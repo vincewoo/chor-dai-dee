@@ -52,29 +52,6 @@ io.on('connection', (socket) => {
       const scores = calculateScores(winner, room.players);
 
       // Update DB for human players
-      scores.forEach(s => {
-          if (!s.isBot) {
-               // We need the database user ID, but we only stored socket ID in room.
-               // We need to fetch user ID from DB by username?
-               // Or we can assume we only track stats for registered users.
-               // Since we don't have user ID in room player object easily without querying.
-               // Let's assume username is unique and query by username or store UserID in join.
-               // I'll query by username for now as it's cleaner than refactoring join logic heavily.
-               // Wait, I can just change join logic to include DB ID.
-
-               // Quick fix: Do the lookup inside updateUserStats or pass username.
-               // The DB function takes userId.
-               // I will update db.js to allow updating by username or just fetch id here.
-               // Actually, let's just lookup by username in db.js helper.
-               // OR, assume room.players has dbId if I add it now.
-               // Let's modify join_room to add dbId.
-          }
-      });
-
-      // Since I can't easily change join_room logic in this patch without context,
-      // I will implement a "bulk update by username" helper in db?
-      // Or just loop.
-
       scores.forEach(async (s) => {
           if (!s.isBot) {
               try {
@@ -85,8 +62,15 @@ io.on('connection', (socket) => {
           }
       });
 
+      // Sanitize winner object to avoid circular references (socket object)
+      const sanitizedWinner = {
+          id: winner.id,
+          name: winner.name,
+          isBot: winner.isBot
+      };
+
       io.to(roomId).emit('game_update', room.getGameState());
-      io.to(roomId).emit('game_over', { winner, scores });
+      io.to(roomId).emit('game_over', { winner: sanitizedWinner, scores });
   };
 
   // Helper for recursive bot turns

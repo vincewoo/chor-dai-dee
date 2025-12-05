@@ -11,6 +11,8 @@ class Room {
         this.deck = new Deck();
         this.currentTurnIndex = 0;
         this.lastPlayedHand = null; // { cards, type, value, playerId }
+        this.playerLastPlayed = {}; // Track each player's last played hand in current round
+        this.passedPlayers = new Set(); // Track players who have passed this round
         this.passes = 0; // Count consecutive passes
         this.winners = []; // Order of finishing
     }
@@ -65,6 +67,8 @@ class Room {
 
         this.gameState = 'playing';
         this.lastPlayedHand = null;
+        this.playerLastPlayed = {}; // Reset player played hands
+        this.passedPlayers = new Set(); // Reset passed players
         this.passes = 0;
         this.winners = [];
 
@@ -139,7 +143,10 @@ class Room {
         // Move is valid
         player.hand = newPlayerHand; // Update hand
         this.lastPlayedHand = { ...validatedHand, playerId };
-        this.passes = 0; // Reset passes
+        // Record this player's played hand (visible until round ends)
+        this.playerLastPlayed[playerId] = { type: 'play', ...validatedHand, playerId };
+        // Note: Don't clear passedPlayers here - players who passed stay out until round is won
+        this.passes = 0; // Reset consecutive pass counter
 
         // Check Win
         if (player.hand.length === 0) {
@@ -163,32 +170,42 @@ class Room {
 
         if (!this.lastPlayedHand) return { error: 'Cannot pass on free turn' }; // Can't pass if you are leading
 
-        this.passes++;
-        this.advanceTurn();
+        // Record that this player passed
+        this.playerLastPlayed[playerId] = { type: 'pass', playerId };
+        this.passedPlayers.add(playerId); // Mark player as passed for this round
 
-        // If 3 people passed, reset board
-        if (this.passes >= 3) {
+        this.passes++;
+
+        // Check if all other players (except the one who played last) have passed
+        const lastPlayerId = this.lastPlayedHand.playerId;
+        const activePlayers = this.players.filter(p => p.id !== lastPlayerId);
+        const allOthersPassed = activePlayers.every(p => this.passedPlayers.has(p.id));
+
+        if (allOthersPassed) {
+            // Round won - last player who played gets control
             this.lastPlayedHand = null;
+            this.playerLastPlayed = {}; // Clear all displayed hands
+            this.passedPlayers = new Set(); // Clear passed players
             this.passes = 0;
-            // Turn is already advanced to the next person, who now has control.
-            // Wait, if P1 plays, P2 passes, P3 passes, P4 passes.
-            // Turn goes back to P1. P1 has control.
-            // My advanceTurn moves index.
-            // So:
-            // P1 plays. Turn -> P2.
-            // P2 passes. Passes=1. Turn -> P3.
-            // P3 passes. Passes=2. Turn -> P4.
-            // P4 passes. Passes=3. Turn -> P1.
-            // Now P1 is currentTurnIndex. lastPlayedHand set to null. Correct.
+            // Set turn to the player who won the round
+            this.currentTurnIndex = this.players.findIndex(p => p.id === lastPlayerId);
+        } else {
+            this.advanceTurn();
         }
 
         return { success: true };
     }
 
     advanceTurn() {
-        this.currentTurnIndex = (this.currentTurnIndex + 1) % 4;
-        // Skip players who have finished (if we support continuing).
-        // For MVP, we stop at 1 winner, so no need to skip.
+        // Move to next player, skipping those who have passed
+        let attempts = 0;
+        do {
+            this.currentTurnIndex = (this.currentTurnIndex + 1) % 4;
+            attempts++;
+        } while (
+            this.passedPlayers.has(this.players[this.currentTurnIndex]?.id) &&
+            attempts < 4
+        );
     }
 
     // New method to check if current player is bot and play
@@ -228,7 +245,8 @@ class Room {
                 id: p.id,
                 name: p.name,
                 cardCount: p.hand ? p.hand.length : 0,
-                isBot: p.isBot
+                isBot: p.isBot,
+                lastPlayed: this.playerLastPlayed[p.id] || null
             })),
             currentTurn: this.players[this.currentTurnIndex]?.id,
             lastPlayedHand: this.lastPlayedHand,
