@@ -33,20 +33,20 @@ const Big2Rules = {
     },
 
     isSingle: (cards) => {
-        return { type: HAND_TYPES.SINGLE, value: cards[0].value, rank: cards[0].rank, suit: cards[0].suit };
+        return { type: HAND_TYPES.SINGLE, value: cards[0].value, rank: cards[0].rank, suit: cards[0].suit, cards };
     },
 
     isPair: (cards) => {
         if (cards[0].rank === cards[1].rank) {
             // Value is the value of the higher suit card (which is at index 1 due to sort)
-            return { type: HAND_TYPES.PAIR, value: cards[1].value, rank: cards[1].rank };
+            return { type: HAND_TYPES.PAIR, value: cards[1].value, rank: cards[1].rank, cards };
         }
         return null;
     },
 
     isTriple: (cards) => {
         if (cards[0].rank === cards[1].rank && cards[1].rank === cards[2].rank) {
-            return { type: HAND_TYPES.TRIPLE, value: cards[2].value, rank: cards[2].rank };
+            return { type: HAND_TYPES.TRIPLE, value: cards[2].value, rank: cards[2].rank, cards };
         }
         return null;
     },
@@ -59,17 +59,17 @@ const Big2Rules = {
         const isStraight = Big2Rules.checkStraight(cards);
 
         if (isFlush && isStraight) {
-            return { type: HAND_TYPES.STRAIGHT_FLUSH, value: cards[4].value };
+            return { type: HAND_TYPES.STRAIGHT_FLUSH, value: cards[4].value, cards };
         }
 
         const quads = Big2Rules.checkQuads(cards);
         if (quads) {
-            return { type: HAND_TYPES.QUADS, value: quads.value };
+            return { type: HAND_TYPES.QUADS, value: quads.value, cards };
         }
 
         const fullHouse = Big2Rules.checkFullHouse(cards);
         if (fullHouse) {
-            return { type: HAND_TYPES.FULL_HOUSE, value: fullHouse.value };
+            return { type: HAND_TYPES.FULL_HOUSE, value: fullHouse.value, cards };
         }
 
         if (isFlush) {
@@ -79,12 +79,12 @@ const Big2Rules = {
             // "Usually, the rank of the flush is determined by the highest card."
             // But suit order matters. Spades flush > Hearts flush.
             // Let's use the highest card's value.
-            return { type: HAND_TYPES.FLUSH, value: cards[4].value, suit: cards[4].suit };
+            return { type: HAND_TYPES.FLUSH, value: cards[4].value, suit: cards[4].suit, cards };
         }
 
         if (isStraight) {
             // Straight value determined by highest card
-            return { type: HAND_TYPES.STRAIGHT, value: cards[4].value };
+            return { type: HAND_TYPES.STRAIGHT, value: cards[4].value, cards };
         }
 
         return null;

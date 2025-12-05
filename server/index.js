@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName } = require('./db');
 const { calculateScores } = require('./game/Scoring');
 
 const app = express();
@@ -24,14 +24,17 @@ io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   socket.on('join_room', ({ roomId, username }) => {
+    console.log(`join_room event received: roomId=${roomId}, username=${username}`);
     // If roomId is 'create', create a new one
     let targetRoomId = roomId;
     if (roomId === 'create') {
         targetRoomId = roomManager.createRoom();
+        console.log(`Created new room: ${targetRoomId}`);
     }
 
     const player = { id: socket.id, name: username || `Player ${socket.id.substr(0,4)}`, socket };
     const result = roomManager.joinRoom(targetRoomId, player);
+    console.log(`Join result:`, result.error || 'success');
 
     if (result.error) {
         socket.emit('error', result.error);
@@ -98,6 +101,17 @@ io.on('connection', (socket) => {
           }
       });
   };
+
+  socket.on('get_room_state', ({ roomId }) => {
+      const room = roomManager.getRoom(roomId);
+      if (room) {
+          socket.emit('room_update', room.getGameState());
+          // Also send hand if game is in progress
+          if (room.gameState === 'playing') {
+              socket.emit('hand_update', room.getPlayerHand(socket.id));
+          }
+      }
+  });
 
   socket.on('start_game', ({ roomId }) => {
       const room = roomManager.getRoom(roomId);

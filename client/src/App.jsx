@@ -8,16 +8,26 @@ import GameRoom from './components/GameRoom';
 const socket = io('http://localhost:3000');
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : null;
+  });
 
-  // In a real app, verify session on load. For now, just state.
+  const handleSetUser = (userData) => {
+    if (userData) {
+      localStorage.setItem('user', JSON.stringify(userData));
+    } else {
+      localStorage.removeItem('user');
+    }
+    setUser(userData);
+  };
 
   return (
     <Router>
         <Routes>
-            <Route path="/" element={!user ? <Login setUser={setUser} /> : <Navigate to="/lobby" />} />
-            <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} /> : <Navigate to="/" />} />
-            <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} /> : <Navigate to="/" />} />
+            <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
+            <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+            <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
         </Routes>
     </Router>
   )

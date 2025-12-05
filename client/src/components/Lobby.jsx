@@ -1,12 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const Lobby = ({ user, socket }) => {
+const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
     const [error, setError] = useState('');
+    const [connected, setConnected] = useState(socket.connected);
     const navigate = useNavigate();
 
+    const handleLogout = () => {
+        setUser(null);
+        navigate('/');
+    };
+
     const createRoom = () => {
+        console.log('createRoom called, socket connected:', socket.connected);
         socket.emit('join_room', { roomId: 'create', username: user.username });
     };
 
@@ -15,16 +22,35 @@ const Lobby = ({ user, socket }) => {
         socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username });
     };
 
-    React.useEffect(() => {
+    useEffect(() => {
+        console.log('Setting up socket listeners, socket connected:', socket.connected);
+
+        const onConnect = () => {
+            console.log('Socket connected');
+            setConnected(true);
+        };
+
+        const onDisconnect = () => {
+            console.log('Socket disconnected');
+            setConnected(false);
+        };
+
+        socket.on('connect', onConnect);
+        socket.on('disconnect', onDisconnect);
+
         socket.on('joined_room', ({ roomId, playerId }) => {
+            console.log('joined_room received:', roomId, playerId);
             navigate(`/game/${roomId}`);
         });
 
         socket.on('error', (err) => {
+            console.log('error received:', err);
             setError(err);
         });
 
         return () => {
+            socket.off('connect', onConnect);
+            socket.off('disconnect', onDisconnect);
             socket.off('joined_room');
             socket.off('error');
         };
@@ -33,7 +59,13 @@ const Lobby = ({ user, socket }) => {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white">
             <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96 text-center">
-                <h2 className="text-2xl font-bold mb-6">Welcome, {user.username}!</h2>
+                <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
+                    {connected ? '● Connected' : '● Disconnected - Is the server running?'}
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Welcome, {user.username}!</h2>
+                <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline mb-4">
+                    Logout
+                </button>
 
                 <div className="space-y-4">
                     <button onClick={createRoom} className="w-full bg-yellow-500 text-white py-3 rounded-lg font-bold hover:bg-yellow-600 transition shadow-md">

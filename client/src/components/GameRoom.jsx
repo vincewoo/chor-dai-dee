@@ -14,9 +14,8 @@ const GameRoom = ({ user, socket }) => {
     const [winner, setWinner] = useState(null);
 
     useEffect(() => {
-        if (!gameState) {
-            // Re-join if refresh? For now assume flow from Lobby
-        }
+        // Request current room state when component mounts
+        socket.emit('get_room_state', { roomId });
 
         socket.on('room_update', (state) => {
             setGameState(state);
@@ -36,8 +35,8 @@ const GameRoom = ({ user, socket }) => {
             setGameState(state);
         });
 
-        socket.on('game_over', ({ winner }) => {
-            setWinner(winner);
+        socket.on('game_over', (data) => {
+            setWinner(data);
         });
 
         socket.on('error', (err) => {
@@ -166,8 +165,10 @@ const GameRoom = ({ user, socket }) => {
 
             {/* Waiting State */}
             {gameState.gameState === 'waiting' && (
-                <div className="absolute inset-0 z-40 bg-black/40 flex flex-col items-center justify-center text-white">
-                    <h2 className="text-4xl font-bold mb-4">Waiting for Players...</h2>
+                <div className="absolute inset-0 z-40 bg-green-800 flex flex-col items-center justify-center text-white">
+                    <div className="text-sm text-green-300 mb-2">Room Code</div>
+                    <h1 className="text-5xl font-bold mb-8 tracking-widest">{roomId}</h1>
+                    <h2 className="text-2xl mb-6">Waiting for Players...</h2>
                     <div className="flex gap-4 mb-8">
                         {gameState.players.map(p => (
                             <div key={p.id} className="bg-white text-black p-4 rounded shadow-lg min-w-[100px] text-center font-bold">
@@ -178,9 +179,11 @@ const GameRoom = ({ user, socket }) => {
                             <div key={i} className="bg-white/20 p-4 rounded border-2 border-dashed border-white min-w-[100px] text-center">Empty</div>
                         ))}
                     </div>
-                    {/* Only host (first player?) or anyone can start if enough players. Let's allow anyone for MVP */}
-                    <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 rounded-full font-bold text-xl hover:bg-yellow-400 shadow-lg transform transition hover:scale-105">
+                    <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 rounded-full font-bold text-xl hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-4">
                         Start Game (Fill with Bots)
+                    </button>
+                    <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-sm">
+                        Leave Room
                     </button>
                 </div>
             )}
