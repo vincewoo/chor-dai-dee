@@ -5,7 +5,9 @@ import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 
-const socket = io('http://localhost:3000');
+// In production, connect to same origin; in development, use localhost:3000
+const SOCKET_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+const socket = io(SOCKET_URL);
 
 function App() {
   const [user, setUser] = useState(() => {

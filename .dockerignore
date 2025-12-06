@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Build outputs (we rebuild in Docker)
+client/dist/
+
+# Development files
+.git/
+.gitignore
+*.md
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database (will be created fresh in container)
+server/database.sqlite

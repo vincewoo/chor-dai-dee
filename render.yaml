@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: chor-dai-dee
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /app/server/data
+    disk:
+      name: data
+      mountPath: /app/server/data
+      sizeGB: 1
