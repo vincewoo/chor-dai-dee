@@ -18,6 +18,7 @@ class Room {
         this.cumulativeScores = {}; // Track cumulative scores: { playerId: totalPoints }
         this.roundNumber = 0; // Current round number
         this.lastRoundWinnerId = null; // Winner of last round starts next
+        this.playedCards = []; // Track all cards played this round for card counting
     }
 
     addPlayer(player) {
@@ -84,6 +85,7 @@ class Room {
         this.passedPlayers = new Set();
         this.passes = 0;
         this.winners = [];
+        this.playedCards = []; // Reset card tracking for new round
 
         // Determine who starts: first round = 3 of Diamonds, later rounds = last winner
         if (this.roundNumber === 1) {
@@ -182,6 +184,11 @@ class Room {
         // Note: Don't clear passedPlayers here - players who passed stay out until round is won
         this.passes = 0; // Reset consecutive pass counter
 
+        // Track played cards for card counting
+        for (const card of handToPlay) {
+            this.playedCards.push({ rank: card.rank, suit: card.suit, value: card.value });
+        }
+
         // Check if player finished round
         if (player.hand.length === 0) {
             this.winners.push(player);
@@ -256,7 +263,9 @@ class Room {
                 // Which players have passed this round
                 passedPlayers: [],
                 // Total passes this round
-                passCount: this.passes
+                passCount: this.passes,
+                // All cards played this round (for card counting)
+                playedCards: [...this.playedCards]
             };
 
             // Build player info in turn order (next player first)

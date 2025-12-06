@@ -22,6 +22,7 @@ const BotLogic = {
      *   - lastPlayedByRelative: 1=next, 2=across, 3=previous player played last
      *   - passedPlayers: array of indices (0=next, 1=across, 2=previous) who passed
      *   - passCount: total passes this round
+     *   - playedCards: array of cards already played this round
      */
     getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}) => {
         // Normalize gameContext with defaults
@@ -29,8 +30,12 @@ const BotLogic = {
             playerCardCounts: gameContext.playerCardCounts || [13, 13, 13],
             lastPlayedByRelative: gameContext.lastPlayedByRelative || null,
             passedPlayers: gameContext.passedPlayers || [],
-            passCount: gameContext.passCount || 0
+            passCount: gameContext.passCount || 0,
+            playedCards: gameContext.playedCards || []
         };
+
+        // Analyze what cards are still in play (card counting)
+        ctx.cardAnalysis = BotLogic.analyzePlayedCards(hand, ctx.playedCards);
 
         const validMoves = BotLogic.getAllValidMoves(hand);
 
@@ -66,7 +71,8 @@ const BotLogic = {
      * Determine if we should pass even though we can play
      */
     shouldStrategicPass: (candidates, hand, lastPlayedHand, ctx) => {
-        const { playerCardCounts, passCount, lastPlayedByRelative } = ctx;
+        const { playerCardCounts, passCount, lastPlayedByRelative, cardAnalysis } = ctx;
+        const prevPlayerCards = playerCardCounts[2]; // Player before us
 
         // Never pass if we're close to winning
         if (hand.length <= 3) return false;
@@ -81,6 +87,19 @@ const BotLogic = {
         // If next player has few cards, be more aggressive
         const nextPlayerCards = playerCardCounts[0];
         if (nextPlayerCards <= 3) return false;
+
+        // POSITION AWARENESS: If player before us played, consider letting them have it
+        // This is a key Big 2 strategy - help the player before you
+        if (lastPlayedByRelative === 3 && prevPlayerCards <= 5 && hand.length > 6) {
+            // Previous player played and is getting low - consider passing to let them keep control
+            // unless we can beat them with a low card
+            const lowestBeater = candidates.reduce((best, curr) =>
+                curr.value < best.value ? curr : best
+            );
+            if (lowestBeater.value > 35) { // We'd need a high card
+                return Math.random() < 0.5; // 50% chance to let them have it
+            }
+        }
 
         // Evaluate our best candidate
         const bestCandidate = candidates.reduce((best, curr) =>
@@ -204,6 +223,11 @@ const BotLogic = {
 
     /**
      * Select the best move using strategic considerations
+     * Incorporates advanced Big 2 strategies:
+     * - Card counting (tracking what's been played)
+     * - Position awareness (help player before, oppose player after)
+     * - Endgame tactics (3-card holdings, highest card logic)
+     * - Milking strategy (slow play with strong hands)
      */
     selectBestMove: (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}) => {
         const cardsRemaining = hand.length;
@@ -211,7 +235,12 @@ const BotLogic = {
         // Extract game context
         const playerCardCounts = ctx.playerCardCounts || [13, 13, 13];
         const nextPlayerCards = playerCardCounts[0];
+        const acrossPlayerCards = playerCardCounts[1];
+        const prevPlayerCards = playerCardCounts[2];
         const minOpponentCards = Math.min(...playerCardCounts);
+        const cardAnalysis = ctx.cardAnalysis || {};
+        const lastPlayedByRelative = ctx.lastPlayedByRelative; // 1=next, 2=across, 3=previous
+        const passedPlayers = ctx.passedPlayers || [];
 
         // Analyze our hand composition for strategic decisions
         const composition = BotLogic.analyzeHandComposition(hand);
@@ -219,6 +248,20 @@ const BotLogic = {
         // Determine if we're in "danger mode" - opponent close to winning
         const dangerMode = minOpponentCards <= 2;
         const nextPlayerDanger = nextPlayerCards <= 2;
+
+        // Check if we have the highest outstanding card (card counting benefit)
+        const weHaveHighest = cardAnalysis.weHaveHighest || false;
+        const twosOutstanding = cardAnalysis.twosOutstanding || 4;
+        const twosInHand = cardAnalysis.twosInHand || 0;
+
+        // Determine if we should use "milking" strategy (slow play with strong hand)
+        // Milk when we have high cards and opponents have many cards
+        const shouldMilk = weHaveHighest && minOpponentCards >= 8 && cardsRemaining >= 8;
+
+        // Position awareness: Previous player (position 3) is "before" us, next player (position 1) is "after"
+        // Strategy: Help the player before you (don't block them), oppose player after you
+        const previousPlayerIsLow = prevPlayerCards <= 4;
+        const nextPlayerIsLow = nextPlayerCards <= 4;
 
         // Evaluate each candidate move
         const scoredMoves = candidates.map(move => {
@@ -414,12 +457,175 @@ const BotLogic = {
                 }
             }
 
+            // 15. POSITION AWARENESS: Consider who played last and who will play next
+            // If previous player (before us) played last, they likely have control
+            // Don't waste high cards beating them if they're close to winning
+            if (lastPlayedByRelative === 3 && previousPlayerIsLow) {
+                // Previous player is low on cards and played - let them try to win
+                // unless we're also low or it's dangerous
+                if (!dangerMode && cardsRemaining > 5) {
+                    // Penalize using high cards against player before us
+                    const avgValue = moveCards.reduce((sum, c) => sum + c.value, 0) / moveCards.length;
+                    if (avgValue > 35) { // High cards
+                        score -= 40;
+                    }
+                }
+            }
+
+            // If next player is low on cards, be aggressive - block them!
+            if (nextPlayerIsLow && !passedPlayers.includes(0)) {
+                // Next player hasn't passed yet and is low - play something hard to beat
+                if (move.value > 40) { // High value hand
+                    score += 50;
+                }
+                if (twosInMove > 0 && nextPlayerCards <= 2) {
+                    // Use 2s to block if next player is about to win
+                    score += 80;
+                }
+            }
+
+            // 16. MILKING STRATEGY: When we have control and high cards, play low to draw out opponent's high cards
+            if (shouldMilk && !lastPlayedHand) {
+                // Free play and we should milk - prefer low singles to draw out opponent cards
+                if (moveType === HAND_TYPES.SINGLE && move.value < 30) {
+                    score += 60; // Play low singles to bait out higher cards
+                }
+                // Don't waste our high cards yet
+                if (twosInMove > 0) {
+                    score -= 80;
+                }
+                const avgValue = moveCards.reduce((sum, c) => sum + c.value, 0) / moveCards.length;
+                if (avgValue > 40) {
+                    score -= 50;
+                }
+            }
+
+            // 17. CARD COUNTING BENEFIT: Use knowledge of played cards
+            // If all 2s are accounted for (played or in our hand), our Aces are essentially 2s
+            if (twosOutstanding === 0 && twosInHand === 0) {
+                // All 2s are gone - Aces are now the highest singles
+                const acesInMove = moveCards.filter(c => c.rank === 'A').length;
+                if (moveType === HAND_TYPES.SINGLE && moveCards[0].rank === 'A') {
+                    score += 30; // Our Ace is guaranteed to win singles
+                }
+            }
+
+            // If we have the only remaining 2(s), we have guaranteed control
+            if (weHaveHighest && twosInHand > 0 && twosOutstanding === 0) {
+                // We have all remaining 2s - don't waste them unless necessary
+                if (twosInMove > 0 && !dangerMode && cardsRemaining > 4) {
+                    score -= 60; // Save 2s for when we really need them
+                }
+            }
+
+            // 18. ENDGAME TACTICS: Special handling for 3-card holdings
+            if (cardsRemaining === 3) {
+                // Classic endgame: with highest card + 2 others, play second-highest first
+                const sortedHand = [...hand].sort((a, b) => a.value - b.value);
+                const highestInHand = sortedHand[2];
+                const secondHighest = sortedHand[1];
+                const lowest = sortedHand[0];
+
+                if (weHaveHighest) {
+                    // We have the highest card - play mid card first, then low, save high for last
+                    if (moveType === HAND_TYPES.SINGLE) {
+                        if (moveCards[0].value === secondHighest.value) {
+                            score += 100; // Play second highest
+                        } else if (moveCards[0].value === highestInHand.value) {
+                            score -= 50; // Don't lead with highest
+                        }
+                    }
+                }
+            }
+
+            // 19. ADD UNPREDICTABILITY: Small random factor to avoid being too predictable
+            // This makes bot behavior less exploitable
+            score += (Math.random() - 0.5) * 10;
+
             return { move, score };
         });
 
         // Sort by score (highest first) and return the best
         scoredMoves.sort((a, b) => b.score - a.score);
         return scoredMoves[0].move;
+    },
+
+    /**
+     * Analyze played cards to determine what's still outstanding
+     * This enables card counting strategy
+     */
+    analyzePlayedCards: (hand, playedCards) => {
+        // Track all 52 cards
+        const allCards = {};
+        for (const suit of SUITS) {
+            for (const rank of RANKS) {
+                const key = `${rank}${suit}`;
+                allCards[key] = 'unknown'; // unknown, played, in_hand
+            }
+        }
+
+        // Mark cards in our hand
+        for (const card of hand) {
+            allCards[`${card.rank}${card.suit}`] = 'in_hand';
+        }
+
+        // Mark played cards
+        for (const card of playedCards) {
+            allCards[`${card.rank}${card.suit}`] = 'played';
+        }
+
+        // Calculate what's still out there
+        const analysis = {
+            // How many 2s are still unaccounted for (not in hand, not played)
+            twosOutstanding: 0,
+            twosInHand: 0,
+            // Highest outstanding cards (not in hand, not played)
+            highestOutstanding: null,
+            // Do we have the highest outstanding card?
+            weHaveHighest: false,
+            // Outstanding cards by rank
+            outstandingByRank: {},
+            // Total cards outstanding (in opponents' hands)
+            totalOutstanding: 0
+        };
+
+        // Find outstanding cards
+        let highestOutstandingValue = -1;
+        let highestInHandValue = -1;
+
+        for (const key in allCards) {
+            const rank = key.slice(0, -1);
+            const suit = key.slice(-1);
+            const value = RANKS.indexOf(rank) * 4 + SUITS.indexOf(suit);
+
+            if (allCards[key] === 'unknown') {
+                analysis.totalOutstanding++;
+                if (!analysis.outstandingByRank[rank]) {
+                    analysis.outstandingByRank[rank] = 0;
+                }
+                analysis.outstandingByRank[rank]++;
+
+                if (rank === '2') {
+                    analysis.twosOutstanding++;
+                }
+                if (value > highestOutstandingValue) {
+                    highestOutstandingValue = value;
+                    analysis.highestOutstanding = { rank, suit, value };
+                }
+            } else if (allCards[key] === 'in_hand') {
+                if (rank === '2') {
+                    analysis.twosInHand++;
+                }
+                if (value > highestInHandValue) {
+                    highestInHandValue = value;
+                }
+            }
+        }
+
+        // Do we have the highest card still in play?
+        analysis.weHaveHighest = highestInHandValue >= highestOutstandingValue;
+
+        return analysis;
     },
 
     /**
