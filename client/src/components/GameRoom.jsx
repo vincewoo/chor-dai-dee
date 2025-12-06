@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from './Card';
 import { AnimatePresence, motion } from 'framer-motion';
+import { canBeatWithAnyHand } from '../utils/handChecker';
 
 // Helper to create a stable key for a played hand (only changes when cards change)
 const getPlayedHandKey = (lastPlayed) => {
@@ -13,10 +14,10 @@ const getPlayedHandKey = (lastPlayed) => {
 // Played cards display component - extracted to prevent re-renders
 const PlayedCards = ({ lastPlayed, position }) => {
     const positionClasses = {
-        top: "absolute top-28 left-1/2 -translate-x-1/2 flex -space-x-5",
-        left: "absolute left-24 top-1/2 -translate-y-1/2 flex -space-x-5",
-        right: "absolute right-24 top-1/2 -translate-y-1/2 flex -space-x-5",
-        bottom: "absolute bottom-44 left-1/2 -translate-x-1/2 flex -space-x-5"
+        top: "absolute top-[14vh] left-1/2 -translate-x-1/2 flex",
+        left: "absolute left-[8vw] top-1/2 -translate-y-1/2 flex",
+        right: "absolute right-[8vw] top-1/2 -translate-y-1/2 flex",
+        bottom: "absolute bottom-[22vh] left-1/2 -translate-x-1/2 flex"
     };
 
     return (
@@ -25,18 +26,19 @@ const PlayedCards = ({ lastPlayed, position }) => {
                 <motion.div
                     key={getPlayedHandKey(lastPlayed)}
                     className={positionClasses[position]}
+                    style={{ gap: '-1vmax', marginLeft: '-1vmax' }}
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15 }}
                 >
                     {lastPlayed.type === 'pass' ? (
-                        <div className="text-red-400 font-bold text-2xl bg-black/50 px-4 py-2 rounded-lg">
+                        <div className="text-red-400 font-bold text-[1.5vmax] bg-black/50 px-[1vmax] py-[0.5vmax] rounded-lg">
                             PASS
                         </div>
                     ) : (
                         lastPlayed.cards?.map((card) => (
-                            <div key={`${card.rank}-${card.suit}`} className="scale-[0.65]">
-                                <Card rank={card.rank} suit={card.suit} />
+                            <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: '-1.5vmax' }}>
+                                <Card rank={card.rank} suit={card.suit} size="small" />
                             </div>
                         ))
                     )}
@@ -53,21 +55,21 @@ const TopPlayerArea = ({ player, isTurn }) => {
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute top-4 left-1/2 -translate-x-1/3 flex items-center gap-10 transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+            <div className={`absolute top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
                 {/* Cards - horizontal */}
-                <div className="flex -space-x-9">
+                <div className="flex" style={{ marginLeft: '-2vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-7 h-10 bg-blue-500 border border-white rounded shadow-sm"></div>
+                        <div key={i} className="w-[1.8vmax] h-[2.5vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginLeft: '-1vmax' }}></div>
                     ))}
                 </div>
                 {/* Avatar */}
                 <div className="flex flex-col items-center shrink-0">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
+                    <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
                         ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
-                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
-                    <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
+                    <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
             </div>
             {/* Played cards or PASS - below player */}
@@ -83,21 +85,21 @@ const LeftPlayerArea = ({ player, isTurn }) => {
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+            <div className={`absolute left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
                 {/* Cards - vertical stack, each card rotated (wider than tall) */}
-                <div className="flex flex-col -space-y-6 mb-3">
+                <div className="flex flex-col mb-[0.75vmax]" style={{ marginTop: '-1vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-10 h-7 bg-blue-500 border border-white rounded shadow-sm"></div>
+                        <div key={i} className="w-[2.5vmax] h-[1.8vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-0.8vmax' }}></div>
                     ))}
                 </div>
                 {/* Avatar */}
                 <div className="flex flex-col items-center">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
+                    <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
                         ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
-                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
-                    <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
+                    <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
             </div>
             {/* Played cards or PASS - to the right of player */}
@@ -113,20 +115,20 @@ const RightPlayerArea = ({ player, isTurn }) => {
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+            <div className={`absolute right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
                 {/* Avatar */}
-                <div className="flex flex-col items-center mb-3">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
+                <div className="flex flex-col items-center mb-[0.75vmax]">
+                    <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
                         ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
-                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
-                    <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
+                    <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
                 {/* Cards - vertical stack, each card rotated (wider than tall) */}
-                <div className="flex flex-col -space-y-6">
+                <div className="flex flex-col" style={{ marginTop: '-1vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-10 h-7 bg-blue-500 border border-white rounded shadow-sm"></div>
+                        <div key={i} className="w-[2.5vmax] h-[1.8vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-0.8vmax' }}></div>
                     ))}
                 </div>
             </div>
@@ -146,6 +148,8 @@ const GameRoom = ({ user, socket }) => {
     const [error, setError] = useState('');
     const [roundResult, setRoundResult] = useState(null);
     const [gameOver, setGameOver] = useState(null);
+    const [autoPass, setAutoPass] = useState(false);
+    const autoPassTriggered = useRef(false);
 
     useEffect(() => {
         // Request current room state when component mounts
@@ -194,6 +198,35 @@ const GameRoom = ({ user, socket }) => {
         };
     }, [socket]);
 
+    // Auto-pass effect: check if we should auto-pass when it becomes our turn
+    useEffect(() => {
+        if (!autoPass || !gameState || gameState.gameState !== 'playing') return;
+
+        const isMyTurn = gameState.currentTurn === socket.id;
+        const hasLastPlayedHand = !!gameState.lastPlayedHand;
+
+        // Only auto-pass if it's our turn and there's a hand to beat
+        if (isMyTurn && hasLastPlayedHand && !autoPassTriggered.current) {
+            // Check if we can beat the hand
+            const canBeat = canBeatWithAnyHand(myHand, gameState.lastPlayedHand);
+
+            if (!canBeat) {
+                // Small delay to give visual feedback before auto-passing
+                autoPassTriggered.current = true;
+                const timer = setTimeout(() => {
+                    socket.emit('pass_turn', { roomId });
+                    autoPassTriggered.current = false;
+                }, 500);
+                return () => clearTimeout(timer);
+            }
+        }
+
+        // Reset triggered flag when it's no longer our turn
+        if (!isMyTurn) {
+            autoPassTriggered.current = false;
+        }
+    }, [autoPass, gameState, myHand, socket, roomId]);
+
     const startGame = () => {
         socket.emit('start_game', { roomId });
     };
@@ -241,30 +274,30 @@ const GameRoom = ({ user, socket }) => {
     return (
         <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             {/* Top Bar */}
-            <div className="absolute top-4 left-4 text-white z-10">
-                <h1 className="text-2xl font-bold drop-shadow-md">Room: {roomId}</h1>
+            <div className="absolute top-[1vh] left-[1vw] text-white z-10">
+                <h1 className="text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
                 {gameState.roundNumber > 0 && (
-                    <div className="text-sm text-yellow-300">Round {gameState.roundNumber}</div>
+                    <div className="text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
                 )}
-                <button onClick={leaveRoom} className="text-xs underline text-gray-300 hover:text-white">Leave</button>
+                <button onClick={leaveRoom} className="text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
             </div>
 
             {/* Scoreboard */}
             {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
-                <div className="absolute top-4 right-4 bg-black/60 rounded-lg p-3 text-white text-sm z-10">
-                    <div className="font-bold mb-2 text-yellow-400">Scores</div>
+                <div className="absolute top-[1vh] right-[1vw] bg-black/60 rounded-lg p-[0.75vmax] text-white text-[0.9vmax] z-10">
+                    <div className="font-bold mb-[0.5vmax] text-yellow-400">Scores</div>
                     {gameState.players
                         .slice()
                         .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
                         .map(p => (
-                        <div key={p.id} className="flex justify-between gap-4">
+                        <div key={p.id} className="flex justify-between gap-[1vmax]">
                             <span className={p.id === socket.id ? 'text-yellow-300' : ''}>{p.name}</span>
                             <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
                                 {p.cumulativeScore}
                             </span>
                         </div>
                     ))}
-                    <div className="text-xs text-gray-400 mt-2 border-t border-white/20 pt-1">First to 100 loses</div>
+                    <div className="text-[0.7vmax] text-gray-400 mt-[0.5vmax] border-t border-white/20 pt-[0.25vmax]">First to 100 loses</div>
                 </div>
             )}
 
@@ -443,7 +476,7 @@ const GameRoom = ({ user, socket }) => {
                 {/* Left side: Controls and Cards stacked */}
                 <div className="flex flex-col items-center">
                     {/* Controls */}
-                    <div className="flex space-x-4 mb-3">
+                    <div className="flex items-center space-x-4 mb-3">
                         <button
                             onClick={playCards}
                             disabled={!isMyTurn || selectedCards.length === 0}
@@ -459,6 +492,14 @@ const GameRoom = ({ user, socket }) => {
                                 ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Pass
+                        </button>
+                        <button
+                            onClick={() => setAutoPass(!autoPass)}
+                            className={`px-4 py-2 rounded-full font-bold shadow-lg transition transform hover:scale-105 text-sm
+                                ${autoPass ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                            title="Automatically pass when you have no cards that can beat the played hand"
+                        >
+                            Auto-Pass {autoPass ? 'ON' : 'OFF'}
                         </button>
                     </div>
 
