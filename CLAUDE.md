@@ -53,17 +53,32 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `start_game` - Begin game (auto-fills bots if < 4 players)
 - `play_card` - Submit a hand
 - `pass_turn` - Pass current turn
-- Server emits: `room_update`, `game_started`, `hand_update`, `game_update`, `game_over`, `error`
+- `next_round` - Start the next round after round ends
+- `get_room_state` - Request current room state (for reconnection)
+- Server emits: `room_update`, `game_started`, `hand_update`, `game_update`, `round_over`, `game_over`, `error`
 
 ## Game Rules (Big 2)
-- Player with 3♦ plays first
+- Player with 3♦ plays first (round 1 only)
+- Subsequent rounds: previous round winner starts
 - Valid hands: single, pair, triple, straight, flush, full house, quads, straight flush
 - Must beat the table or pass
-- Three consecutive passes reset the table
-- First to empty hand wins
+- When all other players pass, the last player who played gets free control
+- First to empty hand wins the round
+
+## Scoring System
+- Games consist of multiple rounds played until someone reaches 100 points
+- Winner of each round gets 0 points; other players get points based on cards remaining
+- Penalty multipliers:
+  - 1-9 cards: 1x (points = cards remaining)
+  - 10-12 cards: 2x multiplier
+  - 13 cards (no plays): 3x multiplier
+- Player with lowest cumulative score when someone hits 100 wins the game
+- Player stats (wins, games, total score) are persisted to SQLite database
 
 ## Technical Notes
 - Client uses ES modules; server uses CommonJS
 - Rooms are stored in-memory (lost on server restart)
 - Card value encoding: `rankIndex * 4 + suitIndex` for comparison
 - Hardcoded URLs: client expects server at `localhost:3000`, server accepts `localhost:5173`
+- Uses Framer Motion for card animations and UI transitions
+- Responsive table layout with relative player positioning (current player always at bottom)

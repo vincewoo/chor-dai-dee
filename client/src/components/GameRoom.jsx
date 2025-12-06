@@ -3,6 +3,139 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Card from './Card';
 import { AnimatePresence, motion } from 'framer-motion';
 
+// Helper to create a stable key for a played hand (only changes when cards change)
+const getPlayedHandKey = (lastPlayed) => {
+    if (!lastPlayed) return null;
+    if (lastPlayed.type === 'pass') return 'pass';
+    return lastPlayed.cards?.map(c => `${c.rank}-${c.suit}`).join(',') || null;
+};
+
+// Played cards display component - extracted to prevent re-renders
+const PlayedCards = ({ lastPlayed, position }) => {
+    const positionClasses = {
+        top: "absolute top-28 left-1/2 -translate-x-1/2 flex -space-x-5",
+        left: "absolute left-24 top-1/2 -translate-y-1/2 flex -space-x-5",
+        right: "absolute right-24 top-1/2 -translate-y-1/2 flex -space-x-5",
+        bottom: "absolute bottom-44 left-1/2 -translate-x-1/2 flex -space-x-5"
+    };
+
+    return (
+        <AnimatePresence mode="wait">
+            {lastPlayed && (
+                <motion.div
+                    key={getPlayedHandKey(lastPlayed)}
+                    className={positionClasses[position]}
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                >
+                    {lastPlayed.type === 'pass' ? (
+                        <div className="text-red-400 font-bold text-2xl bg-black/50 px-4 py-2 rounded-lg">
+                            PASS
+                        </div>
+                    ) : (
+                        lastPlayed.cards?.map((card) => (
+                            <div key={`${card.rank}-${card.suit}`} className="scale-[0.65]">
+                                <Card rank={card.rank} suit={card.suit} />
+                            </div>
+                        ))
+                    )}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+};
+
+// Top Player Area - cards horizontal on left, avatar on right
+const TopPlayerArea = ({ player, isTurn }) => {
+    if (!player) return null;
+
+    return (
+        <>
+            {/* Player info and cards */}
+            <div className={`absolute top-4 left-1/2 -translate-x-1/3 flex items-center gap-10 transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+                {/* Cards - horizontal */}
+                <div className="flex -space-x-9">
+                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
+                        <div key={i} className="w-7 h-10 bg-blue-500 border border-white rounded shadow-sm"></div>
+                    ))}
+                </div>
+                {/* Avatar */}
+                <div className="flex flex-col items-center shrink-0">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
+                        ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                        {player.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
+                    <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
+                </div>
+            </div>
+            {/* Played cards or PASS - below player */}
+            <PlayedCards lastPlayed={player.lastPlayed} position="top" />
+        </>
+    );
+};
+
+// Left Player Area - cards vertical (rotated 90°), avatar at bottom
+const LeftPlayerArea = ({ player, isTurn }) => {
+    if (!player) return null;
+
+    return (
+        <>
+            {/* Player info and cards */}
+            <div className={`absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+                {/* Cards - vertical stack, each card rotated (wider than tall) */}
+                <div className="flex flex-col -space-y-6 mb-3">
+                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
+                        <div key={i} className="w-10 h-7 bg-blue-500 border border-white rounded shadow-sm"></div>
+                    ))}
+                </div>
+                {/* Avatar */}
+                <div className="flex flex-col items-center">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
+                        ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                        {player.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
+                    <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
+                </div>
+            </div>
+            {/* Played cards or PASS - to the right of player */}
+            <PlayedCards lastPlayed={player.lastPlayed} position="left" />
+        </>
+    );
+};
+
+// Right Player Area - cards vertical (rotated 90°), avatar at top
+const RightPlayerArea = ({ player, isTurn }) => {
+    if (!player) return null;
+
+    return (
+        <>
+            {/* Player info and cards */}
+            <div className={`absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+                {/* Avatar */}
+                <div className="flex flex-col items-center mb-3">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
+                        ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                        {player.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
+                    <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
+                </div>
+                {/* Cards - vertical stack, each card rotated (wider than tall) */}
+                <div className="flex flex-col -space-y-6">
+                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
+                        <div key={i} className="w-10 h-7 bg-blue-500 border border-white rounded shadow-sm"></div>
+                    ))}
+                </div>
+            </div>
+            {/* Played cards or PASS - to the left of player */}
+            <PlayedCards lastPlayed={player.lastPlayed} position="right" />
+        </>
+    );
+};
+
 const GameRoom = ({ user, socket }) => {
     const { roomId } = useParams();
     const navigate = useNavigate();
@@ -103,168 +236,6 @@ const GameRoom = ({ user, socket }) => {
         if (myIndex === -1) return gameState.players[offset]; // Spectator view
         const idx = (myIndex + offset) % 4;
         return gameState.players[idx];
-    };
-
-    // Top Player Area - cards horizontal on left, avatar on right
-    const TopPlayerArea = ({ player }) => {
-        if (!player) return null;
-        const isTurn = gameState.currentTurn === player.id;
-
-        return (
-            <>
-                {/* Player info and cards */}
-                <div className={`absolute top-4 left-1/2 -translate-x-1/3 flex items-center gap-10 transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
-                    {/* Cards - horizontal */}
-                    <div className="flex -space-x-9">
-                        {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                            <div key={i} className="w-7 h-10 bg-blue-500 border border-white rounded shadow-sm"></div>
-                        ))}
-                    </div>
-                    {/* Avatar */}
-                    <div className="flex flex-col items-center shrink-0">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
-                            ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
-                            {player.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
-                        <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
-                    </div>
-                </div>
-                {/* Played cards or PASS - below player */}
-                {player.lastPlayed && (
-                    <div className="absolute top-28 left-1/2 -translate-x-1/2 flex -space-x-5">
-                        {player.lastPlayed.type === 'pass' ? (
-                            <motion.div
-                                initial={{ scale: 0.5, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                className="text-red-400 font-bold text-2xl bg-black/50 px-4 py-2 rounded-lg"
-                            >
-                                PASS
-                            </motion.div>
-                        ) : (
-                            player.lastPlayed.cards?.map((card) => (
-                                <motion.div
-                                    key={`${card.rank}-${card.suit}`}
-                                    initial={{ scale: 0.5, opacity: 0 }}
-                                    animate={{ scale: 0.65, opacity: 1 }}
-                                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                                >
-                                    <Card rank={card.rank} suit={card.suit} />
-                                </motion.div>
-                            ))
-                        )}
-                    </div>
-                )}
-            </>
-        );
-    };
-
-    // Left Player Area - cards vertical (rotated 90°), avatar at bottom
-    const LeftPlayerArea = ({ player }) => {
-        if (!player) return null;
-        const isTurn = gameState.currentTurn === player.id;
-
-        return (
-            <>
-                {/* Player info and cards */}
-                <div className={`absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
-                    {/* Cards - vertical stack, each card rotated (wider than tall) */}
-                    <div className="flex flex-col -space-y-6 mb-3">
-                        {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                            <div key={i} className="w-10 h-7 bg-blue-500 border border-white rounded shadow-sm"></div>
-                        ))}
-                    </div>
-                    {/* Avatar */}
-                    <div className="flex flex-col items-center">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
-                            ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
-                            {player.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
-                        <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
-                    </div>
-                </div>
-                {/* Played cards or PASS - to the right of player */}
-                {player.lastPlayed && (
-                    <div className="absolute left-24 top-1/2 -translate-y-1/2 flex -space-x-5">
-                        {player.lastPlayed.type === 'pass' ? (
-                            <motion.div
-                                initial={{ scale: 0.5, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                className="text-red-400 font-bold text-2xl bg-black/50 px-4 py-2 rounded-lg"
-                            >
-                                PASS
-                            </motion.div>
-                        ) : (
-                            player.lastPlayed.cards?.map((card) => (
-                                <motion.div
-                                    key={`${card.rank}-${card.suit}`}
-                                    initial={{ scale: 0.5, opacity: 0 }}
-                                    animate={{ scale: 0.65, opacity: 1 }}
-                                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                                >
-                                    <Card rank={card.rank} suit={card.suit} />
-                                </motion.div>
-                            ))
-                        )}
-                    </div>
-                )}
-            </>
-        );
-    };
-
-    // Right Player Area - cards vertical (rotated 90°), avatar at top
-    const RightPlayerArea = ({ player }) => {
-        if (!player) return null;
-        const isTurn = gameState.currentTurn === player.id;
-
-        return (
-            <>
-                {/* Player info and cards */}
-                <div className={`absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
-                    {/* Avatar */}
-                    <div className="flex flex-col items-center mb-3">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold border-4 shadow-lg
-                            ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
-                            {player.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{player.name}</div>
-                        <div className="text-yellow-300 text-xs">{player.cardCount} Cards</div>
-                    </div>
-                    {/* Cards - vertical stack, each card rotated (wider than tall) */}
-                    <div className="flex flex-col -space-y-6">
-                        {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                            <div key={i} className="w-10 h-7 bg-blue-500 border border-white rounded shadow-sm"></div>
-                        ))}
-                    </div>
-                </div>
-                {/* Played cards or PASS - to the left of player */}
-                {player.lastPlayed && (
-                    <div className="absolute right-24 top-1/2 -translate-y-1/2 flex -space-x-5">
-                        {player.lastPlayed.type === 'pass' ? (
-                            <motion.div
-                                initial={{ scale: 0.5, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                className="text-red-400 font-bold text-2xl bg-black/50 px-4 py-2 rounded-lg"
-                            >
-                                PASS
-                            </motion.div>
-                        ) : (
-                            player.lastPlayed.cards?.map((card) => (
-                                <motion.div
-                                    key={`${card.rank}-${card.suit}`}
-                                    initial={{ scale: 0.5, opacity: 0 }}
-                                    animate={{ scale: 0.65, opacity: 1 }}
-                                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                                >
-                                    <Card rank={card.rank} suit={card.suit} />
-                                </motion.div>
-                            ))
-                        )}
-                    </div>
-                )}
-            </>
-        );
     };
 
     return (
@@ -408,48 +379,64 @@ const GameRoom = ({ user, socket }) => {
             {/* Game Table Layout */}
 
             {/* Top Player (Offset 2) */}
-            <TopPlayerArea player={getRelativePlayer(2)} />
+            <TopPlayerArea player={getRelativePlayer(2)} isTurn={gameState.currentTurn === getRelativePlayer(2)?.id} />
 
             {/* Left Player (Offset 3) */}
-            <LeftPlayerArea player={getRelativePlayer(3)} />
+            <LeftPlayerArea player={getRelativePlayer(3)} isTurn={gameState.currentTurn === getRelativePlayer(3)?.id} />
 
             {/* Right Player (Offset 1) */}
-            <RightPlayerArea player={getRelativePlayer(1)} />
+            <RightPlayerArea player={getRelativePlayer(1)} isTurn={gameState.currentTurn === getRelativePlayer(1)?.id} />
 
-            {/* Center: Table indicator */}
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-                 {!gameState.lastPlayedHand && (
-                     <div className="text-white/30 font-bold text-lg border-2 border-dashed border-white/30 px-6 py-3 rounded-lg">
-                         Free Play
-                     </div>
-                 )}
+            {/* Center: Current hand to beat */}
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
+                {/* Turn indicator */}
+                {gameState.gameState === 'playing' && (
+                    <div className={`mb-4 px-4 py-2 rounded-full font-bold text-lg shadow-lg ${
+                        isMyTurn
+                            ? 'bg-yellow-500 text-black animate-pulse'
+                            : 'bg-black/60 text-white'
+                    }`}>
+                        {isMyTurn ? "Your Turn!" : `${gameState.players.find(p => p.id === gameState.currentTurn)?.name}'s Turn`}
+                    </div>
+                )}
+
+                {/* Hand to beat */}
+                <AnimatePresence mode="wait">
+                    {gameState.lastPlayedHand ? (
+                        <motion.div
+                            key={getPlayedHandKey(gameState.lastPlayedHand)}
+                            className="flex flex-col items-center"
+                            initial={{ scale: 0.5, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                        >
+                            <div className="text-white/70 text-sm mb-2 font-semibold">Hand to Beat</div>
+                            <div className="flex -space-x-4 bg-black/30 px-4 py-3 rounded-xl">
+                                {gameState.lastPlayedHand.cards.map((card) => (
+                                    <div key={`center-${card.rank}-${card.suit}`}>
+                                        <Card rank={card.rank} suit={card.suit} />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="text-white/50 text-xs mt-2">
+                                {gameState.lastPlayedHand.type.replace(/_/g, ' ').toUpperCase()}
+                            </div>
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key="free-play"
+                            className="text-white/30 font-bold text-lg border-2 border-dashed border-white/30 px-6 py-3 rounded-lg"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                        >
+                            Free Play
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* Bottom player's played cards or PASS */}
-            {getRelativePlayer(0)?.lastPlayed && (
-                <div className="absolute bottom-44 left-1/2 -translate-x-1/2 flex -space-x-5">
-                    {getRelativePlayer(0).lastPlayed.type === 'pass' ? (
-                        <motion.div
-                            initial={{ scale: 0.5, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="text-red-400 font-bold text-2xl bg-black/50 px-4 py-2 rounded-lg"
-                        >
-                            PASS
-                        </motion.div>
-                    ) : (
-                        getRelativePlayer(0).lastPlayed.cards?.map((card) => (
-                            <motion.div
-                                key={`${card.rank}-${card.suit}`}
-                                initial={{ scale: 0.5, opacity: 0 }}
-                                animate={{ scale: 0.65, opacity: 1 }}
-                                transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                            >
-                                <Card rank={card.rank} suit={card.suit} />
-                            </motion.div>
-                        ))
-                    )}
-                </div>
-            )}
+            <PlayedCards lastPlayed={getRelativePlayer(0)?.lastPlayed} position="bottom" />
 
             {/* Bottom: My Hand & Controls */}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-end gap-4">
