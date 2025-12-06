@@ -11,7 +11,8 @@ const GameRoom = ({ user, socket }) => {
     const [myHand, setMyHand] = useState([]);
     const [selectedCards, setSelectedCards] = useState([]);
     const [error, setError] = useState('');
-    const [winner, setWinner] = useState(null);
+    const [roundResult, setRoundResult] = useState(null);
+    const [gameOver, setGameOver] = useState(null);
 
     useEffect(() => {
         // Request current room state when component mounts
@@ -23,7 +24,8 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('game_started', (state) => {
             setGameState(state);
-            setWinner(null);
+            setRoundResult(null);
+            setGameOver(null);
         });
 
         socket.on('hand_update', (hand) => {
@@ -35,8 +37,12 @@ const GameRoom = ({ user, socket }) => {
             setGameState(state);
         });
 
+        socket.on('round_over', (data) => {
+            setRoundResult(data);
+        });
+
         socket.on('game_over', (data) => {
-            setWinner(data);
+            setGameOver(data);
         });
 
         socket.on('error', (err) => {
@@ -49,6 +55,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('game_started');
             socket.off('hand_update');
             socket.off('game_update');
+            socket.off('round_over');
             socket.off('game_over');
             socket.off('error');
         };
@@ -56,6 +63,11 @@ const GameRoom = ({ user, socket }) => {
 
     const startGame = () => {
         socket.emit('start_game', { roomId });
+    };
+
+    const nextRound = () => {
+        setRoundResult(null);
+        socket.emit('next_round', { roomId });
     };
 
     const toggleCard = (card) => {
@@ -260,8 +272,30 @@ const GameRoom = ({ user, socket }) => {
             {/* Top Bar */}
             <div className="absolute top-4 left-4 text-white z-10">
                 <h1 className="text-2xl font-bold drop-shadow-md">Room: {roomId}</h1>
+                {gameState.roundNumber > 0 && (
+                    <div className="text-sm text-yellow-300">Round {gameState.roundNumber}</div>
+                )}
                 <button onClick={leaveRoom} className="text-xs underline text-gray-300 hover:text-white">Leave</button>
             </div>
+
+            {/* Scoreboard */}
+            {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
+                <div className="absolute top-4 right-4 bg-black/60 rounded-lg p-3 text-white text-sm z-10">
+                    <div className="font-bold mb-2 text-yellow-400">Scores</div>
+                    {gameState.players
+                        .slice()
+                        .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
+                        .map(p => (
+                        <div key={p.id} className="flex justify-between gap-4">
+                            <span className={p.id === socket.id ? 'text-yellow-300' : ''}>{p.name}</span>
+                            <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
+                                {p.cumulativeScore}
+                            </span>
+                        </div>
+                    ))}
+                    <div className="text-xs text-gray-400 mt-2 border-t border-white/20 pt-1">First to 100 loses</div>
+                </div>
+            )}
 
             {/* Error Toast */}
             <AnimatePresence>
@@ -277,19 +311,64 @@ const GameRoom = ({ user, socket }) => {
                 )}
             </AnimatePresence>
 
-            {/* Winner Modal */}
-            {winner && (
+            {/* Round Over Modal */}
+            {roundResult && (
+                <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-8">
+                    <h2 className="text-5xl font-bold text-yellow-400 mb-2">Round {roundResult.roundNumber} Complete!</h2>
+                    <div className="text-xl mb-4 text-green-300">Round Winner: {roundResult.roundWinner.name}</div>
+
+                    <div className="bg-white/10 rounded-lg p-6 mb-6 w-full max-w-md">
+                        <h3 className="text-xl font-bold mb-4 border-b pb-2">Round Scores</h3>
+                        <div className="grid grid-cols-4 gap-2 text-sm font-semibold mb-2 text-gray-400">
+                            <span>Player</span>
+                            <span className="text-center">Cards</span>
+                            <span className="text-center">Round</span>
+                            <span className="text-center">Total</span>
+                        </div>
+                        {roundResult.scores && roundResult.scores.map(s => (
+                            <div key={s.name} className="grid grid-cols-4 gap-2 mb-2 items-center">
+                                <span className={s.isRoundWinner ? 'text-green-400 font-bold' : ''}>
+                                    {s.name} {s.isBot ? '(Bot)' : ''}
+                                </span>
+                                <span className="text-center text-gray-400">{s.cardsLeft}</span>
+                                <span className={`text-center ${s.roundPoints === 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    +{s.roundPoints}
+                                </span>
+                                <span className={`text-center font-bold ${s.cumulativeScore >= 80 ? 'text-red-500' : s.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-white'}`}>
+                                    {s.cumulativeScore}
+                                </span>
+                            </div>
+                        ))}
+                        <div className="mt-4 pt-2 border-t border-white/20 text-sm text-gray-400">
+                            First to 100 points loses. Lowest score wins!
+                        </div>
+                    </div>
+
+                    <button onClick={nextRound} className="bg-green-600 px-8 py-3 rounded-lg font-bold hover:bg-green-700 transition transform hover:scale-105 text-xl">
+                        Next Round
+                    </button>
+                </div>
+            )}
+
+            {/* Game Over Modal */}
+            {gameOver && (
                 <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-8">
                     <h2 className="text-6xl font-bold text-yellow-400 mb-4 animate-bounce">Game Over!</h2>
-                    <div className="text-2xl mb-2 text-green-300">Winner: {winner.winner.name}</div>
+                    <div className="text-2xl mb-2 text-green-300">Winner: {gameOver.winner.name}</div>
+                    <div className="text-lg mb-4 text-gray-400">Completed in {gameOver.roundNumber} rounds</div>
 
                     <div className="bg-white/10 rounded-lg p-6 mb-8 w-full max-w-md">
-                        <h3 className="text-xl font-bold mb-4 border-b pb-2">Scoreboard</h3>
-                        {winner.scores && winner.scores.map(s => (
-                            <div key={s.name} className="flex justify-between mb-2">
-                                <span>{s.name} {s.isBot ? '(Bot)' : ''}</span>
-                                <span className={s.points >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                    {s.points >= 0 ? `+${s.points}` : s.points}
+                        <h3 className="text-xl font-bold mb-4 border-b pb-2">Final Scores</h3>
+                        {gameOver.scores && gameOver.scores
+                            .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
+                            .map((s, idx) => (
+                            <div key={s.name} className={`flex justify-between mb-2 ${idx === 0 ? 'text-green-400 font-bold text-lg' : ''}`}>
+                                <span>
+                                    {idx === 0 && '🏆 '}
+                                    {s.name} {s.isBot ? '(Bot)' : ''}
+                                </span>
+                                <span className={s.cumulativeScore >= 100 ? 'text-red-500' : ''}>
+                                    {s.cumulativeScore} pts
                                 </span>
                             </div>
                         ))}

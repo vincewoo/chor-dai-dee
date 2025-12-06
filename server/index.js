@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
 const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName } = require('./db');
-const { calculateScores } = require('./game/Scoring');
+const { calculateRoundScores } = require('./game/Scoring');
 
 const app = express();
 app.use(cors());
@@ -48,36 +48,87 @@ io.on('connection', (socket) => {
     }
   });
 
-  const handleGameOver = (room, roomId, winner) => {
-      const scores = calculateScores(winner, room.players);
+  const handleRoundOver = (room, roomId, roundWinner) => {
+      const roundScores = calculateRoundScores(roundWinner, room.players);
+      const isGameOver = room.updateScores(roundScores);
 
-      // Update DB for human players
-      scores.forEach(async (s) => {
-          if (!s.isBot) {
-              try {
-                  await updateUserStatsByName(s.name, s.isWin, s.points);
-              } catch (e) {
-                  console.error("Failed to update stats for", s.name, e);
-              }
-          }
-      });
+      // Add cumulative scores to the round scores for display
+      const scoresWithCumulative = roundScores.map(s => ({
+          ...s,
+          cumulativeScore: room.cumulativeScores[s.id] || 0
+      }));
 
-      // Sanitize winner object to avoid circular references (socket object)
-      const sanitizedWinner = {
-          id: winner.id,
-          name: winner.name,
-          isBot: winner.isBot
+      const sanitizedRoundWinner = {
+          id: roundWinner.id,
+          name: roundWinner.name,
+          isBot: roundWinner.isBot
       };
 
       io.to(roomId).emit('game_update', room.getGameState());
-      io.to(roomId).emit('game_over', { winner: sanitizedWinner, scores });
+
+      if (isGameOver) {
+          // Game is over - someone hit 100 points
+          const gameWinner = room.getGameWinner();
+          room.gameState = 'finished';
+
+          // Update DB for human players (final game results)
+          room.players.forEach(async (p) => {
+              if (!p.isBot) {
+                  try {
+                      const isWinner = p.id === gameWinner.id;
+                      const totalScore = room.cumulativeScores[p.id] || 0;
+                      await updateUserStatsByName(p.name, isWinner, totalScore);
+                  } catch (e) {
+                      console.error("Failed to update stats for", p.name, e);
+                  }
+              }
+          });
+
+          const sanitizedGameWinner = {
+              id: gameWinner.id,
+              name: gameWinner.name,
+              isBot: gameWinner.isBot
+          };
+
+          io.to(roomId).emit('game_over', {
+              winner: sanitizedGameWinner,
+              scores: scoresWithCumulative,
+              finalScores: room.cumulativeScores,
+              roundNumber: room.roundNumber
+          });
+      } else {
+          // Round is over, but game continues
+          io.to(roomId).emit('round_over', {
+              roundWinner: sanitizedRoundWinner,
+              scores: scoresWithCumulative,
+              roundNumber: room.roundNumber
+          });
+      }
+  };
+
+  const handleNextRound = (room, roomId) => {
+      room.roundNumber++;
+      room.startRound();
+
+      // Broadcast updated state
+      io.to(roomId).emit('game_started', room.getGameState());
+
+      // Send individual hands
+      room.players.forEach(p => {
+          if (!p.isBot) {
+              io.to(p.id).emit('hand_update', p.hand);
+          }
+      });
+
+      // Check if first player is bot
+      processBotTurns(room, roomId);
   };
 
   // Helper for recursive bot turns
   const processBotTurns = (room, roomId) => {
       room.checkBotTurn((result) => {
-          if (result.type === 'gameOver') {
-              handleGameOver(room, roomId, result.winner);
+          if (result.type === 'roundOver') {
+              handleRoundOver(room, roomId, result.roundWinner);
           } else {
               io.to(roomId).emit('game_update', room.getGameState());
               // Continue checking if next player is bot
@@ -125,13 +176,20 @@ io.on('connection', (socket) => {
               io.to(roomId).emit('game_update', room.getGameState());
               socket.emit('hand_update', room.getPlayerHand(socket.id));
 
-              if (result.gameOver) {
-                  handleGameOver(room, roomId, result.winner);
+              if (result.roundOver) {
+                  handleRoundOver(room, roomId, result.roundWinner);
               } else {
                   // Check if next player is bot
                   processBotTurns(room, roomId);
               }
           }
+      }
+  });
+
+  socket.on('next_round', ({ roomId }) => {
+      const room = roomManager.getRoom(roomId);
+      if (room && room.gameState === 'round_over') {
+          handleNextRound(room, roomId);
       }
   });
 

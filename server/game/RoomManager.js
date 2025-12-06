@@ -7,7 +7,7 @@ class Room {
     constructor(roomId) {
         this.id = roomId;
         this.players = []; // Array of { id, name, socket, hand, isBot }
-        this.gameState = 'waiting'; // waiting, playing, finished
+        this.gameState = 'waiting'; // waiting, playing, round_over, finished
         this.deck = new Deck();
         this.currentTurnIndex = 0;
         this.lastPlayedHand = null; // { cards, type, value, playerId }
@@ -15,6 +15,9 @@ class Room {
         this.passedPlayers = new Set(); // Track players who have passed this round
         this.passes = 0; // Count consecutive passes
         this.winners = []; // Order of finishing
+        this.cumulativeScores = {}; // Track cumulative scores: { playerId: totalPoints }
+        this.roundNumber = 0; // Current round number
+        this.lastRoundWinnerId = null; // Winner of last round starts next
     }
 
     addPlayer(player) {
@@ -38,20 +41,31 @@ class Room {
 
     startGame() {
         if (this.players.length < 4) {
-            // Auto-fill with bots if < 4? Or require 4?
-            // "Add some AI bots so players can practice offline"
-            // We should fill with bots.
+            // Auto-fill with bots if < 4
             while (this.players.length < 4) {
                 const botId = `bot_${Date.now()}_${this.players.length}`;
                 this.players.push({
                     id: botId,
                     name: `Bot ${this.players.length + 1}`,
                     isBot: true,
-                    difficulty: 'easy' // Default to easy for now
+                    difficulty: 'easy'
                 });
             }
         }
 
+        // Initialize cumulative scores for all players (only on first game start)
+        if (this.roundNumber === 0) {
+            this.players.forEach(p => {
+                this.cumulativeScores[p.id] = 0;
+            });
+        }
+
+        this.roundNumber++;
+        this.startRound();
+        return this.getGameState();
+    }
+
+    startRound() {
         this.deck.reset();
         this.deck.shuffle();
 
@@ -61,27 +75,56 @@ class Room {
             for (let i = 0; i < 13; i++) {
                 player.hand.push(this.deck.deal());
             }
-            // Sort hand
             player.hand = Big2Rules.sortCards(player.hand);
         }
 
         this.gameState = 'playing';
         this.lastPlayedHand = null;
-        this.playerLastPlayed = {}; // Reset player played hands
-        this.passedPlayers = new Set(); // Reset passed players
+        this.playerLastPlayed = {};
+        this.passedPlayers = new Set();
         this.passes = 0;
         this.winners = [];
 
-        // Find who has 3 of Diamonds
-        for (let i = 0; i < 4; i++) {
-            const has3D = this.players[i].hand.some(c => c.rank === '3' && c.suit === 'D');
-            if (has3D) {
-                this.currentTurnIndex = i;
-                break;
+        // Determine who starts: first round = 3 of Diamonds, later rounds = last winner
+        if (this.roundNumber === 1) {
+            // Find who has 3 of Diamonds
+            for (let i = 0; i < 4; i++) {
+                const has3D = this.players[i].hand.some(c => c.rank === '3' && c.suit === 'D');
+                if (has3D) {
+                    this.currentTurnIndex = i;
+                    break;
+                }
             }
+        } else if (this.lastRoundWinnerId) {
+            // Last round winner starts
+            const winnerIndex = this.players.findIndex(p => p.id === this.lastRoundWinnerId);
+            this.currentTurnIndex = winnerIndex >= 0 ? winnerIndex : 0;
         }
+    }
 
-        return this.getGameState();
+    updateScores(roundScores) {
+        // Add round scores to cumulative scores
+        roundScores.forEach(s => {
+            this.cumulativeScores[s.id] = (this.cumulativeScores[s.id] || 0) + s.roundPoints;
+        });
+
+        // Check if anyone hit 100 points
+        const gameOver = Object.values(this.cumulativeScores).some(score => score >= 100);
+        return gameOver;
+    }
+
+    getGameWinner() {
+        // Winner is the player with the lowest score
+        let minScore = Infinity;
+        let winner = null;
+        this.players.forEach(p => {
+            const score = this.cumulativeScores[p.id] || 0;
+            if (score < minScore) {
+                minScore = score;
+                winner = p;
+            }
+        });
+        return winner;
     }
 
     playHand(playerId, cards) {
@@ -114,20 +157,11 @@ class Room {
         const validatedHand = Big2Rules.validateHand(handToPlay);
         if (!validatedHand) return { error: 'Invalid hand combination' };
 
-        // 3 of Diamonds check for first turn
-        // If it's the very first turn of the game
-        // Logic: if winners is empty AND everyone has 13 cards?
-        // Or simpler: if this.players.every(p => p.hand.length === 13)
-        // BUT, what if someone disconnected?
-        // Better: Use a flag "firstTurn" in room state? Or check if 3D is in someone's hand.
-        // If 3D is in THIS player's hand, they MUST play it.
-        // Wait, the rule is "The player with 3D starts".
-        // If it is the first turn, 3D MUST be part of the played hand.
-        const anyoneHas13 = this.players.some(p => p.hand.length === 13);
+        // 3 of Diamonds check - only required on the very first turn of round 1
         const everyoneFull = this.players.every(p => p.hand.length === 13);
+        const isFirstTurnOfGame = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
-        // This is imperfect for reconnection, but fine for fresh games.
-        if (everyoneFull && this.winners.length === 0) {
+        if (isFirstTurnOfGame) {
              const has3D = handToPlay.some(c => c.rank === '3' && c.suit === 'D');
              if (!has3D) return { error: 'Must play 3 of Diamonds on first turn' };
         }
@@ -148,15 +182,12 @@ class Room {
         // Note: Don't clear passedPlayers here - players who passed stay out until round is won
         this.passes = 0; // Reset consecutive pass counter
 
-        // Check Win
+        // Check if player finished round
         if (player.hand.length === 0) {
             this.winners.push(player);
-            this.gameState = 'finished'; // Or continue for 2nd/3rd/4th? usually continue.
-            // Requirement says "Winner takes the win" usually implies game over?
-            // "Multiplayer Big 2" usually plays until 3 people finish or just 1.
-            // Let's stop at 1 winner for MVP simplicity, or continue.
-            // Let's Stop at 1 for now.
-            return { success: true, gameOver: true, winner: player };
+            this.gameState = 'round_over';
+            this.lastRoundWinnerId = player.id;
+            return { success: true, roundOver: true, roundWinner: player };
         }
 
         this.advanceTurn();
@@ -212,9 +243,9 @@ class Room {
     checkBotTurn(callback) {
         const currentPlayer = this.players[this.currentTurnIndex];
         if (currentPlayer && currentPlayer.isBot && this.gameState === 'playing') {
-            // Determine if first turn
+            // Determine if first turn of the entire game (round 1 only)
             const everyoneFull = this.players.every(p => p.hand.length === 13);
-            const isFirstTurn = everyoneFull && this.winners.length === 0;
+            const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
             const move = BotLogic.getBotMove(currentPlayer.hand, this.lastPlayedHand, isFirstTurn);
 
@@ -223,8 +254,8 @@ class Room {
                     // Play
                     const res = this.playHand(currentPlayer.id, move);
                     if (res.success) {
-                        if (res.gameOver) {
-                            callback({ type: 'gameOver', winner: res.winner });
+                        if (res.roundOver) {
+                            callback({ type: 'roundOver', roundWinner: res.roundWinner });
                         } else {
                             callback({ type: 'play', playerId: currentPlayer.id });
                         }
@@ -246,11 +277,14 @@ class Room {
                 name: p.name,
                 cardCount: p.hand ? p.hand.length : 0,
                 isBot: p.isBot,
-                lastPlayed: this.playerLastPlayed[p.id] || null
+                lastPlayed: this.playerLastPlayed[p.id] || null,
+                cumulativeScore: this.cumulativeScores[p.id] || 0
             })),
             currentTurn: this.players[this.currentTurnIndex]?.id,
             lastPlayedHand: this.lastPlayedHand,
-            gameState: this.gameState
+            gameState: this.gameState,
+            roundNumber: this.roundNumber,
+            cumulativeScores: this.cumulativeScores
         };
     }
 
