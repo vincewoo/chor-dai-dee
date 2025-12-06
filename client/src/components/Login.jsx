@@ -2,9 +2,6 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
-// In production, use same origin; in development, use localhost:3000
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
-
 const Login = ({ setUser }) => {
     const [isRegistering, setIsRegistering] = useState(false);
     const [username, setUsername] = useState('');
@@ -15,7 +12,7 @@ const Login = ({ setUser }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        const endpoint = isRegistering ? `${API_URL}/api/register` : `${API_URL}/api/login`;
+        const endpoint = isRegistering ? 'http://localhost:3000/api/register' : 'http://localhost:3000/api/login';
 
         try {
             const res = await axios.post(endpoint, { username, password });

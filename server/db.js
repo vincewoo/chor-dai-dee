@@ -1,13 +1,8 @@
 // server/db.js
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
-const path = require('path');
 
-// Use DATA_DIR env var for persistent storage (e.g., Render disk), fallback to current directory
-const dataDir = process.env.DATA_DIR || __dirname;
-const dbPath = path.join(dataDir, 'database.sqlite');
-
-const db = new sqlite3.Database(dbPath, (err) => {
+const db = new sqlite3.Database('./database.sqlite', (err) => {
     if (err) {
         console.error('Error opening database', err.message);
     } else {
