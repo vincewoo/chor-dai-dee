@@ -23,8 +23,17 @@ const BotLogic = {
      *   - passedPlayers: array of indices (0=next, 1=across, 2=previous) who passed
      *   - passCount: total passes this round
      *   - playedCards: array of cards already played this round
+     * @param {boolean} captureReasoning - Whether to capture detailed reasoning
+     * @returns {Array|Object} - If captureReasoning is false, returns cards array. Otherwise returns { cards, reasoning }
      */
-    getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}) => {
+    getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}, captureReasoning = false) => {
+        const reasoning = captureReasoning ? {
+            situation: {},
+            candidatesConsidered: [],
+            strategicFactors: [],
+            decision: null
+        } : null;
+
         // Normalize gameContext with defaults
         const ctx = {
             playerCardCounts: gameContext.playerCardCounts || [13, 13, 13],
@@ -36,6 +45,24 @@ const BotLogic = {
 
         // Analyze what cards are still in play (card counting)
         ctx.cardAnalysis = BotLogic.analyzePlayedCards(hand, ctx.playedCards);
+
+        if (reasoning) {
+            reasoning.situation = {
+                handSize: hand.length,
+                isFreePlay: !lastPlayedHand,
+                isFirstTurn,
+                opponentCardCounts: ctx.playerCardCounts,
+                passCount: ctx.passCount,
+                twosInHand: ctx.cardAnalysis.twosInHand,
+                twosOutstanding: ctx.cardAnalysis.twosOutstanding,
+                weHaveHighest: ctx.cardAnalysis.weHaveHighest,
+                handToBeat: lastPlayedHand ? {
+                    type: lastPlayedHand.type,
+                    cards: lastPlayedHand.cards?.map(c => `${c.rank}${c.suit}`).join(' '),
+                    value: lastPlayedHand.value
+                } : null
+            };
+        }
 
         const validMoves = BotLogic.getAllValidMoves(hand);
 
@@ -55,38 +82,103 @@ const BotLogic = {
             candidates = validMoves.filter(move => Big2Rules.canBeat(move, lastPlayedHand));
         }
 
-        if (candidates.length === 0) return null; // Pass - no valid moves
+        if (candidates.length === 0) {
+            if (reasoning) {
+                reasoning.decision = {
+                    action: 'pass',
+                    reason: 'No valid moves available to beat the current hand'
+                };
+            }
+            return captureReasoning ? { cards: null, reasoning } : null;
+        }
 
         // Consider strategic passing
-        if (lastPlayedHand && BotLogic.shouldStrategicPass(candidates, hand, lastPlayedHand, ctx)) {
-            return null; // Strategic pass
+        const strategicPassResult = BotLogic.shouldStrategicPass(candidates, hand, lastPlayedHand, ctx, captureReasoning);
+        const shouldPass = captureReasoning ? strategicPassResult.shouldPass : strategicPassResult;
+
+        if (lastPlayedHand && shouldPass) {
+            if (reasoning) {
+                reasoning.strategicFactors.push(...(strategicPassResult.factors || []));
+                reasoning.decision = {
+                    action: 'strategic_pass',
+                    reason: strategicPassResult.reason || 'Strategic pass to conserve high cards'
+                };
+            }
+            return captureReasoning ? { cards: null, reasoning } : null;
+        }
+
+        if (reasoning && strategicPassResult.factors) {
+            reasoning.strategicFactors.push(...strategicPassResult.factors);
         }
 
         // Apply strategic selection
-        const selectedMove = BotLogic.selectBestMove(candidates, hand, lastPlayedHand, isFirstTurn, ctx);
-        return selectedMove.cards;
+        const selectionResult = BotLogic.selectBestMove(candidates, hand, lastPlayedHand, isFirstTurn, ctx, captureReasoning);
+        const selectedMove = captureReasoning ? selectionResult.move : selectionResult;
+
+        if (reasoning) {
+            reasoning.candidatesConsidered = selectionResult.scoredMoves?.slice(0, 5).map(sm => ({
+                cards: sm.move.cards.map(c => `${c.rank}${c.suit}`).join(' '),
+                type: sm.move.type,
+                score: Math.round(sm.score),
+                factors: sm.factors || []
+            })) || [];
+            reasoning.decision = {
+                action: 'play',
+                cards: selectedMove.cards.map(c => `${c.rank}${c.suit}`).join(' '),
+                type: selectedMove.type,
+                score: Math.round(selectionResult.scoredMoves?.[0]?.score || 0),
+                reason: selectionResult.primaryReason || 'Best scoring move'
+            };
+        }
+
+        return captureReasoning ? { cards: selectedMove.cards, reasoning } : selectedMove.cards;
     },
 
     /**
      * Determine if we should pass even though we can play
      */
-    shouldStrategicPass: (candidates, hand, lastPlayedHand, ctx) => {
+    shouldStrategicPass: (candidates, hand, lastPlayedHand, ctx, captureReasoning = false) => {
         const { playerCardCounts, passCount, lastPlayedByRelative, cardAnalysis } = ctx;
         const prevPlayerCards = playerCardCounts[2]; // Player before us
+        const factors = captureReasoning ? [] : null;
+
+        const result = (shouldPass, reason = null) => {
+            if (captureReasoning) {
+                return { shouldPass, factors, reason };
+            }
+            return shouldPass;
+        };
+
+        // Can't pass on free play (no hand to beat)
+        if (!lastPlayedHand) {
+            return result(false);
+        }
 
         // Never pass if we're close to winning
-        if (hand.length <= 3) return false;
+        if (hand.length <= 3) {
+            if (factors) factors.push('Close to winning (≤3 cards) - must play aggressively');
+            return result(false);
+        }
 
         // Never pass if 2 others have already passed (we'd get control)
-        if (passCount >= 2) return false;
+        if (passCount >= 2) {
+            if (factors) factors.push('2 players already passed - will gain control if we play');
+            return result(false);
+        }
 
         // Check if any opponent is close to winning - NEVER pass if so
         const minOpponentCards = Math.min(...playerCardCounts);
-        if (minOpponentCards <= 2) return false;
+        if (minOpponentCards <= 2) {
+            if (factors) factors.push(`Opponent has only ${minOpponentCards} cards - danger mode, must play`);
+            return result(false);
+        }
 
         // If next player has few cards, be more aggressive
         const nextPlayerCards = playerCardCounts[0];
-        if (nextPlayerCards <= 3) return false;
+        if (nextPlayerCards <= 3) {
+            if (factors) factors.push(`Next player has ${nextPlayerCards} cards - must block them`);
+            return result(false);
+        }
 
         // POSITION AWARENESS: If player before us played, consider letting them have it
         // This is a key Big 2 strategy - help the player before you
@@ -97,7 +189,11 @@ const BotLogic = {
                 curr.value < best.value ? curr : best
             );
             if (lowestBeater.value > 35) { // We'd need a high card
-                return Math.random() < 0.5; // 50% chance to let them have it
+                if (factors) factors.push(`Previous player (${prevPlayerCards} cards) played - considering letting them keep control`);
+                const shouldPass = Math.random() < 0.5;
+                if (shouldPass) {
+                    return result(true, 'Letting previous player keep control (positional play)');
+                }
             }
         }
 
@@ -117,7 +213,11 @@ const BotLogic = {
             if (lastPlayedHand.value < 28 && lowestBeater.rank === '2') {
                 const twosInHand = hand.filter(c => c.rank === '2').length;
                 if (twosInHand <= 1) {
-                    return passCount === 0 && Math.random() < 0.6;
+                    if (factors) factors.push(`Would need to use a 2 (only have ${twosInHand}) to beat a low card`);
+                    const shouldPass = passCount === 0 && Math.random() < 0.6;
+                    if (shouldPass) {
+                        return result(true, 'Conserving 2s - too valuable to waste on low cards');
+                    }
                 }
             }
 
@@ -125,7 +225,11 @@ const BotLogic = {
             if (lastPlayedHand.value < 20 && lowestBeater.rank === 'A') {
                 const acesInHand = hand.filter(c => c.rank === 'A').length;
                 if (acesInHand <= 1 && passCount === 0) {
-                    return Math.random() < 0.4;
+                    if (factors) factors.push(`Would need to use an Ace (only have ${acesInHand}) to beat a very low card`);
+                    const shouldPass = Math.random() < 0.4;
+                    if (shouldPass) {
+                        return result(true, 'Conserving Ace - saving for better opportunity');
+                    }
                 }
             }
         }
@@ -134,11 +238,15 @@ const BotLogic = {
         if (FIVE_CARD_PRIORITY[lastPlayedHand.type]) {
             const fiveCardCandidates = candidates.filter(c => c.cards.length === 5);
             if (fiveCardCandidates.length === 1 && valueGap > 15 && passCount === 0) {
-                return Math.random() < 0.5;
+                if (factors) factors.push('Only have one 5-card hand and would need it to beat a weak combo');
+                const shouldPass = Math.random() < 0.5;
+                if (shouldPass) {
+                    return result(true, 'Conserving only 5-card combo for better opportunity');
+                }
             }
         }
 
-        return false;
+        return result(false);
     },
 
     /**
@@ -229,7 +337,7 @@ const BotLogic = {
      * - Endgame tactics (3-card holdings, highest card logic)
      * - Milking strategy (slow play with strong hands)
      */
-    selectBestMove: (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}) => {
+    selectBestMove: (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}, captureReasoning = false) => {
         const cardsRemaining = hand.length;
 
         // Extract game context
@@ -263,11 +371,15 @@ const BotLogic = {
         const previousPlayerIsLow = prevPlayerCards <= 4;
         const nextPlayerIsLow = nextPlayerCards <= 4;
 
+        // Track the primary reason for the winning move
+        let primaryReason = null;
+
         // Evaluate each candidate move
         const scoredMoves = candidates.map(move => {
             let score = 0;
             const moveType = move.type;
             const moveCards = move.cards;
+            const factors = captureReasoning ? [] : null;
 
             // Calculate remaining hand after this move
             const remainingHand = hand.filter(c =>
@@ -278,27 +390,41 @@ const BotLogic = {
             if (moveCards.length === cardsRemaining) {
                 // This move wins the round - highest priority!
                 score += 10000;
+                if (factors) factors.push({ factor: 'Winning move!', points: 10000 });
             }
 
             // 2. CRITICAL: If opponent has 1-2 cards, avoid giving them easy wins
             if (dangerMode) {
                 // Strongly prefer multi-card hands - opponent likely can't match
                 if (moveCards.length >= 2) {
-                    score += 200 * moveCards.length;
+                    const pts = 200 * moveCards.length;
+                    score += pts;
+                    if (factors) factors.push({ factor: `Danger mode: multi-card hand (${moveCards.length} cards)`, points: pts });
                 }
                 // Penalize low singles that next player could easily beat
                 if (moveType === HAND_TYPES.SINGLE && nextPlayerDanger) {
                     // Don't play low singles when next player has 1-2 cards
                     if (move.value < 40) { // Below King
                         score -= 500;
+                        if (factors) factors.push({ factor: 'Danger: low single vs near-winning opponent', points: -500 });
                     }
                     // Even high singles are risky - they might have a 2
                     score -= 100;
+                    if (factors) factors.push({ factor: 'Danger: singles risky vs low opponent', points: -100 });
                 }
                 // Strongly prefer pairs/triples/5-card hands
-                if (moveType === HAND_TYPES.PAIR) score += 150;
-                if (moveType === HAND_TYPES.TRIPLE) score += 200;
-                if (FIVE_CARD_PRIORITY[moveType]) score += 250;
+                if (moveType === HAND_TYPES.PAIR) {
+                    score += 150;
+                    if (factors) factors.push({ factor: 'Danger mode: prefer pairs', points: 150 });
+                }
+                if (moveType === HAND_TYPES.TRIPLE) {
+                    score += 200;
+                    if (factors) factors.push({ factor: 'Danger mode: prefer triples', points: 200 });
+                }
+                if (FIVE_CARD_PRIORITY[moveType]) {
+                    score += 250;
+                    if (factors) factors.push({ factor: 'Danger mode: prefer 5-card hands', points: 250 });
+                }
             }
 
             // 3. If next player specifically is in danger, be extra careful
@@ -307,11 +433,13 @@ const BotLogic = {
                 if (moveType === HAND_TYPES.SINGLE) {
                     if (move.value < 44) { // Below Ace
                         score -= 300;
+                        if (factors) factors.push({ factor: 'Next player low: avoid low singles', points: -300 });
                     }
                 }
                 // Prefer hands the next player is less likely to beat
                 if (moveCards.length >= 2) {
                     score += 100;
+                    if (factors) factors.push({ factor: 'Next player low: prefer multi-card', points: 100 });
                 }
             }
 
@@ -320,38 +448,50 @@ const BotLogic = {
             const maxCardValue = 12 * 4 + 3; // 2 of Spades
             const avgCardValue = moveCards.reduce((sum, c) => sum + c.value, 0) / moveCards.length;
             const valueSaveBonus = dangerMode ? 2 : 10;
-            score += (maxCardValue - avgCardValue) * valueSaveBonus;
+            const savePts = Math.round((maxCardValue - avgCardValue) * valueSaveBonus);
+            score += savePts;
+            if (factors && Math.abs(savePts) > 20) factors.push({ factor: 'Save high cards bonus', points: savePts });
 
             // 5. Prefer keeping 2s unless necessary (less important in danger mode)
             const twosInMove = moveCards.filter(c => c.rank === '2').length;
-            const twosInHand = hand.filter(c => c.rank === '2').length;
-            if (twosInMove > 0 && twosInHand > twosInMove && !dangerMode) {
-                score -= twosInMove * 50;
+            const twosInHandLocal = hand.filter(c => c.rank === '2').length;
+            if (twosInMove > 0 && twosInHandLocal > twosInMove && !dangerMode) {
+                const pts = -twosInMove * 50;
+                score += pts;
+                if (factors) factors.push({ factor: 'Preserve 2s', points: pts });
             }
 
             // 6. Strategy based on hand composition
             if (composition.primaryStrategy === 'pairs') {
                 if (moveType === HAND_TYPES.PAIR) {
                     score += 60;
+                    if (factors) factors.push({ factor: 'Pairs strategy: playing pair', points: 60 });
                 }
                 if (moveType === HAND_TYPES.SINGLE) {
                     const cardRank = moveCards[0].rank;
                     const sameRankInHand = hand.filter(c => c.rank === cardRank).length;
                     if (sameRankInHand >= 2) {
                         score -= 20;
+                        if (factors) factors.push({ factor: 'Pairs strategy: avoid breaking pair', points: -20 });
                     }
                 }
                 if (moveCards.length === 5) {
                     const pairsUsed = BotLogic.countPairsUsedInMove(moveCards, hand);
-                    score -= pairsUsed * 30;
+                    const pts = -pairsUsed * 30;
+                    if (pts !== 0) {
+                        score += pts;
+                        if (factors) factors.push({ factor: `5-card uses ${pairsUsed} pairs`, points: pts });
+                    }
                 }
             } else if (composition.primaryStrategy === 'five_card') {
                 if (FIVE_CARD_PRIORITY[moveType]) {
                     score += 80;
+                    if (factors) factors.push({ factor: '5-card strategy: playing combo', points: 80 });
                 }
             } else if (composition.primaryStrategy === 'singles') {
                 if (moveType === HAND_TYPES.SINGLE) {
                     score += 30;
+                    if (factors) factors.push({ factor: 'Singles strategy: playing single', points: 30 });
                 }
             }
 
@@ -361,8 +501,10 @@ const BotLogic = {
                 const sameRankInHand = hand.filter(c => c.rank === cardRank).length;
                 if (sameRankInHand >= 3) {
                     score -= 100;
+                    if (factors) factors.push({ factor: 'Avoid breaking triple', points: -100 });
                 } else if (sameRankInHand >= 2) {
                     score -= 40;
+                    if (factors) factors.push({ factor: 'Avoid breaking pair', points: -40 });
                 }
             }
 
@@ -373,8 +515,10 @@ const BotLogic = {
                 if (sameRankInHand >= 3) {
                     if (composition.strength[HAND_TYPES.PAIR] >= 4) {
                         score -= 20;
+                        if (factors) factors.push({ factor: 'Breaking triple (but have many pairs)', points: -20 });
                     } else {
                         score -= 60;
+                        if (factors) factors.push({ factor: 'Breaking triple', points: -60 });
                     }
                 }
             }
@@ -397,6 +541,7 @@ const BotLogic = {
                 }
 
                 score += fiveCardBonus;
+                if (factors) factors.push({ factor: '5-card hand bonus', points: fiveCardBonus });
             }
 
             // 10. If free play, prefer hand types we're strongest in
@@ -404,20 +549,37 @@ const BotLogic = {
                 const typeStrength = composition.strength[moveType] || 0;
                 if (typeStrength >= 3) {
                     score += 40;
+                    if (factors) factors.push({ factor: 'Free play: strong in this type', points: 40 });
                 } else if (typeStrength >= 2) {
                     score += 20;
+                    if (factors) factors.push({ factor: 'Free play: moderate in type', points: 20 });
                 }
 
                 // In danger mode, prefer multi-card hands on free play
                 if (dangerMode) {
-                    if (moveType === HAND_TYPES.PAIR) score += 80;
-                    else if (moveType === HAND_TYPES.TRIPLE) score += 100;
-                    else if (FIVE_CARD_PRIORITY[moveType]) score += 120;
+                    if (moveType === HAND_TYPES.PAIR) {
+                        score += 80;
+                        if (factors) factors.push({ factor: 'Danger free play: pair', points: 80 });
+                    }
+                    else if (moveType === HAND_TYPES.TRIPLE) {
+                        score += 100;
+                        if (factors) factors.push({ factor: 'Danger free play: triple', points: 100 });
+                    }
+                    else if (FIVE_CARD_PRIORITY[moveType]) {
+                        score += 120;
+                        if (factors) factors.push({ factor: 'Danger free play: 5-card', points: 120 });
+                    }
                 } else if (composition.primaryStrategy === 'pairs') {
-                    if (moveType === HAND_TYPES.PAIR) score += 50;
+                    if (moveType === HAND_TYPES.PAIR) {
+                        score += 50;
+                        if (factors) factors.push({ factor: 'Pairs strategy free play', points: 50 });
+                    }
                     else if (moveType === HAND_TYPES.SINGLE) score += 5;
                 } else if (composition.primaryStrategy === 'five_card') {
-                    if (FIVE_CARD_PRIORITY[moveType]) score += 40;
+                    if (FIVE_CARD_PRIORITY[moveType]) {
+                        score += 40;
+                        if (factors) factors.push({ factor: '5-card strategy free play', points: 40 });
+                    }
                     else if (moveType === HAND_TYPES.SINGLE) score += 15;
                 } else {
                     if (moveType === HAND_TYPES.SINGLE) score += 15;
@@ -431,19 +593,25 @@ const BotLogic = {
                 const valueGap = move.value - lastPlayedHand.value;
                 if (valueGap > 0 && valueGap <= 8) {
                     score += 25;
+                    if (factors) factors.push({ factor: 'Efficient beat (small gap)', points: 25 });
                 } else if (valueGap > 20) {
                     score -= 15;
+                    if (factors) factors.push({ factor: 'Overkill (large gap)', points: -15 });
                 }
             }
 
             // 12. End-game strategy: when few cards left, prioritize clearing
             if (cardsRemaining <= 5) {
-                score += moveCards.length * 30;
+                const pts = moveCards.length * 30;
+                score += pts;
+                if (factors) factors.push({ factor: 'Endgame: clear cards fast', points: pts });
             }
 
             // 13. Evaluate remaining hand quality after this move
             const remainingQuality = BotLogic.evaluateHandQuality(remainingHand);
-            score += remainingQuality * 5;
+            const qualityPts = Math.round(remainingQuality * 5);
+            score += qualityPts;
+            if (factors && Math.abs(qualityPts) > 20) factors.push({ factor: 'Remaining hand quality', points: qualityPts });
 
             // 14. Consider remaining hand composition
             if (remainingHand.length > 0 && !dangerMode) {
@@ -454,6 +622,7 @@ const BotLogic = {
                 if (remainingComposition.strength[HAND_TYPES.PAIR] === 0 &&
                     remainingHand.length > 3) {
                     score -= 20;
+                    if (factors) factors.push({ factor: 'Would leave no pairs', points: -20 });
                 }
             }
 
@@ -468,6 +637,7 @@ const BotLogic = {
                     const avgValue = moveCards.reduce((sum, c) => sum + c.value, 0) / moveCards.length;
                     if (avgValue > 35) { // High cards
                         score -= 40;
+                        if (factors) factors.push({ factor: 'Position: help prev player', points: -40 });
                     }
                 }
             }
@@ -477,10 +647,12 @@ const BotLogic = {
                 // Next player hasn't passed yet and is low - play something hard to beat
                 if (move.value > 40) { // High value hand
                     score += 50;
+                    if (factors) factors.push({ factor: 'Block next player (high value)', points: 50 });
                 }
                 if (twosInMove > 0 && nextPlayerCards <= 2) {
                     // Use 2s to block if next player is about to win
                     score += 80;
+                    if (factors) factors.push({ factor: 'Use 2 to block winning player', points: 80 });
                 }
             }
 
@@ -489,14 +661,17 @@ const BotLogic = {
                 // Free play and we should milk - prefer low singles to draw out opponent cards
                 if (moveType === HAND_TYPES.SINGLE && move.value < 30) {
                     score += 60; // Play low singles to bait out higher cards
+                    if (factors) factors.push({ factor: 'Milking: play low to bait', points: 60 });
                 }
                 // Don't waste our high cards yet
                 if (twosInMove > 0) {
                     score -= 80;
+                    if (factors) factors.push({ factor: 'Milking: save 2s', points: -80 });
                 }
                 const avgValue = moveCards.reduce((sum, c) => sum + c.value, 0) / moveCards.length;
                 if (avgValue > 40) {
                     score -= 50;
+                    if (factors) factors.push({ factor: 'Milking: save high cards', points: -50 });
                 }
             }
 
@@ -504,9 +679,9 @@ const BotLogic = {
             // If all 2s are accounted for (played or in our hand), our Aces are essentially 2s
             if (twosOutstanding === 0 && twosInHand === 0) {
                 // All 2s are gone - Aces are now the highest singles
-                const acesInMove = moveCards.filter(c => c.rank === 'A').length;
                 if (moveType === HAND_TYPES.SINGLE && moveCards[0].rank === 'A') {
                     score += 30; // Our Ace is guaranteed to win singles
+                    if (factors) factors.push({ factor: 'Card count: Ace is now highest', points: 30 });
                 }
             }
 
@@ -515,6 +690,7 @@ const BotLogic = {
                 // We have all remaining 2s - don't waste them unless necessary
                 if (twosInMove > 0 && !dangerMode && cardsRemaining > 4) {
                     score -= 60; // Save 2s for when we really need them
+                    if (factors) factors.push({ factor: 'Save guaranteed control (2s)', points: -60 });
                 }
             }
 
@@ -524,15 +700,16 @@ const BotLogic = {
                 const sortedHand = [...hand].sort((a, b) => a.value - b.value);
                 const highestInHand = sortedHand[2];
                 const secondHighest = sortedHand[1];
-                const lowest = sortedHand[0];
 
                 if (weHaveHighest) {
                     // We have the highest card - play mid card first, then low, save high for last
                     if (moveType === HAND_TYPES.SINGLE) {
                         if (moveCards[0].value === secondHighest.value) {
                             score += 100; // Play second highest
+                            if (factors) factors.push({ factor: '3-card endgame: play middle', points: 100 });
                         } else if (moveCards[0].value === highestInHand.value) {
                             score -= 50; // Don't lead with highest
+                            if (factors) factors.push({ factor: '3-card endgame: save highest', points: -50 });
                         }
                     }
                 }
@@ -540,13 +717,29 @@ const BotLogic = {
 
             // 19. ADD UNPREDICTABILITY: Small random factor to avoid being too predictable
             // This makes bot behavior less exploitable
-            score += (Math.random() - 0.5) * 10;
+            const randomPts = Math.round((Math.random() - 0.5) * 10);
+            score += randomPts;
 
-            return { move, score };
+            return { move, score, factors };
         });
 
         // Sort by score (highest first) and return the best
         scoredMoves.sort((a, b) => b.score - a.score);
+
+        // Determine primary reason based on top factors
+        if (captureReasoning && scoredMoves[0].factors && scoredMoves[0].factors.length > 0) {
+            const topFactors = scoredMoves[0].factors.sort((a, b) => Math.abs(b.points) - Math.abs(a.points));
+            primaryReason = topFactors[0]?.factor || 'Best overall score';
+        }
+
+        if (captureReasoning) {
+            return {
+                move: scoredMoves[0].move,
+                scoredMoves,
+                primaryReason
+            };
+        }
+
         return scoredMoves[0].move;
     },
 

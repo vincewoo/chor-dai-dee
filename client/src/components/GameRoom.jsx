@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from './Card';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
+import HandHelper from './HandHelper';
+import BotDebugPanel from './BotDebugPanel';
 
 // Helper to create a stable key for a played hand (only changes when cards change)
 const getPlayedHandKey = (lastPlayed) => {
@@ -150,6 +152,8 @@ const GameRoom = ({ user, socket }) => {
     const [gameOver, setGameOver] = useState(null);
     const [autoPass, setAutoPass] = useState(false);
     const autoPassTriggered = useRef(false);
+    const [showDebugPanel, setShowDebugPanel] = useState(false);
+    const [botReasoning, setBotReasoning] = useState(null);
 
     useEffect(() => {
         // Request current room state when component mounts
@@ -187,6 +191,10 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setError(''), 3000);
         });
 
+        socket.on('bot_reasoning', (reasoning) => {
+            setBotReasoning(reasoning);
+        });
+
         return () => {
             socket.off('room_update');
             socket.off('game_started');
@@ -195,6 +203,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('round_over');
             socket.off('game_over');
             socket.off('error');
+            socket.off('bot_reasoning');
         };
     }, [socket]);
 
@@ -245,6 +254,11 @@ const GameRoom = ({ user, socket }) => {
         }
     };
 
+    // Callback for HandHelper to set selected cards
+    const handleSelectCards = useCallback((cards) => {
+        setSelectedCards(cards);
+    }, []);
+
     const playCards = () => {
         if (selectedCards.length === 0) return;
         socket.emit('play_card', { roomId, cards: selectedCards });
@@ -257,6 +271,12 @@ const GameRoom = ({ user, socket }) => {
     const leaveRoom = () => {
         navigate('/lobby');
         // socket emit leave?
+    };
+
+    const toggleDebugMode = () => {
+        const newState = !showDebugPanel;
+        setShowDebugPanel(newState);
+        socket.emit('toggle_debug', { roomId, enabled: newState });
     };
 
     if (!gameState) return <div className="text-white text-center mt-20">Loading...</div>;
@@ -279,7 +299,16 @@ const GameRoom = ({ user, socket }) => {
                 {gameState.roundNumber > 0 && (
                     <div className="text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
                 )}
-                <button onClick={leaveRoom} className="text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
+                <div className="flex gap-2 mt-1">
+                    <button onClick={leaveRoom} className="text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
+                    <button
+                        onClick={toggleDebugMode}
+                        className={`text-[0.7vmax] px-2 py-0.5 rounded ${showDebugPanel ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                        title="Show bot decision reasoning"
+                    >
+                        🤖 Debug {showDebugPanel ? 'ON' : 'OFF'}
+                    </button>
+                </div>
             </div>
 
             {/* Scoreboard */}
@@ -308,7 +337,7 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0, y: -50 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        className="absolute top-10 bg-red-600 text-white px-6 py-2 rounded shadow-xl z-50 font-bold"
+                        className="absolute top-[5vh] bg-red-600 text-white px-[1.5vmax] py-[0.5vmax] rounded shadow-xl z-50 font-bold text-[1vmax]"
                     >
                         {error}
                     </motion.div>
@@ -387,23 +416,23 @@ const GameRoom = ({ user, socket }) => {
             {/* Waiting State */}
             {gameState.gameState === 'waiting' && (
                 <div className="absolute inset-0 z-40 bg-green-800 flex flex-col items-center justify-center text-white">
-                    <div className="text-sm text-green-300 mb-2">Room Code</div>
-                    <h1 className="text-5xl font-bold mb-8 tracking-widest">{roomId}</h1>
-                    <h2 className="text-2xl mb-6">Waiting for Players...</h2>
-                    <div className="flex gap-4 mb-8">
+                    <div className="text-[1vmax] text-green-300 mb-[0.5vmax]">Room Code</div>
+                    <h1 className="text-[3vmax] font-bold mb-[2vmax] tracking-widest">{roomId}</h1>
+                    <h2 className="text-[1.5vmax] mb-[1.5vmax]">Waiting for Players...</h2>
+                    <div className="flex gap-[1vmax] mb-[2vmax]">
                         {gameState.players.map(p => (
-                            <div key={p.id} className="bg-white text-black p-4 rounded shadow-lg min-w-[100px] text-center font-bold">
+                            <div key={p.id} className="bg-white text-black p-[1vmax] rounded shadow-lg min-w-[6vmax] text-center font-bold text-[1vmax]">
                                 {p.name}
                             </div>
                         ))}
                         {Array.from({ length: 4 - gameState.players.length }).map((_, i) => (
-                            <div key={i} className="bg-white/20 p-4 rounded border-2 border-dashed border-white min-w-[100px] text-center">Empty</div>
+                            <div key={i} className="bg-white/20 p-[1vmax] rounded border-2 border-dashed border-white min-w-[6vmax] text-center text-[1vmax]">Empty</div>
                         ))}
                     </div>
-                    <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 rounded-full font-bold text-xl hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-4">
+                    <button onClick={startGame} className="bg-yellow-500 text-black px-[2vmax] py-[0.75vmax] rounded-full font-bold text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-[1vmax]">
                         Start Game (Fill with Bots)
                     </button>
-                    <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-sm">
+                    <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-[0.9vmax]">
                         Leave Room
                     </button>
                 </div>
@@ -424,7 +453,7 @@ const GameRoom = ({ user, socket }) => {
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
                 {/* Turn indicator */}
                 {gameState.gameState === 'playing' && (
-                    <div className={`mb-4 px-4 py-2 rounded-full font-bold text-lg shadow-lg ${
+                    <div className={`mb-[1vmax] px-[1.5vmax] py-[0.5vmax] rounded-full font-bold text-[1.2vmax] shadow-lg ${
                         isMyTurn
                             ? 'bg-yellow-500 text-black animate-pulse'
                             : 'bg-black/60 text-white'
@@ -443,22 +472,22 @@ const GameRoom = ({ user, socket }) => {
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             transition={{ type: "spring", stiffness: 200, damping: 15 }}
                         >
-                            <div className="text-white/70 text-sm mb-2 font-semibold">Hand to Beat</div>
-                            <div className="flex -space-x-4 bg-black/30 px-4 py-3 rounded-xl">
+                            <div className="text-white/70 text-[0.9vmax] mb-[0.5vmax] font-semibold">Hand to Beat</div>
+                            <div className="flex bg-black/30 px-[1vmax] py-[0.75vmax] rounded-xl" style={{ marginLeft: '-1vmax' }}>
                                 {gameState.lastPlayedHand.cards.map((card) => (
-                                    <div key={`center-${card.rank}-${card.suit}`}>
+                                    <div key={`center-${card.rank}-${card.suit}`} style={{ marginLeft: '-0.5vmax' }}>
                                         <Card rank={card.rank} suit={card.suit} />
                                     </div>
                                 ))}
                             </div>
-                            <div className="text-white/50 text-xs mt-2">
+                            <div className="text-white/50 text-[0.8vmax] mt-[0.5vmax]">
                                 {gameState.lastPlayedHand.type.replace(/_/g, ' ').toUpperCase()}
                             </div>
                         </motion.div>
                     ) : (
                         <motion.div
                             key="free-play"
-                            className="text-white/30 font-bold text-lg border-2 border-dashed border-white/30 px-6 py-3 rounded-lg"
+                            className="text-white/30 font-bold text-[1.2vmax] border-2 border-dashed border-white/30 px-[1.5vmax] py-[0.75vmax] rounded-lg"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                         >
@@ -472,15 +501,25 @@ const GameRoom = ({ user, socket }) => {
             <PlayedCards lastPlayed={getRelativePlayer(0)?.lastPlayed} position="bottom" />
 
             {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-end gap-4">
+            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex items-end gap-[1vmax]">
                 {/* Left side: Controls and Cards stacked */}
                 <div className="flex flex-col items-center">
+                    {/* Hand Helper Buttons */}
+                    {gameState.gameState === 'playing' && (
+                        <HandHelper
+                            playerHand={myHand}
+                            lastPlayedHand={gameState.lastPlayedHand}
+                            onSelectCards={handleSelectCards}
+                            isMyTurn={isMyTurn}
+                        />
+                    )}
+
                     {/* Controls */}
-                    <div className="flex items-center space-x-4 mb-3">
+                    <div className="flex items-center gap-[1vmax] mb-[0.75vmax]">
                         <button
                             onClick={playCards}
                             disabled={!isMyTurn || selectedCards.length === 0}
-                            className={`px-6 py-2 rounded-full font-bold shadow-lg transition transform
+                            className={`px-[1.5vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-[1vmax]
                                 ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Play
@@ -488,14 +527,14 @@ const GameRoom = ({ user, socket }) => {
                         <button
                             onClick={passTurn}
                             disabled={!isMyTurn || !gameState.lastPlayedHand}
-                            className={`px-6 py-2 rounded-full font-bold shadow-lg transition transform
+                            className={`px-[1.5vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-[1vmax]
                                 ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Pass
                         </button>
                         <button
                             onClick={() => setAutoPass(!autoPass)}
-                            className={`px-4 py-2 rounded-full font-bold shadow-lg transition transform hover:scale-105 text-sm
+                            className={`px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-[0.85vmax]
                                 ${autoPass ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
                             title="Automatically pass when you have no cards that can beat the played hand"
                         >
@@ -504,33 +543,48 @@ const GameRoom = ({ user, socket }) => {
                     </div>
 
                     {/* My Hand */}
-                    <div className="flex justify-center -space-x-6 hover:space-x-1 transition-all duration-300">
+                    <div className="flex justify-center transition-all duration-300 hover:gap-[0.5vmax]" style={{ gap: '-1.5vmax' }}>
                         {myHand.map((card, index) => {
                              const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
                              return (
-                                <Card
-                                    key={`${card.rank}-${card.suit}`}
-                                    rank={card.rank}
-                                    suit={card.suit}
-                                    selected={isSelected}
-                                    onClick={() => toggleCard(card)}
-                                    index={index}
-                                />
+                                <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: index === 0 ? 0 : '-1.5vmax' }} className="hover:ml-0 transition-all">
+                                    <Card
+                                        rank={card.rank}
+                                        suit={card.suit}
+                                        selected={isSelected}
+                                        onClick={() => toggleCard(card)}
+                                        index={index}
+                                    />
+                                </div>
                              );
                         })}
                     </div>
                 </div>
 
                 {/* Right side: Avatar */}
-                <div className="flex flex-col items-center mb-2">
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold border-4 shadow-lg
+                <div className="flex flex-col items-center mb-[0.5vmax]">
+                    <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
                         ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
                         {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
                     </div>
-                    <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1">{user?.username || 'You'}</div>
-                    <div className="text-yellow-300 text-xs">{myHand.length} Cards</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{user?.username || 'You'}</div>
+                    <div className="text-yellow-300 text-[0.7vmax]">{myHand.length} Cards</div>
                 </div>
             </div>
+
+            {/* Bot Debug Panel */}
+            <AnimatePresence>
+                {showDebugPanel && (
+                    <BotDebugPanel
+                        reasoning={botReasoning}
+                        isVisible={showDebugPanel}
+                        onClose={() => {
+                            setShowDebugPanel(false);
+                            socket.emit('toggle_debug', { roomId, enabled: false });
+                        }}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 };

@@ -19,12 +19,22 @@ class Room {
         this.roundNumber = 0; // Current round number
         this.lastRoundWinnerId = null; // Winner of last round starts next
         this.playedCards = []; // Track all cards played this round for card counting
+        this.debugMode = false; // Enable bot reasoning capture
+        this.lastBotReasoning = null; // Store the most recent bot decision reasoning
     }
 
     addPlayer(player) {
         if (this.players.length >= 4) return false;
         this.players.push(player);
         return true;
+    }
+
+    setDebugMode(enabled) {
+        this.debugMode = enabled;
+    }
+
+    getLastBotReasoning() {
+        return this.lastBotReasoning;
     }
 
     removePlayer(socketId) {
@@ -289,12 +299,28 @@ class Room {
                 }
             }
 
-            const move = BotLogic.getBotMove(
+            // Get bot move with optional reasoning capture
+            const result = BotLogic.getBotMove(
                 currentPlayer.hand,
                 this.lastPlayedHand,
                 isFirstTurn,
-                gameContext
+                gameContext,
+                this.debugMode // Pass debug mode flag
             );
+
+            // Extract move and reasoning based on debug mode
+            const move = this.debugMode ? result.cards : result;
+            const reasoning = this.debugMode ? result.reasoning : null;
+
+            // Store reasoning if in debug mode
+            if (this.debugMode && reasoning) {
+                this.lastBotReasoning = {
+                    botId: currentPlayer.id,
+                    botName: currentPlayer.name,
+                    timestamp: Date.now(),
+                    ...reasoning
+                };
+            }
 
             setTimeout(() => {
                 if (move) {
@@ -302,15 +328,15 @@ class Room {
                     const res = this.playHand(currentPlayer.id, move);
                     if (res.success) {
                         if (res.roundOver) {
-                            callback({ type: 'roundOver', roundWinner: res.roundWinner });
+                            callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning });
                         } else {
-                            callback({ type: 'play', playerId: currentPlayer.id });
+                            callback({ type: 'play', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
                         }
                     }
                 } else {
                     // Pass
                     this.passTurn(currentPlayer.id);
-                    callback({ type: 'pass', playerId: currentPlayer.id });
+                    callback({ type: 'pass', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
                 }
             }, 1000); // 1s delay for realism
         }
@@ -331,7 +357,8 @@ class Room {
             lastPlayedHand: this.lastPlayedHand,
             gameState: this.gameState,
             roundNumber: this.roundNumber,
-            cumulativeScores: this.cumulativeScores
+            cumulativeScores: this.cumulativeScores,
+            debugMode: this.debugMode
         };
     }
 

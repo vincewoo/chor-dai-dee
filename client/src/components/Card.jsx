@@ -2,41 +2,199 @@ import React from 'react';
 import { SUIT_SYMBOLS, SUIT_COLORS } from '../constants';
 import { motion } from 'framer-motion';
 
-// Card sizes scale with viewport - base size is roughly 4vmin x 6vmin
+// Pip layout positions for number cards (as percentages of the pip container)
+// Container is inset 12% from card edges, so these are relative to that inner area
+const PIP_LAYOUTS = {
+    'A': [{ x: 50, y: 50, scale: 2.2 }],
+    '2': [
+        { x: 50, y: 20 },
+        { x: 50, y: 80, flip: true }
+    ],
+    '3': [
+        { x: 50, y: 15 },
+        { x: 50, y: 50 },
+        { x: 50, y: 85, flip: true }
+    ],
+    '4': [
+        { x: 25, y: 20 },
+        { x: 75, y: 20 },
+        { x: 25, y: 80, flip: true },
+        { x: 75, y: 80, flip: true }
+    ],
+    '5': [
+        { x: 25, y: 20 },
+        { x: 75, y: 20 },
+        { x: 50, y: 50 },
+        { x: 25, y: 80, flip: true },
+        { x: 75, y: 80, flip: true }
+    ],
+    '6': [
+        { x: 25, y: 17 },
+        { x: 75, y: 17 },
+        { x: 25, y: 50 },
+        { x: 75, y: 50 },
+        { x: 25, y: 83, flip: true },
+        { x: 75, y: 83, flip: true }
+    ],
+    '7': [
+        { x: 25, y: 15 },
+        { x: 75, y: 15 },
+        { x: 50, y: 32 },
+        { x: 25, y: 50 },
+        { x: 75, y: 50 },
+        { x: 25, y: 85, flip: true },
+        { x: 75, y: 85, flip: true }
+    ],
+    '8': [
+        { x: 25, y: 15 },
+        { x: 75, y: 15 },
+        { x: 50, y: 32 },
+        { x: 25, y: 50 },
+        { x: 75, y: 50 },
+        { x: 50, y: 68, flip: true },
+        { x: 25, y: 85, flip: true },
+        { x: 75, y: 85, flip: true }
+    ],
+    '9': [
+        { x: 25, y: 12 },
+        { x: 75, y: 12 },
+        { x: 25, y: 37 },
+        { x: 75, y: 37 },
+        { x: 50, y: 50 },
+        { x: 25, y: 63, flip: true },
+        { x: 75, y: 63, flip: true },
+        { x: 25, y: 88, flip: true },
+        { x: 75, y: 88, flip: true }
+    ],
+    '10': [
+        { x: 25, y: 10 },
+        { x: 75, y: 10 },
+        { x: 50, y: 26 },
+        { x: 25, y: 36 },
+        { x: 75, y: 36 },
+        { x: 25, y: 64, flip: true },
+        { x: 75, y: 64, flip: true },
+        { x: 50, y: 74, flip: true },
+        { x: 25, y: 90, flip: true },
+        { x: 75, y: 90, flip: true }
+    ]
+};
+
+// Face card component using emojis
+const FaceCard = ({ rank }) => {
+    // K = Person with crown, Q = Princess, J = Prince
+    const faceEmoji = rank === 'K' ? '🫅' : rank === 'Q' ? '👸' : '🤴';
+
+    return (
+        <div className="absolute inset-[8%] flex flex-col items-center justify-center overflow-hidden">
+            {/* Top emoji */}
+            <span style={{ fontSize: '4em', lineHeight: 0.9 }}>{faceEmoji}</span>
+            {/* Bottom emoji (inverted) */}
+            <span className="rotate-180" style={{ fontSize: '4em', lineHeight: 0.9 }}>{faceEmoji}</span>
+        </div>
+    );
+};
+
 const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' }) => {
-    // Size variants for different contexts
     const sizeClasses = {
-        small: 'w-[3vmax] h-[4.5vmax] text-[0.8vmax]',
-        normal: 'w-[4vmax] h-[6vmax] text-[1vmax]',
-        large: 'w-[5vmax] h-[7.5vmax] text-[1.2vmax]'
+        small: 'w-[3vmax] h-[4.5vmax]',
+        normal: 'w-[4vmax] h-[6vmax]',
+        large: 'w-[5vmax] h-[7.5vmax]'
+    };
+
+    const fontSizes = {
+        small: { corner: '0.55vmax', pip: '0.7vmax' },
+        normal: { corner: '0.7vmax', pip: '0.9vmax' },
+        large: { corner: '0.85vmax', pip: '1.1vmax' }
     };
 
     const sizeClass = sizeClasses[size] || sizeClasses.normal;
+    const fontSize = fontSizes[size] || fontSizes.normal;
+    const suitSymbol = SUIT_SYMBOLS[suit];
+    const color = SUIT_COLORS[suit];
+    const isFaceCard = ['J', 'Q', 'K'].includes(rank);
+    const pipLayout = PIP_LAYOUTS[rank];
 
     if (isBack) {
         return (
             <motion.div
-                className={`${sizeClass} bg-blue-800 rounded-lg border-2 border-white shadow-md m-[0.25vmax]`}
+                className={`${sizeClass} rounded-lg border-2 border-white shadow-md m-[0.25vmax] relative overflow-hidden`}
+                style={{
+                    background: 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1e3a8a 100%)'
+                }}
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: index * 0.05 }}
-            />
+            >
+                {/* Diamond pattern on back */}
+                <div className="absolute inset-[8%] border-2 border-blue-300 rounded opacity-50" />
+                <div className="absolute inset-[15%] border border-blue-400 rounded opacity-30" />
+                <div
+                    className="absolute inset-[20%] rounded"
+                    style={{
+                        backgroundImage: `repeating-linear-gradient(
+                            45deg,
+                            transparent,
+                            transparent 3px,
+                            rgba(255,255,255,0.1) 3px,
+                            rgba(255,255,255,0.1) 6px
+                        )`
+                    }}
+                />
+            </motion.div>
         );
     }
 
     return (
         <motion.div
-            className={`${sizeClass} bg-white rounded-lg border-2 shadow-md m-[0.25vmax] flex flex-col items-center justify-center cursor-pointer select-none
-                ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : 'border-gray-300 hover:-translate-y-[0.5vmax]'}
-                ${SUIT_COLORS[suit]}`}
+            className={`${sizeClass} bg-white rounded-lg border-2 shadow-md m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
+                ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : 'border-gray-300 hover:-translate-y-[0.5vmax]'}`}
             onClick={onClick}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 300, damping: 20 }}
             whileTap={{ scale: 0.95 }}
         >
-            <div className="font-bold" style={{ fontSize: '1.2em' }}>{rank}</div>
-            <div style={{ fontSize: '1.5em' }}>{SUIT_SYMBOLS[suit]}</div>
+            {/* Top-left corner */}
+            <div
+                className={`absolute top-[4%] left-[8%] flex flex-col items-center leading-none ${color}`}
+                style={{ fontSize: fontSize.corner }}
+            >
+                <span className="font-bold">{rank}</span>
+                <span style={{ fontSize: '1.1em' }}>{suitSymbol}</span>
+            </div>
+
+            {/* Bottom-right corner (rotated) */}
+            <div
+                className={`absolute bottom-[4%] right-[8%] flex flex-col items-center leading-none rotate-180 ${color}`}
+                style={{ fontSize: fontSize.corner }}
+            >
+                <span className="font-bold">{rank}</span>
+                <span style={{ fontSize: '1.1em' }}>{suitSymbol}</span>
+            </div>
+
+            {/* Center content */}
+            {isFaceCard ? (
+                <FaceCard rank={rank} />
+            ) : (
+                /* Pip layout for number cards and Ace */
+                <div className="absolute inset-[12%]">
+                    {pipLayout && pipLayout.map((pip, i) => (
+                        <div
+                            key={i}
+                            className={`absolute ${color}`}
+                            style={{
+                                left: `${pip.x}%`,
+                                top: `${pip.y}%`,
+                                transform: `translate(-50%, -50%) ${pip.flip ? 'rotate(180deg)' : ''} scale(${pip.scale || 1})`,
+                                fontSize: fontSize.pip
+                            }}
+                        >
+                            {suitSymbol}
+                        </div>
+                    ))}
+                </div>
+            )}
         </motion.div>
     );
 };

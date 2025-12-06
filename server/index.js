@@ -131,6 +131,10 @@ io.on('connection', (socket) => {
               handleRoundOver(room, roomId, result.roundWinner);
           } else {
               io.to(roomId).emit('game_update', room.getGameState());
+              // Emit bot reasoning if debug mode is enabled
+              if (room.debugMode && result.reasoning) {
+                  io.to(roomId).emit('bot_reasoning', result.reasoning);
+              }
               // Continue checking if next player is bot
               processBotTurns(room, roomId);
           }
@@ -204,6 +208,16 @@ io.on('connection', (socket) => {
               // Check if next player is bot
               processBotTurns(room, roomId);
           }
+      }
+  });
+
+  // Debug mode toggle
+  socket.on('toggle_debug', ({ roomId, enabled }) => {
+      const room = roomManager.getRoom(roomId);
+      if (room) {
+          room.setDebugMode(enabled);
+          io.to(roomId).emit('game_update', room.getGameState());
+          console.log(`Debug mode ${enabled ? 'enabled' : 'disabled'} for room ${roomId}`);
       }
   });
 
