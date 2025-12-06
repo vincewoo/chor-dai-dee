@@ -247,7 +247,45 @@ class Room {
             const everyoneFull = this.players.every(p => p.hand.length === 13);
             const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
-            const move = BotLogic.getBotMove(currentPlayer.hand, this.lastPlayedHand, isFirstTurn);
+            // Build game context for strategic decisions
+            const gameContext = {
+                // Card counts in turn order starting from next player
+                playerCardCounts: [],
+                // Index of the player who played last (relative: 1=next, 2=across, 3=previous)
+                lastPlayedByRelative: null,
+                // Which players have passed this round
+                passedPlayers: [],
+                // Total passes this round
+                passCount: this.passes
+            };
+
+            // Build player info in turn order (next player first)
+            for (let i = 1; i <= 3; i++) {
+                const idx = (this.currentTurnIndex + i) % 4;
+                const player = this.players[idx];
+                gameContext.playerCardCounts.push(player.hand ? player.hand.length : 0);
+                if (this.passedPlayers.has(player.id)) {
+                    gameContext.passedPlayers.push(i - 1); // 0=next, 1=across, 2=previous
+                }
+            }
+
+            // Find who played last (relative position)
+            if (this.lastPlayedHand && this.lastPlayedHand.playerId) {
+                const lastPlayerIdx = this.players.findIndex(p => p.id === this.lastPlayedHand.playerId);
+                if (lastPlayerIdx !== -1) {
+                    // Calculate relative position (1-3, where 1=next player, 3=previous player)
+                    let relative = (lastPlayerIdx - this.currentTurnIndex + 4) % 4;
+                    if (relative === 0) relative = 4; // Shouldn't happen, but just in case
+                    gameContext.lastPlayedByRelative = relative;
+                }
+            }
+
+            const move = BotLogic.getBotMove(
+                currentPlayer.hand,
+                this.lastPlayedHand,
+                isFirstTurn,
+                gameContext
+            );
 
             setTimeout(() => {
                 if (move) {

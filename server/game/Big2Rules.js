@@ -59,6 +59,19 @@ const Big2Rules = {
         const isStraight = Big2Rules.checkStraight(cards);
 
         if (isFlush && isStraight) {
+            // Special cases for straight flushes with 2 (2 is high):
+            // - A-2-3-4-5: HIGHEST straight flush, value based on 2
+            // - 2-3-4-5-6: second highest, value based on 2
+            const ranks = cards.map(c => c.rank);
+            if (ranks.includes('2')) {
+                const twoCard = cards.find(c => c.rank === '2');
+                let value = twoCard.value;
+                if (ranks.includes('A')) {
+                    // A-2-3-4-5 is the highest straight flush
+                    value += 4;
+                }
+                return { type: HAND_TYPES.STRAIGHT_FLUSH, value, cards };
+            }
             return { type: HAND_TYPES.STRAIGHT_FLUSH, value: cards[4].value, cards };
         }
 
@@ -84,6 +97,21 @@ const Big2Rules = {
 
         if (isStraight) {
             // Straight value determined by highest card
+            // Special cases for straights with 2 (2 is high):
+            // - A-2-3-4-5: HIGHEST straight, value based on 2
+            // - 2-3-4-5-6: second highest, value based on 2
+            const ranks = cards.map(c => c.rank);
+            if (ranks.includes('2')) {
+                // Any straight with 2 uses 2's value (2 is highest card)
+                const twoCard = cards.find(c => c.rank === '2');
+                // A-2-3-4-5 is higher than 2-3-4-5-6, so add a bonus for having A
+                let value = twoCard.value;
+                if (ranks.includes('A')) {
+                    // A-2-3-4-5 is the highest straight - add 4 to ensure it beats 2-3-4-5-6
+                    value += 4;
+                }
+                return { type: HAND_TYPES.STRAIGHT, value, cards };
+            }
             return { type: HAND_TYPES.STRAIGHT, value: cards[4].value, cards };
         }
 
@@ -91,48 +119,45 @@ const Big2Rules = {
     },
 
     checkStraight: (cards) => {
-        // Normal straights: 3-4-5-6-7 ... 10-J-Q-K-A
-        // Special straights in Big 2: A-2-3-4-5 (Lowest?), J-Q-K-A-2 (Highest?)
-        // In standard Big 2:
-        // 3-4-5-6-7 is lowest.
-        // ...
-        // 2-3-4-5-6 is usually not allowed or treated specially.
-        // A-2-3-4-5 is often valid (lowest).
-        // J-Q-K-A-2 is often valid (highest).
-        // Let's assume standard ranks logic first.
-        // Since we mapped 3=0, ... 2=12.
-        // A straight is 5 consecutive indices.
+        // Valid straights in Big 2:
+        // - Standard: 3-4-5-6-7 up to 10-J-Q-K-A
+        // - Special: A-2-3-4-5 (lowest straight, "wheel")
+        // - Special: 2-3-4-5-6 (second lowest)
+        // Invalid: J-Q-K-A-2 (2 cannot be high end of straight)
 
-        // Check for normal consecutive
-        let isConsecutive = true;
-        for (let i = 0; i < 4; i++) {
-             // We need to check RANKS indices.
-             const rankIdx1 = RANKS.indexOf(cards[i].rank);
-             const rankIdx2 = RANKS.indexOf(cards[i+1].rank);
-             if (rankIdx2 !== rankIdx1 + 1) {
-                 isConsecutive = false;
-                 break;
-             }
-        }
-        if (isConsecutive) return true;
-
-        // Check for special straights involving 2 (which is index 12) and A (index 11)
-        // A-2-3-4-5? Ranks: A, 2, 3, 4, 5. Indices: 11, 12, 0, 1, 2.
-        // 3-4-5-6-7 ...
-        // In our sorting (by value), 2 is high.
-        // If we have A, 2, 3, 4, 5. Sorted by value: 3, 4, 5, A, 2.
-        // Let's check ranks present.
         const ranks = cards.map(c => c.rank);
         const has = (r) => ranks.includes(r);
 
-        // A-2-3-4-5?
-        if (has('A') && has('2') && has('3') && has('4') && has('5')) return true;
+        // Check for special straight: A-2-3-4-5 (lowest straight - "wheel")
+        if (has('A') && has('2') && has('3') && has('4') && has('5')) {
+            return true;
+        }
 
-        // J-Q-K-A-2?
-        // Sorted: J, Q, K, A, 2. This is consecutive in our system!
-        // J=8, Q=9, K=10, A=11, 2=12. This is consecutive.
+        // Check for special straight: 2-3-4-5-6 (second lowest)
+        if (has('2') && has('3') && has('4') && has('5') && has('6')) {
+            return true;
+        }
 
-        return false;
+        // For all other straights, 2 is not allowed
+        if (cards.some(c => c.rank === '2')) {
+            return false;
+        }
+
+        // Check for normal consecutive (using rank indices)
+        // RANKS: ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2']
+        // So 3=0, 4=1, ... A=11, 2=12
+        // Valid straights go from index 0-4 (3-4-5-6-7) to index 7-11 (10-J-Q-K-A)
+        let isConsecutive = true;
+        for (let i = 0; i < 4; i++) {
+            const rankIdx1 = RANKS.indexOf(cards[i].rank);
+            const rankIdx2 = RANKS.indexOf(cards[i+1].rank);
+            if (rankIdx2 !== rankIdx1 + 1) {
+                isConsecutive = false;
+                break;
+            }
+        }
+
+        return isConsecutive;
     },
 
     checkQuads: (cards) => {
