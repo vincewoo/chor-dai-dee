@@ -129,12 +129,17 @@ io.on('connection', (socket) => {
       room.roundNumber++;
       room.startRound();
 
+      const gameState = room.getGameState();
+      console.log(`Next round ${room.roundNumber} starting. Current turn: ${gameState.currentTurn}, Players:`,
+          room.players.map(p => ({ id: p.id, name: p.name, isBot: p.isBot })));
+
       // Broadcast updated state
-      io.to(roomId).emit('game_started', room.getGameState());
+      io.to(roomId).emit('game_started', gameState);
 
       // Send individual hands
       room.players.forEach(p => {
           if (!p.isBot) {
+              console.log(`Sending hand_update to ${p.name} (${p.id}), ${p.hand?.length} cards`);
               io.to(p.id).emit('hand_update', p.hand);
           }
       });
