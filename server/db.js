@@ -1,12 +1,19 @@
 // server/db.js
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
+const path = require('path');
 
-const db = new sqlite3.Database('./database.sqlite', (err) => {
+// Use /data directory in production (Fly.io volume mount), local directory otherwise
+const isProduction = process.env.NODE_ENV === 'production';
+const dbPath = isProduction
+    ? '/data/database.sqlite'
+    : path.join(__dirname, 'database.sqlite');
+
+const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Error opening database', err.message);
     } else {
-        console.log('Connected to SQLite database.');
+        console.log(`Connected to SQLite database at ${dbPath}`);
         initDb();
     }
 });

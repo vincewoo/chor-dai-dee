@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
@@ -7,13 +8,28 @@ const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsBy
 const { calculateRoundScores } = require('./game/Scoring');
 
 const app = express();
-app.use(cors());
+
+// Determine allowed origins based on environment
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = isProduction
+  ? [process.env.APP_URL || 'https://chor-dai-dee.fly.dev']
+  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST']
+}));
 app.use(express.json());
+
+// Serve static files in production
+if (isProduction) {
+  app.use(express.static(path.join(__dirname, 'public')));
+}
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: allowedOrigins,
     methods: ["GET", "POST"]
   }
 });
@@ -263,6 +279,13 @@ app.get('/api/stats/:username', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+
+// SPA catch-all route - must be after all API routes
+if (isProduction) {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

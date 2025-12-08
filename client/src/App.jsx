@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import io from 'socket.io-client'
 import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 
-const socket = io('http://localhost:3000');
+// In production, connect to same origin; in development, connect to localhost:3000
+const socketUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:3000';
+const socket = io(socketUrl);
 
 function App() {
   const [user, setUser] = useState(() => {
