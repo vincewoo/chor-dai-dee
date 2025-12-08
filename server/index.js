@@ -11,14 +11,20 @@ const app = express();
 
 // Determine allowed origins based on environment
 const isProduction = process.env.NODE_ENV === 'production';
-const allowedOrigins = isProduction
-  ? [process.env.APP_URL || 'https://chor-dai-dee.fly.dev']
-  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST']
-}));
+// In production, allow same-origin requests (no CORS needed when serving from same domain)
+// Also allow any fly.dev subdomain for flexibility
+const corsOptions = isProduction
+  ? {
+      origin: true, // Reflect the request origin (allows same-origin)
+      methods: ['GET', 'POST']
+    }
+  : {
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      methods: ['GET', 'POST']
+    };
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Serve static files in production
@@ -28,10 +34,7 @@ if (isProduction) {
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"]
-  }
+  cors: corsOptions
 });
 
 const roomManager = new RoomManager();
