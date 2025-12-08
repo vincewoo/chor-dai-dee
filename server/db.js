@@ -27,24 +27,7 @@ function initDb() {
             password_hash TEXT
         )`);
 
-        // Check if stats table exists and has rating_mu
-        db.get("PRAGMA table_info(stats)", (err, rows) => {
-            if (err) {
-                console.error("Error checking table info:", err);
-                return;
-            }
-
-            // If table doesn't exist, create it with new schema
-            if (!rows) {
-                createStatsTable();
-            } else {
-                // Check for existence of old 'elo' column or missing 'rating_mu'
-                // rows is usually undefined if table doesn't exist? No, PRAGMA returns rows one by one in .each or array in .all?
-                // Wait, db.get returns only the first row. We should use db.all for PRAGMA.
-            }
-        });
-
-        // Let's redo the check properly using db.all
+        // Check stats table schema
         db.all("PRAGMA table_info(stats)", (err, columns) => {
             if (err) {
                 console.error("Error getting stats schema", err);
@@ -62,7 +45,7 @@ function initDb() {
                     console.log("Migrating stats table: Removing elo, adding rating_mu/sigma");
                     migrateStatsTable();
                 } else if (!hasRatingMu) {
-                    // This case shouldn't happen if we just created it, but maybe partial state?
+                    // This case handles partially initialized tables or manual adjustments
                     console.log("Adding missing rating columns");
                     db.run(`ALTER TABLE stats ADD COLUMN rating_mu REAL DEFAULT 25.0`);
                     db.run(`ALTER TABLE stats ADD COLUMN rating_sigma REAL DEFAULT 8.333`);

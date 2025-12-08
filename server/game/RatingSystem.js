@@ -12,7 +12,7 @@ const DEFAULT_SIGMA = 25 / 3;
  *                          Each object must have: { id, name, isBot, rating_mu, rating_sigma }
  *                          (For bots or new players, mu/sigma can be undefined/null, defaults will be used)
  * @param {Object} finalScores - Map of { playerId: score }. Big 2 scores are penalties (lower is better).
- * @returns {Array} - Array of objects { id, mu, sigma, ordinal } for HUMAN players only.
+ * @returns {Array} - Array of objects { id, name, mu, sigma, ordinal } for HUMAN players only.
  */
 function calculateNewRatings(players, finalScores) {
     // 1. Prepare teams for OpenSkill
@@ -32,18 +32,21 @@ function calculateNewRatings(players, finalScores) {
         teams.push([r]);
         playerOrder.push(p);
 
-        // Calculate score for OpenSkill
+        // Calculate score for OpenSkill to determine RANK.
         // Big 2: Lower points = Better.
-        // OpenSkill: Higher score = Better.
-        // So we negate the Big 2 score.
-        // Example: Winner has 0 -> -0. Loser has 40 -> -40.
-        // -0 > -40, so Winner > Loser.
+        // OpenSkill: Higher score = Better (for sorting ranks).
+        // By passing these scores, OpenSkill will correctly identify that:
+        // Winner (0 pts) > 2nd (8 pts) > 3rd (15 pts) > 4th (30 pts)
+        // because -0 > -8 > -15 > -30.
+        // This implicitly handles the "magnitude" of the loss by placing
+        // players in the correct strict order (1, 2, 3, 4) rather than just "Winner vs Losers".
         const penalty = finalScores[p.id] || 0;
         scores.push(-penalty);
     });
 
     // 2. Calculate new ratings
-    // We pass 'score' to determine rank/weights.
+    // We pass 'score' to determine rank.
+    // The library uses these scores to sort teams and assign ranks 1..N.
     const newRatings = rate(teams, { score: scores });
 
     // 3. Map results back to players and filter out bots
