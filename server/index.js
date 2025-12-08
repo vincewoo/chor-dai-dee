@@ -6,6 +6,7 @@ const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
 const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName } = require('./db');
 const { calculateRoundScores } = require('./game/Scoring');
+const { calculateNewRatings } = require('./game/RatingSystem');
 
 const app = express();
 
@@ -122,13 +123,47 @@ io.on('connection', (socket) => {
           const gameWinner = room.getGameWinner();
           room.gameState = 'finished';
 
-          // Update DB for human players (final game results)
+          // 1. Fetch current ratings for all humans
+          // We need to fetch stats to get current mu/sigma
+          const playersWithStats = await Promise.all(room.players.map(async (p) => {
+            if (p.isBot) return { ...p };
+            try {
+                const stats = await getUserStats(p.name);
+                return {
+                    ...p,
+                    rating_mu: stats ? stats.rating_mu : undefined,
+                    rating_sigma: stats ? stats.rating_sigma : undefined
+                };
+            } catch (e) {
+                console.error("Error fetching stats for rating calc:", p.name, e);
+                return { ...p };
+            }
+          }));
+
+          // 2. Calculate new ratings
+          const newRatings = calculateNewRatings(playersWithStats, room.cumulativeScores);
+
+          // Map new ratings by name for easy lookup
+          const ratingUpdates = {};
+          newRatings.forEach(r => {
+            ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
+          });
+
+          // 3. Update DB for human players (final game results + ratings)
           room.players.forEach(async (p) => {
               if (!p.isBot) {
                   try {
                       const isWinner = p.id === gameWinner.id;
                       const totalScore = room.cumulativeScores[p.id] || 0;
-                      await updateUserStatsByName(p.name, isWinner, totalScore);
+                      const newRating = ratingUpdates[p.name];
+
+                      await updateUserStatsByName(
+                          p.name,
+                          isWinner,
+                          totalScore,
+                          newRating ? newRating.mu : null,
+                          newRating ? newRating.sigma : null
+                        );
                   } catch (e) {
                       console.error("Failed to update stats for", p.name, e);
                   }
