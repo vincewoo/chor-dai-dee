@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  chor-dai-dee:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chor-dai-dee
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - chor-dai-dee-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  chor-dai-dee-data:
+    driver: local

@@ -44,14 +44,46 @@ io.on('connection', (socket) => {
 
   socket.on('join_room', ({ roomId, username }) => {
     console.log(`join_room event received: roomId=${roomId}, username=${username}`);
-    // If roomId is 'create', create a new one
+
+    // Check if user can reconnect to an existing room
+    const reconnectInfo = roomManager.findRoomForReconnect(username);
+    if (reconnectInfo) {
+        const { roomId: existingRoomId, room } = reconnectInfo;
+        console.log(`Reconnecting ${username} to room ${existingRoomId}`);
+
+        const player = room.reconnectPlayer(username, socket.id, socket);
+        if (player) {
+            socket.join(existingRoomId);
+
+            // Send reconnection success with full state
+            socket.emit('reconnected', {
+                roomId: existingRoomId,
+                playerId: socket.id,
+                gameState: room.getGameState()
+            });
+
+            // Send player's hand if game is in progress
+            if (room.gameState === 'playing' || room.gameState === 'round_over') {
+                socket.emit('hand_update', player.hand || []);
+            }
+
+            // Notify everyone in room about the reconnection
+            io.to(existingRoomId).emit('room_update', room.getGameState());
+            io.to(existingRoomId).emit('player_reconnected', { playerName: username });
+
+            console.log(`${username} reconnected successfully to room ${existingRoomId}`);
+            return;
+        }
+    }
+
+    // Normal join flow
     let targetRoomId = roomId;
     if (roomId === 'create') {
         targetRoomId = roomManager.createRoom();
         console.log(`Created new room: ${targetRoomId}`);
     }
 
-    const player = { id: socket.id, name: username || `Player ${socket.id.substr(0,4)}`, socket };
+    const player = { id: socket.id, name: username || `Player ${socket.id.substring(0,4)}`, socket };
     const result = roomManager.joinRoom(targetRoomId, player);
     console.log(`Join result:`, result.error || 'success');
 
@@ -247,8 +279,22 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
-    // Handle removal... needs lookup of which room they were in.
-    // For now, minimal handling.
+
+    // Find which room this player was in
+    const result = roomManager.findRoomBySocketId(socket.id);
+    if (result) {
+        const { roomId, room, player } = result;
+
+        // Mark player as disconnected (not removed, so they can reconnect)
+        const disconnectedPlayer = room.markDisconnected(socket.id);
+        if (disconnectedPlayer) {
+            console.log(`Player ${disconnectedPlayer.name} marked as disconnected in room ${roomId}`);
+
+            // Notify other players
+            io.to(roomId).emit('room_update', room.getGameState());
+            io.to(roomId).emit('player_disconnected', { playerName: disconnectedPlayer.name });
+        }
+    }
   });
 });
 

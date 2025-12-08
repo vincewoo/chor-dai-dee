@@ -1,14 +1,5 @@
-# Build stage for client
-FROM node:20-alpine AS client-builder
-
-WORKDIR /app/client
-COPY client/package*.json ./
-RUN npm ci
-COPY client/ ./
-RUN npm run build
-
-# Production stage
-FROM node:20-alpine AS production
+# Production stage - uses pre-built client from client/dist
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -16,14 +7,15 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++ sqlite
 
 # Copy server package files and install dependencies
-COPY server/package*.json ./
-RUN npm ci --only=production
+COPY server/package.json ./
+COPY server/package-lock.json* ./
+RUN npm install --omit=dev
 
 # Copy server source
 COPY server/ ./
 
-# Copy built client files to be served by express
-COPY --from=client-builder /app/client/dist ./public
+# Copy pre-built client files to be served by express
+COPY client/dist/ ./public/
 
 # Create directory for SQLite database
 RUN mkdir -p /data

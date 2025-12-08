@@ -1,10 +1,32 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from './Card';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
 import HandHelper from './HandHelper';
 import BotDebugPanel from './BotDebugPanel';
+
+// Card sorting utilities
+const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
+const RANKS_ORDER = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+
+const getCardValue = (card) => {
+    const rankIndex = RANKS_ORDER.indexOf(card.rank);
+    const suitIndex = SUITS_ORDER.indexOf(card.suit);
+    return rankIndex * 4 + suitIndex;
+};
+
+const sortByRank = (cards) => {
+    return [...cards].sort((a, b) => getCardValue(a) - getCardValue(b));
+};
+
+const sortBySuit = (cards) => {
+    return [...cards].sort((a, b) => {
+        const suitDiff = SUITS_ORDER.indexOf(a.suit) - SUITS_ORDER.indexOf(b.suit);
+        if (suitDiff !== 0) return suitDiff;
+        return RANKS_ORDER.indexOf(a.rank) - RANKS_ORDER.indexOf(b.rank);
+    });
+};
 
 // Helper to create a stable key for a played hand (only changes when cards change)
 const getPlayedHandKey = (lastPlayed) => {
@@ -54,10 +76,12 @@ const PlayedCards = ({ lastPlayed, position }) => {
 const TopPlayerArea = ({ player, isTurn }) => {
     if (!player) return null;
 
+    const isDisconnected = player.isDisconnected;
+
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+            <div className={`absolute top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Cards - horizontal */}
                 <div className="flex" style={{ marginLeft: '-2vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
@@ -65,11 +89,16 @@ const TopPlayerArea = ({ player, isTurn }) => {
                     ))}
                 </div>
                 {/* Avatar */}
-                <div className="flex flex-col items-center shrink-0">
+                <div className="flex flex-col items-center shrink-0 relative">
                     <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
+                    {isDisconnected && (
+                        <div className="absolute -top-[0.5vmax] -right-[0.5vmax] bg-red-500 text-white text-[0.6vmax] px-[0.3vmax] rounded">
+                            DC
+                        </div>
+                    )}
                     <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
@@ -84,10 +113,12 @@ const TopPlayerArea = ({ player, isTurn }) => {
 const LeftPlayerArea = ({ player, isTurn }) => {
     if (!player) return null;
 
+    const isDisconnected = player.isDisconnected;
+
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+            <div className={`absolute left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Cards - vertical stack, each card rotated (wider than tall) */}
                 <div className="flex flex-col mb-[0.75vmax]" style={{ marginTop: '-1vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
@@ -95,11 +126,16 @@ const LeftPlayerArea = ({ player, isTurn }) => {
                     ))}
                 </div>
                 {/* Avatar */}
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center relative">
                     <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
+                    {isDisconnected && (
+                        <div className="absolute -top-[0.5vmax] -right-[0.5vmax] bg-red-500 text-white text-[0.6vmax] px-[0.3vmax] rounded">
+                            DC
+                        </div>
+                    )}
                     <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
@@ -114,16 +150,23 @@ const LeftPlayerArea = ({ player, isTurn }) => {
 const RightPlayerArea = ({ player, isTurn }) => {
     if (!player) return null;
 
+    const isDisconnected = player.isDisconnected;
+
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'}`}>
+            <div className={`absolute right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
-                <div className="flex flex-col items-center mb-[0.75vmax]">
+                <div className="flex flex-col items-center mb-[0.75vmax] relative">
                     <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
+                    {isDisconnected && (
+                        <div className="absolute -top-[0.5vmax] -right-[0.5vmax] bg-red-500 text-white text-[0.6vmax] px-[0.3vmax] rounded">
+                            DC
+                        </div>
+                    )}
                     <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
@@ -154,6 +197,16 @@ const GameRoom = ({ user, socket }) => {
     const autoPassTriggered = useRef(false);
     const [showDebugPanel, setShowDebugPanel] = useState(false);
     const [botReasoning, setBotReasoning] = useState(null);
+    const [notification, setNotification] = useState(null);
+    const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
+
+    // Sorted hand based on current sort mode
+    const sortedHand = useMemo(() => {
+        if (sortMode === 'suit') {
+            return sortBySuit(myHand);
+        }
+        return sortByRank(myHand);
+    }, [myHand, sortMode]);
 
     useEffect(() => {
         // Request current room state when component mounts
@@ -195,6 +248,16 @@ const GameRoom = ({ user, socket }) => {
             setBotReasoning(reasoning);
         });
 
+        socket.on('player_disconnected', ({ playerName }) => {
+            setNotification({ type: 'warning', message: `${playerName} disconnected` });
+            setTimeout(() => setNotification(null), 3000);
+        });
+
+        socket.on('player_reconnected', ({ playerName }) => {
+            setNotification({ type: 'success', message: `${playerName} reconnected!` });
+            setTimeout(() => setNotification(null), 3000);
+        });
+
         return () => {
             socket.off('room_update');
             socket.off('game_started');
@@ -204,6 +267,8 @@ const GameRoom = ({ user, socket }) => {
             socket.off('game_over');
             socket.off('error');
             socket.off('bot_reasoning');
+            socket.off('player_disconnected');
+            socket.off('player_reconnected');
         };
     }, [socket]);
 
@@ -340,6 +405,22 @@ const GameRoom = ({ user, socket }) => {
                         className="absolute top-[5vh] bg-red-600 text-white px-[1.5vmax] py-[0.5vmax] rounded shadow-xl z-50 font-bold text-[1vmax]"
                     >
                         {error}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Notification Toast */}
+            <AnimatePresence>
+                {notification && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-[1.5vmax] py-[0.5vmax] rounded shadow-xl z-50 font-bold text-[1vmax] ${
+                            notification.type === 'warning' ? 'bg-yellow-600 text-white' : 'bg-green-600 text-white'
+                        }`}
+                    >
+                        {notification.message}
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -540,11 +621,18 @@ const GameRoom = ({ user, socket }) => {
                         >
                             Auto-Pass {autoPass ? 'ON' : 'OFF'}
                         </button>
+                        <button
+                            onClick={() => setSortMode(sortMode === 'rank' ? 'suit' : 'rank')}
+                            className="px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-[0.85vmax] bg-purple-600 text-white hover:bg-purple-500"
+                            title={`Currently sorting by ${sortMode}. Click to sort by ${sortMode === 'rank' ? 'suit' : 'rank'}.`}
+                        >
+                            Sort: {sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}
+                        </button>
                     </div>
 
                     {/* My Hand */}
                     <div className="flex justify-center transition-all duration-300 hover:gap-[0.5vmax]" style={{ gap: '-1.5vmax' }}>
-                        {myHand.map((card, index) => {
+                        {sortedHand.map((card, index) => {
                              const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
                              return (
                                 <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: index === 0 ? 0 : '-1.5vmax' }} className="hover:ml-0 transition-all">

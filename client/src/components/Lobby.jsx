@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
     const [error, setError] = useState('');
+    const [reconnecting, setReconnecting] = useState(false);
     const [connected, setConnected] = useState(socket.connected);
     const navigate = useNavigate();
 
@@ -22,12 +23,26 @@ const Lobby = ({ user, socket, setUser }) => {
         socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username });
     };
 
+    // Attempt to reconnect to an existing game on mount
+    const attemptReconnect = () => {
+        if (socket.connected && user?.username) {
+            console.log('Attempting to reconnect to existing game...');
+            setReconnecting(true);
+            // Use a dummy room ID to trigger reconnection check
+            socket.emit('join_room', { roomId: 'reconnect', username: user.username });
+            // Clear reconnecting state after a short delay if no reconnection happens
+            setTimeout(() => setReconnecting(false), 2000);
+        }
+    };
+
     useEffect(() => {
         console.log('Setting up socket listeners, socket connected:', socket.connected);
 
         const onConnect = () => {
             console.log('Socket connected');
             setConnected(true);
+            // Try to reconnect when socket connects
+            attemptReconnect();
         };
 
         const onDisconnect = () => {
@@ -40,27 +55,45 @@ const Lobby = ({ user, socket, setUser }) => {
 
         socket.on('joined_room', ({ roomId, playerId }) => {
             console.log('joined_room received:', roomId, playerId);
+            setReconnecting(false);
+            navigate(`/game/${roomId}`);
+        });
+
+        // Handle reconnection to existing game
+        socket.on('reconnected', ({ roomId, playerId, gameState }) => {
+            console.log('Reconnected to existing game:', roomId);
+            setReconnecting(false);
             navigate(`/game/${roomId}`);
         });
 
         socket.on('error', (err) => {
             console.log('error received:', err);
-            setError(err);
+            setReconnecting(false);
+            // Don't show "Room not found" error when attempting auto-reconnect
+            if (err !== 'Room not found' || !reconnecting) {
+                setError(err);
+            }
         });
+
+        // Attempt reconnection on mount if already connected
+        if (socket.connected) {
+            attemptReconnect();
+        }
 
         return () => {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
             socket.off('joined_room');
+            socket.off('reconnected');
             socket.off('error');
         };
-    }, [socket, navigate]);
+    }, [socket, navigate, user?.username]);
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white">
             <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96 text-center">
                 <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
-                    {connected ? '● Connected' : '● Disconnected - Is the server running?'}
+                    {reconnecting ? '● Checking for existing game...' : connected ? '● Connected' : '● Disconnected - Is the server running?'}
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Welcome, {user.username}!</h2>
                 <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline mb-4">

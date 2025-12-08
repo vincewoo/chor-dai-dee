@@ -6,7 +6,7 @@ const { BotLogic } = require('./BotLogic');
 class Room {
     constructor(roomId) {
         this.id = roomId;
-        this.players = []; // Array of { id, name, socket, hand, isBot }
+        this.players = []; // Array of { id, name, socket, hand, isBot, isDisconnected }
         this.gameState = 'waiting'; // waiting, playing, round_over, finished
         this.deck = new Deck();
         this.currentTurnIndex = 0;
@@ -21,12 +21,87 @@ class Room {
         this.playedCards = []; // Track all cards played this round for card counting
         this.debugMode = false; // Enable bot reasoning capture
         this.lastBotReasoning = null; // Store the most recent bot decision reasoning
+        this.playersByUsername = {}; // Map username -> player for reconnection
     }
 
     addPlayer(player) {
         if (this.players.length >= 4) return false;
+        player.isDisconnected = false;
         this.players.push(player);
+        // Track by username for reconnection
+        if (player.name && !player.isBot) {
+            this.playersByUsername[player.name] = player;
+        }
         return true;
+    }
+
+    // Check if a username can reconnect to this room
+    canReconnect(username) {
+        const existingPlayer = this.playersByUsername[username];
+        return existingPlayer && existingPlayer.isDisconnected;
+    }
+
+    // Reconnect a player with a new socket
+    reconnectPlayer(username, newSocketId, newSocket) {
+        const existingPlayer = this.playersByUsername[username];
+        if (!existingPlayer) return null;
+
+        const oldId = existingPlayer.id;
+
+        // Update player's socket info
+        existingPlayer.id = newSocketId;
+        existingPlayer.socket = newSocket;
+        existingPlayer.isDisconnected = false;
+
+        // Update references that use the old socket ID
+        if (this.cumulativeScores[oldId] !== undefined) {
+            this.cumulativeScores[newSocketId] = this.cumulativeScores[oldId];
+            delete this.cumulativeScores[oldId];
+        }
+
+        if (this.playerLastPlayed[oldId]) {
+            this.playerLastPlayed[newSocketId] = this.playerLastPlayed[oldId];
+            this.playerLastPlayed[newSocketId].playerId = newSocketId;
+            delete this.playerLastPlayed[oldId];
+        }
+
+        if (this.passedPlayers.has(oldId)) {
+            this.passedPlayers.delete(oldId);
+            this.passedPlayers.add(newSocketId);
+        }
+
+        if (this.lastPlayedHand && this.lastPlayedHand.playerId === oldId) {
+            this.lastPlayedHand.playerId = newSocketId;
+        }
+
+        if (this.lastRoundWinnerId === oldId) {
+            this.lastRoundWinnerId = newSocketId;
+        }
+
+        // Update playersByUsername reference
+        this.playersByUsername[username] = existingPlayer;
+
+        return existingPlayer;
+    }
+
+    // Mark a player as disconnected
+    markDisconnected(socketId) {
+        const player = this.players.find(p => p.id === socketId);
+        if (player && !player.isBot) {
+            player.isDisconnected = true;
+            return player;
+        }
+        return null;
+    }
+
+    // Check if a player slot is available (including disconnected slots for new players)
+    hasAvailableSlot() {
+        return this.players.length < 4;
+    }
+
+    // Get disconnected player by socket ID
+    getDisconnectedPlayer(socketId) {
+        return this.players.find(p => p.id === socketId && p.isDisconnected);
     }
 
     setDebugMode(enabled) {
@@ -350,6 +425,7 @@ class Room {
                 name: p.name,
                 cardCount: p.hand ? p.hand.length : 0,
                 isBot: p.isBot,
+                isDisconnected: p.isDisconnected || false,
                 lastPlayed: this.playerLastPlayed[p.id] || null,
                 cumulativeScore: this.cumulativeScores[p.id] || 0
             })),
@@ -391,6 +467,27 @@ class RoomManager {
 
     getRoom(roomId) {
         return this.rooms.get(roomId);
+    }
+
+    // Find a room where this username can reconnect
+    findRoomForReconnect(username) {
+        for (const [roomId, room] of this.rooms) {
+            if (room.canReconnect(username)) {
+                return { roomId, room };
+            }
+        }
+        return null;
+    }
+
+    // Find which room a socket is in
+    findRoomBySocketId(socketId) {
+        for (const [roomId, room] of this.rooms) {
+            const player = room.players.find(p => p.id === socketId);
+            if (player) {
+                return { roomId, room, player };
+            }
+        }
+        return null;
     }
 }
 
