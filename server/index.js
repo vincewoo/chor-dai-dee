@@ -6,7 +6,7 @@ const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
 const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName } = require('./db');
 const { calculateRoundScores } = require('./game/Scoring');
-const { calculateNewRatings } = require('./game/RatingSystem');
+const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 
 const app = express();
 
@@ -43,8 +43,28 @@ const roomManager = new RoomManager();
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  socket.on('join_room', ({ roomId, username }) => {
+  socket.on('join_room', async ({ roomId, username }) => {
     console.log(`join_room event received: roomId=${roomId}, username=${username}`);
+
+    // Fetch user stats to get rating
+    let ratingMu, ratingSigma, displayRating;
+    if (username) {
+        try {
+            const stats = await getUserStats(username);
+            if (stats) {
+                ratingMu = stats.rating_mu;
+                ratingSigma = stats.rating_sigma;
+                displayRating = calculateDisplayRating(ratingMu, ratingSigma);
+            } else {
+                displayRating = calculateDisplayRating(undefined, undefined); // Default
+            }
+        } catch (e) {
+            console.error('Error fetching stats for join_room:', e);
+            displayRating = calculateDisplayRating(undefined, undefined);
+        }
+    } else {
+        displayRating = calculateDisplayRating(undefined, undefined);
+    }
 
     // Check if user can reconnect to an existing room
     const reconnectInfo = roomManager.findRoomForReconnect(username);
@@ -54,6 +74,9 @@ io.on('connection', (socket) => {
 
         const player = room.reconnectPlayer(username, socket.id, socket);
         if (player) {
+            // Update rating on reconnection just in case it changed
+            player.rating = displayRating;
+
             socket.join(existingRoomId);
 
             // Send reconnection success with full state
@@ -84,7 +107,13 @@ io.on('connection', (socket) => {
         console.log(`Created new room: ${targetRoomId}`);
     }
 
-    const player = { id: socket.id, name: username || `Player ${socket.id.substring(0,4)}`, socket };
+    const player = {
+        id: socket.id,
+        name: username || `Player ${socket.id.substring(0,4)}`,
+        socket,
+        rating: displayRating
+    };
+
     const result = roomManager.joinRoom(targetRoomId, player);
     console.log(`Join result:`, result.error || 'success');
 
@@ -164,6 +193,11 @@ io.on('connection', (socket) => {
                           newRating ? newRating.mu : null,
                           newRating ? newRating.sigma : null
                         );
+
+                      // Update player object in room with new rating so UI updates
+                      if (newRating) {
+                          p.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
+                      }
                   } catch (e) {
                       console.error("Failed to update stats for", p.name, e);
                   }

@@ -5,6 +5,31 @@ const { rate, rating, ordinal } = require('openskill');
 const DEFAULT_MU = 25;
 const DEFAULT_SIGMA = 25 / 3;
 
+// Constants for display rating calculation
+const RATING_OFFSET = 1200;
+const RATING_MULTIPLIER = 40;
+
+/**
+ * Calculates the display rating from OpenSkill mu and sigma.
+ * Formula: 1200 + (mu - 3*sigma) * 40
+ * This maps a new player (0 conservative rating) to 1200.
+ *
+ * @param {number} mu - Skill mean
+ * @param {number} sigma - Uncertainty
+ * @returns {number} - The display rating (rounded integer)
+ */
+function calculateDisplayRating(mu, sigma) {
+    if (mu === undefined || mu === null) mu = DEFAULT_MU;
+    if (sigma === undefined || sigma === null) sigma = DEFAULT_SIGMA;
+
+    // We use the raw values directly instead of ordinal() from openskill
+    // because ordinal() might have its own implementation details we want to control,
+    // although ordinal() is typically mu - 3*sigma.
+    // Let's stick to the formula explicitly agreed upon.
+    const conservativeRating = mu - 3 * sigma;
+    return Math.round((conservativeRating * RATING_MULTIPLIER) + RATING_OFFSET);
+}
+
 /**
  * Calculates new ratings for a game of Big 2 using OpenSkill.
  *
@@ -71,4 +96,4 @@ function calculateNewRatings(players, finalScores) {
     return updates;
 }
 
-module.exports = { calculateNewRatings };
+module.exports = { calculateNewRatings, calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA };

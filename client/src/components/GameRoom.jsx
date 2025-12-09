@@ -99,7 +99,9 @@ const TopPlayerArea = ({ player, isTurn }) => {
                             DC
                         </div>
                     )}
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                        {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
+                    </div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
             </div>
@@ -136,7 +138,9 @@ const LeftPlayerArea = ({ player, isTurn }) => {
                             DC
                         </div>
                     )}
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                        {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
+                    </div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
             </div>
@@ -167,7 +171,9 @@ const RightPlayerArea = ({ player, isTurn }) => {
                             DC
                         </div>
                     )}
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{player.name}</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                        {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
+                    </div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
                 {/* Cards - vertical stack, each card rotated (wider than tall) */}
@@ -670,7 +676,12 @@ const GameRoom = ({ user, socket }) => {
                         ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
                         {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
                     </div>
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">{user?.username || 'You'}</div>
+                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                        {user?.username || 'You'}
+                        {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
+                            <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
+                        )}
+                    </div>
                     <div className="text-yellow-300 text-[0.7vmax]">{myHand.length} Cards</div>
                 </div>
             </div>
