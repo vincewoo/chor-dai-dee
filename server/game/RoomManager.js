@@ -2,6 +2,7 @@
 const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
 const { BotLogic } = require('./BotLogic');
+const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 
 class Room {
     constructor(roomId) {
@@ -133,11 +134,30 @@ class Room {
             // Auto-fill with bots if < 4
             while (this.players.length < 4) {
                 const botId = `bot_${Date.now()}_${this.players.length}`;
+
+                // Set ratings based on bot type
+                // Regular bot: Default rating (conservatively 0 -> 1200)
+                // Advanced bot: Higher rating. mu=35, sigma=3 -> conservative 26 -> 2240
+
+                let mu, sigma;
+                if (useAdvancedBots) {
+                    mu = 35;
+                    sigma = 3;
+                } else {
+                    mu = DEFAULT_MU;
+                    sigma = DEFAULT_SIGMA;
+                }
+
+                const displayRating = calculateDisplayRating(mu, sigma);
+
                 this.players.push({
                     id: botId,
                     name: `${useAdvancedBots ? 'Advanced ' : ''}Bot ${this.players.length + 1}`,
                     isBot: true,
-                    difficulty: useAdvancedBots ? 'advanced' : 'easy'
+                    difficulty: useAdvancedBots ? 'advanced' : 'easy',
+                    rating_mu: mu,
+                    rating_sigma: sigma,
+                    rating: displayRating
                 });
             }
         }
@@ -453,7 +473,8 @@ class Room {
                 isBot: p.isBot,
                 isDisconnected: p.isDisconnected || false,
                 lastPlayed: this.playerLastPlayed[p.id] || null,
-                cumulativeScore: this.cumulativeScores[p.id] || 0
+                cumulativeScore: this.cumulativeScores[p.id] || 0,
+                rating: p.rating
             })),
             currentTurn: this.players[this.currentTurnIndex]?.id,
             lastPlayedHand: this.lastPlayedHand,
