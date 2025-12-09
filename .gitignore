@@ -4,3 +4,4 @@ build
 .env
 *.log
 .DS_Store
+chor-dai-dee.tar.gz
