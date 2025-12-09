@@ -1,6 +1,8 @@
 // server/game/BotLogic.js
 const { Big2Rules, HAND_TYPES } = require('./Big2Rules');
 const { RANKS, SUITS } = require('./Deck');
+const { spawn } = require('child_process');
+const path = require('path');
 
 // Hand type priorities for 5-card hands (higher = stronger)
 const FIVE_CARD_PRIORITY = {
@@ -27,6 +29,22 @@ const BotLogic = {
      * @returns {Array|Object} - If captureReasoning is false, returns cards array. Otherwise returns { cards, reasoning }
      */
     getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}, captureReasoning = false) => {
+        // Check if we should use the advanced ML bot
+        // For now, let's use it if available.
+        // In the future, this could be a setting.
+        // We'll return a Promise if we use the async advanced bot, but this function is sync.
+        // To handle this in the current codebase structure (likely synchronous loops),
+        // we might need to rely on the current sync implementation OR refactor the caller to handle async.
+        //
+        // However, BotLogic.getBotMove seems to be designed as synchronous.
+        // Using spawnSync would block the event loop which is bad for Node.
+        // BUT for a turn-based game, 100-200ms blocking might be acceptable for a prototype.
+        // Let's try to check if we can make it async. The user asked to "incorporate it".
+        // Assuming I should add a NEW async method `getAdvancedBotMove` and the caller needs to update.
+        //
+        // But the prompt implies replacing/incorporating into "our bot system".
+        // I will add a separate async function and keep getBotMove for backward compatibility / fallback.
+
         const reasoning = captureReasoning ? {
             situation: {},
             candidatesConsidered: [],
@@ -132,6 +150,106 @@ const BotLogic = {
         }
 
         return captureReasoning ? { cards: selectedMove.cards, reasoning } : selectedMove.cards;
+    },
+
+    /**
+     * Get the best move using the Advanced Python PPO Bot
+     * @returns {Promise<Array|Object>} - Returns Promise resolving to cards array
+     */
+    getAdvancedBotMove: async (hand, lastPlayedHand, isFirstTurn, gameContext = {}) => {
+        return new Promise((resolve, reject) => {
+            const pythonScript = path.join(__dirname, '../ai/inference.py');
+
+            // Construct input JSON
+            const inputData = {
+                hand: hand,
+                lastPlayedHand: lastPlayedHand,
+                isFirstTurn: isFirstTurn,
+                // Pass count
+                passCount: gameContext.passCount || 0,
+                // Opponent cards (Next, Across, Previous)
+                opponentCardCounts: gameContext.playerCardCounts || [13, 13, 13],
+                // Played cards history
+                playedCards: gameContext.playedCards || [],
+                // Who played last relative to us (for context reconstruction)
+                lastPlayedByRelative: gameContext.lastPlayedByRelative
+            };
+
+            const proc = spawn('python3', [pythonScript]);
+
+            let stdoutData = '';
+            let stderrData = '';
+
+            proc.stdout.on('data', (data) => {
+                stdoutData += data.toString();
+            });
+
+            proc.stderr.on('data', (data) => {
+                stderrData += data.toString();
+            });
+
+            proc.on('close', (code) => {
+                if (code !== 0) {
+                    console.error('Python bot failed:', stderrData);
+                    // Fallback to legacy bot
+                    console.log('Falling back to legacy bot...');
+                    resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
+                    return;
+                }
+
+                try {
+                    const result = JSON.parse(stdoutData);
+
+                    if (result.error) {
+                         console.error('Python bot error:', result.error);
+                         resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
+                         return;
+                    }
+
+                    if (result.action === 'pass') {
+                        resolve(null);
+                    } else if (result.action === 'play') {
+                        // The Python bot returns card objects.
+                        // We need to ensure they match our internal structure if needed.
+                        // Our internal structure is { rank: '...', suit: '...' }.
+                        // inference.py returns exactly that.
+
+                        // However, we should validate the move is valid using our rules engine.
+                        const moveCards = result.cards;
+                        const validMoves = BotLogic.getAllValidMoves(hand);
+
+                        // Find matching valid move
+                        // This ensures we don't play something illegal if the ML bot hallucinates
+                        const match = validMoves.find(m => {
+                            if (m.cards.length !== moveCards.length) return false;
+                            // Check if all cards match
+                            return m.cards.every(c =>
+                                moveCards.some(mc => mc.rank === c.rank && mc.suit === c.suit)
+                            );
+                        });
+
+                        if (match) {
+                             resolve(match.cards);
+                        } else {
+                            console.warn('ML Bot suggested invalid move:', moveCards);
+                            // Fallback
+                            resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
+                        }
+                    } else {
+                         // Fallback
+                         resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
+                    }
+
+                } catch (e) {
+                    console.error('Failed to parse ML bot output:', e, stdoutData);
+                    resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
+                }
+            });
+
+            // Send input
+            proc.stdin.write(JSON.stringify(inputData));
+            proc.stdin.end();
+        });
     },
 
     /**

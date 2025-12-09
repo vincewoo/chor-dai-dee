@@ -22,6 +22,7 @@ class Room {
         this.debugMode = false; // Enable bot reasoning capture
         this.lastBotReasoning = null; // Store the most recent bot decision reasoning
         this.playersByUsername = {}; // Map username -> player for reconnection
+        this.settings = { useAdvancedBots: false }; // Room settings
     }
 
     addPlayer(player) {
@@ -125,16 +126,18 @@ class Room {
         }
     }
 
-    startGame() {
+    startGame(useAdvancedBots = false) {
+        this.settings.useAdvancedBots = useAdvancedBots;
+
         if (this.players.length < 4) {
             // Auto-fill with bots if < 4
             while (this.players.length < 4) {
                 const botId = `bot_${Date.now()}_${this.players.length}`;
                 this.players.push({
                     id: botId,
-                    name: `Bot ${this.players.length + 1}`,
+                    name: `${useAdvancedBots ? 'Advanced ' : ''}Bot ${this.players.length + 1}`,
                     isBot: true,
-                    difficulty: 'easy'
+                    difficulty: useAdvancedBots ? 'advanced' : 'easy'
                 });
             }
         }
@@ -374,46 +377,69 @@ class Room {
                 }
             }
 
-            // Get bot move with optional reasoning capture
-            const result = BotLogic.getBotMove(
-                currentPlayer.hand,
-                this.lastPlayedHand,
-                isFirstTurn,
-                gameContext,
-                this.debugMode // Pass debug mode flag
-            );
-
-            // Extract move and reasoning based on debug mode
-            const move = this.debugMode ? result.cards : result;
-            const reasoning = this.debugMode ? result.reasoning : null;
-
-            // Store reasoning if in debug mode
-            if (this.debugMode && reasoning) {
-                this.lastBotReasoning = {
-                    botId: currentPlayer.id,
-                    botName: currentPlayer.name,
-                    timestamp: Date.now(),
-                    ...reasoning
-                };
-            }
-
-            setTimeout(() => {
-                if (move) {
-                    // Play
-                    const res = this.playHand(currentPlayer.id, move);
-                    if (res.success) {
-                        if (res.roundOver) {
-                            callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning });
-                        } else {
-                            callback({ type: 'play', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
-                        }
-                    }
-                } else {
-                    // Pass
-                    this.passTurn(currentPlayer.id);
-                    callback({ type: 'pass', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
+            const handleBotMove = (move, reasoning) => {
+                // Store reasoning if in debug mode
+                if (this.debugMode && reasoning) {
+                    this.lastBotReasoning = {
+                        botId: currentPlayer.id,
+                        botName: currentPlayer.name,
+                        timestamp: Date.now(),
+                        ...reasoning
+                    };
                 }
-            }, 1000); // 1s delay for realism
+
+                setTimeout(() => {
+                    if (move) {
+                        // Play
+                        const res = this.playHand(currentPlayer.id, move);
+                        if (res.success) {
+                            if (res.roundOver) {
+                                callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning });
+                            } else {
+                                callback({ type: 'play', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
+                            }
+                        }
+                    } else {
+                        // Pass
+                        this.passTurn(currentPlayer.id);
+                        callback({ type: 'pass', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
+                    }
+                }, 1000); // 1s delay for realism
+            };
+
+            // Choose bot logic based on settings
+            if (this.settings.useAdvancedBots) {
+                BotLogic.getAdvancedBotMove(
+                    currentPlayer.hand,
+                    this.lastPlayedHand,
+                    isFirstTurn,
+                    gameContext
+                ).then(move => {
+                    // Advanced bot currently doesn't return detailed reasoning structure in the same way
+                    handleBotMove(move, { model: 'PPO-Big2', note: 'Advanced Bot Decision' });
+                }).catch(err => {
+                    console.error('Error getting advanced bot move:', err);
+                    // Fallback to basic bot
+                    const result = BotLogic.getBotMove(currentPlayer.hand, this.lastPlayedHand, isFirstTurn, gameContext, this.debugMode);
+                    const move = this.debugMode ? result.cards : result;
+                    const reasoning = this.debugMode ? result.reasoning : null;
+                    handleBotMove(move, reasoning);
+                });
+            } else {
+                // Legacy Bot
+                const result = BotLogic.getBotMove(
+                    currentPlayer.hand,
+                    this.lastPlayedHand,
+                    isFirstTurn,
+                    gameContext,
+                    this.debugMode // Pass debug mode flag
+                );
+
+                // Extract move and reasoning based on debug mode
+                const move = this.debugMode ? result.cards : result;
+                const reasoning = this.debugMode ? result.reasoning : null;
+                handleBotMove(move, reasoning);
+            }
         }
     }
 

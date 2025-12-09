@@ -196,6 +196,7 @@ const GameRoom = ({ user, socket }) => {
     const [autoPass, setAutoPass] = useState(false);
     const autoPassTriggered = useRef(false);
     const [showDebugPanel, setShowDebugPanel] = useState(false);
+    const [useAdvancedBots, setUseAdvancedBots] = useState(false);
     const [botReasoning, setBotReasoning] = useState(null);
     const [notification, setNotification] = useState(null);
     const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
@@ -302,7 +303,7 @@ const GameRoom = ({ user, socket }) => {
     }, [autoPass, gameState, myHand, socket, roomId]);
 
     const startGame = () => {
-        socket.emit('start_game', { roomId });
+        socket.emit('start_game', { roomId, useAdvancedBots });
     };
 
     const nextRound = () => {
@@ -510,9 +511,23 @@ const GameRoom = ({ user, socket }) => {
                             <div key={i} className="bg-white/20 p-[1vmax] rounded border-2 border-dashed border-white min-w-[6vmax] text-center text-[1vmax]">Empty</div>
                         ))}
                     </div>
-                    <button onClick={startGame} className="bg-yellow-500 text-black px-[2vmax] py-[0.75vmax] rounded-full font-bold text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-[1vmax]">
-                        Start Game (Fill with Bots)
-                    </button>
+                    <div className="flex flex-col items-center gap-2 mb-[1vmax]">
+                        <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded">
+                            <input
+                                type="checkbox"
+                                id="advancedBots"
+                                checked={useAdvancedBots}
+                                onChange={(e) => setUseAdvancedBots(e.target.checked)}
+                                className="w-4 h-4 cursor-pointer"
+                            />
+                            <label htmlFor="advancedBots" className="cursor-pointer select-none text-[1vmax]">
+                                Enable Advanced AI Bots
+                            </label>
+                        </div>
+                        <button onClick={startGame} className="bg-yellow-500 text-black px-[2vmax] py-[0.75vmax] rounded-full font-bold text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105">
+                            Start Game (Fill with Bots)
+                        </button>
+                    </div>
                     <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-[0.9vmax]">
                         Leave Room
                     </button>
