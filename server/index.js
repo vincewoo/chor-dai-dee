@@ -100,7 +100,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  const handleRoundOver = (room, roomId, roundWinner) => {
+  const handleRoundOver = async (room, roomId, roundWinner) => {
       const roundScores = calculateRoundScores(roundWinner, room.players);
       const isGameOver = room.updateScores(roundScores);
 
@@ -243,10 +243,10 @@ io.on('connection', (socket) => {
       }
   });
 
-  socket.on('start_game', ({ roomId }) => {
+  socket.on('start_game', ({ roomId, useAdvancedBots }) => {
       const room = roomManager.getRoom(roomId);
       if (room) {
-          room.startGame();
+          room.startGame(useAdvancedBots);
           // Broadcast full state
           io.to(roomId).emit('game_started', room.getGameState());
           // Send individual hands
