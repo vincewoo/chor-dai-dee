@@ -5,4 +5,4 @@ build
 *.log
 .DS_Store
 chor-dai-dee.tar.gz
-__pycache__
+*.pyc

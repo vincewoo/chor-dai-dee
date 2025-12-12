@@ -50,10 +50,17 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
         return lastPlayedHand.cards.map(c => `${c.rank}${c.suit}`).join(',');
     }, [lastPlayedHand]);
 
-    // Find all available hand types (excluding singles)
+    // Find ALL available hand types (pass null to get all, not just beatable)
     const availableHandTypes = useMemo(() => {
-        const allTypes = findAvailableHandTypes(playerHand, lastPlayedHand);
+        const allTypes = findAvailableHandTypes(playerHand, null);
         return allTypes.filter(h => SHOWN_HAND_TYPES.includes(h.type));
+    }, [playerHand]);
+
+    // Find which hand types can beat the current hand (for highlighting)
+    const beatableHandTypes = useMemo(() => {
+        if (!lastPlayedHand) return new Set();
+        const beatable = findAvailableHandTypes(playerHand, lastPlayedHand);
+        return new Set(beatable.map(h => h.type));
     }, [playerHand, lastPlayedHand]);
 
     // Check if current activeType is still valid
@@ -64,7 +71,27 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
 
     // Handle clicking on a hand type button
     const handleTypeClick = useCallback((type) => {
-        const hands = findEligibleHands(playerHand, lastPlayedHand, type);
+        // Get ALL hands of this type
+        const allHands = findEligibleHands(playerHand, null, type);
+
+        let hands = allHands;
+        if (lastPlayedHand) {
+            // Get beatable hands and sort them first
+            const beatableHands = findEligibleHands(playerHand, lastPlayedHand, type);
+            const beatableSet = new Set(
+                beatableHands.map(h => h.cards.map(c => `${c.rank}-${c.suit}`).join(','))
+            );
+
+            hands = [
+                ...allHands.filter(h =>
+                    beatableSet.has(h.cards.map(c => `${c.rank}-${c.suit}`).join(','))
+                ),
+                ...allHands.filter(h =>
+                    !beatableSet.has(h.cards.map(c => `${c.rank}-${c.suit}`).join(','))
+                )
+            ];
+        }
+
         if (hands.length === 0) return;
 
         if (activeType === type && isActiveTypeValid) {
@@ -100,6 +127,7 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
 
             {availableHandTypes.map(({ type, count }) => {
                 const isActive = activeType === type && isActiveTypeValid;
+                const canBeat = beatableHandTypes.has(type);
                 const currentIndex = isActive ? activeIndex + 1 : 0;
 
                 return (
@@ -112,10 +140,12 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
                             hover:scale-105 active:scale-95
                             ${isActive
                                 ? 'bg-yellow-500 text-black ring-2 ring-yellow-300'
-                                : 'bg-gray-700 text-white hover:bg-gray-600'
+                                : canBeat
+                                    ? 'bg-green-600 text-white hover:bg-green-500'
+                                    : 'bg-gray-700 text-white hover:bg-gray-600'
                             }
                         `}
-                        title={`${HAND_SHORT_NAMES[type]} (${count} available)`}
+                        title={`${HAND_SHORT_NAMES[type]} (${count} available)${canBeat ? ' - Can beat!' : ''}`}
                     >
                         <span className="text-[0.9vmax]">{HAND_ICONS[type]}</span>
                         <span>{HAND_SHORT_NAMES[type]}</span>

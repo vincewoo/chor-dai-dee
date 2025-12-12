@@ -6,6 +6,9 @@ import { canBeatWithAnyHand } from '../utils/handChecker';
 import HandHelper from './HandHelper';
 import BotDebugPanel from './BotDebugPanel';
 import { useSuitColors } from '../contexts/SuitColorContext';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -34,6 +37,43 @@ const getPlayedHandKey = (lastPlayed) => {
     if (!lastPlayed) return null;
     if (lastPlayed.type === 'pass') return 'pass';
     return lastPlayed.cards?.map(c => `${c.rank}-${c.suit}`).join(',') || null;
+};
+
+// Sortable card wrapper component for drag-and-drop
+const SortableCard = ({ card, isSelected, onClick, index }) => {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id: `${card.rank}-${card.suit}` });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        marginLeft: index === 0 ? 0 : '-1.5vmax',
+        zIndex: isDragging ? 50 : 'auto',
+    };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={`hover:ml-0 transition-all ${isDragging ? 'opacity-50' : ''}`}
+            {...attributes}
+            {...listeners}
+        >
+            <Card
+                rank={card.rank}
+                suit={card.suit}
+                selected={isSelected}
+                onClick={onClick}
+                index={index}
+            />
+        </div>
+    );
 };
 
 // Played cards display component - extracted to prevent re-renders
@@ -206,6 +246,15 @@ const GameRoom = ({ user, socket }) => {
     const navigate = useNavigate();
     const { fourColorMode, toggleFourColorMode } = useSuitColors();
 
+    // Configure drag-and-drop sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8, // Minimum drag distance to activate (prevents accidental drags on click)
+            },
+        })
+    );
+
     const [gameState, setGameState] = useState(null);
     const [myHand, setMyHand] = useState([]);
     const [selectedCards, setSelectedCards] = useState([]);
@@ -219,14 +268,21 @@ const GameRoom = ({ user, socket }) => {
     const [botReasoning, setBotReasoning] = useState(null);
     const [notification, setNotification] = useState(null);
     const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
+    const [isCustomOrder, setIsCustomOrder] = useState(false); // Track if hand is manually arranged
+    const [customHandOrder, setCustomHandOrder] = useState(null); // Store custom card order
 
     // Sorted hand based on current sort mode
     const sortedHand = useMemo(() => {
+        // Use custom order if in custom mode
+        if (isCustomOrder && customHandOrder) {
+            return customHandOrder;
+        }
+        // Otherwise apply current sort mode
         if (sortMode === 'suit') {
             return sortBySuit(myHand);
         }
         return sortByRank(myHand);
-    }, [myHand, sortMode]);
+    }, [myHand, sortMode, isCustomOrder, customHandOrder]);
 
     useEffect(() => {
         // Join room first (handles reconnection if needed), then request state
@@ -250,6 +306,8 @@ const GameRoom = ({ user, socket }) => {
         socket.on('hand_update', (hand) => {
             setMyHand(hand);
             setSelectedCards([]);
+            setIsCustomOrder(false); // Reset custom order on new hand
+            setCustomHandOrder(null);
         });
 
         socket.on('game_update', (state) => {
@@ -344,10 +402,94 @@ const GameRoom = ({ user, socket }) => {
         }
     };
 
+    // Helper function to reorder selected cards as a group
+    const reorderSelectedCards = (hand, selectedCards, overCardId) => {
+        const selectedSet = new Set(selectedCards.map(c => `${c.rank}-${c.suit}`));
+
+        // Remove selected cards while preserving their order
+        const selectedInOrder = [];
+        const remaining = hand.filter(card => {
+            const key = `${card.rank}-${card.suit}`;
+            if (selectedSet.has(key)) {
+                selectedInOrder.push(card);
+                return false;
+            }
+            return true;
+        });
+
+        // Find the position to insert in the remaining array
+        const insertIndex = remaining.findIndex(card => `${card.rank}-${card.suit}` === overCardId);
+
+        // If not found (shouldn't happen), append to end
+        if (insertIndex === -1) {
+            return [...remaining, ...selectedInOrder];
+        }
+
+        // Insert selected cards at the target position
+        const result = [...remaining];
+        result.splice(insertIndex, 0, ...selectedInOrder);
+        return result;
+    };
+
+    // Handle drag end event
+    const handleDragEnd = (event) => {
+        const { active, over } = event;
+
+        if (!over || active.id === over.id) return;
+
+        const currentHand = isCustomOrder && customHandOrder ? customHandOrder : sortedHand;
+        const oldIndex = currentHand.findIndex(card => `${card.rank}-${card.suit}` === active.id);
+        const newIndex = currentHand.findIndex(card => `${card.rank}-${card.suit}` === over.id);
+
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        const draggedCard = currentHand[oldIndex];
+        const isDraggingSelected = selectedCards.some(
+            c => c.rank === draggedCard.rank && c.suit === draggedCard.suit
+        );
+
+        let reorderedHand;
+
+        if (isDraggingSelected && selectedCards.length > 1) {
+            // Check if dropping over another selected card (part of the group)
+            const isOverSelected = selectedCards.some(
+                c => `${c.rank}-${c.suit}` === over.id
+            );
+
+            if (isOverSelected) {
+                // Dropping within the same selected group - no change
+                return;
+            }
+
+            // Group drag: move all selected cards to where we dropped
+            reorderedHand = reorderSelectedCards(currentHand, selectedCards, over.id);
+        } else {
+            // Single drag: move one card
+            reorderedHand = [...currentHand];
+            const [removed] = reorderedHand.splice(oldIndex, 1);
+            reorderedHand.splice(newIndex, 0, removed);
+        }
+
+        setIsCustomOrder(true);
+        setCustomHandOrder(reorderedHand);
+    };
+
     // Callback for HandHelper to set selected cards
     const handleSelectCards = useCallback((cards) => {
         setSelectedCards(cards);
     }, []);
+
+    // Handle sort button click
+    const handleSortClick = () => {
+        if (isCustomOrder) {
+            // Reset to sorted mode
+            setIsCustomOrder(false);
+            setCustomHandOrder(null);
+        } else {
+            // Toggle between rank and suit
+            setSortMode(sortMode === 'rank' ? 'suit' : 'rank');
+        }
+    };
 
     const playCards = () => {
         if (selectedCards.length === 0) return;
@@ -661,11 +803,25 @@ const GameRoom = ({ user, socket }) => {
                             Auto-Pass {autoPass ? 'ON' : 'OFF'}
                         </button>
                         <button
-                            onClick={() => setSortMode(sortMode === 'rank' ? 'suit' : 'rank')}
-                            className="px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-[0.85vmax] bg-purple-600 text-white hover:bg-purple-500"
-                            title={`Currently sorting by ${sortMode}. Click to sort by ${sortMode === 'rank' ? 'suit' : 'rank'}.`}
+                            onClick={handleSortClick}
+                            className={`
+                                px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg
+                                transition transform hover:scale-105 text-[0.85vmax]
+                                ${isCustomOrder
+                                    ? 'bg-orange-500 text-white hover:bg-orange-400 ring-2 ring-orange-300'
+                                    : 'bg-purple-600 text-white hover:bg-purple-500'
+                                }
+                            `}
+                            title={
+                                isCustomOrder
+                                    ? 'Custom order - Click to resort'
+                                    : `Currently sorting by ${sortMode}. Click to sort by ${sortMode === 'rank' ? 'suit' : 'rank'}.`
+                            }
                         >
-                            Sort: {sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}
+                            {isCustomOrder
+                                ? '🔀 Custom'
+                                : `Sort: ${sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}`
+                            }
                         </button>
                         <button
                             onClick={toggleFourColorMode}
@@ -678,22 +834,31 @@ const GameRoom = ({ user, socket }) => {
                     </div>
 
                     {/* My Hand */}
-                    <div className="flex justify-center transition-all duration-300 hover:gap-[0.5vmax]" style={{ gap: '-1.5vmax' }}>
-                        {sortedHand.map((card, index) => {
-                             const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
-                             return (
-                                <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: index === 0 ? 0 : '-1.5vmax' }} className="hover:ml-0 transition-all">
-                                    <Card
-                                        rank={card.rank}
-                                        suit={card.suit}
-                                        selected={isSelected}
-                                        onClick={() => toggleCard(card)}
-                                        index={index}
-                                    />
-                                </div>
-                             );
-                        })}
-                    </div>
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                    >
+                        <SortableContext
+                            items={sortedHand.map(card => `${card.rank}-${card.suit}`)}
+                            strategy={horizontalListSortingStrategy}
+                        >
+                            <div className="flex justify-center transition-all duration-300 hover:gap-[0.5vmax]" style={{ gap: '-1.5vmax' }}>
+                                {sortedHand.map((card, index) => {
+                                    const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
+                                    return (
+                                        <SortableCard
+                                            key={`${card.rank}-${card.suit}`}
+                                            card={card}
+                                            isSelected={isSelected}
+                                            onClick={() => toggleCard(card)}
+                                            index={index}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </SortableContext>
+                    </DndContext>
                 </div>
 
                 {/* Right side: Avatar */}
