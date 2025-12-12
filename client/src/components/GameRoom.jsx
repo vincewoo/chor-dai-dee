@@ -48,11 +48,22 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
         transform,
         transition,
         isDragging
-    } = useSortable({ id: `${card.rank}-${card.suit}` });
+    } = useSortable({
+        id: `${card.rank}-${card.suit}`,
+        transition: {
+            duration: 150,
+            easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+        },
+    });
+
+    const defaultTransition = 'margin-left 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
+    const styleTransition = isDragging
+        ? undefined
+        : (transition ? `${transition}, ${defaultTransition}` : defaultTransition);
 
     const style = {
         transform: CSS.Transform.toString(transform),
-        transition,
+        transition: styleTransition,
         marginLeft: index === 0 ? 0 : '-1.5vmax',
         zIndex: isDragging ? 50 : 'auto',
     };
@@ -61,7 +72,7 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
         <div
             ref={setNodeRef}
             style={style}
-            className={`hover:ml-0 transition-all ${isDragging ? 'opacity-50' : ''}`}
+            className={`hover:ml-0 ${isDragging ? 'opacity-50' : ''}`}
             {...attributes}
             {...listeners}
         >
