@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
 import HandHelper from './HandHelper';
 import BotDebugPanel from './BotDebugPanel';
+import { useSuitColors } from '../contexts/SuitColorContext';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -38,11 +39,14 @@ const getPlayedHandKey = (lastPlayed) => {
 // Played cards display component - extracted to prevent re-renders
 const PlayedCards = ({ lastPlayed, position }) => {
     const positionClasses = {
-        top: "absolute top-[14vh] left-1/2 -translate-x-1/2 flex",
-        left: "absolute left-[8vw] top-1/2 -translate-y-1/2 flex",
-        right: "absolute right-[8vw] top-1/2 -translate-y-1/2 flex",
-        bottom: "absolute bottom-[22vh] left-1/2 -translate-x-1/2 flex"
+        top: "absolute top-[18vh] left-1/2 -translate-x-1/2",
+        left: "absolute left-[12vw] top-1/2 -translate-y-1/2",
+        right: "absolute right-[12vw] top-1/2 -translate-y-1/2",
+        bottom: "absolute bottom-[26vh] left-1/2 -translate-x-1/2"
     };
+
+    const isVertical = position === 'left' || position === 'right';
+    const rotationDeg = position === 'left' ? 90 : position === 'right' ? -90 : 0;
 
     return (
         <AnimatePresence mode="wait">
@@ -50,22 +54,30 @@ const PlayedCards = ({ lastPlayed, position }) => {
                 <motion.div
                     key={getPlayedHandKey(lastPlayed)}
                     className={positionClasses[position]}
-                    style={{ gap: '-1vmax', marginLeft: '-1vmax' }}
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15 }}
                 >
-                    {lastPlayed.type === 'pass' ? (
-                        <div className="text-red-400 font-bold text-[1.5vmax] bg-black/50 px-[1vmax] py-[0.5vmax] rounded-lg">
-                            PASS
-                        </div>
-                    ) : (
-                        lastPlayed.cards?.map((card) => (
-                            <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: '-1.5vmax' }}>
-                                <Card rank={card.rank} suit={card.suit} size="small" />
+                    <div
+                        className="flex"
+                        style={{
+                            transform: `rotate(${rotationDeg}deg)`,
+                            gap: '-1vmax',
+                            marginLeft: '-1vmax'
+                        }}
+                    >
+                        {lastPlayed.type === 'pass' ? (
+                            <div className="text-red-400 font-bold text-[2vmax] bg-black/50 px-[1.5vmax] py-[0.75vmax] rounded-lg">
+                                PASS
                             </div>
-                        ))
-                    )}
+                        ) : (
+                            lastPlayed.cards?.map((card) => (
+                                <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: '-2vmax' }}>
+                                    <Card rank={card.rank} suit={card.suit} size="large" />
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </motion.div>
             )}
         </AnimatePresence>
@@ -85,7 +97,7 @@ const TopPlayerArea = ({ player, isTurn }) => {
                 {/* Cards - horizontal */}
                 <div className="flex" style={{ marginLeft: '-2vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-[1.8vmax] h-[2.5vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginLeft: '-1vmax' }}></div>
+                        <div key={i} className="w-[3.3vmax] h-[4.5vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginLeft: '-1.5vmax' }}></div>
                     ))}
                 </div>
                 {/* Avatar */}
@@ -121,10 +133,10 @@ const LeftPlayerArea = ({ player, isTurn }) => {
         <>
             {/* Player info and cards */}
             <div className={`absolute left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
-                {/* Cards - vertical stack, each card rotated (wider than tall) */}
-                <div className="flex flex-col mb-[0.75vmax]" style={{ marginTop: '-1vmax' }}>
+                {/* Cards - horizontal stack */}
+                <div className="flex flex-col mb-[1.5vmax]" style={{ marginTop: '-1.5vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-[2.5vmax] h-[1.8vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-0.8vmax' }}></div>
+                        <div key={i} className="w-[4.5vmax] h-[3.3vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-1.2vmax' }}></div>
                     ))}
                 </div>
                 {/* Avatar */}
@@ -161,7 +173,7 @@ const RightPlayerArea = ({ player, isTurn }) => {
             {/* Player info and cards */}
             <div className={`absolute right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
-                <div className="flex flex-col items-center mb-[0.75vmax] relative">
+                <div className="flex flex-col items-center mb-[2.5vmax] relative">
                     <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
                         ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
@@ -176,10 +188,10 @@ const RightPlayerArea = ({ player, isTurn }) => {
                     </div>
                     <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
-                {/* Cards - vertical stack, each card rotated (wider than tall) */}
-                <div className="flex flex-col" style={{ marginTop: '-1vmax' }}>
+                {/* Cards - horizontal stack */}
+                <div className="flex flex-col" style={{ marginTop: '-1.5vmax' }}>
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-[2.5vmax] h-[1.8vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-0.8vmax' }}></div>
+                        <div key={i} className="w-[4.5vmax] h-[3.3vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-1.2vmax' }}></div>
                     ))}
                 </div>
             </div>
@@ -192,6 +204,7 @@ const RightPlayerArea = ({ player, isTurn }) => {
 const GameRoom = ({ user, socket }) => {
     const { roomId } = useParams();
     const navigate = useNavigate();
+    const { fourColorMode, toggleFourColorMode } = useSuitColors();
 
     const [gameState, setGameState] = useState(null);
     const [myHand, setMyHand] = useState([]);
@@ -216,8 +229,13 @@ const GameRoom = ({ user, socket }) => {
     }, [myHand, sortMode]);
 
     useEffect(() => {
-        // Request current room state when component mounts
-        socket.emit('get_room_state', { roomId });
+        // Join room first (handles reconnection if needed), then request state
+        socket.emit('join_room', { roomId, username: user?.username });
+
+        // Small delay to allow reconnection to complete before requesting state
+        setTimeout(() => {
+            socket.emit('get_room_state', { roomId });
+        }, 100);
 
         socket.on('room_update', (state) => {
             setGameState(state);
@@ -574,22 +592,22 @@ const GameRoom = ({ user, socket }) => {
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             transition={{ type: "spring", stiffness: 200, damping: 15 }}
                         >
-                            <div className="text-white/70 text-[0.9vmax] mb-[0.5vmax] font-semibold">Hand to Beat</div>
-                            <div className="flex bg-black/30 px-[1vmax] py-[0.75vmax] rounded-xl" style={{ marginLeft: '-1vmax' }}>
+                            <div className="text-white/70 text-[1.2vmax] mb-[0.5vmax] font-semibold">Hand to Beat</div>
+                            <div className="flex bg-black/30 px-[1.5vmax] py-[1vmax] rounded-xl" style={{ marginLeft: '-1.5vmax' }}>
                                 {gameState.lastPlayedHand.cards.map((card) => (
-                                    <div key={`center-${card.rank}-${card.suit}`} style={{ marginLeft: '-0.5vmax' }}>
-                                        <Card rank={card.rank} suit={card.suit} />
+                                    <div key={`center-${card.rank}-${card.suit}`} style={{ marginLeft: '-1vmax' }}>
+                                        <Card rank={card.rank} suit={card.suit} size="large" />
                                     </div>
                                 ))}
                             </div>
-                            <div className="text-white/50 text-[0.8vmax] mt-[0.5vmax]">
+                            <div className="text-white/50 text-[1vmax] mt-[0.75vmax]">
                                 {gameState.lastPlayedHand.type.replace(/_/g, ' ').toUpperCase()}
                             </div>
                         </motion.div>
                     ) : (
                         <motion.div
                             key="free-play"
-                            className="text-white/30 font-bold text-[1.2vmax] border-2 border-dashed border-white/30 px-[1.5vmax] py-[0.75vmax] rounded-lg"
+                            className="text-white/30 font-bold text-[1.5vmax] border-2 border-dashed border-white/30 px-[2vmax] py-[1vmax] rounded-lg"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                         >
@@ -648,6 +666,14 @@ const GameRoom = ({ user, socket }) => {
                             title={`Currently sorting by ${sortMode}. Click to sort by ${sortMode === 'rank' ? 'suit' : 'rank'}.`}
                         >
                             Sort: {sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}
+                        </button>
+                        <button
+                            onClick={toggleFourColorMode}
+                            className={`px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-[0.85vmax]
+                                ${fourColorMode ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                            title="Toggle 4-color suits for better visibility (blue diamonds, green clubs)"
+                        >
+                            4-Color {fourColorMode ? 'ON' : 'OFF'}
                         </button>
                     </div>
 

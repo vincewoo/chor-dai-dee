@@ -1,6 +1,7 @@
 import React from 'react';
-import { SUIT_SYMBOLS, SUIT_COLORS } from '../constants';
+import { SUIT_SYMBOLS } from '../constants';
 import { motion } from 'framer-motion';
+import { useSuitColors } from '../contexts/SuitColorContext';
 
 // Pip layout positions for number cards (as percentages of the pip container)
 // Container is inset 12% from card edges, so these are relative to that inner area
@@ -96,6 +97,8 @@ const FaceCard = ({ rank }) => {
 };
 
 const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' }) => {
+    const { suitColors } = useSuitColors();
+
     const sizeClasses = {
         small: 'w-[3vmax] h-[4.5vmax]',
         normal: 'w-[4vmax] h-[6vmax]',
@@ -111,7 +114,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
     const sizeClass = sizeClasses[size] || sizeClasses.normal;
     const fontSize = fontSizes[size] || fontSizes.normal;
     const suitSymbol = SUIT_SYMBOLS[suit];
-    const color = SUIT_COLORS[suit];
+    const color = suitColors[suit];
     const isFaceCard = ['J', 'Q', 'K'].includes(rank);
     const pipLayout = PIP_LAYOUTS[rank];
 

@@ -175,6 +175,13 @@ const BotLogic = {
                 lastPlayedByRelative: gameContext.lastPlayedByRelative
             };
 
+            // Set a timeout to fallback if Python script takes too long
+            const timeout = setTimeout(() => {
+                console.warn('Advanced bot timeout - falling back to legacy bot');
+                proc.kill();
+                resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
+            }, 5000); // 5 second timeout
+
             const proc = spawn('python3', [pythonScript]);
 
             let stdoutData = '';
@@ -189,6 +196,8 @@ const BotLogic = {
             });
 
             proc.on('close', (code) => {
+                clearTimeout(timeout); // Clear timeout when process completes
+
                 if (code !== 0) {
                     console.error('Python bot failed:', stderrData);
                     // Fallback to legacy bot

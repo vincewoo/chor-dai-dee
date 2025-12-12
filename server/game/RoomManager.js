@@ -49,6 +49,7 @@ class Room {
         if (!existingPlayer) return null;
 
         const oldId = existingPlayer.id;
+        console.log(`Reconnecting ${username}: old ID=${oldId}, new ID=${newSocketId}, hand size=${existingPlayer.hand ? existingPlayer.hand.length : 0}`);
 
         // Update player's socket info
         existingPlayer.id = newSocketId;
@@ -82,6 +83,10 @@ class Room {
 
         // Update playersByUsername reference
         this.playersByUsername[username] = existingPlayer;
+
+        // Verify the player in the players array was updated
+        const playerInArray = this.players.find(p => p.id === newSocketId);
+        console.log(`After reconnect - player in array: ${playerInArray ? 'found' : 'NOT FOUND'}, hand: ${playerInArray?.hand?.length || 0} cards`);
 
         return existingPlayer;
     }

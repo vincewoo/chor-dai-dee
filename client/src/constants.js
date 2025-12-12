@@ -11,3 +11,11 @@ export const SUIT_COLORS = {
     H: 'text-red-600',
     S: 'text-black'
 };
+
+// 4-color mode: blue diamonds, green clubs for better visibility
+export const SUIT_COLORS_4 = {
+    D: 'text-blue-500',
+    C: 'text-green-600',
+    H: 'text-red-600',
+    S: 'text-black'
+};

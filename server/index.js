@@ -21,7 +21,7 @@ const corsOptions = isProduction
       methods: ['GET', 'POST']
     }
   : {
-      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174'],
       methods: ['GET', 'POST']
     };
 
@@ -66,7 +66,7 @@ io.on('connection', (socket) => {
         displayRating = calculateDisplayRating(undefined, undefined);
     }
 
-    // Check if user can reconnect to an existing room
+    // Check if user is already in a room (either disconnected or still connected)
     const reconnectInfo = roomManager.findRoomForReconnect(username);
     if (reconnectInfo) {
         const { roomId: existingRoomId, room } = reconnectInfo;
@@ -88,6 +88,7 @@ io.on('connection', (socket) => {
 
             // Send player's hand if game is in progress
             if (room.gameState === 'playing' || room.gameState === 'round_over') {
+                console.log(`Sending hand to ${username} on reconnect: ${player.hand ? player.hand.length : 0} cards`);
                 socket.emit('hand_update', player.hand || []);
             }
 
@@ -96,6 +97,42 @@ io.on('connection', (socket) => {
             io.to(existingRoomId).emit('player_reconnected', { playerName: username });
 
             console.log(`${username} reconnected successfully to room ${existingRoomId}`);
+
+            // Check if current player is a bot and trigger bot turn processing
+            if (room.gameState === 'playing') {
+                processBotTurns(room, existingRoomId);
+            }
+
+            return;
+        }
+    }
+
+    // Check if player already exists in the target room (not disconnected, but socket changed)
+    const targetRoom = roomManager.getRoom(roomId);
+    if (targetRoom && targetRoom.playersByUsername && targetRoom.playersByUsername[username]) {
+        const existingPlayer = targetRoom.playersByUsername[username];
+        // Player is already in the room but socket ID changed (e.g., page refresh)
+        console.log(`Player ${username} already in room ${roomId}, updating socket from ${existingPlayer.id} to ${socket.id}`);
+
+        const player = targetRoom.reconnectPlayer(username, socket.id, socket);
+        if (player) {
+            player.rating = displayRating;
+            socket.join(roomId);
+
+            socket.emit('joined_room', { roomId, playerId: socket.id });
+            io.to(roomId).emit('room_update', targetRoom.getGameState());
+
+            // Send hand if game is in progress
+            if (targetRoom.gameState === 'playing' || targetRoom.gameState === 'round_over') {
+                console.log(`Sending hand to ${username} (already in room): ${player.hand ? player.hand.length : 0} cards`);
+                socket.emit('hand_update', player.hand || []);
+            }
+
+            // Check if current player is a bot and trigger bot turn processing
+            if (targetRoom.gameState === 'playing') {
+                processBotTurns(targetRoom, roomId);
+            }
+
             return;
         }
     }
@@ -272,7 +309,11 @@ io.on('connection', (socket) => {
           socket.emit('room_update', room.getGameState());
           // Also send hand if game is in progress
           if (room.gameState === 'playing') {
-              socket.emit('hand_update', room.getPlayerHand(socket.id));
+              const hand = room.getPlayerHand(socket.id);
+              console.log(`get_room_state: Sending hand to ${socket.id}: ${hand ? hand.length : 0} cards`);
+              socket.emit('hand_update', hand);
+              // Check if current player is a bot and trigger bot turn processing
+              processBotTurns(room, roomId);
           }
       }
   });
