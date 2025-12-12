@@ -46,7 +46,8 @@ tar -czf ${APP_NAME}.tar.gz \
     client/dist/ \
     Dockerfile \
     docker-compose.yml \
-    .dockerignore
+    .dockerignore \
+    start-tailscale.sh
 
 # Step 4: Create deployment directory on Synology
 echo -e "${YELLOW}Step 4: Setting up Synology deployment directory...${NC}"
