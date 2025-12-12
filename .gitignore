@@ -6,3 +6,4 @@ build
 .DS_Store
 chor-dai-dee.tar.gz
 *.pyc
+server/database.sqlite3
