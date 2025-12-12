@@ -19,6 +19,9 @@ services:
       - NET_ADMIN
       - NET_RAW
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   chor-dai-dee:
     build:
