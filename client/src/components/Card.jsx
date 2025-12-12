@@ -88,10 +88,12 @@ const FaceCard = ({ rank }) => {
 
     return (
         <div className="absolute inset-[8%] flex flex-col items-center justify-center overflow-hidden">
-            {/* Top emoji */}
-            <span style={{ fontSize: '4em', lineHeight: 0.9 }}>{faceEmoji}</span>
-            {/* Bottom emoji (inverted) */}
-            <span className="rotate-180" style={{ fontSize: '4em', lineHeight: 0.9 }}>{faceEmoji}</span>
+            {/* Single smaller emoji on small screens */}
+            <span className="md:hidden" style={{ fontSize: '1.75em', lineHeight: 1 }}>{faceEmoji}</span>
+            {/* Top emoji (only on md+ screens) */}
+            <span className="hidden md:block" style={{ fontSize: '4em', lineHeight: 0.9 }}>{faceEmoji}</span>
+            {/* Bottom emoji (inverted, only on md+ screens) */}
+            <span className="hidden md:block rotate-180" style={{ fontSize: '4em', lineHeight: 0.9 }}>{faceEmoji}</span>
         </div>
     );
 };
