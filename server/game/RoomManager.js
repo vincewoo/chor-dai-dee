@@ -3,9 +3,10 @@ const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
 const { BotLogic } = require('./BotLogic');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
+const { getPointThreshold } = require('./GameModes');
 
 class Room {
-    constructor(roomId) {
+    constructor(roomId, gameMode = 'standard') {
         this.id = roomId;
         this.players = []; // Array of { id, name, socket, hand, isBot, isDisconnected }
         this.gameState = 'waiting'; // waiting, playing, round_over, finished
@@ -24,6 +25,8 @@ class Room {
         this.lastBotReasoning = null; // Store the most recent bot decision reasoning
         this.playersByUsername = {}; // Map username -> player for reconnection
         this.settings = { useAdvancedBots: false }; // Room settings
+        this.gameMode = gameMode; // Game mode: 'short' or 'standard'
+        this.pointThreshold = getPointThreshold(gameMode); // Point threshold for game over
     }
 
     addPlayer(player) {
@@ -223,9 +226,18 @@ class Room {
             this.cumulativeScores[s.id] = (this.cumulativeScores[s.id] || 0) + s.roundPoints;
         });
 
-        // Check if anyone hit 100 points
-        const gameOver = Object.values(this.cumulativeScores).some(score => score >= 100);
+        // Check if anyone hit the point threshold
+        const gameOver = Object.values(this.cumulativeScores).some(score => score >= this.pointThreshold);
         return gameOver;
+    }
+
+    setGameMode(gameMode) {
+        if (this.gameState !== 'waiting') {
+            return { error: 'Cannot change mode during game' };
+        }
+        this.gameMode = gameMode;
+        this.pointThreshold = getPointThreshold(gameMode);
+        return { success: true };
     }
 
     getGameWinner() {
@@ -486,7 +498,9 @@ class Room {
             gameState: this.gameState,
             roundNumber: this.roundNumber,
             cumulativeScores: this.cumulativeScores,
-            debugMode: this.debugMode
+            debugMode: this.debugMode,
+            gameMode: this.gameMode,
+            pointThreshold: this.pointThreshold
         };
     }
 

@@ -9,6 +9,7 @@ import { useSuitColors } from '../contexts/SuitColorContext';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { GAME_MODES } from '../constants/gameModes';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -414,7 +415,7 @@ const GameRoom = ({ user, socket }) => {
     };
 
     // Helper function to reorder selected cards as a group
-    const reorderSelectedCards = (hand, selectedCards, overCardId) => {
+    const reorderSelectedCards = (hand, selectedCards, overCardId, isDraggingRight) => {
         const selectedSet = new Set(selectedCards.map(c => `${c.rank}-${c.suit}`));
 
         // Remove selected cards while preserving their order
@@ -436,9 +437,12 @@ const GameRoom = ({ user, socket }) => {
             return [...remaining, ...selectedInOrder];
         }
 
-        // Insert selected cards at the target position
+        // Insert selected cards at the correct position based on drag direction
+        // When dragging right: insert AFTER the target card
+        // When dragging left: insert BEFORE the target card
         const result = [...remaining];
-        result.splice(insertIndex, 0, ...selectedInOrder);
+        const finalIndex = isDraggingRight ? insertIndex + 1 : insertIndex;
+        result.splice(finalIndex, 0, ...selectedInOrder);
         return result;
     };
 
@@ -472,8 +476,11 @@ const GameRoom = ({ user, socket }) => {
                 return;
             }
 
+            // Determine drag direction: dragging right means newIndex > oldIndex
+            const isDraggingRight = newIndex > oldIndex;
+
             // Group drag: move all selected cards to where we dropped
-            reorderedHand = reorderSelectedCards(currentHand, selectedCards, over.id);
+            reorderedHand = reorderSelectedCards(currentHand, selectedCards, over.id, isDraggingRight);
         } else {
             // Single drag: move one card
             reorderedHand = [...currentHand];
@@ -539,6 +546,11 @@ const GameRoom = ({ user, socket }) => {
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">
                 <h1 className="text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
+                {gameState.gameMode && (
+                    <div className="text-[0.8vmax] text-green-300">
+                        {GAME_MODES[gameState.gameMode.toUpperCase()]?.name || 'Standard Game'}
+                    </div>
+                )}
                 {gameState.roundNumber > 0 && (
                     <div className="text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
                 )}
@@ -569,7 +581,9 @@ const GameRoom = ({ user, socket }) => {
                             </span>
                         </div>
                     ))}
-                    <div className="text-[0.7vmax] text-gray-400 mt-[0.5vmax] border-t border-white/20 pt-[0.25vmax]">First to 100 loses</div>
+                    <div className="text-[0.7vmax] text-gray-400 mt-[0.5vmax] border-t border-white/20 pt-[0.25vmax]">
+                        First to {gameState.pointThreshold || 100} loses
+                    </div>
                 </div>
             )}
 
@@ -688,6 +702,40 @@ const GameRoom = ({ user, socket }) => {
                             <div key={i} className="bg-white/20 p-[1vmax] rounded border-2 border-dashed border-white min-w-[6vmax] text-center text-[1vmax]">Empty</div>
                         ))}
                     </div>
+
+                    {/* Game Mode Selector - Only host (first player) can change */}
+                    <div className="mb-[2vmax]">
+                        <div className="text-[1vmax] text-green-300 mb-[0.75vmax] text-center">Game Mode</div>
+                        <div className="flex gap-[1vmax]">
+                            {Object.values(GAME_MODES).map(mode => {
+                                const isHost = gameState.players[0]?.id === socket.id;
+                                const isSelected = gameState.gameMode === mode.id;
+                                return (
+                                    <button
+                                        key={mode.id}
+                                        onClick={() => isHost && socket.emit('set_game_mode', { gameMode: mode.id })}
+                                        disabled={!isHost}
+                                        className={`px-[1.5vmax] py-[1vmax] rounded-lg font-bold text-[0.9vmax] transition ${
+                                            isSelected
+                                                ? 'bg-yellow-500 text-black shadow-lg'
+                                                : isHost
+                                                    ? 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
+                                                    : 'bg-white/10 text-white/50 cursor-not-allowed'
+                                        }`}
+                                    >
+                                        <div className="font-bold">{mode.name}</div>
+                                        <div className="text-[0.7vmax] opacity-80">{mode.description} • {mode.pointThreshold} pts</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {gameState.players[0]?.id !== socket.id && (
+                            <div className="text-[0.8vmax] text-yellow-300 mt-[0.5vmax] text-center">
+                                Only the room host can change the game mode
+                            </div>
+                        )}
+                    </div>
+
                     <div className="flex flex-col items-center gap-2 mb-[1vmax]">
                         <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded">
                             <input

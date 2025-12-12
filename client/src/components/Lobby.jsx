@@ -68,11 +68,13 @@ const Lobby = ({ user, socket, setUser }) => {
 
         socket.on('error', (err) => {
             console.log('error received:', err);
-            setReconnecting(false);
-            // Don't show "Room not found" error when attempting auto-reconnect
-            if (err !== 'Room not found' || !reconnecting) {
-                setError(err);
-            }
+            // Only show error if it's not "Room not found" during reconnect attempt
+            setReconnecting(prev => {
+                if (err !== 'Room not found' || !prev) {
+                    setError(err);
+                }
+                return false;
+            });
         });
 
         // Attempt reconnection on mount if already connected

@@ -4,7 +4,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode } = require('./db');
 const { calculateRoundScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 
@@ -189,12 +189,12 @@ io.on('connection', (socket) => {
           const gameWinner = room.getGameWinner();
           room.gameState = 'finished';
 
-          // 1. Fetch current ratings for all humans
+          // 1. Fetch current ratings for all humans (mode-specific)
           // We need to fetch stats to get current mu/sigma
           const playersWithStats = await Promise.all(room.players.map(async (p) => {
             if (p.isBot) return { ...p };
             try {
-                const stats = await getUserStats(p.name);
+                const stats = await getUserStatsByMode(p.name, room.gameMode);
                 return {
                     ...p,
                     rating_mu: stats ? stats.rating_mu : undefined,
@@ -215,7 +215,7 @@ io.on('connection', (socket) => {
             ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
           });
 
-          // 3. Update DB for human players (final game results + ratings)
+          // 3. Update DB for human players (final game results + ratings, mode-specific)
           room.players.forEach(async (p) => {
               if (!p.isBot) {
                   try {
@@ -223,8 +223,9 @@ io.on('connection', (socket) => {
                       const totalScore = room.cumulativeScores[p.id] || 0;
                       const newRating = ratingUpdates[p.name];
 
-                      await updateUserStatsByName(
+                      await updateUserStatsByMode(
                           p.name,
+                          room.gameMode,
                           isWinner,
                           totalScore,
                           newRating ? newRating.mu : null,
@@ -316,6 +317,24 @@ io.on('connection', (socket) => {
               processBotTurns(room, roomId);
           }
       }
+  });
+
+  socket.on('set_game_mode', ({ gameMode }) => {
+      const result = roomManager.findRoomBySocketId(socket.id);
+      if (!result) {
+          return socket.emit('error', 'Not in a room');
+      }
+
+      const { room, roomId } = result;
+
+      // Only allow changing mode in waiting state
+      const setResult = room.setGameMode(gameMode);
+      if (setResult.error) {
+          return socket.emit('error', setResult.error);
+      }
+
+      // Broadcast updated state to all players in room
+      io.to(roomId).emit('room_update', room.getGameState());
   });
 
   socket.on('start_game', ({ roomId, useAdvancedBots }) => {

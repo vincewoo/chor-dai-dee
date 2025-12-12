@@ -66,6 +66,29 @@ function createStatsTable() {
         rating_sigma REAL DEFAULT 8.333,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )`);
+
+    // Create mode-specific stats tables
+    db.run(`CREATE TABLE IF NOT EXISTS stats_short (
+        user_id INTEGER PRIMARY KEY,
+        wins INTEGER DEFAULT 0,
+        losses INTEGER DEFAULT 0,
+        points INTEGER DEFAULT 0,
+        games_played INTEGER DEFAULT 0,
+        rating_mu REAL DEFAULT 25.0,
+        rating_sigma REAL DEFAULT 8.333,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS stats_standard (
+        user_id INTEGER PRIMARY KEY,
+        wins INTEGER DEFAULT 0,
+        losses INTEGER DEFAULT 0,
+        points INTEGER DEFAULT 0,
+        games_played INTEGER DEFAULT 0,
+        rating_mu REAL DEFAULT 25.0,
+        rating_sigma REAL DEFAULT 8.333,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )`);
 }
 
 function migrateStatsTable() {
@@ -179,4 +202,76 @@ const updateUserStatsByName = (username, isWin, pointsDelta, newMu = null, newSi
     });
 };
 
-module.exports = { db, createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName };
+// Helper function to get stats table name based on game mode
+const getStatsTableName = (gameMode) => {
+    // Default to 'standard' if invalid mode
+    const validModes = ['short', 'standard'];
+    const mode = validModes.includes(gameMode) ? gameMode : 'standard';
+    return `stats_${mode}`;
+};
+
+// Get user stats for a specific game mode
+const getUserStatsByMode = (username, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const tableName = getStatsTableName(gameMode);
+        const query = `SELECT s.*, u.username FROM ${tableName} s JOIN users u ON u.id = s.user_id WHERE u.username = ?`;
+        db.get(query, [username], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+};
+
+// Update user stats for a specific game mode
+const updateUserStatsByMode = (username, gameMode, isWin, pointsDelta, newMu = null, newSigma = null) => {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT id FROM users WHERE username = ?`, [username], (err, row) => {
+            if (err) return reject(err);
+            if (!row) return reject('User not found');
+
+            const userId = row.id;
+            const tableName = getStatsTableName(gameMode);
+            const winInc = isWin ? 1 : 0;
+            const lossInc = isWin ? 0 : 1;
+
+            // First, ensure user has a stats row in this mode's table
+            const initQuery = `INSERT OR IGNORE INTO ${tableName} (user_id) VALUES (?)`;
+            db.run(initQuery, [userId], (err) => {
+                if (err) return reject(err);
+
+                // Build update query
+                let query = `UPDATE ${tableName} SET
+                    wins = wins + ?,
+                    losses = losses + ?,
+                    points = points + ?,
+                    games_played = games_played + 1`;
+
+                const params = [winInc, lossInc, pointsDelta];
+
+                if (newMu !== null && newSigma !== null) {
+                    query += `, rating_mu = ?, rating_sigma = ?`;
+                    params.push(newMu, newSigma);
+                }
+
+                query += ` WHERE user_id = ?`;
+                params.push(userId);
+
+                db.run(query, params, (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+        });
+    });
+};
+
+module.exports = {
+    db,
+    createUser,
+    verifyUser,
+    getUserStats,
+    updateUserStats,
+    updateUserStatsByName,
+    getUserStatsByMode,
+    updateUserStatsByMode
+};
