@@ -102,15 +102,17 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
     const { suitColors } = useSuitColors();
 
     const sizeClasses = {
-        small: 'w-[3vmax] h-[4.5vmax]',
-        normal: 'w-[4vmax] h-[6vmax]',
-        large: 'w-[5vmax] h-[7.5vmax]'
+        small: 'w-[18px] h-[26px] md:w-[3vmax] md:h-[4.5vmax]',
+        normal: 'w-[32px] h-[48px] md:w-[4vmax] md:h-[6vmax]',
+        large: 'w-[62px] h-[93px] md:w-[5vmax] md:h-[7.5vmax]',
+        xlarge: 'w-[70px] h-[105px] md:w-[5.5vmax] md:h-[8.25vmax]'
     };
 
     const fontSizes = {
-        small: { corner: '0.55vmax', pip: '0.7vmax' },
-        normal: { corner: '0.7vmax', pip: '0.9vmax' },
-        large: { corner: '0.85vmax', pip: '1.1vmax' }
+        small: { corner: 'text-[6px] md:text-[0.55vmax]', pip: 'text-[8px] md:text-[0.7vmax]' },
+        normal: { corner: 'text-[10px] md:text-[0.7vmax]', pip: 'text-[12px] md:text-[0.9vmax]' },
+        large: { corner: 'text-[14px] md:text-[0.85vmax]', pip: 'text-[16px] md:text-[1.1vmax]' },
+        xlarge: { corner: 'text-[16px] md:text-[0.95vmax]', pip: 'text-[18px] md:text-[1.2vmax]' }
     };
 
     const sizeClass = sizeClasses[size] || sizeClasses.normal;
@@ -162,20 +164,18 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
         >
             {/* Top-left corner */}
             <div
-                className={`absolute top-[4%] left-[8%] flex flex-col items-center leading-none ${color}`}
-                style={{ fontSize: fontSize.corner }}
+                className={`absolute top-[4%] left-[8%] flex flex-col items-center leading-none ${color} ${fontSize.corner}`}
             >
                 <span className="font-bold">{rank}</span>
-                <span style={{ fontSize: '1.1em' }}>{suitSymbol}</span>
+                <span className="text-[1.1em]">{suitSymbol}</span>
             </div>
 
             {/* Bottom-right corner (rotated) */}
             <div
-                className={`absolute bottom-[4%] right-[8%] flex flex-col items-center leading-none rotate-180 ${color}`}
-                style={{ fontSize: fontSize.corner }}
+                className={`absolute bottom-[4%] right-[8%] flex flex-col items-center leading-none rotate-180 ${color} ${fontSize.corner}`}
             >
                 <span className="font-bold">{rank}</span>
-                <span style={{ fontSize: '1.1em' }}>{suitSymbol}</span>
+                <span className="text-[1.1em]">{suitSymbol}</span>
             </div>
 
             {/* Center content */}
@@ -187,12 +187,11 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
                     {pipLayout && pipLayout.map((pip, i) => (
                         <div
                             key={i}
-                            className={`absolute ${color}`}
+                            className={`absolute ${color} ${fontSize.pip}`}
                             style={{
                                 left: `${pip.x}%`,
                                 top: `${pip.y}%`,
-                                transform: `translate(-50%, -50%) ${pip.flip ? 'rotate(180deg)' : ''} scale(${pip.scale || 1})`,
-                                fontSize: fontSize.pip
+                                transform: `translate(-50%, -50%) ${pip.flip ? 'rotate(180deg)' : ''} scale(${pip.scale || 1})`
                             }}
                         >
                             {suitSymbol}

@@ -121,9 +121,9 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
     return (
         <div
             key={`${handKey}-${lastPlayedKey}`}
-            className="flex items-center gap-[0.5vmax] flex-wrap justify-center mb-[0.5vmax] animate-fadeIn"
+            className="flex items-center gap-2 md:gap-[0.5vmax] flex-wrap justify-center mb-2 md:mb-[0.5vmax] animate-fadeIn"
         >
-            <span className="text-white/60 text-[0.7vmax] mr-[0.25vmax]">Quick Select:</span>
+            <span className="hidden md:inline text-white/60 text-xs md:text-[0.7vmax] mr-1 md:mr-[0.25vmax]">Quick Select:</span>
 
             {availableHandTypes.map(({ type, count }) => {
                 const isActive = activeType === type && isActiveTypeValid;
@@ -135,8 +135,8 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
                         key={type}
                         onClick={() => handleTypeClick(type)}
                         className={`
-                            px-[0.75vmax] py-[0.35vmax] rounded-lg font-bold text-[0.75vmax]
-                            shadow-lg transition-all duration-150 flex items-center gap-[0.35vmax]
+                            px-3 md:px-[0.75vmax] py-2 md:py-[0.35vmax] rounded-lg font-bold text-sm md:text-[0.75vmax]
+                            shadow-lg transition-all duration-150 flex items-center gap-1.5 md:gap-[0.35vmax]
                             hover:scale-105 active:scale-95
                             ${isActive
                                 ? 'bg-yellow-500 text-black ring-2 ring-yellow-300'
@@ -147,11 +147,11 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
                         `}
                         title={`${HAND_SHORT_NAMES[type]} (${count} available)${canBeat ? ' - Can beat!' : ''}`}
                     >
-                        <span className="text-[0.9vmax]">{HAND_ICONS[type]}</span>
+                        <span className="text-base md:text-[0.9vmax]">{HAND_ICONS[type]}</span>
                         <span>{HAND_SHORT_NAMES[type]}</span>
                         {count > 1 && (
                             <span className={`
-                                text-[0.6vmax] px-[0.3vmax] rounded-full
+                                text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded-full
                                 ${isActive ? 'bg-black/30 text-yellow-100' : 'bg-white/20'}
                             `}>
                                 {isActive ? `${currentIndex}/${count}` : count}
@@ -164,7 +164,7 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
             {activeType && isActiveTypeValid && (
                 <button
                     onClick={handleClear}
-                    className="px-[0.6vmax] py-[0.35vmax] rounded-lg font-bold text-[0.7vmax]
+                    className="px-2.5 md:px-[0.6vmax] py-2 md:py-[0.35vmax] rounded-lg font-bold text-sm md:text-[0.7vmax]
                         bg-red-600/80 text-white hover:bg-red-500 shadow-lg
                         transition-all duration-150 hover:scale-105 active:scale-95"
                     title="Clear selection"

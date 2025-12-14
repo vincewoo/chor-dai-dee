@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from './Card';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
 import HandHelper from './HandHelper';
-import BotDebugPanel from './BotDebugPanel';
 import { useSuitColors } from '../contexts/SuitColorContext';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -65,7 +64,7 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
     const style = {
         transform: CSS.Transform.toString(transform),
         transition: styleTransition,
-        marginLeft: index === 0 ? 0 : '-1.5vmax',
+        marginLeft: index === 0 ? 0 : '-45px',
         zIndex: isDragging ? 50 : 'auto',
     };
 
@@ -73,7 +72,7 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
         <div
             ref={setNodeRef}
             style={style}
-            className={`hover:ml-0 ${isDragging ? 'opacity-50' : ''}`}
+            className={`hover:ml-0 md:hover:-ml-[1.5vmax] ${index !== 0 ? 'md:-ml-[1.5vmax]' : ''} ${isDragging ? 'opacity-50' : ''}`}
             {...attributes}
             {...listeners}
         >
@@ -83,6 +82,7 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
                 selected={isSelected}
                 onClick={onClick}
                 index={index}
+                size="xlarge"
             />
         </div>
     );
@@ -90,15 +90,19 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
 
 // Played cards display component - extracted to prevent re-renders
 const PlayedCards = ({ lastPlayed, position }) => {
+    // Mobile: position near avatars; Desktop: original positions
     const positionClasses = {
-        top: "absolute top-[18vh] left-1/2 -translate-x-1/2",
-        left: "absolute left-[12vw] top-1/2 -translate-y-1/2",
-        right: "absolute right-[12vw] top-1/2 -translate-y-1/2",
-        bottom: "absolute bottom-[26vh] left-1/2 -translate-x-1/2"
+        top: "absolute top-[90px] md:top-[18vh] left-1/2 -translate-x-1/2",
+        left: "absolute left-[50px] md:left-[12vw] top-[calc(50%-150px)] md:top-1/2 md:-translate-y-1/2",
+        right: "absolute right-[40px] md:right-[12vw] top-[calc(50%-150px)] md:top-1/2 md:-translate-y-1/2",
+        bottom: "absolute bottom-[24vh] md:bottom-[26vh] left-1/2 -translate-x-1/2"
     };
 
-    const isVertical = position === 'left' || position === 'right';
     const rotationDeg = position === 'left' ? 90 : position === 'right' ? -90 : 0;
+
+    // Use large size cards on mobile for side players (double the normal size)
+    const isSidePlayer = position === 'top' || position === 'left' || position === 'right';
+    const cardSize = 'large'; // Use large for all on mobile
 
     return (
         <AnimatePresence mode="wait">
@@ -111,21 +115,24 @@ const PlayedCards = ({ lastPlayed, position }) => {
                     transition={{ type: "spring", stiffness: 200, damping: 15 }}
                 >
                     <div
-                        className="flex"
+                        className="flex -ml-2 md:-ml-[1vmax]"
                         style={{
-                            transform: `rotate(${rotationDeg}deg)`,
-                            gap: '-1vmax',
-                            marginLeft: '-1vmax'
+                            transform: `rotate(${isSidePlayer ? 0 : rotationDeg}deg)`,
+                            gap: '-8px md:-1vmax'
                         }}
                     >
                         {lastPlayed.type === 'pass' ? (
-                            <div className="text-red-400 font-bold text-[2vmax] bg-black/50 px-[1.5vmax] py-[0.75vmax] rounded-lg">
+                            <div className={`text-red-400 font-bold bg-black/50 rounded-lg ${
+                                isSidePlayer
+                                    ? 'text-base md:text-[2vmax] px-3 py-1.5 md:px-[1.5vmax] md:py-[0.75vmax]'
+                                    : 'text-2xl md:text-[2vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.75vmax]'
+                            }`}>
                                 PASS
                             </div>
                         ) : (
                             lastPlayed.cards?.map((card) => (
-                                <div key={`${card.rank}-${card.suit}`} style={{ marginLeft: '-2vmax' }}>
-                                    <Card rank={card.rank} suit={card.suit} size="large" />
+                                <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
+                                    <Card rank={card.rank} suit={card.suit} size={cardSize} />
                                 </div>
                             ))
                         )}
@@ -145,11 +152,11 @@ const TopPlayerArea = ({ player, isTurn }) => {
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
-                {/* Cards - horizontal */}
-                <div className="flex" style={{ marginLeft: '-2vmax' }}>
+            <div className={`absolute top-[8px] md:top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-4 md:gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
+                {/* Cards - horizontal (hidden on mobile) */}
+                <div className="hidden md:flex -ml-4 md:-ml-[2vmax]">
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-[3.3vmax] h-[4.5vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginLeft: '-1.5vmax' }}></div>
+                        <div key={i} className="w-[18px] h-[26px] md:w-[3.3vmax] md:h-[4.5vmax] bg-blue-500 border border-white rounded shadow-sm -ml-3 md:-ml-[1.5vmax]"></div>
                     ))}
                 </div>
                 {/* Avatar */}
@@ -163,10 +170,10 @@ const TopPlayerArea = ({ player, isTurn }) => {
                             DC
                         </div>
                     )}
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
                     </div>
-                    <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
+                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
             </div>
             {/* Played cards or PASS - below player */}
@@ -184,11 +191,11 @@ const LeftPlayerArea = ({ player, isTurn }) => {
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
-                {/* Cards - horizontal stack */}
-                <div className="flex flex-col mb-[1.5vmax]" style={{ marginTop: '-1.5vmax' }}>
+            <div className={`absolute left-[2px] md:left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
+                {/* Cards - horizontal stack (hidden on mobile) */}
+                <div className="hidden md:flex flex-col mb-[1.5vmax] -mt-3 md:-mt-[1.5vmax]">
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-[4.5vmax] h-[3.3vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-1.2vmax' }}></div>
+                        <div key={i} className="w-[26px] h-[18px] md:w-[4.5vmax] md:h-[3.3vmax] bg-blue-500 border border-white rounded shadow-sm -mt-2.5 md:-mt-[1.2vmax]"></div>
                     ))}
                 </div>
                 {/* Avatar */}
@@ -202,10 +209,10 @@ const LeftPlayerArea = ({ player, isTurn }) => {
                             DC
                         </div>
                     )}
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
                     </div>
-                    <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
+                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
             </div>
             {/* Played cards or PASS - to the right of player */}
@@ -223,9 +230,9 @@ const RightPlayerArea = ({ player, isTurn }) => {
     return (
         <>
             {/* Player info and cards */}
-            <div className={`absolute right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
+            <div className={`absolute right-[2px] md:right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
-                <div className="flex flex-col items-center mb-[2.5vmax] relative">
+                <div className="flex flex-col items-center mb-2 md:mb-[2.5vmax] relative">
                     <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
                         ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
                         {player.name.substring(0, 2).toUpperCase()}
@@ -235,15 +242,15 @@ const RightPlayerArea = ({ player, isTurn }) => {
                             DC
                         </div>
                     )}
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
                     </div>
-                    <div className="text-yellow-300 text-[0.7vmax]">{player.cardCount} Cards</div>
+                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
-                {/* Cards - horizontal stack */}
-                <div className="flex flex-col" style={{ marginTop: '-1.5vmax' }}>
+                {/* Cards - horizontal stack (hidden on mobile) */}
+                <div className="hidden md:flex flex-col -mt-3 md:-mt-[1.5vmax]">
                     {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div key={i} className="w-[4.5vmax] h-[3.3vmax] bg-blue-500 border border-white rounded shadow-sm" style={{ marginTop: '-1.2vmax' }}></div>
+                        <div key={i} className="w-[26px] h-[18px] md:w-[4.5vmax] md:h-[3.3vmax] bg-blue-500 border border-white rounded shadow-sm -mt-2.5 md:-mt-[1.2vmax]"></div>
                     ))}
                 </div>
             </div>
@@ -275,13 +282,12 @@ const GameRoom = ({ user, socket }) => {
     const [gameOver, setGameOver] = useState(null);
     const [autoPass, setAutoPass] = useState(false);
     const autoPassTriggered = useRef(false);
-    const [showDebugPanel, setShowDebugPanel] = useState(false);
     const [useAdvancedBots, setUseAdvancedBots] = useState(false);
-    const [botReasoning, setBotReasoning] = useState(null);
     const [notification, setNotification] = useState(null);
     const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
     const [isCustomOrder, setIsCustomOrder] = useState(false); // Track if hand is manually arranged
     const [customHandOrder, setCustomHandOrder] = useState(null); // Store custom card order
+    const [showSettings, setShowSettings] = useState(false); // Settings modal
 
     // Sorted hand based on current sort mode
     const sortedHand = useMemo(() => {
@@ -339,10 +345,6 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setError(''), 3000);
         });
 
-        socket.on('bot_reasoning', (reasoning) => {
-            setBotReasoning(reasoning);
-        });
-
         socket.on('player_disconnected', ({ playerName }) => {
             setNotification({ type: 'warning', message: `${playerName} disconnected` });
             setTimeout(() => setNotification(null), 3000);
@@ -361,7 +363,6 @@ const GameRoom = ({ user, socket }) => {
             socket.off('round_over');
             socket.off('game_over');
             socket.off('error');
-            socket.off('bot_reasoning');
             socket.off('player_disconnected');
             socket.off('player_reconnected');
         };
@@ -523,12 +524,6 @@ const GameRoom = ({ user, socket }) => {
         // socket emit leave?
     };
 
-    const toggleDebugMode = () => {
-        const newState = !showDebugPanel;
-        setShowDebugPanel(newState);
-        socket.emit('toggle_debug', { roomId, enabled: newState });
-    };
-
     if (!gameState) return <div className="text-white text-center mt-20">Loading...</div>;
 
     const myIndex = gameState.players.findIndex(p => p.id === socket.id);
@@ -545,43 +540,43 @@ const GameRoom = ({ user, socket }) => {
         <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">
-                <h1 className="text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
+                <h1 className="text-xl md:text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
                 {gameState.gameMode && (
-                    <div className="text-[0.8vmax] text-green-300">
+                    <div className="text-xs md:text-[0.8vmax] text-green-300">
                         {GAME_MODES[gameState.gameMode.toUpperCase()]?.name || 'Standard Game'}
                     </div>
                 )}
                 {gameState.roundNumber > 0 && (
-                    <div className="text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
+                    <div className="text-sm md:text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
                 )}
                 <div className="flex gap-2 mt-1">
-                    <button onClick={leaveRoom} className="text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
+                    <button onClick={leaveRoom} className="text-xs md:text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
                     <button
-                        onClick={toggleDebugMode}
-                        className={`text-[0.7vmax] px-2 py-0.5 rounded ${showDebugPanel ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-                        title="Show bot decision reasoning"
+                        onClick={() => setShowSettings(true)}
+                        className="text-xs md:text-[0.7vmax] px-2 py-0.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
+                        title="Game Settings"
                     >
-                        🤖 Debug {showDebugPanel ? 'ON' : 'OFF'}
+                        ⚙️ Settings
                     </button>
                 </div>
             </div>
 
-            {/* Scoreboard */}
+            {/* Scoreboard - hidden on mobile */}
             {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
-                <div className="absolute top-[1vh] right-[1vw] bg-black/60 rounded-lg p-[0.75vmax] text-white text-[0.9vmax] z-10">
-                    <div className="font-bold mb-[0.5vmax] text-yellow-400">Scores</div>
+                <div className="hidden md:block absolute top-[1vh] right-[1vw] bg-black/60 rounded-lg p-3 md:p-[0.75vmax] text-white text-sm md:text-[0.9vmax] z-10">
+                    <div className="font-bold mb-2 md:mb-[0.5vmax] text-yellow-400">Scores</div>
                     {gameState.players
                         .slice()
                         .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
                         .map(p => (
-                        <div key={p.id} className="flex justify-between gap-[1vmax]">
+                        <div key={p.id} className="flex justify-between gap-4 md:gap-[1vmax]">
                             <span className={p.id === socket.id ? 'text-yellow-300' : ''}>{p.name}</span>
                             <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
                                 {p.cumulativeScore}
                             </span>
                         </div>
                     ))}
-                    <div className="text-[0.7vmax] text-gray-400 mt-[0.5vmax] border-t border-white/20 pt-[0.25vmax]">
+                    <div className="text-xs md:text-[0.7vmax] text-gray-400 mt-2 md:mt-[0.5vmax] border-t border-white/20 pt-1 md:pt-[0.25vmax]">
                         First to {gameState.pointThreshold || 100} loses
                     </div>
                 </div>
@@ -594,7 +589,7 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0, y: -50 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        className="absolute top-[5vh] bg-red-600 text-white px-[1.5vmax] py-[0.5vmax] rounded shadow-xl z-50 font-bold text-[1vmax]"
+                        className="absolute top-[5vh] bg-red-600 text-white px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-50 font-bold text-base md:text-[1vmax]"
                     >
                         {error}
                     </motion.div>
@@ -608,7 +603,7 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0, y: -50 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-[1.5vmax] py-[0.5vmax] rounded shadow-xl z-50 font-bold text-[1vmax] ${
+                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-50 font-bold text-base md:text-[1vmax] ${
                             notification.type === 'warning' ? 'bg-yellow-600 text-white' : 'bg-green-600 text-white'
                         }`}
                     >
@@ -774,7 +769,7 @@ const GameRoom = ({ user, socket }) => {
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
                 {/* Turn indicator */}
                 {gameState.gameState === 'playing' && (
-                    <div className={`mb-[1vmax] px-[1.5vmax] py-[0.5vmax] rounded-full font-bold text-[1.2vmax] shadow-lg ${
+                    <div className={`mb-3 md:mb-[1vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] shadow-lg ${
                         isMyTurn
                             ? 'bg-yellow-500 text-black animate-pulse'
                             : 'bg-black/60 text-white'
@@ -793,15 +788,15 @@ const GameRoom = ({ user, socket }) => {
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             transition={{ type: "spring", stiffness: 200, damping: 15 }}
                         >
-                            <div className="text-white/70 text-[1.2vmax] mb-[0.5vmax] font-semibold">Hand to Beat</div>
-                            <div className="flex bg-black/30 px-[1.5vmax] py-[1vmax] rounded-xl" style={{ marginLeft: '-1.5vmax' }}>
+                            <div className="text-white/70 text-lg md:text-[1.2vmax] mb-2 md:mb-[0.5vmax] font-semibold">Hand to Beat</div>
+                            <div className="flex bg-black/30 px-3 md:px-[1.5vmax] py-2 md:py-[1vmax] rounded-xl -ml-2 md:-ml-[1.5vmax]">
                                 {gameState.lastPlayedHand.cards.map((card) => (
-                                    <div key={`center-${card.rank}-${card.suit}`} style={{ marginLeft: '-1vmax' }}>
+                                    <div key={`center-${card.rank}-${card.suit}`} className="-ml-2 md:-ml-[1vmax]">
                                         <Card rank={card.rank} suit={card.suit} size="large" />
                                     </div>
                                 ))}
                             </div>
-                            <div className="text-white/50 text-[1vmax] mt-[0.75vmax]">
+                            <div className="text-white/50 text-base md:text-[1vmax] mt-2 md:mt-[0.75vmax]">
                                 {gameState.lastPlayedHand.type.replace(/_/g, ' ').toUpperCase()}
                             </div>
                         </motion.div>
@@ -836,11 +831,11 @@ const GameRoom = ({ user, socket }) => {
                     )}
 
                     {/* Controls */}
-                    <div className="flex items-center gap-[1vmax] mb-[0.75vmax]">
+                    <div className="flex items-center gap-2 md:gap-[1vmax] mb-2 md:mb-[0.75vmax] flex-wrap">
                         <button
                             onClick={playCards}
                             disabled={!isMyTurn || selectedCards.length === 0}
-                            className={`px-[1.5vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-[1vmax]
+                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
                                 ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Play
@@ -848,24 +843,16 @@ const GameRoom = ({ user, socket }) => {
                         <button
                             onClick={passTurn}
                             disabled={!isMyTurn || !gameState.lastPlayedHand}
-                            className={`px-[1.5vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-[1vmax]
+                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
                                 ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Pass
                         </button>
                         <button
-                            onClick={() => setAutoPass(!autoPass)}
-                            className={`px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-[0.85vmax]
-                                ${autoPass ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
-                            title="Automatically pass when you have no cards that can beat the played hand"
-                        >
-                            Auto-Pass {autoPass ? 'ON' : 'OFF'}
-                        </button>
-                        <button
                             onClick={handleSortClick}
                             className={`
-                                px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg
-                                transition transform hover:scale-105 text-[0.85vmax]
+                                px-3 md:px-[1vmax] py-2 md:py-[0.5vmax] rounded-full font-bold shadow-lg
+                                transition transform hover:scale-105 text-sm md:text-[0.85vmax]
                                 ${isCustomOrder
                                     ? 'bg-orange-500 text-white hover:bg-orange-400 ring-2 ring-orange-300'
                                     : 'bg-purple-600 text-white hover:bg-purple-500'
@@ -882,14 +869,6 @@ const GameRoom = ({ user, socket }) => {
                                 : `Sort: ${sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}`
                             }
                         </button>
-                        <button
-                            onClick={toggleFourColorMode}
-                            className={`px-[1vmax] py-[0.5vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-[0.85vmax]
-                                ${fourColorMode ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'}`}
-                            title="Toggle 4-color suits for better visibility (blue diamonds, green clubs)"
-                        >
-                            4-Color {fourColorMode ? 'ON' : 'OFF'}
-                        </button>
                     </div>
 
                     {/* My Hand */}
@@ -902,7 +881,7 @@ const GameRoom = ({ user, socket }) => {
                             items={sortedHand.map(card => `${card.rank}-${card.suit}`)}
                             strategy={horizontalListSortingStrategy}
                         >
-                            <div className="flex justify-center transition-all duration-300 hover:gap-[0.5vmax]" style={{ gap: '-1.5vmax' }}>
+                            <div className="flex justify-center transition-all duration-300 -gap-[45px] md:-gap-[1.5vmax] hover:gap-2 md:hover:gap-[0.5vmax]">
                                 {sortedHand.map((card, index) => {
                                     const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
                                     return (
@@ -926,27 +905,93 @@ const GameRoom = ({ user, socket }) => {
                         ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
                         {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
                     </div>
-                    <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
+                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {user?.username || 'You'}
                         {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
                             <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
                         )}
                     </div>
-                    <div className="text-yellow-300 text-[0.7vmax]">{myHand.length} Cards</div>
+                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{myHand.length} Cards</div>
                 </div>
             </div>
 
-            {/* Bot Debug Panel */}
+            {/* Settings Modal */}
             <AnimatePresence>
-                {showDebugPanel && (
-                    <BotDebugPanel
-                        reasoning={botReasoning}
-                        isVisible={showDebugPanel}
-                        onClose={() => {
-                            setShowDebugPanel(false);
-                            socket.emit('toggle_debug', { roomId, enabled: false });
-                        }}
-                    />
+                {showSettings && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-50 bg-black/70 flex items-center justify-center"
+                        onClick={() => setShowSettings(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex justify-between items-center mb-6 md:mb-[1.5vmax]">
+                                <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white">Settings</h2>
+                                <button
+                                    onClick={() => setShowSettings(false)}
+                                    className="text-gray-400 hover:text-white text-3xl md:text-[2vmax] font-bold leading-none"
+                                >
+                                    ×
+                                </button>
+                            </div>
+
+                            <div className="space-y-4 md:space-y-[1vmax]">
+                                {/* Auto-Pass Setting */}
+                                <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
+                                    <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
+                                        <label className="text-white font-semibold text-lg md:text-[1.2vmax]">
+                                            Auto-Pass
+                                        </label>
+                                        <button
+                                            onClick={() => setAutoPass(!autoPass)}
+                                            className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]
+                                                ${autoPass ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                        >
+                                            {autoPass ? 'ON' : 'OFF'}
+                                        </button>
+                                    </div>
+                                    <p className="text-gray-300 text-sm md:text-[0.85vmax]">
+                                        Automatically pass when you have no cards that can beat the played hand
+                                    </p>
+                                </div>
+
+                                {/* 4-Color Setting */}
+                                <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
+                                    <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
+                                        <label className="text-white font-semibold text-lg md:text-[1.2vmax]">
+                                            4-Color Suits
+                                        </label>
+                                        <button
+                                            onClick={toggleFourColorMode}
+                                            className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]
+                                                ${fourColorMode ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                        >
+                                            {fourColorMode ? 'ON' : 'OFF'}
+                                        </button>
+                                    </div>
+                                    <p className="text-gray-300 text-sm md:text-[0.85vmax]">
+                                        Use 4-color suits for better visibility (blue diamonds, green clubs)
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 md:mt-[1.5vmax] flex justify-end">
+                                <button
+                                    onClick={() => setShowSettings(false)}
+                                    className="bg-green-600 hover:bg-green-700 text-white px-6 md:px-[2vmax] py-2 md:py-[0.6vmax] rounded-lg font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
                 )}
             </AnimatePresence>
         </div>
