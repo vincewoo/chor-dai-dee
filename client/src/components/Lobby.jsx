@@ -98,9 +98,18 @@ const Lobby = ({ user, socket, setUser }) => {
                     {reconnecting ? '● Checking for existing game...' : connected ? '● Connected' : '● Disconnected - Is the server running?'}
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Welcome, {user.username}!</h2>
-                <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline mb-4">
-                    Logout
-                </button>
+                <div className="flex justify-center gap-4 mb-4">
+                    <button
+                        onClick={() => navigate('/stats')}
+                        className="text-sm text-blue-600 hover:text-blue-800 underline font-medium"
+                    >
+                        View Stats
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline">
+                        Logout
+                    </button>
+                </div>
 
                 <div className="space-y-4">
                     <button onClick={createRoom} className="w-full bg-yellow-500 text-white py-3 rounded-lg font-bold hover:bg-yellow-600 transition shadow-md">

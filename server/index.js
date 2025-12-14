@@ -4,7 +4,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats } = require('./db');
 const { calculateRoundScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 
@@ -176,6 +176,57 @@ io.on('connection', (socket) => {
           cumulativeScore: room.cumulativeScores[s.id] || 0
       }));
 
+      // Calculate placements for each player (1st = winner, 2nd/3rd/4th by cards left)
+      const roundScoresWithPlacements = [...roundScores].sort((a, b) => {
+          if (a.isRoundWinner) return -1;
+          if (b.isRoundWinner) return 1;
+          // Sort by cards left (fewer = better), then by points
+          if (a.cardsLeft !== b.cardsLeft) return a.cardsLeft - b.cardsLeft;
+          return a.roundPoints - b.roundPoints;
+      }).map((score, index) => ({
+          ...score,
+          placement: index + 1
+      }));
+
+      // Save round stats for each player (both human and bots)
+      for (const scoreData of roundScoresWithPlacements) {
+          if (!scoreData.isBot) {
+              try {
+                  const user = await getUserByUsername(scoreData.name);
+                  if (user) {
+                      const playStats = room.roundPlayStats[scoreData.id] || {
+                          plays: 0,
+                          passes: 0,
+                          leadsWon: 0,
+                          handTypes: {}
+                      };
+
+                      // Determine penalty multiplier
+                      let penaltyMultiplier = 1;
+                      if (scoreData.cardsLeft >= 13) penaltyMultiplier = 3;
+                      else if (scoreData.cardsLeft >= 10) penaltyMultiplier = 2;
+
+                      const roundData = {
+                          roundNumber: room.roundNumber,
+                          placement: scoreData.placement,
+                          cardsLeft: scoreData.cardsLeft,
+                          penaltyMultiplier: penaltyMultiplier,
+                          roundPoints: scoreData.roundPoints,
+                          cumulativeScore: room.cumulativeScores[scoreData.id] || 0,
+                          plays: playStats.plays,
+                          passes: playStats.passes,
+                          leadsWon: playStats.leadsWon,
+                          handTypes: playStats.handTypes
+                      };
+
+                      await saveRoundStats(room.gameId, user.id, room.gameMode, roundData);
+                  }
+              } catch (e) {
+                  console.error("Failed to save round stats for", scoreData.name, e);
+              }
+          }
+      }
+
       const sanitizedRoundWinner = {
           id: roundWinner.id,
           name: roundWinner.name,
@@ -215,14 +266,27 @@ io.on('connection', (socket) => {
             ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
           });
 
-          // 3. Update DB for human players (final game results + ratings, mode-specific)
-          room.players.forEach(async (p) => {
+          // Calculate final game placements (1st = lowest score, 2nd/3rd/4th by score ascending)
+          const finalPlacements = [...room.players].sort((a, b) => {
+              const scoreA = room.cumulativeScores[a.id] || 0;
+              const scoreB = room.cumulativeScores[b.id] || 0;
+              return scoreA - scoreB; // Lower score = better placement
+          }).map((p, index) => ({
+              playerId: p.id,
+              playerName: p.name,
+              placement: index + 1
+          }));
+
+          // 3. Update DB for human players (final game results + ratings + aggregate stats, mode-specific)
+          for (const p of room.players) {
               if (!p.isBot) {
                   try {
                       const isWinner = p.id === gameWinner.id;
                       const totalScore = room.cumulativeScores[p.id] || 0;
                       const newRating = ratingUpdates[p.name];
+                      const playerPlacement = finalPlacements.find(fp => fp.playerId === p.id);
 
+                      // Update game-level stats (wins/losses/points/rating)
                       await updateUserStatsByMode(
                           p.name,
                           room.gameMode,
@@ -230,7 +294,17 @@ io.on('connection', (socket) => {
                           totalScore,
                           newRating ? newRating.mu : null,
                           newRating ? newRating.sigma : null
-                        );
+                      );
+
+                      // Update aggregate stats (placement, plays, passes, penalties)
+                      if (playerPlacement) {
+                          await updateAggregateStats(
+                              p.name,
+                              room.gameMode,
+                              playerPlacement.placement,
+                              room.gameId
+                          );
+                      }
 
                       // Update player object in room with new rating so UI updates
                       if (newRating) {
@@ -240,7 +314,48 @@ io.on('connection', (socket) => {
                       console.error("Failed to update stats for", p.name, e);
                   }
               }
-          });
+          }
+
+          // 4. Update head-to-head stats for all human player pairs
+          const humanPlayers = room.players.filter(p => !p.isBot);
+          for (let i = 0; i < humanPlayers.length; i++) {
+              for (let j = i + 1; j < humanPlayers.length; j++) {
+                  try {
+                      const player1 = humanPlayers[i];
+                      const player2 = humanPlayers[j];
+
+                      const user1 = await getUserByUsername(player1.name);
+                      const user2 = await getUserByUsername(player2.name);
+
+                      if (user1 && user2) {
+                          const placement1 = finalPlacements.find(fp => fp.playerId === player1.id);
+                          const placement2 = finalPlacements.find(fp => fp.playerId === player2.id);
+
+                          if (placement1 && placement2) {
+                              // Update player1's record vs player2
+                              await updateHeadToHeadStats(
+                                  user1.id,
+                                  user2.id,
+                                  room.gameMode,
+                                  placement1.placement,
+                                  placement2.placement
+                              );
+
+                              // Update player2's record vs player1
+                              await updateHeadToHeadStats(
+                                  user2.id,
+                                  user1.id,
+                                  room.gameMode,
+                                  placement2.placement,
+                                  placement1.placement
+                              );
+                          }
+                      }
+                  } catch (e) {
+                      console.error("Failed to update head-to-head stats:", e);
+                  }
+              }
+          }
 
           const sanitizedGameWinner = {
               id: gameWinner.id,
@@ -459,6 +574,73 @@ app.get('/api/stats/:username', async (req, res) => {
         if (stats) res.json(stats);
         else res.status(404).json({ error: 'User not found' });
     } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get detailed stats with round aggregates and combination usage
+app.get('/api/stats/:username/detailed', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const mode = req.query.mode || 'standard'; // default to standard
+
+        // 1. Get user ID
+        const user = await getUserByUsername(username);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // 2. Get game-level stats (existing)
+        const gameStats = await getUserStatsByMode(username, mode);
+
+        // 3. Get aggregated round stats
+        const roundAggregates = await getRoundAggregates(user.id, mode);
+
+        // 4. Get combination type usage
+        const combinationStats = await getCombinationStats(user.id, mode);
+
+        res.json({
+            username,
+            mode,
+            gameStats: gameStats || {},
+            roundAggregates: roundAggregates || {},
+            combinationStats: combinationStats || {}
+        });
+    } catch (err) {
+        console.error('Error fetching detailed stats:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get recent round history
+app.get('/api/stats/:username/rounds', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const mode = req.query.mode || 'standard';
+        const limit = parseInt(req.query.limit) || 20;
+
+        const user = await getUserByUsername(username);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const rounds = await getRecentRounds(user.id, mode, limit);
+        res.json({ rounds });
+    } catch (err) {
+        console.error('Error fetching round history:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get head-to-head stats
+app.get('/api/stats/:username/head-to-head', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const mode = req.query.mode || 'standard';
+
+        const user = await getUserByUsername(username);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const h2hStats = await getHeadToHeadStats(user.id, mode);
+        res.json({ headToHead: h2hStats });
+    } catch (err) {
+        console.error('Error fetching head-to-head stats:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });

@@ -27,6 +27,8 @@ class Room {
         this.settings = { useAdvancedBots: false }; // Room settings
         this.gameMode = gameMode; // Game mode: 'short' or 'standard'
         this.pointThreshold = getPointThreshold(gameMode); // Point threshold for game over
+        this.roundPlayStats = {}; // Track plays/passes per round for advanced stats
+        this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`; // Unique game ID for round tracking
     }
 
     addPlayer(player) {
@@ -203,6 +205,26 @@ class Room {
         this.winners = [];
         this.playedCards = []; // Reset card tracking for new round
 
+        // Initialize round play stats for advanced stats tracking
+        this.roundPlayStats = {};
+        this.players.forEach(p => {
+            this.roundPlayStats[p.id] = {
+                plays: 0,
+                passes: 0,
+                leadsWon: 0, // Count of times player won control of table
+                handTypes: {
+                    SINGLE: 0,
+                    PAIR: 0,
+                    TRIPLE: 0,
+                    STRAIGHT: 0,
+                    FLUSH: 0,
+                    FULL_HOUSE: 0,
+                    QUADS: 0,
+                    STRAIGHT_FLUSH: 0
+                }
+            };
+        });
+
         // Determine who starts: first round = 3 of Diamonds, later rounds = last winner
         if (this.roundNumber === 1) {
             // Find who has 3 of Diamonds
@@ -314,6 +336,12 @@ class Room {
             this.playedCards.push({ rank: card.rank, suit: card.suit, value: card.value });
         }
 
+        // Track play stats for advanced stats
+        if (this.roundPlayStats[playerId]) {
+            this.roundPlayStats[playerId].plays++;
+            this.roundPlayStats[playerId].handTypes[validatedHand.type]++;
+        }
+
         // Check if player finished round
         if (player.hand.length === 0) {
             this.winners.push(player);
@@ -337,6 +365,11 @@ class Room {
         this.playerLastPlayed[playerId] = { type: 'pass', playerId };
         this.passedPlayers.add(playerId); // Mark player as passed for this round
 
+        // Track pass stats for advanced stats
+        if (this.roundPlayStats[playerId]) {
+            this.roundPlayStats[playerId].passes++;
+        }
+
         this.passes++;
 
         // Check if all other players (except the one who played last) have passed
@@ -346,6 +379,11 @@ class Room {
 
         if (allOthersPassed) {
             // Round won - last player who played gets control
+            // Track lead success for advanced stats
+            if (this.roundPlayStats[lastPlayerId]) {
+                this.roundPlayStats[lastPlayerId].leadsWon++;
+            }
+
             this.lastPlayedHand = null;
             this.playerLastPlayed = {}; // Clear all displayed hands
             this.passedPlayers = new Set(); // Clear passed players
