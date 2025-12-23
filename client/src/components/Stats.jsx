@@ -8,6 +8,7 @@ const Stats = ({ user }) => {
     const [mode, setMode] = useState('standard');
     const [stats, setStats] = useState(null);
     const [headToHead, setHeadToHead] = useState([]);
+    const [tier3Stats, setTier3Stats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const navigate = useNavigate();
@@ -20,12 +21,14 @@ const Stats = ({ user }) => {
         setLoading(true);
         setError('');
         try {
-            const [statsRes, h2hRes] = await Promise.all([
+            const [statsRes, h2hRes, tier3Res] = await Promise.all([
                 axios.get(`${API_BASE}/api/stats/${user.username}/detailed?mode=${mode}`),
-                axios.get(`${API_BASE}/api/stats/${user.username}/head-to-head?mode=${mode}`)
+                axios.get(`${API_BASE}/api/stats/${user.username}/head-to-head?mode=${mode}`),
+                axios.get(`${API_BASE}/api/stats/${user.username}/tier3?mode=${mode}`)
             ]);
             setStats(statsRes.data);
             setHeadToHead(h2hRes.data.headToHead || []);
+            setTier3Stats(tier3Res.data);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load stats');
         } finally {
@@ -104,17 +107,34 @@ const Stats = ({ user }) => {
                         {/* Play Aggressiveness */}
                         <PlayStyleCard stats={stats.gameStats} roundAggregates={stats.roundAggregates} />
 
-                        {/* Lead Success Rate - Tier 2 */}
-                        <LeadSuccessCard stats={stats.gameStats} roundAggregates={stats.roundAggregates} />
-
                         {/* Combination Usage */}
                         <CombinationCard stats={stats.combinationStats} />
 
                         {/* Penalty Severity */}
-                        <PenaltyCard stats={stats.gameStats} />
+                        <PenaltyCard stats={stats.gameStats} roundAggregates={stats.roundAggregates} />
 
-                        {/* Head-to-Head Records - Tier 2 */}
+                        {/* Tier 2 Strategic Metrics */}
+                        <div className="col-span-full mt-4">
+                            <h2 className="text-3xl font-bold text-yellow-300 mb-2">Strategic Metrics (Tier 2)</h2>
+                            <p className="text-sm text-gray-400">Control, competition, and head-to-head performance</p>
+                        </div>
+
+                        <LeadSuccessCard stats={stats.gameStats} />
                         <HeadToHeadCard headToHead={headToHead} />
+
+                        {/* Tier 3 Advanced Analytics */}
+                        {tier3Stats && (
+                            <>
+                                <div className="col-span-full mt-4">
+                                    <h2 className="text-3xl font-bold text-yellow-300 mb-2">Advanced Analytics (Tier 3)</h2>
+                                    <p className="text-sm text-gray-400">Deep insights into decision quality, consistency, and play style</p>
+                                </div>
+
+                                <CardAwarenessCard stats={tier3Stats.cardAwareness} />
+                                <VarianceCard stats={tier3Stats.variance} />
+                                <BehavioralCard stats={tier3Stats.behavioral} />
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -146,7 +166,7 @@ const GameOverviewCard = ({ stats }) => {
     );
 };
 
-// Placement Card Component
+// Placement Card Component (Game-level only - final rankings)
 const PlacementCard = ({ stats }) => {
     const first = stats.first_place || 0;
     const second = stats.second_place || 0;
@@ -234,7 +254,6 @@ const CombinationCard = ({ stats }) => {
     ];
 
     const total = combinations.reduce((sum, c) => sum + c.value, 0);
-    const maxValue = Math.max(...combinations.map(c => c.value), 1);
 
     return (
         <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
@@ -260,12 +279,15 @@ const CombinationCard = ({ stats }) => {
     );
 };
 
-// Penalty Card Component
-const PenaltyCard = ({ stats }) => {
-    const penalty1x = (stats.total_rounds || 0) - (stats.penalty_2x_rounds || 0) - (stats.penalty_3x_rounds || 0);
-    const penalty2x = stats.penalty_2x_rounds || 0;
-    const penalty3x = stats.penalty_3x_rounds || 0;
-    const totalRounds = stats.total_rounds || 0;
+// Penalty Card Component (Round-level - updates after each round)
+const PenaltyCard = ({ stats, roundAggregates }) => {
+    // Use roundAggregates (real-time round data) if available, otherwise fall back to gameStats
+    const source = roundAggregates && (roundAggregates.total_rounds > 0) ? roundAggregates : stats;
+
+    const penalty1x = (source.total_rounds || 0) - (source.penalty_2x_rounds || 0) - (source.penalty_3x_rounds || 0);
+    const penalty2x = source.penalty_2x_rounds || 0;
+    const penalty3x = source.penalty_3x_rounds || 0;
+    const totalRounds = source.total_rounds || 0;
 
     const getPercentage = (count) => totalRounds > 0 ? ((count / totalRounds) * 100).toFixed(1) : '0.0';
 
@@ -319,7 +341,7 @@ const PenaltyBar = ({ label, count, percentage, color }) => (
 );
 
 // Lead Success Card Component - Tier 2
-const LeadSuccessCard = ({ stats, roundAggregates }) => {
+const LeadSuccessCard = ({ stats }) => {
     const leadsWon = stats.leads_won || 0;
     const leadAttempts = stats.lead_attempts || 0;
     const leadSuccessRate = leadAttempts > 0 ? ((leadsWon / leadAttempts) * 100).toFixed(1) : '0.0';
@@ -329,7 +351,7 @@ const LeadSuccessCard = ({ stats, roundAggregates }) => {
 
     return (
         <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
-            <h2 className="text-2xl font-bold text-yellow-600 mb-4">Lead Control (Tier 2)</h2>
+            <h2 className="text-2xl font-bold text-yellow-600 mb-4">Lead Control</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatItem label="Leads Won" value={leadsWon} valueColor="text-green-600" />
                 <StatItem label="Total Plays" value={totalPlays} />
@@ -357,7 +379,7 @@ const HeadToHeadCard = ({ headToHead }) => {
     if (!headToHead || headToHead.length === 0) {
         return (
             <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
-                <h2 className="text-2xl font-bold text-yellow-600 mb-4">Head-to-Head Records (Tier 2)</h2>
+                <h2 className="text-2xl font-bold text-yellow-600 mb-4">Head-to-Head Records</h2>
                 <p className="text-gray-500 text-center py-4">
                     Play against other players to build head-to-head records!
                 </p>
@@ -367,7 +389,7 @@ const HeadToHeadCard = ({ headToHead }) => {
 
     return (
         <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
-            <h2 className="text-2xl font-bold text-yellow-600 mb-4">Head-to-Head Records (Tier 2)</h2>
+            <h2 className="text-2xl font-bold text-yellow-600 mb-4">Head-to-Head Records</h2>
             <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead>
@@ -412,6 +434,210 @@ const HeadToHeadCard = ({ headToHead }) => {
                 <p>
                     <strong>Avg Placement Δ:</strong> Average placement difference (positive = you finish higher than opponent).
                 </p>
+            </div>
+        </div>
+    );
+};
+
+// Card Awareness & Decision Efficiency Card - Tier 3
+const CardAwarenessCard = ({ stats }) => {
+    if (!stats) {
+        return (
+            <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
+                <h2 className="text-2xl font-bold text-purple-600 mb-4">Decision Efficiency</h2>
+                <p className="text-gray-500 text-center py-4">No decision data available yet</p>
+            </div>
+        );
+    }
+
+    const totalDecisions = stats.total_decisions || 0;
+    const optimalDecisions = stats.optimal_decisions || 0;
+    const suboptimalDecisions = stats.suboptimal_decisions || 0;
+    const optimalRate = totalDecisions > 0 ? ((optimalDecisions / totalDecisions) * 100).toFixed(1) : '0.0';
+    const lateGameAccuracy = ((stats.late_game_accuracy || 0) * 100).toFixed(1);
+
+    const riskyPlaysTotal = (stats.risky_plays_successful || 0) + (stats.risky_plays_failed || 0);
+    const riskySuccessRate = riskyPlaysTotal > 0
+        ? ((stats.risky_plays_successful / riskyPlaysTotal) * 100).toFixed(1)
+        : '0.0';
+
+    return (
+        <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl border-2 border-purple-400">
+            <h2 className="text-2xl font-bold text-purple-600 mb-4">Decision Efficiency</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <StatItem label="Total Decisions" value={totalDecisions} />
+                <StatItem label="Optimal Plays" value={optimalDecisions} valueColor="text-green-600" />
+                <StatItem label="Suboptimal Plays" value={suboptimalDecisions} valueColor="text-orange-600" />
+                <StatItem
+                    label="Optimal Rate"
+                    value={`${optimalRate}%`}
+                    valueColor={parseFloat(optimalRate) >= 60 ? 'text-green-600' : 'text-gray-700'}
+                />
+                <StatItem
+                    label="Late Game Accuracy"
+                    value={`${lateGameAccuracy}%`}
+                    valueColor={parseFloat(lateGameAccuracy) >= 50 ? 'text-green-600' : 'text-gray-700'}
+                />
+                <StatItem
+                    label="Risky Play Success"
+                    value={`${riskySuccessRate}%`}
+                    valueColor={parseFloat(riskySuccessRate) >= 50 ? 'text-green-600' : 'text-red-600'}
+                />
+            </div>
+            <div className="mt-4 text-sm text-gray-600">
+                <p><strong>Decision Efficiency:</strong> Measures the quality of your play decisions. Higher optimal rate = better strategic choices.</p>
+                <p><strong>Late Game Accuracy:</strong> Your positional advantage in the final stages of rounds.</p>
+            </div>
+        </div>
+    );
+};
+
+// Variance & Streak Card - Tier 3
+const VarianceCard = ({ stats }) => {
+    if (!stats) {
+        return (
+            <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
+                <h2 className="text-2xl font-bold text-blue-600 mb-4">Performance Variance</h2>
+                <p className="text-gray-500 text-center py-4">No variance data available yet</p>
+            </div>
+        );
+    }
+
+    const currentStreak = stats.current_streak || 0;
+    const longestWinStreak = stats.longest_win_streak || 0;
+    const longestLossStreak = stats.longest_loss_streak || 0;
+    const luckyWins = stats.lucky_wins || 0;
+    const skilledWins = stats.skilled_wins || 0;
+    const totalWins = luckyWins + skilledWins;
+    const skillRate = totalWins > 0 ? ((skilledWins / totalWins) * 100).toFixed(1) : '0.0';
+
+    // New: Variance and Consistency scores
+    const varianceScore = ((stats.variance_score || 0) * 100).toFixed(1);
+    const consistencyRating = ((stats.consistency_rating || 0) * 100).toFixed(1);
+
+    const streakDisplay = currentStreak > 0
+        ? `+${currentStreak} Win${currentStreak !== 1 ? 's' : ''}`
+        : currentStreak < 0
+        ? `${currentStreak} Loss${currentStreak !== -1 ? 'es' : ''}`
+        : 'No Streak';
+
+    const streakColor = currentStreak > 0 ? 'text-green-600' : currentStreak < 0 ? 'text-red-600' : 'text-gray-700';
+
+    return (
+        <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl border-2 border-blue-400">
+            <h2 className="text-2xl font-bold text-blue-600 mb-4">Performance Variance</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <StatItem
+                    label="Current Streak"
+                    value={streakDisplay}
+                    valueColor={streakColor}
+                />
+                <StatItem
+                    label="Longest Win Streak"
+                    value={longestWinStreak}
+                    valueColor="text-green-600"
+                />
+                <StatItem
+                    label="Longest Loss Streak"
+                    value={longestLossStreak}
+                    valueColor="text-red-600"
+                />
+                <StatItem label="Skilled Wins" value={skilledWins} valueColor="text-green-600" />
+                <StatItem label="Lucky Wins" value={luckyWins} valueColor="text-yellow-600" />
+                <StatItem
+                    label="Skill Rate"
+                    value={`${skillRate}%`}
+                    valueColor={parseFloat(skillRate) >= 70 ? 'text-green-600' : 'text-gray-700'}
+                />
+                <StatItem
+                    label="Consistency Rating"
+                    value={`${consistencyRating}%`}
+                    valueColor={parseFloat(consistencyRating) >= 70 ? 'text-green-600' : parseFloat(consistencyRating) >= 50 ? 'text-yellow-600' : 'text-gray-700'}
+                />
+                <StatItem
+                    label="Variance Score"
+                    value={`${varianceScore}%`}
+                    valueColor={parseFloat(varianceScore) < 30 ? 'text-green-600' : parseFloat(varianceScore) < 50 ? 'text-yellow-600' : 'text-red-600'}
+                />
+            </div>
+            <div className="mt-4 text-sm text-gray-600">
+                <p><strong>Variance Analysis:</strong> Tracks consistency and performance patterns over time.</p>
+                <p><strong>Consistency Rating:</strong> Higher is better - shows how reliably you perform.</p>
+                <p><strong>Variance Score:</strong> Lower is better - measures performance volatility.</p>
+                <p><strong>Skilled vs Lucky Wins:</strong> Wins attributed to strong play vs. fortunate circumstances.</p>
+            </div>
+        </div>
+    );
+};
+
+// Behavioral Profile Card - Tier 3
+const BehavioralCard = ({ stats }) => {
+    if (!stats) {
+        return (
+            <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
+                <h2 className="text-2xl font-bold text-indigo-600 mb-4">Player Profile</h2>
+                <p className="text-gray-500 text-center py-4">No behavioral data available yet</p>
+            </div>
+        );
+    }
+
+    const aggressionScore = ((stats.aggression_score || 0) * 100).toFixed(1);
+    const riskScore = ((stats.risk_score || 0) * 100).toFixed(1);
+    const adaptabilityScore = ((stats.adaptability_score || 0) * 100).toFixed(1);
+    const archetype = stats.player_archetype || 'Unknown';
+    const earlyGameStyle = stats.early_game_style || 'Neutral';
+    const lateGameStyle = stats.late_game_style || 'Neutral';
+
+    const archetypeColor = {
+        'Aggressive': 'text-red-600',
+        'Conservative': 'text-blue-600',
+        'Balanced': 'text-green-600',
+        'Adaptive': 'text-purple-600'
+    }[archetype] || 'text-gray-700';
+
+    return (
+        <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl border-2 border-indigo-400">
+            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Player Profile</h2>
+
+            <div className="mb-6 p-4 bg-indigo-50 rounded-lg">
+                <div className="text-center">
+                    <div className="text-sm text-gray-600 mb-1">Player Archetype</div>
+                    <div className={`text-3xl font-bold ${archetypeColor}`}>{archetype}</div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <StatItem
+                    label="Aggression Score"
+                    value={`${aggressionScore}%`}
+                    valueColor={parseFloat(aggressionScore) > 70 ? 'text-red-600' : parseFloat(aggressionScore) < 40 ? 'text-blue-600' : 'text-gray-700'}
+                />
+                <StatItem
+                    label="Risk Score"
+                    value={`${riskScore}%`}
+                    valueColor={parseFloat(riskScore) > 60 ? 'text-orange-600' : 'text-gray-700'}
+                />
+                <StatItem
+                    label="Adaptability"
+                    value={`${adaptabilityScore}%`}
+                    valueColor={parseFloat(adaptabilityScore) > 70 ? 'text-green-600' : 'text-gray-700'}
+                />
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-4">
+                <div className="p-3 bg-gray-50 rounded">
+                    <div className="text-sm text-gray-600 mb-1">Early Game</div>
+                    <div className="font-bold">{earlyGameStyle}</div>
+                </div>
+                <div className="p-3 bg-gray-50 rounded">
+                    <div className="text-sm text-gray-600 mb-1">Late Game</div>
+                    <div className="font-bold">{lateGameStyle}</div>
+                </div>
+            </div>
+
+            <div className="mt-4 text-sm text-gray-600">
+                <p><strong>Behavioral Profile:</strong> AI-classified play style based on decision patterns.</p>
+                <p><strong>Archetypes:</strong> Aggressive (high pressure), Conservative (safe play), Balanced (mixed), Adaptive (flexible).</p>
             </div>
         </div>
     );

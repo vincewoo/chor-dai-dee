@@ -89,7 +89,7 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
 };
 
 // Played cards display component - extracted to prevent re-renders
-const PlayedCards = ({ lastPlayed, position }) => {
+const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, hasActiveHandOnTable = false }) => {
     // Mobile: position near avatars; Desktop: original positions
     const positionClasses = {
         top: "absolute top-[90px] md:top-[18vh] left-1/2 -translate-x-1/2",
@@ -104,15 +104,49 @@ const PlayedCards = ({ lastPlayed, position }) => {
     const isSidePlayer = position === 'top' || position === 'left' || position === 'right';
     const cardSize = 'large'; // Use large for all on mobile
 
+    // Determine what to display
+    // Only show turn indicator when it's their turn AND there's no active hand on the table (free control)
+    const showTurnIndicator = !hasActiveHandOnTable && isCurrentTurn;
+    const showPlayedCards = !!lastPlayed;
+
+    // Return null if nothing to show
+    if (!showTurnIndicator && !showPlayedCards) {
+        return null;
+    }
+
     return (
         <AnimatePresence mode="wait">
-            {lastPlayed && (
+            {showTurnIndicator ? (
+                // Turn indicator display
+                <motion.div
+                    key={`turn-${position}`}
+                    className={positionClasses[position]}
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.5, opacity: 0 }}
+                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                >
+                    <div className={`px-4 py-2 md:px-[1.5vmax] md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] shadow-lg ${
+                        isMe ? 'bg-yellow-500 text-black animate-pulse' : 'bg-black/60 text-white'
+                    }`}>
+                        {isMe ? "Your Turn!" : `${playerName}'s Turn`}
+                    </div>
+                </motion.div>
+            ) : (
+                // Played cards display (existing logic with enhancements)
                 <motion.div
                     key={getPlayedHandKey(lastPlayed)}
                     className={positionClasses[position]}
                     initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                    animate={{
+                        scale: 1,
+                        opacity: 1
+                    }}
+                    transition={{
+                        type: "spring",
+                        stiffness: 200,
+                        damping: 15
+                    }}
                 >
                     <div
                         className="flex -ml-2 md:-ml-[1vmax]"
@@ -144,7 +178,7 @@ const PlayedCards = ({ lastPlayed, position }) => {
 };
 
 // Top Player Area - cards horizontal on left, avatar on right
-const TopPlayerArea = ({ player, isTurn }) => {
+const TopPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandOnTable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -177,13 +211,20 @@ const TopPlayerArea = ({ player, isTurn }) => {
                 </div>
             </div>
             {/* Played cards or PASS - below player */}
-            <PlayedCards lastPlayed={player.lastPlayed} position="top" />
+            <PlayedCards
+                lastPlayed={player.lastPlayed}
+                position="top"
+                isCurrentTurn={isCurrentTurn}
+                playerName={player.name}
+                isMe={player.id === socketId}
+                hasActiveHandOnTable={hasActiveHandOnTable}
+            />
         </>
     );
 };
 
 // Left Player Area - cards vertical (rotated 90°), avatar at bottom
-const LeftPlayerArea = ({ player, isTurn }) => {
+const LeftPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandOnTable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -216,13 +257,20 @@ const LeftPlayerArea = ({ player, isTurn }) => {
                 </div>
             </div>
             {/* Played cards or PASS - to the right of player */}
-            <PlayedCards lastPlayed={player.lastPlayed} position="left" />
+            <PlayedCards
+                lastPlayed={player.lastPlayed}
+                position="left"
+                isCurrentTurn={isCurrentTurn}
+                playerName={player.name}
+                isMe={player.id === socketId}
+                hasActiveHandOnTable={hasActiveHandOnTable}
+            />
         </>
     );
 };
 
 // Right Player Area - cards vertical (rotated 90°), avatar at top
-const RightPlayerArea = ({ player, isTurn }) => {
+const RightPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandOnTable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -255,7 +303,14 @@ const RightPlayerArea = ({ player, isTurn }) => {
                 </div>
             </div>
             {/* Played cards or PASS - to the left of player */}
-            <PlayedCards lastPlayed={player.lastPlayed} position="right" />
+            <PlayedCards
+                lastPlayed={player.lastPlayed}
+                position="right"
+                isCurrentTurn={isCurrentTurn}
+                playerName={player.name}
+                isMe={player.id === socketId}
+                hasActiveHandOnTable={hasActiveHandOnTable}
+            />
         </>
     );
 };
@@ -493,6 +548,11 @@ const GameRoom = ({ user, socket }) => {
         setCustomHandOrder(reorderedHand);
     };
 
+    // Helper to check if it's a player's turn
+    const isPlayersTurn = (player) => {
+        return gameState.gameState === 'playing' && player && player.id === gameState.currentTurn;
+    };
+
     // Callback for HandHelper to set selected cards
     const handleSelectCards = useCallback((cards) => {
         setSelectedCards(cards);
@@ -520,8 +580,8 @@ const GameRoom = ({ user, socket }) => {
     };
 
     const leaveRoom = () => {
+        socket.emit('leave_room', { roomId });
         navigate('/lobby');
-        // socket emit leave?
     };
 
     if (!gameState) return <div className="text-white text-center mt-20">Loading...</div>;
@@ -757,64 +817,41 @@ const GameRoom = ({ user, socket }) => {
             {/* Game Table Layout */}
 
             {/* Top Player (Offset 2) */}
-            <TopPlayerArea player={getRelativePlayer(2)} isTurn={gameState.currentTurn === getRelativePlayer(2)?.id} />
+            <TopPlayerArea
+                player={getRelativePlayer(2)}
+                isTurn={gameState.currentTurn === getRelativePlayer(2)?.id}
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(2))}
+                socketId={socket?.id}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
 
             {/* Left Player (Offset 3) */}
-            <LeftPlayerArea player={getRelativePlayer(3)} isTurn={gameState.currentTurn === getRelativePlayer(3)?.id} />
+            <LeftPlayerArea
+                player={getRelativePlayer(3)}
+                isTurn={gameState.currentTurn === getRelativePlayer(3)?.id}
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(3))}
+                socketId={socket?.id}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
 
             {/* Right Player (Offset 1) */}
-            <RightPlayerArea player={getRelativePlayer(1)} isTurn={gameState.currentTurn === getRelativePlayer(1)?.id} />
-
-            {/* Center: Current hand to beat */}
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
-                {/* Turn indicator */}
-                {gameState.gameState === 'playing' && (
-                    <div className={`mb-3 md:mb-[1vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] shadow-lg ${
-                        isMyTurn
-                            ? 'bg-yellow-500 text-black animate-pulse'
-                            : 'bg-black/60 text-white'
-                    }`}>
-                        {isMyTurn ? "Your Turn!" : `${gameState.players.find(p => p.id === gameState.currentTurn)?.name}'s Turn`}
-                    </div>
-                )}
-
-                {/* Hand to beat */}
-                <AnimatePresence mode="wait">
-                    {gameState.lastPlayedHand ? (
-                        <motion.div
-                            key={getPlayedHandKey(gameState.lastPlayedHand)}
-                            className="flex flex-col items-center"
-                            initial={{ scale: 0.5, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                        >
-                            <div className="text-white/70 text-lg md:text-[1.2vmax] mb-2 md:mb-[0.5vmax] font-semibold">Hand to Beat</div>
-                            <div className="flex bg-black/30 px-3 md:px-[1.5vmax] py-2 md:py-[1vmax] rounded-xl -ml-2 md:-ml-[1.5vmax]">
-                                {gameState.lastPlayedHand.cards.map((card) => (
-                                    <div key={`center-${card.rank}-${card.suit}`} className="-ml-2 md:-ml-[1vmax]">
-                                        <Card rank={card.rank} suit={card.suit} size="large" />
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="text-white/50 text-base md:text-[1vmax] mt-2 md:mt-[0.75vmax]">
-                                {gameState.lastPlayedHand.type.replace(/_/g, ' ').toUpperCase()}
-                            </div>
-                        </motion.div>
-                    ) : (
-                        <motion.div
-                            key="free-play"
-                            className="text-white/30 font-bold text-[1.5vmax] border-2 border-dashed border-white/30 px-[2vmax] py-[1vmax] rounded-lg"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                        >
-                            Free Play
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
+            <RightPlayerArea
+                player={getRelativePlayer(1)}
+                isTurn={gameState.currentTurn === getRelativePlayer(1)?.id}
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(1))}
+                socketId={socket?.id}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
 
             {/* Bottom player's played cards or PASS */}
-            <PlayedCards lastPlayed={getRelativePlayer(0)?.lastPlayed} position="bottom" />
+            <PlayedCards
+                lastPlayed={getRelativePlayer(0)?.lastPlayed}
+                position="bottom"
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(0))}
+                playerName={getRelativePlayer(0)?.name}
+                isMe={true}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
 
             {/* Bottom: My Hand & Controls */}
             <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex items-end gap-[1vmax]">

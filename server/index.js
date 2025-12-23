@@ -672,6 +672,45 @@ io.on('connection', (socket) => {
       }
   });
 
+  socket.on('leave_room', ({ roomId }) => {
+    console.log(`User ${socket.id} leaving room ${roomId}`);
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const playerName = player.name;
+
+    // Remove player from room
+    if (room.gameState === 'waiting') {
+      // During waiting state, just remove the player
+      room.removePlayer(socket.id);
+      socket.leave(roomId);
+
+      // Notify other players
+      io.to(roomId).emit('room_update', room.getGameState());
+      console.log(`Player ${playerName} left room ${roomId}`);
+
+      // If room is empty, delete it
+      if (room.players.length === 0) {
+        roomManager.deleteRoom(roomId);
+        console.log(`Room ${roomId} deleted (empty)`);
+      }
+    } else {
+      // During active game, mark as disconnected instead
+      const disconnectedPlayer = room.markDisconnected(socket.id);
+      socket.leave(roomId);
+
+      if (disconnectedPlayer) {
+        console.log(`Player ${playerName} left during game, marked as disconnected in room ${roomId}`);
+        io.to(roomId).emit('room_update', room.getGameState());
+        io.to(roomId).emit('player_disconnected', { playerName: disconnectedPlayer.name });
+      }
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
 

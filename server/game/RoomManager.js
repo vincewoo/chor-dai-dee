@@ -208,7 +208,7 @@ class Room {
         this.winners = [];
         this.playedCards = []; // Reset card tracking for new round
         this.turnNumber = 0; // Reset turn counter for new round
-        this.tier3DecisionTracking = {}; // Reset Tier 3 decision tracking for new round
+        // DON'T reset tier3DecisionTracking - accumulate across all rounds in the game
 
         // Initialize round play stats for advanced stats tracking
         this.roundPlayStats = {};
@@ -371,6 +371,7 @@ class Room {
             }
 
             this.tier3DecisionTracking[playerId].decisions.push({
+                round: this.roundNumber,
                 turn: this.turnNumber,
                 action: 'play',
                 quality: decision.quality,
@@ -444,6 +445,7 @@ class Room {
             }
 
             this.tier3DecisionTracking[playerId].decisions.push({
+                round: this.roundNumber,
                 turn: this.turnNumber,
                 action: 'pass',
                 quality: decision.quality,
@@ -570,7 +572,7 @@ class Room {
                         this.passTurn(currentPlayer.id);
                         callback({ type: 'pass', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
                     }
-                }, 1000); // 1s delay for realism
+                }, 200); // 200ms delay for realism
             };
 
             // Choose bot logic based on settings
