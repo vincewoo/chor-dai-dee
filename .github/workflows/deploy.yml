@@ -68,6 +68,7 @@ jobs:
             --exclude 'server/node_modules' \
             --exclude 'server/database.sqlite' \
             --exclude 'certs' \
+            --exclude '.env' \
             ./ ${SYNOLOGY_USER}@${SYNOLOGY_IP}:${DEPLOY_PATH}/
 
       - name: Deploy with Docker Compose
@@ -81,15 +82,21 @@ jobs:
           ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} << EOF
             cd ${DEPLOY_PATH}
 
+            # Create .env file with Tailscale auth key
+            echo "TS_AUTHKEY=${TS_AUTHKEY}" > .env
+
             # Pull latest images and rebuild
-            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose pull
-            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose build --no-cache
+            sudo docker-compose pull
+            sudo docker-compose build --no-cache
 
             # Stop and remove old containers
-            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose down
+            sudo docker-compose down
 
-            # Start new containers with Tailscale auth key
-            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose up -d
+            # Start new containers (docker-compose will read .env automatically)
+            sudo docker-compose up -d
+
+            # Remove .env file for security
+            rm -f .env
 
             # Show status
             sudo docker-compose ps
