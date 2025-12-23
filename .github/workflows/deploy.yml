@@ -47,7 +47,21 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/synology_key
           chmod 600 ~/.ssh/synology_key
-          ssh-keyscan -H -p ${SYNOLOGY_PORT} ${SYNOLOGY_IP} >> ~/.ssh/known_hosts
+
+          # Add host key with retries (ssh-keyscan can be flaky)
+          for i in 1 2 3; do
+            echo "Attempt $i: Scanning SSH host keys..."
+            if ssh-keyscan -T 10 -H -p ${SYNOLOGY_PORT} ${SYNOLOGY_IP} >> ~/.ssh/known_hosts 2>/dev/null; then
+              echo "Successfully obtained host keys"
+              break
+            fi
+            if [ $i -lt 3 ]; then
+              echo "Failed, retrying in 5 seconds..."
+              sleep 5
+            else
+              echo "Failed after 3 attempts, continuing anyway (strict host checking will be disabled)"
+            fi
+          done
 
       - name: Copy files to Synology
         env:
@@ -57,11 +71,11 @@ jobs:
           DEPLOY_PATH: ${{ secrets.SYNOLOGY_DEPLOY_PATH }}
         run: |
           # Create deployment directory if it doesn't exist
-          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} "mkdir -p ${DEPLOY_PATH}"
+          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} -o StrictHostKeyChecking=accept-new ${SYNOLOGY_USER}@${SYNOLOGY_IP} "mkdir -p ${DEPLOY_PATH}"
 
           # Copy application files
           rsync -avz --delete \
-            -e "ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT}" \
+            -e "ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} -o StrictHostKeyChecking=accept-new" \
             --exclude 'node_modules' \
             --exclude '.git' \
             --exclude 'client/node_modules' \
@@ -79,7 +93,7 @@ jobs:
           DEPLOY_PATH: ${{ secrets.SYNOLOGY_DEPLOY_PATH }}
           TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
         run: |
-          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} << EOF
+          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} -o StrictHostKeyChecking=accept-new ${SYNOLOGY_USER}@${SYNOLOGY_IP} << EOF
             cd ${DEPLOY_PATH}
 
             # Create .env file with Tailscale auth key
