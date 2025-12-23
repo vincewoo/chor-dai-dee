@@ -79,6 +79,92 @@ function initDb() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_h2h_player_mode
                 ON head_to_head_stats(player_id, game_mode)`);
 
+        // Create Tier 3 advanced analytics tables
+
+        // Decision Efficiency: Track each play decision for optimality analysis
+        db.run(`CREATE TABLE IF NOT EXISTS decision_tracking (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            round_number INTEGER NOT NULL,
+            turn_number INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            hand_size INTEGER NOT NULL,
+            cards_remaining_in_deck INTEGER NOT NULL,
+            current_pile_strength REAL,
+            hand_strength REAL,
+            decision_quality TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
+
+        db.run(`CREATE INDEX IF NOT EXISTS idx_decision_tracking_user
+                ON decision_tracking(user_id, game_id)`);
+
+        // Card Counting: Track prediction accuracy and deck awareness
+        db.run(`CREATE TABLE IF NOT EXISTS card_awareness_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            game_mode TEXT NOT NULL,
+            total_decisions INTEGER DEFAULT 0,
+            optimal_decisions INTEGER DEFAULT 0,
+            suboptimal_decisions INTEGER DEFAULT 0,
+            risky_plays_successful INTEGER DEFAULT 0,
+            risky_plays_failed INTEGER DEFAULT 0,
+            late_game_accuracy REAL DEFAULT 0.0,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(user_id, game_mode)
+        )`);
+
+        // Variance & Consistency: Track performance patterns over time
+        db.run(`CREATE TABLE IF NOT EXISTS variance_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            game_mode TEXT NOT NULL,
+            current_streak INTEGER DEFAULT 0,
+            longest_win_streak INTEGER DEFAULT 0,
+            longest_loss_streak INTEGER DEFAULT 0,
+            total_sessions INTEGER DEFAULT 0,
+            variance_score REAL DEFAULT 0.0,
+            consistency_rating REAL DEFAULT 0.0,
+            lucky_wins INTEGER DEFAULT 0,
+            skilled_wins INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(user_id, game_mode)
+        )`);
+
+        // Behavioral Segmentation: Classify player styles
+        db.run(`CREATE TABLE IF NOT EXISTS behavioral_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            game_mode TEXT NOT NULL,
+            aggression_score REAL DEFAULT 0.0,
+            risk_score REAL DEFAULT 0.0,
+            adaptability_score REAL DEFAULT 0.0,
+            player_archetype TEXT DEFAULT 'Balanced',
+            early_game_style TEXT DEFAULT 'Neutral',
+            late_game_style TEXT DEFAULT 'Neutral',
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(user_id, game_mode)
+        )`);
+
+        db.run(`CREATE INDEX IF NOT EXISTS idx_behavioral_user
+                ON behavioral_stats(user_id, game_mode)`);
+
+        // Placement History: Track game placements over time for adaptability calculation
+        db.run(`CREATE TABLE IF NOT EXISTS placement_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            game_mode TEXT NOT NULL,
+            game_id TEXT NOT NULL,
+            placement INTEGER NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
+
+        db.run(`CREATE INDEX IF NOT EXISTS idx_placement_history_user
+                ON placement_history(user_id, game_mode)`);
+
         // Check if round_stats table needs leads_won column (migration for existing databases)
         db.all("PRAGMA table_info(round_stats)", (err, columns) => {
             if (err) {
@@ -457,12 +543,18 @@ const getRoundAggregates = (userId, gameMode) => {
                 COUNT(*) as total_rounds,
                 AVG(placement) as avg_placement,
                 SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END) as round_wins,
+                SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END) as first_place,
+                SUM(CASE WHEN placement = 2 THEN 1 ELSE 0 END) as second_place,
+                SUM(CASE WHEN placement = 3 THEN 1 ELSE 0 END) as third_place,
+                SUM(CASE WHEN placement = 4 THEN 1 ELSE 0 END) as fourth_place,
                 SUM(plays_count) as total_plays,
                 SUM(passes_count) as total_passes,
                 SUM(leads_won) as leads_won,
                 AVG(CAST(plays_count AS REAL) / NULLIF(plays_count + passes_count, 0)) as play_rate,
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x,
-                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x
+                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x,
+                SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x_rounds,
+                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x_rounds
             FROM round_stats
             WHERE user_id = ? AND game_mode = ?
         `;
@@ -626,6 +718,260 @@ const getHeadToHeadStats = (playerId, gameMode) => {
     });
 };
 
+// ========== TIER 3 ADVANCED ANALYTICS FUNCTIONS ==========
+
+// Track individual decision for efficiency analysis
+const trackDecision = (gameId, userId, roundNumber, turnNumber, action, handSize, cardsInDeck, pileStrength, handStrength, quality) => {
+    return new Promise((resolve, reject) => {
+        const query = `INSERT INTO decision_tracking
+            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+        db.run(query, [gameId, userId, roundNumber, turnNumber, action, handSize, cardsInDeck, pileStrength, handStrength, quality], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Update card awareness stats
+const updateCardAwarenessStats = (userId, gameMode, isOptimal, isRisky, riskSucceeded, lateGameAccuracy) => {
+    return new Promise((resolve, reject) => {
+        // Insert or update
+        const query = `INSERT INTO card_awareness_stats
+            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_accuracy)
+            VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, game_mode) DO UPDATE SET
+                total_decisions = total_decisions + 1,
+                optimal_decisions = optimal_decisions + ?,
+                suboptimal_decisions = suboptimal_decisions + ?,
+                risky_plays_successful = risky_plays_successful + ?,
+                risky_plays_failed = risky_plays_failed + ?,
+                late_game_accuracy = (late_game_accuracy * (total_decisions - 1) + ?) / total_decisions`;
+
+        const optimalVal = isOptimal ? 1 : 0;
+        const suboptimalVal = !isOptimal ? 1 : 0;
+        const riskySuccess = (isRisky && riskSucceeded) ? 1 : 0;
+        const riskyFail = (isRisky && !riskSucceeded) ? 1 : 0;
+
+        db.run(query, [
+            userId, gameMode, optimalVal, suboptimalVal, riskySuccess, riskyFail, lateGameAccuracy,
+            optimalVal, suboptimalVal, riskySuccess, riskyFail, lateGameAccuracy
+        ], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Get card awareness stats
+const getCardAwarenessStats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT * FROM card_awareness_stats WHERE user_id = ? AND game_mode = ?`;
+        db.get(query, [userId, gameMode], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || null);
+        });
+    });
+};
+
+// Update variance and streak stats
+const updateVarianceStats = (userId, gameMode, isWin, isLucky) => {
+    return new Promise((resolve, reject) => {
+        // First get current stats
+        db.get(`SELECT * FROM variance_stats WHERE user_id = ? AND game_mode = ?`, [userId, gameMode], (err, row) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+
+            const currentStreak = row ? row.current_streak : 0;
+            const longestWin = row ? row.longest_win_streak : 0;
+            const longestLoss = row ? row.longest_loss_streak : 0;
+
+            // Calculate new streak
+            let newStreak;
+            if (isWin) {
+                newStreak = currentStreak >= 0 ? currentStreak + 1 : 1;
+            } else {
+                newStreak = currentStreak <= 0 ? currentStreak - 1 : -1;
+            }
+
+            const newLongestWin = isWin && newStreak > longestWin ? newStreak : longestWin;
+            const newLongestLoss = !isWin && Math.abs(newStreak) > longestLoss ? Math.abs(newStreak) : longestLoss;
+
+            const luckyWinInc = (isWin && isLucky) ? 1 : 0;
+            const skilledWinInc = (isWin && !isLucky) ? 1 : 0;
+
+            const query = `INSERT INTO variance_stats
+                (user_id, game_mode, current_streak, longest_win_streak, longest_loss_streak, total_sessions, lucky_wins, skilled_wins)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(user_id, game_mode) DO UPDATE SET
+                    current_streak = ?,
+                    longest_win_streak = ?,
+                    longest_loss_streak = ?,
+                    total_sessions = total_sessions + 1,
+                    lucky_wins = lucky_wins + ?,
+                    skilled_wins = skilled_wins + ?`;
+
+            db.run(query, [
+                userId, gameMode, newStreak, newLongestWin, newLongestLoss, luckyWinInc, skilledWinInc,
+                newStreak, newLongestWin, newLongestLoss, luckyWinInc, skilledWinInc
+            ], (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    });
+};
+
+// Get variance stats
+const getVarianceStats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT * FROM variance_stats WHERE user_id = ? AND game_mode = ?`;
+        db.get(query, [userId, gameMode], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || null);
+        });
+    });
+};
+
+// Update behavioral classification with optional early/late game phase data
+const updateBehavioralStats = (userId, gameMode, aggressionScore, riskScore, adaptabilityScore, earlyGameAggression = null, lateGameRisk = null) => {
+    return new Promise((resolve, reject) => {
+        // Determine archetype based on scores
+        let archetype = 'Balanced';
+        if (aggressionScore > 0.7 && riskScore > 0.6) {
+            archetype = 'Aggressive';
+        } else if (aggressionScore < 0.4 && riskScore < 0.4) {
+            archetype = 'Conservative';
+        } else if (adaptabilityScore > 0.75) {
+            archetype = 'Adaptive';
+        }
+
+        // Determine early/late game styles
+        // Use phase-specific data if available, otherwise use overall scores
+        const earlyAggressionScore = earlyGameAggression !== null ? earlyGameAggression : aggressionScore;
+        const lateRiskScore = lateGameRisk !== null ? lateGameRisk : riskScore;
+
+        const earlyStyle = earlyAggressionScore > 0.6 ? 'Aggressive' : earlyAggressionScore < 0.4 ? 'Passive' : 'Neutral';
+        const lateStyle = lateRiskScore > 0.6 ? 'Risky' : lateRiskScore < 0.4 ? 'Safe' : 'Neutral';
+
+        const query = `INSERT INTO behavioral_stats
+            (user_id, game_mode, aggression_score, risk_score, adaptability_score, player_archetype, early_game_style, late_game_style)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, game_mode) DO UPDATE SET
+                aggression_score = (aggression_score * 0.8 + ? * 0.2),
+                risk_score = (risk_score * 0.8 + ? * 0.2),
+                adaptability_score = (adaptability_score * 0.8 + ? * 0.2),
+                player_archetype = ?,
+                early_game_style = ?,
+                late_game_style = ?`;
+
+        db.run(query, [
+            userId, gameMode, aggressionScore, riskScore, adaptabilityScore, archetype, earlyStyle, lateStyle,
+            aggressionScore, riskScore, adaptabilityScore, archetype, earlyStyle, lateStyle
+        ], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Get behavioral stats
+const getBehavioralStats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT * FROM behavioral_stats WHERE user_id = ? AND game_mode = ?`;
+        db.get(query, [userId, gameMode], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || null);
+        });
+    });
+};
+
+// Save placement history for adaptability tracking
+const savePlacementHistory = (userId, gameMode, gameId, placement) => {
+    return new Promise((resolve, reject) => {
+        const query = `INSERT INTO placement_history (user_id, game_mode, game_id, placement)
+            VALUES (?, ?, ?, ?)`;
+
+        db.run(query, [userId, gameMode, gameId, placement], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Get recent placement history for adaptability calculation
+const getPlacementHistory = (userId, gameMode, limit = 20) => {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT placement FROM placement_history
+            WHERE user_id = ? AND game_mode = ?
+            ORDER BY timestamp DESC
+            LIMIT ?`;
+
+        db.all(query, [userId, gameMode, limit], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows ? rows.map(r => r.placement) : []);
+        });
+    });
+};
+
+// Calculate and update variance/consistency scores
+const updateVarianceScores = async (userId, gameMode) => {
+    try {
+        const placements = await getPlacementHistory(userId, gameMode, 20);
+
+        if (placements.length < 3) {
+            // Not enough data yet
+            return;
+        }
+
+        // Calculate variance score
+        const avg = placements.reduce((a, b) => a + b, 0) / placements.length;
+        const variance = placements.reduce((sum, p) => sum + Math.pow(p - avg, 2), 0) / placements.length;
+        const stdDev = Math.sqrt(variance);
+
+        // Normalize variance score (0-1, lower is better)
+        const varianceScore = Math.min(1, stdDev / 1.5);
+
+        // Consistency rating (inverse of variance - higher is better)
+        const consistencyRating = Math.max(0, 1 - varianceScore);
+
+        // Update variance_stats table
+        const query = `UPDATE variance_stats
+            SET variance_score = ?, consistency_rating = ?
+            WHERE user_id = ? AND game_mode = ?`;
+
+        return new Promise((resolve, reject) => {
+            db.run(query, [varianceScore, consistencyRating, userId, gameMode], (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    } catch (err) {
+        console.error('Error updating variance scores:', err);
+        throw err;
+    }
+};
+
+// Get all Tier 3 stats for a user
+const getTier3Stats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        Promise.all([
+            getCardAwarenessStats(userId, gameMode),
+            getVarianceStats(userId, gameMode),
+            getBehavioralStats(userId, gameMode)
+        ]).then(([awareness, variance, behavioral]) => {
+            resolve({
+                cardAwareness: awareness,
+                variance: variance,
+                behavioral: behavioral
+            });
+        }).catch(reject);
+    });
+};
+
 module.exports = {
     db,
     createUser,
@@ -642,5 +988,17 @@ module.exports = {
     getRecentRounds,
     updateAggregateStats,
     updateHeadToHeadStats,
-    getHeadToHeadStats
+    getHeadToHeadStats,
+    // Tier 3 functions
+    trackDecision,
+    updateCardAwarenessStats,
+    getCardAwarenessStats,
+    updateVarianceStats,
+    getVarianceStats,
+    updateBehavioralStats,
+    getBehavioralStats,
+    getTier3Stats,
+    savePlacementHistory,
+    getPlacementHistory,
+    updateVarianceScores
 };

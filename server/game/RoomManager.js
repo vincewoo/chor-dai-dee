@@ -4,6 +4,7 @@ const { Big2Rules } = require('./Big2Rules');
 const { BotLogic } = require('./BotLogic');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
+const { DecisionAnalyzer } = require('./DecisionAnalyzer');
 
 class Room {
     constructor(roomId, gameMode = 'standard') {
@@ -29,6 +30,8 @@ class Room {
         this.pointThreshold = getPointThreshold(gameMode); // Point threshold for game over
         this.roundPlayStats = {}; // Track plays/passes per round for advanced stats
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`; // Unique game ID for round tracking
+        this.turnNumber = 0; // Track turn number within each round for decision tracking
+        this.tier3DecisionTracking = {}; // Track Tier 3 decision data per player
     }
 
     addPlayer(player) {
@@ -204,6 +207,8 @@ class Room {
         this.passes = 0;
         this.winners = [];
         this.playedCards = []; // Reset card tracking for new round
+        this.turnNumber = 0; // Reset turn counter for new round
+        this.tier3DecisionTracking = {}; // Reset Tier 3 decision tracking for new round
 
         // Initialize round play stats for advanced stats tracking
         this.roundPlayStats = {};
@@ -342,6 +347,50 @@ class Room {
             this.roundPlayStats[playerId].handTypes[validatedHand.type]++;
         }
 
+        // Track Tier 3 decision quality (for human players only)
+        if (!player.isBot) {
+            const handValues = player.hand.map(c => c.value);
+            const cardsInDeck = 52 - this.playedCards.length;
+            const handStrength = DecisionAnalyzer.calculateHandStrength(handValues);
+            const pileStrength = DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand);
+
+            const decision = DecisionAnalyzer.evaluateDecision({
+                action: 'play',
+                hand: handValues,
+                pile: this.lastPlayedHand,
+                cardsInDeck,
+                playedCards: this.playedCards
+            });
+
+            if (!this.tier3DecisionTracking[playerId]) {
+                this.tier3DecisionTracking[playerId] = {
+                    decisions: [],
+                    riskyPlays: 0,
+                    optimalPlays: 0
+                };
+            }
+
+            this.tier3DecisionTracking[playerId].decisions.push({
+                turn: this.turnNumber,
+                action: 'play',
+                quality: decision.quality,
+                isRisky: decision.isRisky,
+                handSize: player.hand.length,
+                cardsInDeck: cardsInDeck,
+                handStrength: handStrength,
+                pileStrength: pileStrength
+            });
+
+            if (decision.quality === 'optimal') {
+                this.tier3DecisionTracking[playerId].optimalPlays++;
+            }
+            if (decision.isRisky) {
+                this.tier3DecisionTracking[playerId].riskyPlays++;
+            }
+        }
+
+        this.turnNumber++;
+
         // Check if player finished round
         if (player.hand.length === 0) {
             this.winners.push(player);
@@ -369,6 +418,48 @@ class Room {
         if (this.roundPlayStats[playerId]) {
             this.roundPlayStats[playerId].passes++;
         }
+
+        // Track Tier 3 decision quality (for human players only)
+        const player = this.players[playerIndex];
+        if (!player.isBot) {
+            const handValues = player.hand.map(c => c.value);
+            const cardsInDeck = 52 - this.playedCards.length;
+            const handStrength = DecisionAnalyzer.calculateHandStrength(handValues);
+            const pileStrength = DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand);
+
+            const decision = DecisionAnalyzer.evaluateDecision({
+                action: 'pass',
+                hand: handValues,
+                pile: this.lastPlayedHand,
+                cardsInDeck,
+                playedCards: this.playedCards
+            });
+
+            if (!this.tier3DecisionTracking[playerId]) {
+                this.tier3DecisionTracking[playerId] = {
+                    decisions: [],
+                    riskyPlays: 0,
+                    optimalPlays: 0
+                };
+            }
+
+            this.tier3DecisionTracking[playerId].decisions.push({
+                turn: this.turnNumber,
+                action: 'pass',
+                quality: decision.quality,
+                isRisky: decision.isRisky,
+                handSize: player.hand.length,
+                cardsInDeck: cardsInDeck,
+                handStrength: handStrength,
+                pileStrength: pileStrength
+            });
+
+            if (decision.quality === 'optimal') {
+                this.tier3DecisionTracking[playerId].optimalPlays++;
+            }
+        }
+
+        this.turnNumber++;
 
         this.passes++;
 

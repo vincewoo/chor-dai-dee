@@ -4,9 +4,10 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision } = require('./db');
 const { calculateRoundScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
+const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
 
 const app = express();
 
@@ -304,6 +305,156 @@ io.on('connection', (socket) => {
                               playerPlacement.placement,
                               room.gameId
                           );
+                      }
+
+                      // Calculate and save Tier 3 advanced analytics
+                      const tier3Data = room.tier3DecisionTracking[p.id];
+                      if (tier3Data && tier3Data.decisions.length > 0) {
+                          try {
+                              const user = await getUserByUsername(p.name);
+                              if (user) {
+                                  // Save all decisions to decision_tracking table
+                                  for (const decision of tier3Data.decisions) {
+                                      try {
+                                          await trackDecision(
+                                              room.gameId,
+                                              user.id,
+                                              room.roundNumber,
+                                              decision.turn,
+                                              decision.action,
+                                              decision.handSize || 0,
+                                              decision.cardsInDeck || 0,
+                                              decision.pileStrength || 0,
+                                              decision.handStrength || 0,
+                                              decision.quality
+                                          );
+                                      } catch (err) {
+                                          console.error("Failed to track decision:", err);
+                                      }
+                                  }
+
+                                  // Get round aggregates for this player
+                                  const roundAggregates = await getRoundAggregates(user.id, room.gameMode);
+
+                                  // 1. Card Awareness Stats
+                                  const totalDecisions = tier3Data.decisions.length;
+                                  const optimalCount = tier3Data.optimalPlays || 0;
+                                  const isOptimal = optimalCount > (totalDecisions / 2);
+                                  const riskyCount = tier3Data.riskyPlays || 0;
+                                  const isRisky = riskyCount > 0;
+
+                                  // Determine risky play success (risky plays that led to good placement)
+                                  const riskSucceeded = isRisky && playerPlacement.placement <= 2;
+
+                                  // Calculate late game accuracy
+                                  const lateGameAccuracy = DecisionAnalyzer.calculateLateGameAccuracy(
+                                      room.cumulativeScores[p.id] || 0,
+                                      52 // Full deck
+                                  );
+
+                                  await updateCardAwarenessStats(
+                                      user.id,
+                                      room.gameMode,
+                                      isOptimal,
+                                      isRisky,
+                                      riskSucceeded,
+                                      lateGameAccuracy
+                                  );
+
+                                  // 2. Variance Stats (Streaks and Lucky/Skilled wins)
+                                  const isWinner = p.id === gameWinner.id;
+
+                                  // Determine if win was lucky vs skilled
+                                  let isLucky = false;
+                                  if (isWinner) {
+                                      // Calculate avg cards remaining for other players
+                                      const otherPlayers = room.players.filter(pl => pl.id !== p.id);
+                                      const avgCardsRemaining = otherPlayers.reduce((sum, pl) => {
+                                          const playerScore = room.cumulativeScores[pl.id] || 0;
+                                          return sum + playerScore;
+                                      }, 0) / otherPlayers.length;
+
+                                      const optimalRate = optimalCount / totalDecisions;
+                                      isLucky = DecisionAnalyzer.isLuckyWin(avgCardsRemaining, optimalRate);
+                                  }
+
+                                  await updateVarianceStats(
+                                      user.id,
+                                      room.gameMode,
+                                      isWinner,
+                                      isLucky
+                                  );
+
+                                  // 3. Save placement history for adaptability tracking
+                                  if (playerPlacement) {
+                                      await savePlacementHistory(
+                                          user.id,
+                                          room.gameMode,
+                                          room.gameId,
+                                          playerPlacement.placement
+                                      );
+                                  }
+
+                                  // 4. Update variance/consistency scores based on placement history
+                                  await updateVarianceScores(user.id, room.gameMode);
+
+                                  // 5. Behavioral Stats
+                                  const totalPlays = roundAggregates?.total_plays || 0;
+                                  const totalPasses = roundAggregates?.total_passes || 0;
+                                  const leadsWon = roundAggregates?.leads_won || 0;
+
+                                  const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
+                                      totalPlays,
+                                      totalPasses,
+                                      leadsWon
+                                  );
+
+                                  // Get existing card awareness stats for risk score calculation
+                                  const existingAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
+                                  const riskySuccessful = existingAwareness?.risky_plays_successful || 0;
+                                  const riskyFailed = existingAwareness?.risky_plays_failed || 0;
+
+                                  const riskScore = DecisionAnalyzer.calculateRiskScore(
+                                      riskySuccessful,
+                                      riskyFailed,
+                                      totalPlays
+                                  );
+
+                                  // Get placement history for adaptability calculation
+                                  const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
+                                  const adaptabilityScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
+
+                                  // Calculate early/late game phase-specific behaviors
+                                  // Early game = decisions in first 40% of turns
+                                  // Late game = decisions in last 30% of turns
+                                  const totalTurns = tier3Data.decisions.length;
+                                  const earlyGameCutoff = Math.floor(totalTurns * 0.4);
+                                  const lateGameStart = Math.floor(totalTurns * 0.7);
+
+                                  const earlyDecisions = tier3Data.decisions.slice(0, earlyGameCutoff);
+                                  const lateDecisions = tier3Data.decisions.slice(lateGameStart);
+
+                                  // Calculate early game aggression (play rate in early game)
+                                  const earlyPlays = earlyDecisions.filter(d => d.action === 'play').length;
+                                  const earlyGameAggression = earlyDecisions.length > 0 ? earlyPlays / earlyDecisions.length : 0.5;
+
+                                  // Calculate late game risk (risky play rate in late game)
+                                  const lateRiskyPlays = lateDecisions.filter(d => d.isRisky).length;
+                                  const lateGameRisk = lateDecisions.length > 0 ? lateRiskyPlays / lateDecisions.length : 0.5;
+
+                                  await updateBehavioralStats(
+                                      user.id,
+                                      room.gameMode,
+                                      aggressionScore,
+                                      riskScore,
+                                      adaptabilityScore,
+                                      earlyGameAggression,
+                                      lateGameRisk
+                                  );
+                              }
+                          } catch (e) {
+                              console.error("Failed to update Tier 3 stats for", p.name, e);
+                          }
                       }
 
                       // Update player object in room with new rating so UI updates
@@ -641,6 +792,23 @@ app.get('/api/stats/:username/head-to-head', async (req, res) => {
         res.json({ headToHead: h2hStats });
     } catch (err) {
         console.error('Error fetching head-to-head stats:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get Tier 3 advanced analytics stats
+app.get('/api/stats/:username/tier3', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const mode = req.query.mode || 'standard';
+
+        const user = await getUserByUsername(username);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const tier3Stats = await getTier3Stats(user.id, mode);
+        res.json(tier3Stats);
+    } catch (err) {
+        console.error('Error fetching Tier 3 stats:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
