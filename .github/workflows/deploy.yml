@@ -118,7 +118,7 @@ jobs:
 
             # Request HTTPS certificates
             echo "Requesting HTTPS certificates from Tailscale..."
-            sudo docker exec chor-dai-dee-tailscale tailscale cert chor-dai-dee-1.tail83fc6d.ts.net || echo "Certificate request initiated, may take a moment to complete"
+            sudo docker exec chor-dai-dee-tailscale tailscale cert chor-dai-dee.tail83fc6d.ts.net || echo "Certificate request initiated, may take a moment to complete"
 
             # Wait for certificates to be available and copy them
             echo "Checking for certificates..."
@@ -137,7 +137,7 @@ jobs:
             done
 
             # Restart client container to pick up certificates if they were copied
-            if [ -f "./certs/certs/chor-dai-dee-1.tail83fc6d.ts.net.crt" ]; then
+            if [ -f "./certs/certs/chor-dai-dee.tail83fc6d.ts.net.crt" ]; then
               echo "Certificates found, restarting client container with HTTPS support..."
               sudo docker-compose restart client
             else

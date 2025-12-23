@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Check if SSL certificates exist
-if [ -f "/etc/nginx/certs/chor-dai-dee-1.tail83fc6d.ts.net.crt" ] && [ -f "/etc/nginx/certs/chor-dai-dee-1.tail83fc6d.ts.net.key" ]; then
+if [ -f "/etc/nginx/certs/chor-dai-dee.tail83fc6d.ts.net.crt" ] && [ -f "/etc/nginx/certs/chor-dai-dee.tail83fc6d.ts.net.key" ]; then
     echo "SSL certificates found, using HTTPS configuration"
     cp /etc/nginx/conf.d/nginx-https.conf /etc/nginx/conf.d/default.conf
 else

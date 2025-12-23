@@ -38,14 +38,14 @@ services:
   tailscale:
     image: tailscale/tailscale:latest
     container_name: chor-dai-dee-tailscale
-    hostname: chor-dai-dee-1
+    hostname: chor-dai-dee
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
-      - TS_HOSTNAME=chor-dai-dee-1
+      - TS_HOSTNAME=chor-dai-dee
       - TS_ACCEPT_DNS=false
-      - TS_CERT_DOMAIN=chor-dai-dee-1.tail83fc6d.ts.net
+      - TS_CERT_DOMAIN=chor-dai-dee.tail83fc6d.ts.net
     volumes:
       - tailscale-state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
