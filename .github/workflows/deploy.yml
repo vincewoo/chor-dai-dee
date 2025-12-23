@@ -117,8 +117,10 @@ jobs:
             sleep 10
 
             # Enable Tailscale Funnel for public HTTPS access (this also provisions certificates)
-            echo "Enabling Tailscale Funnel on port 443..."
-            sudo docker-compose exec -T tailscale tailscale funnel 443 on || echo "Funnel configuration initiated"
+            echo "Setting up Tailscale Funnel on port 443..."
+            # Funnel will handle HTTPS and proxy to our nginx on localhost:443
+            sudo docker-compose exec -T tailscale tailscale serve --bg --https 443 https://localhost:443 || echo "Serve configuration initiated"
+            sudo docker-compose exec -T tailscale tailscale funnel 443 on || echo "Funnel enabled"
 
             # Wait for Funnel to provision certificates
             echo "Waiting for Funnel to provision certificates..."
