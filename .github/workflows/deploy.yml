@@ -92,8 +92,24 @@ jobs:
             # Stop and remove old containers
             sudo docker-compose down
 
+            # Create certs directory if it doesn't exist
+            mkdir -p certs
+
             # Start new containers (docker-compose will read .env automatically)
             sudo docker-compose up -d
+
+            # Wait for Tailscale to get certificates (may take a few seconds)
+            echo "Waiting for Tailscale to obtain certificates..."
+            sleep 10
+
+            # Copy certificates from Tailscale container
+            sudo docker cp chor-dai-dee-tailscale:/var/lib/tailscale/certs/ ./certs/ 2>/dev/null || echo "Certificates not yet available, will be obtained on next deployment"
+
+            # Restart client container to pick up certificates if they were copied
+            if [ -f "./certs/chor-dai-dee.tail83fc6d.ts.net.crt" ]; then
+              echo "Certificates found, restarting client container..."
+              sudo docker-compose restart client
+            fi
 
             # Remove .env file for security
             rm -f .env
