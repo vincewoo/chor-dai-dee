@@ -72,7 +72,7 @@ jobs:
           SYNOLOGY_PORT: ${{ secrets.SYNOLOGY_SSH_PORT }}
           DEPLOY_PATH: ${{ secrets.SYNOLOGY_DEPLOY_PATH }}
         run: |
-          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} << 'EOF'
+          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} << EOF
             cd ${DEPLOY_PATH}
 
             # Pull latest images and rebuild
