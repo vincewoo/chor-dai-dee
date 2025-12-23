@@ -63,6 +63,7 @@ jobs:
             --exclude 'client/node_modules' \
             --exclude 'server/node_modules' \
             --exclude 'server/database.sqlite' \
+            --exclude 'certs' \
             ./ ${SYNOLOGY_USER}@${SYNOLOGY_IP}:${DEPLOY_PATH}/
 
       - name: Deploy with Docker Compose
