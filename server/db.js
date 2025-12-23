@@ -27,6 +27,26 @@ function initDb() {
             password_hash TEXT
         )`);
 
+        // User Preferences Table
+        db.run(`CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INTEGER PRIMARY KEY,
+            four_color_mode INTEGER DEFAULT 0,
+            auto_pass INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`, (err) => {
+            if (err) {
+                console.error('Error creating user_preferences table:', err);
+            } else {
+                // Initialize preferences for any existing users who don't have them
+                db.run(`INSERT OR IGNORE INTO user_preferences (user_id)
+                        SELECT id FROM users`, (err) => {
+                    if (err) {
+                        console.error('Error initializing user preferences:', err);
+                    }
+                });
+            }
+        });
+
         // Create round_stats table for per-round tracking
         db.run(`CREATE TABLE IF NOT EXISTS round_stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -359,10 +379,38 @@ const createUser = async (username, password) => {
         db.run(`INSERT INTO users (username, password_hash) VALUES (?, ?)`, [username, hash], function(err) {
             if (err) return reject(err);
             const userId = this.lastID;
-            // Initialize stats
-            db.run(`INSERT INTO stats (user_id) VALUES (?)`, [userId], (err) => {
-                if (err) return reject(err);
-                resolve({ id: userId, username });
+
+            // Initialize stats for all tables (legacy stats + mode-specific tables + preferences)
+            db.serialize(() => {
+                db.run(`INSERT INTO stats (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                });
+
+                db.run(`INSERT INTO stats_standard (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                });
+
+                db.run(`INSERT INTO stats_short (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                });
+
+                db.run(`INSERT INTO user_preferences (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    // All inserts successful
+                    resolve({ id: userId, username });
+                });
             });
         });
     });
@@ -955,6 +1003,47 @@ const updateVarianceScores = async (userId, gameMode) => {
     }
 };
 
+// ========== USER PREFERENCES FUNCTIONS ==========
+
+// Get user preferences
+const getUserPreferences = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM user_preferences WHERE user_id = ?`, [userId], (err, row) => {
+            if (err) return reject(err);
+            // If no preferences exist, return defaults
+            if (!row) {
+                return resolve({
+                    user_id: userId,
+                    four_color_mode: 0,
+                    auto_pass: 0
+                });
+            }
+            resolve(row);
+        });
+    });
+};
+
+// Update user preferences (creates if doesn't exist)
+const updateUserPreferences = (userId, preferences) => {
+    return new Promise((resolve, reject) => {
+        const { fourColorMode, autoPass } = preferences;
+
+        const query = `INSERT INTO user_preferences (user_id, four_color_mode, auto_pass)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(user_id) DO UPDATE SET
+                           four_color_mode = ?,
+                           auto_pass = ?`;
+
+        const fourColorValue = fourColorMode ? 1 : 0;
+        const autoPassValue = autoPass ? 1 : 0;
+
+        db.run(query, [userId, fourColorValue, autoPassValue, fourColorValue, autoPassValue], (err) => {
+            if (err) return reject(err);
+            resolve();
+        });
+    });
+};
+
 // Get all Tier 3 stats for a user
 const getTier3Stats = (userId, gameMode) => {
     return new Promise((resolve, reject) => {
@@ -1000,5 +1089,8 @@ module.exports = {
     getTier3Stats,
     savePlacementHistory,
     getPlacementHistory,
-    updateVarianceScores
+    updateVarianceScores,
+    // User preferences
+    getUserPreferences,
+    updateUserPreferences
 };

@@ -1,40 +1,21 @@
 version: '3.8'
 
 services:
-  tailscale:
-    image: tailscale/tailscale:v1.38.4
-    container_name: tailscale-sidecar
-    hostname: chor-dai-dee # This will be its name in your Tailscale admin panel
-    environment:
-      - TS_AUTHKEY=tskey-auth-k2aAkeV4HC21CNTRL-MaoYF65KEnCj4b9DhGWjnCeLNpaLfSnVM # Generate this in Tailscale Admin Console -> Settings -> Keys (Reusable/Ephemeral)
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false # Set to true if you have issues with /dev/net/tun
-      - TS_HOSTNAME=chor-dai-dee
-    volumes:
-      - ./tailscale-data:/var/lib/tailscale # Critical for persistence across reboots
-      - /dev/net/tun:/dev/net/tun # Required for standard kernel networking
-      - ./start-tailscale.sh:/start-tailscale.sh
-    entrypoint: ["/start-tailscale.sh"]
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    restart: unless-stopped
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-
-  chor-dai-dee:
+  server:
     build:
-      context: .
+      context: ./server
       dockerfile: Dockerfile
-    container_name: chor-dai-dee
+    container_name: chor-dai-dee-server
     restart: unless-stopped
-    network_mode: service:tailscale # Shares network with tailscale container
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist the database
+      - ./server/database.sqlite:/app/database.sqlite
     environment:
       - NODE_ENV=production
-      - PORT=3000
-    volumes:
-      - chor-dai-dee-data:/data
+    networks:
+      - chor-dai-dee-network
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
       interval: 30s
@@ -42,6 +23,19 @@ services:
       retries: 3
       start_period: 40s
 
-volumes:
-  chor-dai-dee-data:
-    driver: local
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: chor-dai-dee-client
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+    networks:
+      - chor-dai-dee-network
+
+networks:
+  chor-dai-dee-network:
+    driver: bridge

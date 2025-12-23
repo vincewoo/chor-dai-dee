@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 import Stats from './components/Stats';
+import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
 
 // In production, connect to same origin; in development, connect to localhost:3000
@@ -27,16 +28,18 @@ function App() {
   };
 
   return (
-    <SuitColorProvider>
-      <Router>
-          <Routes>
-              <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
-              <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
-              <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
-              <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
-          </Routes>
-      </Router>
-    </SuitColorProvider>
+    <UserPreferencesProvider user={user}>
+      <SuitColorProvider>
+        <Router>
+            <Routes>
+                <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
+                <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+            </Routes>
+        </Router>
+      </SuitColorProvider>
+    </UserPreferencesProvider>
   )
 }
 

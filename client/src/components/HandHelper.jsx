@@ -121,57 +121,61 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
     return (
         <div
             key={`${handKey}-${lastPlayedKey}`}
-            className="flex items-center gap-2 md:gap-[0.5vmax] flex-wrap justify-center mb-2 md:mb-[0.5vmax] animate-fadeIn"
+            className="w-full mb-2 md:mb-[0.5vmax] animate-fadeIn"
         >
-            <span className="hidden md:inline text-white/60 text-xs md:text-[0.7vmax] mr-1 md:mr-[0.25vmax]">Quick Select:</span>
+            <div className="flex items-center gap-2 md:gap-[0.5vmax] px-2 justify-center md:justify-start">
+                <span className="hidden md:inline text-white/60 text-xs md:text-[0.7vmax] mr-1 md:mr-[0.25vmax] flex-shrink-0">Quick Select:</span>
 
-            {availableHandTypes.map(({ type, count }) => {
-                const isActive = activeType === type && isActiveTypeValid;
-                const canBeat = beatableHandTypes.has(type);
-                const currentIndex = isActive ? activeIndex + 1 : 0;
+                <div className="flex items-center gap-2 md:gap-[0.5vmax] overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent flex-1 justify-center md:justify-start">
+                    {availableHandTypes.map(({ type, count }) => {
+                        const isActive = activeType === type && isActiveTypeValid;
+                        const canBeat = beatableHandTypes.has(type);
+                        const currentIndex = isActive ? activeIndex + 1 : 0;
 
-                return (
+                        return (
+                            <button
+                                key={type}
+                                onClick={() => handleTypeClick(type)}
+                                className={`
+                                    flex-shrink-0 px-2.5 md:px-[0.75vmax] py-1.5 md:py-[0.35vmax] rounded-lg font-bold text-xs md:text-[0.75vmax]
+                                    shadow-lg transition-all duration-150 flex items-center gap-1 md:gap-[0.35vmax]
+                                    hover:scale-105 active:scale-95
+                                    ${isActive
+                                        ? 'bg-yellow-500 text-black ring-2 ring-yellow-300'
+                                        : canBeat
+                                            ? 'bg-green-600 text-white hover:bg-green-500'
+                                            : 'bg-gray-700 text-white hover:bg-gray-600'
+                                    }
+                                `}
+                                title={`${HAND_SHORT_NAMES[type]} (${count} available)${canBeat ? ' - Can beat!' : ''}`}
+                            >
+                                <span className="text-sm md:text-[0.9vmax]">{HAND_ICONS[type]}</span>
+                                <span className="whitespace-nowrap">{HAND_SHORT_NAMES[type]}</span>
+                                {count > 1 && (
+                                    <span className={`
+                                        text-[9px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] py-0.5 rounded-full
+                                        ${isActive ? 'bg-black/30 text-yellow-100' : 'bg-white/20'}
+                                    `}>
+                                        {isActive ? `${currentIndex}/${count}` : count}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {activeType && isActiveTypeValid && (
                     <button
-                        key={type}
-                        onClick={() => handleTypeClick(type)}
-                        className={`
-                            px-3 md:px-[0.75vmax] py-2 md:py-[0.35vmax] rounded-lg font-bold text-sm md:text-[0.75vmax]
-                            shadow-lg transition-all duration-150 flex items-center gap-1.5 md:gap-[0.35vmax]
-                            hover:scale-105 active:scale-95
-                            ${isActive
-                                ? 'bg-yellow-500 text-black ring-2 ring-yellow-300'
-                                : canBeat
-                                    ? 'bg-green-600 text-white hover:bg-green-500'
-                                    : 'bg-gray-700 text-white hover:bg-gray-600'
-                            }
-                        `}
-                        title={`${HAND_SHORT_NAMES[type]} (${count} available)${canBeat ? ' - Can beat!' : ''}`}
+                        onClick={handleClear}
+                        className="flex-shrink-0 px-2 md:px-[0.6vmax] py-1.5 md:py-[0.35vmax] rounded-lg font-bold text-xs md:text-[0.7vmax]
+                            bg-red-600/80 text-white hover:bg-red-500 shadow-lg
+                            transition-all duration-150 hover:scale-105 active:scale-95"
+                        title="Clear selection"
                     >
-                        <span className="text-base md:text-[0.9vmax]">{HAND_ICONS[type]}</span>
-                        <span>{HAND_SHORT_NAMES[type]}</span>
-                        {count > 1 && (
-                            <span className={`
-                                text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded-full
-                                ${isActive ? 'bg-black/30 text-yellow-100' : 'bg-white/20'}
-                            `}>
-                                {isActive ? `${currentIndex}/${count}` : count}
-                            </span>
-                        )}
+                        ✕
                     </button>
-                );
-            })}
-
-            {activeType && isActiveTypeValid && (
-                <button
-                    onClick={handleClear}
-                    className="px-2.5 md:px-[0.6vmax] py-2 md:py-[0.35vmax] rounded-lg font-bold text-sm md:text-[0.7vmax]
-                        bg-red-600/80 text-white hover:bg-red-500 shadow-lg
-                        transition-all duration-150 hover:scale-105 active:scale-95"
-                    title="Clear selection"
-                >
-                    ✕
-                </button>
-            )}
+                )}
+            </div>
         </div>
     );
 };

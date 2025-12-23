@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext } from 'react';
 import { SUIT_COLORS, SUIT_COLORS_4 } from '../constants';
+import { useUserPreferences } from './UserPreferencesContext';
 
 const SuitColorContext = createContext();
 
@@ -12,20 +13,9 @@ export const useSuitColors = () => {
 };
 
 export const SuitColorProvider = ({ children }) => {
-    const [fourColorMode, setFourColorMode] = useState(() => {
-        const saved = localStorage.getItem('fourColorMode');
-        return saved === 'true';
-    });
-
-    useEffect(() => {
-        localStorage.setItem('fourColorMode', fourColorMode);
-    }, [fourColorMode]);
+    const { fourColorMode, toggleFourColorMode } = useUserPreferences();
 
     const suitColors = fourColorMode ? SUIT_COLORS_4 : SUIT_COLORS;
-
-    const toggleFourColorMode = () => {
-        setFourColorMode(prev => !prev);
-    };
 
     return (
         <SuitColorContext.Provider value={{ suitColors, fourColorMode, toggleFourColorMode }}>

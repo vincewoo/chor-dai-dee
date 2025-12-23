@@ -179,25 +179,75 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
             </div>
 
             {/* Center content */}
-            {isFaceCard ? (
-                <FaceCard rank={rank} />
-            ) : (
-                /* Pip layout for number cards and Ace */
+            {/* On mobile (< md), show simplified large emoji. On desktop, show detailed pips/faces */}
+            {rank === 'A' ? (
+                /* Aces always use large centered suit */
                 <div className="absolute inset-[12%]">
-                    {pipLayout && pipLayout.map((pip, i) => (
+                    <div
+                        className={`absolute ${color} ${fontSize.pip}`}
+                        style={{
+                            left: '50%',
+                            top: '50%',
+                            transform: 'translate(-50%, -50%) scale(2.2)'
+                        }}
+                    >
+                        {suitSymbol}
+                    </div>
+                </div>
+            ) : isFaceCard ? (
+                <>
+                    {/* Mobile: Single face emoji */}
+                    <div className="md:hidden absolute inset-[12%]">
                         <div
-                            key={i}
+                            className="absolute"
+                            style={{
+                                left: '50%',
+                                top: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                fontSize: '1.75em',
+                                lineHeight: 1
+                            }}
+                        >
+                            {rank === 'K' ? '🫅' : rank === 'Q' ? '👸' : '🤴'}
+                        </div>
+                    </div>
+                    {/* Desktop: Detailed face card rendering */}
+                    <div className="hidden md:block">
+                        <FaceCard rank={rank} />
+                    </div>
+                </>
+            ) : (
+                <>
+                    {/* Mobile: Large centered suit for number cards */}
+                    <div className="md:hidden absolute inset-[12%]">
+                        <div
                             className={`absolute ${color} ${fontSize.pip}`}
                             style={{
-                                left: `${pip.x}%`,
-                                top: `${pip.y}%`,
-                                transform: `translate(-50%, -50%) ${pip.flip ? 'rotate(180deg)' : ''} scale(${pip.scale || 1})`
+                                left: '50%',
+                                top: '50%',
+                                transform: 'translate(-50%, -50%) scale(2.2)'
                             }}
                         >
                             {suitSymbol}
                         </div>
-                    ))}
-                </div>
+                    </div>
+                    {/* Desktop: Pip layout for number cards */}
+                    <div className="hidden md:block absolute inset-[12%]">
+                        {pipLayout && pipLayout.map((pip, i) => (
+                            <div
+                                key={i}
+                                className={`absolute ${color} ${fontSize.pip}`}
+                                style={{
+                                    left: `${pip.x}%`,
+                                    top: `${pip.y}%`,
+                                    transform: `translate(-50%, -50%) ${pip.flip ? 'rotate(180deg)' : ''} scale(${pip.scale || 1})`
+                                }}
+                            >
+                                {suitSymbol}
+                            </div>
+                        ))}
+                    </div>
+                </>
             )}
         </motion.div>
     );

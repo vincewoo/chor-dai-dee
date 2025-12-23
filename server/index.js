@@ -4,7 +4,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences } = require('./db');
 const { calculateRoundScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
@@ -754,6 +754,33 @@ app.post('/api/login', async (req, res) => {
             res.status(401).json({ error: 'Invalid credentials' });
         }
     } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// User Preferences Routes
+app.get('/api/preferences/:userId', async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        const preferences = await getUserPreferences(userId);
+        res.json({
+            fourColorMode: preferences.four_color_mode === 1,
+            autoPass: preferences.auto_pass === 1
+        });
+    } catch (err) {
+        console.error('Error fetching preferences:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.post('/api/preferences/:userId', async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        const { fourColorMode, autoPass } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, autoPass });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error updating preferences:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });

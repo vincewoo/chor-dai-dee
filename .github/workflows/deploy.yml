@@ -1,0 +1,103 @@
+name: Deploy to Synology
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: ./client
+        run: npm ci
+
+      - name: Build client
+        working-directory: ./client
+        run: npm run build
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SYNOLOGY_SSH_KEY }}" > ~/.ssh/synology_key
+          chmod 600 ~/.ssh/synology_key
+          ssh-keyscan -H -p ${{ secrets.SYNOLOGY_SSH_PORT }} ${{ secrets.SYNOLOGY_TAILSCALE_IP }} >> ~/.ssh/known_hosts
+
+      - name: Copy files to Synology
+        env:
+          SYNOLOGY_IP: ${{ secrets.SYNOLOGY_TAILSCALE_IP }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PORT: ${{ secrets.SYNOLOGY_SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.SYNOLOGY_DEPLOY_PATH }}
+        run: |
+          # Create deployment directory if it doesn't exist
+          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} "mkdir -p ${DEPLOY_PATH}"
+
+          # Copy application files
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT}" \
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            --exclude 'client/node_modules' \
+            --exclude 'server/node_modules' \
+            --exclude 'server/database.sqlite' \
+            ./ ${SYNOLOGY_USER}@${SYNOLOGY_IP}:${DEPLOY_PATH}/
+
+      - name: Deploy with Docker Compose
+        env:
+          SYNOLOGY_IP: ${{ secrets.SYNOLOGY_TAILSCALE_IP }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PORT: ${{ secrets.SYNOLOGY_SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.SYNOLOGY_DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} << 'EOF'
+            cd ${DEPLOY_PATH}
+
+            # Pull latest images and rebuild
+            sudo docker-compose pull
+            sudo docker-compose build --no-cache
+
+            # Stop and remove old containers
+            sudo docker-compose down
+
+            # Start new containers
+            sudo docker-compose up -d
+
+            # Show status
+            sudo docker-compose ps
+
+            # Show logs (last 20 lines)
+            sudo docker-compose logs --tail=20
+          EOF
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/synology_key
+
+      - name: Deployment complete
+        run: |
+          echo "✅ Deployment completed successfully!"
+          echo "Application should be running on your Synology"
