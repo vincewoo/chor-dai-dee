@@ -39,11 +39,15 @@ jobs:
           tags: tag:ci
 
       - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.SYNOLOGY_SSH_KEY }}
+          SYNOLOGY_PORT: ${{ secrets.SYNOLOGY_SSH_PORT }}
+          SYNOLOGY_IP: ${{ secrets.SYNOLOGY_TAILSCALE_IP }}
         run: |
           mkdir -p ~/.ssh
-          echo '${{ secrets.SYNOLOGY_SSH_KEY }}' > ~/.ssh/synology_key
+          echo "$SSH_KEY" > ~/.ssh/synology_key
           chmod 600 ~/.ssh/synology_key
-          ssh-keyscan -H -p ${{ secrets.SYNOLOGY_SSH_PORT }} ${{ secrets.SYNOLOGY_TAILSCALE_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H -p ${SYNOLOGY_PORT} ${SYNOLOGY_IP} >> ~/.ssh/known_hosts
 
       - name: Copy files to Synology
         env:
