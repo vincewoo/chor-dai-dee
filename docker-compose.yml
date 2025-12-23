@@ -44,6 +44,8 @@ services:
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
       - TS_HOSTNAME=chor-dai-dee
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+      - TS_ACCEPT_DNS=false
     volumes:
       - tailscale-state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
