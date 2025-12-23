@@ -52,6 +52,7 @@ Add these lines (replace `deployer` with your deployment username):
 ```
 deployer ALL=(ALL) NOPASSWD: /usr/local/bin/docker-compose
 deployer ALL=(ALL) NOPASSWD: /usr/bin/docker
+deployer ALL=(ALL) NOPASSWD: /usr/local/bin/docker
 ```
 
 Save and exit (`:wq` in vi).
