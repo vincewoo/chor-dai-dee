@@ -71,19 +71,20 @@ jobs:
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PORT: ${{ secrets.SYNOLOGY_SSH_PORT }}
           DEPLOY_PATH: ${{ secrets.SYNOLOGY_DEPLOY_PATH }}
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
         run: |
           ssh -i ~/.ssh/synology_key -p ${SYNOLOGY_PORT} ${SYNOLOGY_USER}@${SYNOLOGY_IP} << EOF
             cd ${DEPLOY_PATH}
 
             # Pull latest images and rebuild
-            sudo docker-compose pull
-            sudo docker-compose build --no-cache
+            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose pull
+            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose build --no-cache
 
             # Stop and remove old containers
-            sudo docker-compose down
+            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose down
 
-            # Start new containers
-            sudo docker-compose up -d
+            # Start new containers with Tailscale auth key
+            sudo TS_AUTHKEY=${TS_AUTHKEY} docker-compose up -d
 
             # Show status
             sudo docker-compose ps

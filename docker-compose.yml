@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: chor-dai-dee-tailscale
+    hostname: chor-dai-dee
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+      - TS_HOSTNAME=chor-dai-dee
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+
   server:
     build:
       context: ./server
@@ -29,13 +46,16 @@ services:
       dockerfile: Dockerfile
     container_name: chor-dai-dee-client
     restart: unless-stopped
-    ports:
-      - "8080:80"
+    network_mode: service:tailscale
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - server
-    networks:
-      - chor-dai-dee-network
+      - tailscale
 
 networks:
   chor-dai-dee-network:
     driver: bridge
+
+volumes:
+  tailscale-state:
