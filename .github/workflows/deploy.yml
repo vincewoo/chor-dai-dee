@@ -41,7 +41,9 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SYNOLOGY_SSH_KEY }}" > ~/.ssh/synology_key
+          cat << 'EOF' > ~/.ssh/synology_key
+          ${{ secrets.SYNOLOGY_SSH_KEY }}
+          EOF
           chmod 600 ~/.ssh/synology_key
           ssh-keyscan -H -p ${{ secrets.SYNOLOGY_SSH_PORT }} ${{ secrets.SYNOLOGY_TAILSCALE_IP }} >> ~/.ssh/known_hosts
 
