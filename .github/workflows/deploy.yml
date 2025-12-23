@@ -112,17 +112,28 @@ jobs:
             # Start new containers (docker-compose will read .env automatically)
             sudo docker-compose up -d
 
-            # Wait for Tailscale to get certificates (may take a few seconds)
-            echo "Waiting for Tailscale to obtain certificates..."
-            sleep 10
-
-            # Copy certificates from Tailscale container
-            sudo docker cp chor-dai-dee-tailscale:/var/lib/tailscale/certs/ ./certs/ 2>/dev/null || echo "Certificates not yet available, will be obtained on next deployment"
+            # Wait for Tailscale to authenticate and obtain certificates
+            echo "Waiting for Tailscale to authenticate and obtain certificates..."
+            for i in 1 2 3 4 5 6; do
+              sleep 5
+              echo "Attempt $i: Checking for certificates..."
+              if sudo docker exec chor-dai-dee-tailscale ls /var/lib/tailscale/certs/ 2>/dev/null | grep -q ".crt"; then
+                echo "Certificates found in Tailscale container!"
+                sudo docker cp chor-dai-dee-tailscale:/var/lib/tailscale/certs/ ./certs/ 2>/dev/null
+                break
+              fi
+              if [ $i -eq 6 ]; then
+                echo "Certificates not yet available after 30 seconds. This is expected on first deployment."
+                echo "Tailscale may need manual authorization or more time to obtain certificates."
+              fi
+            done
 
             # Restart client container to pick up certificates if they were copied
-            if [ -f "./certs/chor-dai-dee.tail83fc6d.ts.net.crt" ]; then
-              echo "Certificates found, restarting client container..."
+            if [ -f "./certs/certs/chor-dai-dee.tail83fc6d.ts.net.crt" ]; then
+              echo "Certificates found, restarting client container with HTTPS support..."
               sudo docker-compose restart client
+            else
+              echo "Running with HTTP-only for now. HTTPS will be enabled on next deployment once certificates are available."
             fi
 
             # Remove .env file for security
