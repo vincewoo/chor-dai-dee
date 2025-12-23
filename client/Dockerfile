@@ -3,9 +3,14 @@ FROM nginx:alpine
 # Copy the built files from the GitHub Actions build step
 COPY dist/ /usr/share/nginx/html/
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx configurations
+COPY nginx-http.conf /etc/nginx/conf.d/nginx-http.conf
+COPY nginx-https.conf /etc/nginx/conf.d/nginx-https.conf
 
-EXPOSE 80
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 80 443
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

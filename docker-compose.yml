@@ -45,6 +45,7 @@ services:
       - TS_USERSPACE=false
       - TS_HOSTNAME=chor-dai-dee
       - TS_ACCEPT_DNS=false
+      - TS_CERT_DOMAIN=chor-dai-dee.tail83fc6d.ts.net
     volumes:
       - tailscale-state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
