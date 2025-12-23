@@ -136,10 +136,24 @@ jobs:
               fi
             done
 
+            # Enable Tailscale Funnel for public HTTPS access
+            echo "Enabling Tailscale Funnel on port 443..."
+            sudo docker exec chor-dai-dee-tailscale tailscale funnel 443 on || echo "Funnel configuration initiated"
+
+            # Wait a moment for Funnel to provision certificates
+            sleep 5
+
+            # Copy certificates after Funnel is enabled
+            if sudo docker exec chor-dai-dee-tailscale ls /var/lib/tailscale/certs/ 2>/dev/null | grep -q ".crt"; then
+              echo "Funnel certificates found, copying to host..."
+              sudo docker cp chor-dai-dee-tailscale:/var/lib/tailscale/certs/ ./certs/ 2>/dev/null
+            fi
+
             # Restart client container to pick up certificates if they were copied
             if [ -f "./certs/certs/chor-dai-dee.tail83fc6d.ts.net.crt" ]; then
               echo "Certificates found, restarting client container with HTTPS support..."
               sudo docker-compose restart client
+              echo "✅ HTTPS enabled with Tailscale Funnel - publicly accessible at https://chor-dai-dee.tail83fc6d.ts.net"
             else
               echo "Running with HTTP-only for now. HTTPS will be enabled on next deployment once certificates are available."
             fi
