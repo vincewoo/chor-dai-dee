@@ -1,6 +1,40 @@
 version: '3.8'
 
 services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: chor-dai-dee-server
+    restart: unless-stopped
+    volumes:
+      # Persist the database
+      - ./server/database.sqlite:/app/database.sqlite
+    environment:
+      - NODE_ENV=production
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: chor-dai-dee-client
+    restart: unless-stopped
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+    network_mode: service:tailscale
+    depends_on:
+      - server
+      - tailscale
+
   tailscale:
     image: tailscale/tailscale:latest
     container_name: chor-dai-dee-tailscale
@@ -17,45 +51,6 @@ services:
       - NET_ADMIN
       - NET_RAW
     restart: unless-stopped
-
-  server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    container_name: chor-dai-dee-server
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      # Persist the database
-      - ./server/database.sqlite:/app/database.sqlite
-    environment:
-      - NODE_ENV=production
-    networks:
-      - chor-dai-dee-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    container_name: chor-dai-dee-client
-    restart: unless-stopped
-    network_mode: service:tailscale
-    volumes:
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      - server
-      - tailscale
-
-networks:
-  chor-dai-dee-network:
-    driver: bridge
 
 volumes:
   tailscale-state:
