@@ -34,7 +34,7 @@ const HAND_SHORT_NAMES = {
     [HAND_TYPES.STRAIGHT_FLUSH]: 'SF'
 };
 
-const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => {
+const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn, selectedCards }) => {
     // Track which hand type is currently active and which index within that type
     const [activeType, setActiveType] = useState(null);
     const [activeIndex, setActiveIndex] = useState(0);
@@ -114,7 +114,10 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
         onSelectCards([]);
     }, [onSelectCards]);
 
-    if (!isMyTurn || availableHandTypes.length === 0) {
+    // Check if there are any manually selected cards
+    const hasSelection = selectedCards && selectedCards.length > 0;
+
+    if (!isMyTurn || (availableHandTypes.length === 0 && !hasSelection)) {
         return null;
     }
 
@@ -164,7 +167,7 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn }) => 
                     })}
                 </div>
 
-                {activeType && isActiveTypeValid && (
+                {((activeType && isActiveTypeValid) || hasSelection) && (
                     <button
                         onClick={handleClear}
                         className="flex-shrink-0 px-2 md:px-[0.6vmax] py-1.5 md:py-[0.35vmax] rounded-lg font-bold text-xs md:text-[0.7vmax]
