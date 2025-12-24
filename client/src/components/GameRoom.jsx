@@ -813,25 +813,25 @@ const GameRoom = ({ user, socket }) => {
 
             {/* Waiting State */}
             {gameState.gameState === 'waiting' && (
-                <div className="absolute inset-0 z-40 bg-green-800 flex flex-col items-center justify-center text-white">
-                    <div className="text-[1vmax] text-green-300 mb-[0.5vmax]">Room Code</div>
-                    <h1 className="text-[3vmax] font-bold mb-[2vmax] tracking-widest">{roomId}</h1>
-                    <h2 className="text-[1.5vmax] mb-[1.5vmax]">Waiting for Players...</h2>
-                    <div className="flex gap-[1vmax] mb-[2vmax]">
+                <div className="absolute inset-0 z-40 bg-green-800 flex flex-col items-center justify-center text-white px-4">
+                    <div className="text-sm md:text-[1vmax] text-green-300 mb-2 md:mb-[0.5vmax]">Room Code</div>
+                    <h1 className="text-5xl md:text-[3vmax] font-bold mb-6 md:mb-[2vmax] tracking-widest">{roomId}</h1>
+                    <h2 className="text-xl md:text-[1.5vmax] mb-6 md:mb-[1.5vmax]">Waiting for Players...</h2>
+                    <div className="flex flex-wrap justify-center gap-3 md:gap-[1vmax] mb-8 md:mb-[2vmax]">
                         {gameState.players.map(p => (
-                            <div key={p.id} className="bg-white text-black p-[1vmax] rounded shadow-lg min-w-[6vmax] text-center font-bold text-[1vmax]">
+                            <div key={p.id} className="bg-white text-black px-4 py-3 md:p-[1vmax] rounded shadow-lg min-w-[80px] md:min-w-[6vmax] text-center font-bold text-base md:text-[1vmax]">
                                 {p.name}
                             </div>
                         ))}
                         {Array.from({ length: 4 - gameState.players.length }).map((_, i) => (
-                            <div key={i} className="bg-white/20 p-[1vmax] rounded border-2 border-dashed border-white min-w-[6vmax] text-center text-[1vmax]">Empty</div>
+                            <div key={i} className="bg-white/20 px-4 py-3 md:p-[1vmax] rounded border-2 border-dashed border-white min-w-[80px] md:min-w-[6vmax] text-center text-base md:text-[1vmax]">Empty</div>
                         ))}
                     </div>
 
                     {/* Game Mode Selector - Only host (first player) can change */}
-                    <div className="mb-[2vmax]">
-                        <div className="text-[1vmax] text-green-300 mb-[0.75vmax] text-center">Game Mode</div>
-                        <div className="flex gap-[1vmax]">
+                    <div className="mb-6 md:mb-[2vmax] w-full max-w-2xl">
+                        <div className="text-sm md:text-[1vmax] text-green-300 mb-3 md:mb-[0.75vmax] text-center">Game Mode</div>
+                        <div className="flex flex-col md:flex-row gap-3 md:gap-[1vmax] md:justify-center">
                             {Object.values(GAME_MODES).map(mode => {
                                 const isHost = gameState.players[0]?.id === socket.id;
                                 const isSelected = gameState.gameMode === mode.id;
@@ -840,7 +840,7 @@ const GameRoom = ({ user, socket }) => {
                                         key={mode.id}
                                         onClick={() => isHost && socket.emit('set_game_mode', { gameMode: mode.id })}
                                         disabled={!isHost}
-                                        className={`px-[1.5vmax] py-[1vmax] rounded-lg font-bold text-[0.9vmax] transition ${
+                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
                                             isSelected
                                                 ? 'bg-yellow-500 text-black shadow-lg'
                                                 : isHost
@@ -848,37 +848,37 @@ const GameRoom = ({ user, socket }) => {
                                                     : 'bg-white/10 text-white/50 cursor-not-allowed'
                                         }`}
                                     >
-                                        <div className="font-bold">{mode.name}</div>
-                                        <div className="text-[0.7vmax] opacity-80">{mode.description} • {mode.pointThreshold} pts</div>
+                                        <div className="font-bold whitespace-nowrap">{mode.name}</div>
+                                        <div className="text-sm md:text-[0.7vmax] opacity-80 whitespace-nowrap">{mode.description} • {mode.pointThreshold} pts</div>
                                     </button>
                                 );
                             })}
                         </div>
                         {gameState.players[0]?.id !== socket.id && (
-                            <div className="text-[0.8vmax] text-yellow-300 mt-[0.5vmax] text-center">
+                            <div className="text-sm md:text-[0.8vmax] text-yellow-300 mt-3 md:mt-[0.5vmax] text-center">
                                 Only the room host can change the game mode
                             </div>
                         )}
                     </div>
 
-                    <div className="flex flex-col items-center gap-2 mb-[1vmax]">
-                        <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded">
+                    <div className="flex flex-col items-center gap-3 md:gap-2 mb-4 md:mb-[1vmax]">
+                        <div className="flex items-center gap-2 bg-black/40 px-4 py-2 md:px-3 md:py-1 rounded">
                             <input
                                 type="checkbox"
                                 id="advancedBots"
                                 checked={useAdvancedBots}
                                 onChange={(e) => setUseAdvancedBots(e.target.checked)}
-                                className="w-4 h-4 cursor-pointer"
+                                className="w-5 h-5 md:w-4 md:h-4 cursor-pointer"
                             />
-                            <label htmlFor="advancedBots" className="cursor-pointer select-none text-[1vmax]">
+                            <label htmlFor="advancedBots" className="cursor-pointer select-none text-base md:text-[1vmax]">
                                 Enable Advanced AI Bots
                             </label>
                         </div>
-                        <button onClick={startGame} className="bg-yellow-500 text-black px-[2vmax] py-[0.75vmax] rounded-full font-bold text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105">
+                        <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 md:px-[2vmax] md:py-[0.75vmax] rounded-full font-bold text-lg md:text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105">
                             Start Game (Fill with Bots)
                         </button>
                     </div>
-                    <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-[0.9vmax]">
+                    <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax]">
                         Leave Room
                     </button>
                 </div>

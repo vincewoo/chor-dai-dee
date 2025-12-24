@@ -571,10 +571,11 @@ const BotLogic = {
             }
 
             // 4. Prefer using lower value cards (save high cards for control)
-            // But reduce this preference in danger mode
+            // But reduce this preference in danger mode AND on free play
             const maxCardValue = 12 * 4 + 3; // 2 of Spades
             const avgCardValue = moveCards.reduce((sum, c) => sum + c.value, 0) / moveCards.length;
-            const valueSaveBonus = dangerMode ? 2 : 10;
+            // Reduce save-high-cards bonus on free play to encourage aggressive multi-card plays
+            const valueSaveBonus = dangerMode ? 2 : (!lastPlayedHand ? 5 : 10);
             const savePts = Math.round((maxCardValue - avgCardValue) * valueSaveBonus);
             score += savePts;
             if (factors && Math.abs(savePts) > 20) factors.push({ factor: 'Save high cards bonus', points: savePts });
@@ -623,29 +624,48 @@ const BotLogic = {
             }
 
             // 7. Prefer keeping pairs/triples intact when playing singles
+            // Reduce penalties on free play since we want to play aggressively
             if (moveType === HAND_TYPES.SINGLE && composition.primaryStrategy !== 'pairs') {
                 const cardRank = moveCards[0].rank;
                 const sameRankInHand = hand.filter(c => c.rank === cardRank).length;
-                if (sameRankInHand >= 3) {
-                    score -= 100;
-                    if (factors) factors.push({ factor: 'Avoid breaking triple', points: -100 });
-                } else if (sameRankInHand >= 2) {
-                    score -= 40;
-                    if (factors) factors.push({ factor: 'Avoid breaking pair', points: -40 });
+                // Only apply penalties if not free play, or apply reduced penalties
+                if (!lastPlayedHand) {
+                    // On free play, slight penalty but not much - we prefer multi-card hands anyway
+                    if (sameRankInHand >= 3) {
+                        score -= 30;
+                        if (factors) factors.push({ factor: 'Breaking triple on free play', points: -30 });
+                    } else if (sameRankInHand >= 2) {
+                        score -= 15;
+                        if (factors) factors.push({ factor: 'Breaking pair on free play', points: -15 });
+                    }
+                } else {
+                    // When beating a hand, full penalties apply
+                    if (sameRankInHand >= 3) {
+                        score -= 100;
+                        if (factors) factors.push({ factor: 'Avoid breaking triple', points: -100 });
+                    } else if (sameRankInHand >= 2) {
+                        score -= 40;
+                        if (factors) factors.push({ factor: 'Avoid breaking pair', points: -40 });
+                    }
                 }
             }
 
             // 8. When playing pairs, consider if we're breaking triples
+            // Reduce penalty on free play
             if (moveType === HAND_TYPES.PAIR) {
                 const cardRank = moveCards[0].rank;
                 const sameRankInHand = hand.filter(c => c.rank === cardRank).length;
                 if (sameRankInHand >= 3) {
+                    // On free play, breaking a triple to play a pair is fine - we're being aggressive
+                    const penaltyMultiplier = !lastPlayedHand ? 0.3 : 1.0;
                     if (composition.strength[HAND_TYPES.PAIR] >= 4) {
-                        score -= 20;
-                        if (factors) factors.push({ factor: 'Breaking triple (but have many pairs)', points: -20 });
+                        const pts = Math.round(-20 * penaltyMultiplier);
+                        score += pts;
+                        if (factors && pts !== 0) factors.push({ factor: 'Breaking triple (but have many pairs)', points: pts });
                     } else {
-                        score -= 60;
-                        if (factors) factors.push({ factor: 'Breaking triple', points: -60 });
+                        const pts = Math.round(-60 * penaltyMultiplier);
+                        score += pts;
+                        if (factors && pts !== 0) factors.push({ factor: 'Breaking triple', points: pts });
                     }
                 }
             }
@@ -672,6 +692,7 @@ const BotLogic = {
             }
 
             // 10. If free play, prefer hand types we're strongest in
+            // UPDATED: More aggressive free play - prioritize clearing cards fast
             if (!lastPlayedHand) {
                 const typeStrength = composition.strength[moveType] || 0;
                 if (typeStrength >= 3) {
@@ -682,36 +703,55 @@ const BotLogic = {
                     if (factors) factors.push({ factor: 'Free play: moderate in type', points: 20 });
                 }
 
-                // In danger mode, prefer multi-card hands on free play
+                // AGGRESSIVE FREE PLAY: Strongly prefer multi-card hands to reduce hand size faster
+                // This makes bots play more aggressively when they have the lead
                 if (dangerMode) {
+                    // In danger mode, be even more aggressive
                     if (moveType === HAND_TYPES.PAIR) {
-                        score += 80;
-                        if (factors) factors.push({ factor: 'Danger free play: pair', points: 80 });
+                        score += 120;
+                        if (factors) factors.push({ factor: 'Danger free play: pair', points: 120 });
                     }
                     else if (moveType === HAND_TYPES.TRIPLE) {
-                        score += 100;
-                        if (factors) factors.push({ factor: 'Danger free play: triple', points: 100 });
+                        score += 150;
+                        if (factors) factors.push({ factor: 'Danger free play: triple', points: 150 });
                     }
                     else if (FIVE_CARD_PRIORITY[moveType]) {
-                        score += 120;
-                        if (factors) factors.push({ factor: 'Danger free play: 5-card', points: 120 });
+                        score += 200;
+                        if (factors) factors.push({ factor: 'Danger free play: 5-card', points: 200 });
                     }
-                } else if (composition.primaryStrategy === 'pairs') {
-                    if (moveType === HAND_TYPES.PAIR) {
-                        score += 50;
-                        if (factors) factors.push({ factor: 'Pairs strategy free play', points: 50 });
-                    }
-                    else if (moveType === HAND_TYPES.SINGLE) score += 5;
-                } else if (composition.primaryStrategy === 'five_card') {
-                    if (FIVE_CARD_PRIORITY[moveType]) {
-                        score += 40;
-                        if (factors) factors.push({ factor: '5-card strategy free play', points: 40 });
-                    }
-                    else if (moveType === HAND_TYPES.SINGLE) score += 15;
                 } else {
-                    if (moveType === HAND_TYPES.SINGLE) score += 15;
-                    else if (moveType === HAND_TYPES.PAIR) score += 10;
-                    else if (moveType === HAND_TYPES.TRIPLE) score += 5;
+                    // Normal free play - still be aggressive about reducing hand size
+                    if (moveType === HAND_TYPES.PAIR) {
+                        score += 100;
+                        if (factors) factors.push({ factor: 'Free play: pair (aggressive)', points: 100 });
+                    }
+                    else if (moveType === HAND_TYPES.TRIPLE) {
+                        score += 120;
+                        if (factors) factors.push({ factor: 'Free play: triple (aggressive)', points: 120 });
+                    }
+                    else if (FIVE_CARD_PRIORITY[moveType]) {
+                        // Strongly favor 5-card hands - they clear 5 cards at once!
+                        const fiveCardBonus = 150 + FIVE_CARD_PRIORITY[moveType] * 10;
+                        score += fiveCardBonus;
+                        if (factors) factors.push({ factor: 'Free play: 5-card hand (aggressive)', points: fiveCardBonus });
+                    }
+                    // Singles are acceptable but much less preferred
+                    else if (moveType === HAND_TYPES.SINGLE) {
+                        score += 5;
+                    }
+
+                    // Additional strategy-specific bonuses
+                    if (composition.primaryStrategy === 'pairs') {
+                        if (moveType === HAND_TYPES.PAIR) {
+                            score += 30;
+                            if (factors) factors.push({ factor: 'Pairs strategy bonus', points: 30 });
+                        }
+                    } else if (composition.primaryStrategy === 'five_card') {
+                        if (FIVE_CARD_PRIORITY[moveType]) {
+                            score += 40;
+                            if (factors) factors.push({ factor: '5-card strategy bonus', points: 40 });
+                        }
+                    }
                 }
             }
 
