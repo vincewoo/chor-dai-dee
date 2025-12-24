@@ -593,7 +593,7 @@ const GameRoom = ({ user, socket }) => {
             <img
                 src={logoImage}
                 alt="Chor Dai Dee Logo"
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30%] opacity-[0.15] pointer-events-none z-0"
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] md:w-[30%] opacity-[0.15] pointer-events-none z-0"
             />
             <div className="text-white text-center text-xl font-bold relative z-10">Loading...</div>
         </div>
@@ -616,7 +616,7 @@ const GameRoom = ({ user, socket }) => {
             <img
                 src={logoImage}
                 alt="Chor Dai Dee Logo"
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30%] opacity-[0.15] pointer-events-none z-0"
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] md:w-[30%] opacity-[0.15] pointer-events-none z-0"
             />
 
             {/* Top Bar */}
