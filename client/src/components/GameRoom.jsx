@@ -97,7 +97,7 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
         top: "absolute top-[90px] md:top-[18vh] left-1/2 -translate-x-1/2",
         left: "absolute left-[50px] md:left-[12vw] top-[calc(50%-150px)] md:top-1/2 md:-translate-y-1/2",
         right: "absolute right-[40px] md:right-[12vw] top-[calc(50%-150px)] md:top-1/2 md:-translate-y-1/2",
-        bottom: "absolute bottom-[28vh] md:bottom-[26vh] left-1/2 -translate-x-1/2"
+        bottom: "absolute bottom-[35vh] md:bottom-[32vh] left-1/2 -translate-x-1/2"
     };
 
     const rotationDeg = position === 'left' ? 90 : position === 'right' ? -90 : 0;
@@ -117,11 +117,11 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
     }
 
     return (
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
             {showTurnIndicator ? (
                 // Turn indicator display
                 <motion.div
-                    key={`turn-${position}`}
+                    key={`turn-${position}-${playerName}`}
                     className={positionClasses[position]}
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -134,20 +134,18 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                         {isMe ? "Your Turn!" : `${playerName}'s Turn`}
                     </div>
                 </motion.div>
-            ) : (
+            ) : showPlayedCards ? (
                 // Played cards display (existing logic with enhancements)
                 <motion.div
-                    key={getPlayedHandKey(lastPlayed)}
+                    key={`played-${position}-${getPlayedHandKey(lastPlayed)}`}
                     className={positionClasses[position]}
-                    initial={{ scale: 0.5, opacity: 0 }}
+                    initial={{ opacity: 0 }}
                     animate={{
-                        scale: 1,
                         opacity: 1
                     }}
+                    exit={{ opacity: 0 }}
                     transition={{
-                        type: "spring",
-                        stiffness: 200,
-                        damping: 15
+                        duration: 0.2
                     }}
                 >
                     <div
@@ -174,7 +172,7 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                         )}
                     </div>
                 </motion.div>
-            )}
+            ) : null}
         </AnimatePresence>
     );
 };
