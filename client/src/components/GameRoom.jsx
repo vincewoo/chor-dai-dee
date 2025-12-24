@@ -430,6 +430,7 @@ const GameRoom = ({ user, socket }) => {
     const [isCustomOrder, setIsCustomOrder] = useState(false); // Track if hand is manually arranged
     const [customHandOrder, setCustomHandOrder] = useState(null); // Store custom card order
     const [showSettings, setShowSettings] = useState(false); // Settings modal
+    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // Leave confirmation modal
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -491,9 +492,38 @@ const GameRoom = ({ user, socket }) => {
             }
         }, 3000); // Wait 3 seconds for room state
 
+        // Track if we were reconnected to prevent duplicate get_room_state call
+        let wasReconnected = false;
+
+        // Handler for reconnection
+        const handleReconnect = ({ roomId: reconnectedRoomId, gameState: reconnectedGameState }) => {
+            console.log(`Reconnected to room ${reconnectedRoomId}`, reconnectedGameState);
+            wasReconnected = true;
+            setGameState(reconnectedGameState);
+            clearTimeout(roomLoadTimeout);
+            // If we were reconnected to a different room, navigate to it
+            if (reconnectedRoomId !== roomId) {
+                console.log(`Redirecting from ${roomId} to ${reconnectedRoomId}`);
+                navigate(`/game/${reconnectedRoomId}`, { replace: true });
+            }
+        };
+
+        socket.on('reconnected', handleReconnect);
+
+        // Also handle the case where we're already in the room (fast refresh)
+        socket.on('joined_room', ({ roomId: joinedRoomId }) => {
+            console.log(`Joined room ${joinedRoomId} (fast reconnect)`);
+            wasReconnected = true;
+            clearTimeout(roomLoadTimeout);
+            // Don't need to set game state here, room_update will handle it
+        });
+
         // Small delay to allow reconnection to complete before requesting state
         setTimeout(() => {
-            socket.emit('get_room_state', { roomId });
+            // Only request room state if we weren't reconnected
+            if (!wasReconnected) {
+                socket.emit('get_room_state', { roomId });
+            }
         }, 100);
 
         socket.on('room_update', (state) => {
@@ -561,6 +591,8 @@ const GameRoom = ({ user, socket }) => {
             socket.off('error');
             socket.off('player_disconnected');
             socket.off('player_reconnected');
+            socket.off('reconnected', handleReconnect);
+            socket.off('joined_room');
         };
     }, [socket, navigate]);
 
@@ -802,6 +834,20 @@ const GameRoom = ({ user, socket }) => {
         navigate('/lobby');
     };
 
+    const handleLeaveClick = () => {
+        // Show confirmation modal
+        setShowLeaveConfirm(true);
+    };
+
+    const confirmLeave = () => {
+        setShowLeaveConfirm(false);
+        leaveRoom();
+    };
+
+    const cancelLeave = () => {
+        setShowLeaveConfirm(false);
+    };
+
     if (!gameState) return (
         <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             <img
@@ -845,7 +891,7 @@ const GameRoom = ({ user, socket }) => {
                     <div className="text-sm md:text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
                 )}
                 <div className="flex gap-2 mt-1">
-                    <button onClick={leaveRoom} className="text-xs md:text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
+                    <button onClick={handleLeaveClick} className="text-xs md:text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
                     <button
                         onClick={() => setShowSettings(true)}
                         className="text-xs md:text-[0.7vmax] px-2 py-0.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
@@ -1029,7 +1075,7 @@ const GameRoom = ({ user, socket }) => {
                     <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 md:px-[2vmax] md:py-[0.75vmax] rounded-full font-bold text-lg md:text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-4 md:mb-[1vmax]">
                         Start Game (Fill with Bots)
                     </button>
-                    <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax]">
+                    <button onClick={handleLeaveClick} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax]">
                         Leave Room
                     </button>
                 </div>
@@ -1303,6 +1349,69 @@ const GameRoom = ({ user, socket }) => {
                                     className="bg-green-600 hover:bg-green-700 text-white px-6 md:px-[2vmax] py-2 md:py-[0.6vmax] rounded-lg font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]"
                                 >
                                     Close
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Leave Confirmation Modal */}
+            <AnimatePresence>
+                {showLeaveConfirm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center"
+                        onClick={cancelLeave}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white mb-4">Leave Room?</h2>
+
+                            <div className="text-gray-300 mb-6 space-y-2">
+                                {gameState?.hostUsername === user?.username ? (
+                                    <>
+                                        <p className="font-semibold text-yellow-400">You are the room host!</p>
+                                        <p>If you leave:</p>
+                                        <ul className="list-disc ml-5 space-y-1">
+                                            <li>You will be replaced with a bot</li>
+                                            <li>Host will transfer to another player</li>
+                                            <li>You will NOT be able to rejoin this game</li>
+                                        </ul>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p>If you leave:</p>
+                                        <ul className="list-disc ml-5 space-y-1">
+                                            <li>You will be replaced with a bot</li>
+                                            <li>You will NOT be able to rejoin this game</li>
+                                        </ul>
+                                    </>
+                                )}
+                                <p className="text-sm text-gray-400 mt-3">
+                                    Note: Closing the browser or disconnecting accidentally will let you rejoin.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    onClick={cancelLeave}
+                                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition"
+                                >
+                                    Stay
+                                </button>
+                                <button
+                                    onClick={confirmLeave}
+                                    className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
+                                >
+                                    Leave Room
                                 </button>
                             </div>
                         </motion.div>

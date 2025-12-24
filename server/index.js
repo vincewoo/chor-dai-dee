@@ -75,6 +75,8 @@ io.on('connection', (socket) => {
 
             socket.join(existingRoomId);
 
+            console.log(`Room state on reconnect: ${room.gameState}, player hand: ${player.hand ? player.hand.length : 0} cards`);
+
             // Send reconnection success with full state
             socket.emit('reconnected', {
                 roomId: existingRoomId,

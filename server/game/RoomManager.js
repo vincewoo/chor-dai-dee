@@ -10,6 +10,7 @@ class Room {
     constructor(roomId, gameMode = 'standard') {
         this.id = roomId;
         this.players = []; // Array of { id, name, socket, hand, isBot, isDisconnected }
+        this.hostUsername = null; // The username of the room host (first player to join)
         this.gameState = 'waiting'; // waiting, playing, round_over, finished
         this.deck = new Deck();
         this.currentTurnIndex = 0;
@@ -42,6 +43,11 @@ class Room {
         // Track by username for reconnection
         if (player.name && !player.isBot) {
             this.playersByUsername[player.name] = player;
+            // Set the first non-bot player as the host
+            if (!this.hostUsername) {
+                this.hostUsername = player.name;
+                console.log(`Room ${this.id}: ${player.name} is now the host`);
+            }
         }
         return true;
     }
@@ -65,7 +71,7 @@ class Room {
         existingPlayer.socket = newSocket;
         existingPlayer.isDisconnected = false;
 
-        // Update references that use the old socket ID
+        // Always update references that use the old socket ID
         if (this.cumulativeScores[oldId] !== undefined) {
             this.cumulativeScores[newSocketId] = this.cumulativeScores[oldId];
             delete this.cumulativeScores[oldId];
@@ -185,9 +191,22 @@ class Room {
             delete this.tier3DecisionTracking[socketId];
         }
 
-        // Remove from playersByUsername if it exists
+        // Remove from playersByUsername if it exists (they explicitly left)
         if (oldPlayer.name && this.playersByUsername[oldPlayer.name]) {
             delete this.playersByUsername[oldPlayer.name];
+        }
+
+        // If the host left, transfer host to the next non-bot player
+        if (this.hostUsername === oldPlayer.name) {
+            const newHost = this.players.find(p => !p.isBot && p !== botPlayer);
+            if (newHost) {
+                this.hostUsername = newHost.name;
+                console.log(`Room ${this.id}: Host transferred to ${newHost.name}`);
+            } else {
+                // No other human players, host is now null (room will be deleted if all bots)
+                this.hostUsername = null;
+                console.log(`Room ${this.id}: No host remaining (all bots)`);
+            }
         }
 
         console.log(`Replaced player ${oldPlayer.name} with bot at index ${playerIndex}`);
@@ -350,9 +369,11 @@ class Room {
     }
 
     setGameMode(gameMode) {
+        // Only allow changing mode in 'waiting' state
         if (this.gameState !== 'waiting') {
             return { error: 'Cannot change mode during game' };
         }
+
         this.gameMode = gameMode;
         this.pointThreshold = getPointThreshold(gameMode);
         return { success: true };
@@ -711,6 +732,7 @@ class Room {
     getGameState() {
         return {
             roomId: this.id,
+            hostUsername: this.hostUsername,
             players: this.players.map(p => ({
                 id: p.id,
                 name: p.name,
