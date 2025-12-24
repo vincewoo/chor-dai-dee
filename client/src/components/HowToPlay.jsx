@@ -1,0 +1,418 @@
+import React, { useState } from 'react';
+import Card from './Card';
+import { SUIT_SYMBOLS } from '../constants';
+
+const HowToPlay = ({ isOpen, onClose }) => {
+    const [activeTab, setActiveTab] = useState('overview');
+
+    if (!isOpen) return null;
+
+    // Helper to render a row of example cards (stacked like in-game)
+    const CardRow = ({ cards }) => (
+        <div className="flex justify-center items-center my-2">
+            <div className="flex">
+                {cards.map((card, idx) => (
+                    <div
+                        key={idx}
+                        style={{
+                            marginLeft: idx === 0 ? '0' : '-45px',
+                            position: 'relative',
+                            zIndex: idx
+                        }}
+                    >
+                        <Card rank={card.rank} suit={card.suit} size="large" />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="bg-green-700 text-white p-6 flex justify-between items-center">
+                    <h2 className="text-2xl font-bold">How to Play Big 2 (Hong Kong Style)</h2>
+                    <button
+                        onClick={onClose}
+                        className="text-white hover:text-gray-200 text-3xl leading-none"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                {/* Tab Navigation */}
+                <div className="flex border-b border-gray-200 bg-gray-50">
+                    <button
+                        onClick={() => setActiveTab('overview')}
+                        className={`flex-1 px-4 py-3 font-medium transition ${
+                            activeTab === 'overview'
+                                ? 'bg-white text-green-700 border-b-2 border-green-700'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Overview
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('rankings')}
+                        className={`flex-1 px-4 py-3 font-medium transition ${
+                            activeTab === 'rankings'
+                                ? 'bg-white text-green-700 border-b-2 border-green-700'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Card & Hand Rankings
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('rules')}
+                        className={`flex-1 px-4 py-3 font-medium transition ${
+                            activeTab === 'rules'
+                                ? 'bg-white text-green-700 border-b-2 border-green-700'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Game Rules
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('scoring')}
+                        className={`flex-1 px-4 py-3 font-medium transition ${
+                            activeTab === 'scoring'
+                                ? 'bg-white text-green-700 border-b-2 border-green-700'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Scoring
+                    </button>
+                </div>
+
+                {/* Content Area */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    {activeTab === 'overview' && (
+                        <div className="space-y-4">
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">What is Big 2?</h3>
+                                <p className="text-gray-700 leading-relaxed">
+                                    Big 2 (also known as Deuces or Choi Dai Di) is a popular card game in East Asia.
+                                    The objective is to be the first player to get rid of all your cards by playing higher-ranking
+                                    hands than your opponents.
+                                </p>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">Quick Start</h3>
+                                <ol className="list-decimal list-inside space-y-2 text-gray-700">
+                                    <li>Each player receives 13 cards</li>
+                                    <li>The player with 3{SUIT_SYMBOLS.D} starts the first round</li>
+                                    <li>Play cards that beat the current hand on the table</li>
+                                    <li>If you can't or don't want to play, pass your turn</li>
+                                    <li>When everyone passes, the last player to play gets "free control" and can play anything</li>
+                                    <li>First player to empty their hand wins the round</li>
+                                    <li>Game continues until someone reaches 50 (Short) or 100 (Standard) points</li>
+                                    <li>Player with the LOWEST score wins the game</li>
+                                </ol>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">Game Modes</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="border border-gray-300 rounded-lg p-4">
+                                        <h4 className="font-bold text-green-700 mb-2">Short Game (~30 min)</h4>
+                                        <p className="text-gray-700">First player to reach 50 points ends the game. Perfect for quick matches.</p>
+                                    </div>
+                                    <div className="border border-gray-300 rounded-lg p-4">
+                                        <h4 className="font-bold text-green-700 mb-2">Standard Game (~60 min)</h4>
+                                        <p className="text-gray-700">First player to reach 100 points ends the game. Full competitive experience.</p>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'rankings' && (
+                        <div className="space-y-6">
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Suit Rankings (Lowest to Highest)</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                                    <div className="border border-gray-300 rounded-lg p-3 text-center">
+                                        <div className="text-4xl mb-2 text-blue-500">{SUIT_SYMBOLS.D}</div>
+                                        <div className="font-bold text-gray-800">Diamonds</div>
+                                        <div className="text-sm text-gray-600">Lowest</div>
+                                    </div>
+                                    <div className="border border-gray-300 rounded-lg p-3 text-center">
+                                        <div className="text-4xl mb-2 text-green-600">{SUIT_SYMBOLS.C}</div>
+                                        <div className="font-bold text-gray-800">Clubs</div>
+                                        <div className="text-sm text-gray-600">Low</div>
+                                    </div>
+                                    <div className="border border-gray-300 rounded-lg p-3 text-center">
+                                        <div className="text-4xl mb-2 text-red-600">{SUIT_SYMBOLS.H}</div>
+                                        <div className="font-bold text-gray-800">Hearts</div>
+                                        <div className="text-sm text-gray-600">High</div>
+                                    </div>
+                                    <div className="border border-gray-300 rounded-lg p-3 text-center">
+                                        <div className="text-4xl mb-2 text-black">{SUIT_SYMBOLS.S}</div>
+                                        <div className="font-bold text-gray-800">Spades</div>
+                                        <div className="text-sm text-gray-600">Highest</div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Rank Rankings (Lowest to Highest)</h3>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <div className="text-center text-gray-700 font-mono text-lg">
+                                        3 &lt; 4 &lt; 5 &lt; 6 &lt; 7 &lt; 8 &lt; 9 &lt; 10 &lt; J &lt; Q &lt; K &lt; A &lt; <span className="font-bold text-red-600">2</span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 text-center mt-2">Note: 2 is the highest rank (hence "Big 2")</p>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Hand Types (Ranked from Weakest to Strongest)</h3>
+
+                                {/* Single */}
+                                <div className="border border-gray-300 rounded-lg p-4 mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2">1. Single Card</h4>
+                                    <p className="text-gray-700 text-sm mb-2">Any single card. Compared by rank first, then suit.</p>
+                                    <CardRow cards={[{ rank: '7', suit: 'H' }]} />
+                                    <p className="text-xs text-gray-600 text-center mt-1">Example: 7{SUIT_SYMBOLS.H} beats 7{SUIT_SYMBOLS.D} but loses to 8{SUIT_SYMBOLS.D}</p>
+                                </div>
+
+                                {/* Pair */}
+                                <div className="border border-gray-300 rounded-lg p-4 mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2">2. Pair</h4>
+                                    <p className="text-gray-700 text-sm mb-2">Two cards of the same rank. Compared by rank, then highest suit.</p>
+                                    <CardRow cards={[{ rank: 'J', suit: 'S' }, { rank: 'J', suit: 'H' }]} />
+                                    <p className="text-xs text-gray-600 text-center mt-1">Example: JJ with {SUIT_SYMBOLS.S} as highest suit</p>
+                                </div>
+
+                                {/* Triple */}
+                                <div className="border border-gray-300 rounded-lg p-4 mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2">3. Triple</h4>
+                                    <p className="text-gray-700 text-sm mb-2">Three cards of the same rank. Compared by rank only.</p>
+                                    <CardRow cards={[{ rank: '9', suit: 'S' }, { rank: '9', suit: 'H' }, { rank: '9', suit: 'C' }]} />
+                                </div>
+
+                                {/* 5-Card Hands */}
+                                <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4 mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2">5-Card Hands (Special)</h4>
+                                    <p className="text-gray-700 text-sm mb-3">
+                                        These hands consist of exactly 5 cards and can only beat other 5-card hands.
+                                        They are ranked by hand type first, then by the highest card.
+                                    </p>
+
+                                    {/* Straight */}
+                                    <div className="bg-white rounded p-3 mb-2">
+                                        <h5 className="font-semibold text-gray-800 mb-1">Straight (Weakest 5-card hand)</h5>
+                                        <p className="text-xs text-gray-600 mb-2">Five consecutive ranks. Compared by highest card.</p>
+                                        <CardRow cards={[
+                                            { rank: '5', suit: 'D' },
+                                            { rank: '6', suit: 'C' },
+                                            { rank: '7', suit: 'H' },
+                                            { rank: '8', suit: 'S' },
+                                            { rank: '9', suit: 'D' }
+                                        ]} />
+                                    </div>
+
+                                    {/* Flush */}
+                                    <div className="bg-white rounded p-3 mb-2">
+                                        <h5 className="font-semibold text-gray-800 mb-1">Flush</h5>
+                                        <p className="text-xs text-gray-600 mb-2">Five cards of the same suit. Compared by highest card, then suit.</p>
+                                        <CardRow cards={[
+                                            { rank: '3', suit: 'H' },
+                                            { rank: '5', suit: 'H' },
+                                            { rank: '8', suit: 'H' },
+                                            { rank: 'J', suit: 'H' },
+                                            { rank: 'K', suit: 'H' }
+                                        ]} />
+                                    </div>
+
+                                    {/* Full House */}
+                                    <div className="bg-white rounded p-3 mb-2">
+                                        <h5 className="font-semibold text-gray-800 mb-1">Full House</h5>
+                                        <p className="text-xs text-gray-600 mb-2">Three of a kind + a pair. Compared by the triple's rank.</p>
+                                        <CardRow cards={[
+                                            { rank: 'Q', suit: 'S' },
+                                            { rank: 'Q', suit: 'H' },
+                                            { rank: 'Q', suit: 'C' },
+                                            { rank: '4', suit: 'D' },
+                                            { rank: '4', suit: 'S' }
+                                        ]} />
+                                        <p className="text-xs text-gray-600 text-center mt-1">Three Queens + Two 4s</p>
+                                    </div>
+
+                                    {/* Four of a Kind */}
+                                    <div className="bg-white rounded p-3 mb-2">
+                                        <h5 className="font-semibold text-gray-800 mb-1">Four of a Kind (Quads)</h5>
+                                        <p className="text-xs text-gray-600 mb-2">Four cards of the same rank + any fifth card. Compared by the quad's rank.</p>
+                                        <CardRow cards={[
+                                            { rank: '8', suit: 'S' },
+                                            { rank: '8', suit: 'H' },
+                                            { rank: '8', suit: 'D' },
+                                            { rank: '8', suit: 'C' },
+                                            { rank: 'K', suit: 'S' }
+                                        ]} />
+                                    </div>
+
+                                    {/* Straight Flush */}
+                                    <div className="bg-white rounded p-3">
+                                        <h5 className="font-semibold text-gray-800 mb-1">Straight Flush (Strongest hand!)</h5>
+                                        <p className="text-xs text-gray-600 mb-2">Five consecutive ranks, all same suit. Compared by highest card, then suit.</p>
+                                        <CardRow cards={[
+                                            { rank: '9', suit: 'S' },
+                                            { rank: '10', suit: 'S' },
+                                            { rank: 'J', suit: 'S' },
+                                            { rank: 'Q', suit: 'S' },
+                                            { rank: 'K', suit: 'S' }
+                                        ]} />
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'rules' && (
+                        <div className="space-y-4">
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Starting the Game</h3>
+                                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                    <li><strong>First Round:</strong> The player with 3{SUIT_SYMBOLS.D} must play it first (can be in a hand containing 3{SUIT_SYMBOLS.D})</li>
+                                    <li><strong>Subsequent Rounds:</strong> The winner of the previous round starts and can play any valid hand</li>
+                                    <li>Each player receives 13 cards at the start of each round</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Playing Your Turn</h3>
+                                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                    <li>You must play the <strong>same number of cards</strong> as the current hand on the table</li>
+                                    <li>Your hand must be <strong>higher-ranking</strong> than the current hand</li>
+                                    <li>Singles beat singles, pairs beat pairs, trips beat trips, and 5-card hands beat 5-card hands (by type first, then value)</li>
+                                    <li>If you cannot or choose not to play, you must <strong>pass</strong></li>
+                                    <li>Once you pass, you cannot play again until someone else plays. This means that you could strategically pass and rejoin the game later in the round.</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Free Control</h3>
+                                <div className="bg-green-50 border border-green-300 rounded-lg p-4">
+                                    <p className="text-gray-700 mb-2">
+                                        When all other players pass consecutively, the last player who played a hand gains <strong>"free control"</strong>.
+                                    </p>
+                                    <ul className="list-disc list-inside space-y-1 text-gray-700">
+                                        <li>The table is cleared</li>
+                                        <li>You can play any valid hand (single, pair, triple, or 5-card hand)</li>
+                                        <li>This is your opportunity to start fresh with your strategy</li>
+                                    </ul>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Winning a Round</h3>
+                                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                    <li>The first player to play all their cards wins the round</li>
+                                    <li>The round ends immediately when someone empties their hand</li>
+                                    <li>The winner scores 0 points; other players score penalty points based on remaining cards</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Special Rules</h3>
+                                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                                    <li><strong>5-Card Hands:</strong> Can only be beaten by stronger 5-card hands (e.g., a straight flush beats a flush)</li>
+                                    <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
+                                    <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (Spades &gt; Hearts &gt; Clubs &gt; Diamonds)</li>
+                                </ul>
+                            </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'scoring' && (
+                        <div className="space-y-4">
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">How Scoring Works</h3>
+                                <p className="text-gray-700 mb-3">
+                                    Big 2 uses a penalty scoring system. The winner of each round gets 0 points,
+                                    while other players receive penalty points based on their remaining cards.
+                                </p>
+                                <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4">
+                                    <p className="font-bold text-gray-800 mb-2">Important: Lowest score wins!</p>
+                                    <p className="text-gray-700">
+                                        When a player reaches 50 points (Short) or 100 points (Standard), the game ends.
+                                        The player with the LOWEST cumulative score is the winner.
+                                    </p>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Penalty Points per Round</h3>
+                                <p className="text-gray-700 mb-3">
+                                    If you lose a round badly (>= 10 cards remaining), you receive a higher penalty multiplier.
+                                    The multiplier increases as the number of remaining cards increases.
+                                </p>
+                                <div className="space-y-3">
+                                    <div className="border border-gray-300 rounded-lg p-4">
+                                        <h4 className="font-bold text-green-700 mb-2">1-9 Cards Remaining: 1× Multiplier</h4>
+                                        <p className="text-gray-700">Points = Number of cards remaining</p>
+                                        <p className="text-sm text-gray-600 mt-1">Example: 7 cards left = 7 points</p>
+                                    </div>
+
+                                    <div className="border border-gray-300 rounded-lg p-4">
+                                        <h4 className="font-bold text-orange-600 mb-2">10-12 Cards Remaining: 2× Multiplier</h4>
+                                        <p className="text-gray-700">Points = (Number of cards remaining) × 2</p>
+                                        <p className="text-sm text-gray-600 mt-1">Example: 11 cards left = 22 points</p>
+                                    </div>
+
+                                    <div className="border border-gray-300 rounded-lg p-4">
+                                        <h4 className="font-bold text-red-600 mb-2">13 Cards Remaining: 3× Multiplier</h4>
+                                        <p className="text-gray-700">Points = 13 × 3 = 39 points</p>
+                                        <p className="text-sm text-gray-600 mt-1">Applies when you didn't play any cards (maximum penalty)</p>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Scoring Example</h3>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <p className="font-semibold text-gray-800 mb-2">Round Results:</p>
+                                    <ul className="space-y-1 text-gray-700">
+                                        <li>• Player A: 0 cards (Winner) = <strong>0 points</strong></li>
+                                        <li>• Player B: 5 cards = <strong>5 points</strong> (1× multiplier)</li>
+                                        <li>• Player C: 11 cards = <strong>22 points</strong> (2× multiplier)</li>
+                                        <li>• Player D: 13 cards = <strong>39 points</strong> (3× multiplier)</li>
+                                    </ul>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Rating System</h3>
+                                <p className="text-gray-700 mb-2">
+                                    Players have a skill rating that updates after each game based on their final placement (1st, 2nd, 3rd, 4th).
+                                </p>
+                                <ul className="list-disc list-inside space-y-1 text-gray-700">
+                                    <li>Starting rating: ~1200</li>
+                                    <li>Better placements increase your rating</li>
+                                    <li>Worse placements decrease your rating</li>
+                                    <li>The system uses OpenSkill (similar to TrueSkill) for fair matchmaking</li>
+                                    <li>Only human players receive rating updates</li>
+                                </ul>
+                            </section>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+                    <button
+                        onClick={onClose}
+                        className="w-full bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700 transition"
+                    >
+                        Got it! Let's Play
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default HowToPlay;

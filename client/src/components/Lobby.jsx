@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
+import HowToPlay from './HowToPlay';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
     const [error, setError] = useState('');
     const [reconnecting, setReconnecting] = useState(false);
     const [connected, setConnected] = useState(socket.connected);
+    const [showHowToPlay, setShowHowToPlay] = useState(false);
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -102,6 +104,13 @@ const Lobby = ({ user, socket, setUser }) => {
                 <h2 className="text-2xl font-bold mb-2">Welcome, {user.username}!</h2>
                 <div className="flex justify-center gap-4 mb-4">
                     <button
+                        onClick={() => setShowHowToPlay(true)}
+                        className="text-sm text-green-600 hover:text-green-800 underline font-medium"
+                    >
+                        How to Play
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
                         onClick={() => navigate('/stats')}
                         className="text-sm text-blue-600 hover:text-blue-800 underline font-medium"
                     >
@@ -139,6 +148,8 @@ const Lobby = ({ user, socket, setUser }) => {
                 </div>
                 {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
             </div>
+
+            <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
         </div>
     );
 };

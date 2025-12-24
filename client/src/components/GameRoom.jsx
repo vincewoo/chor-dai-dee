@@ -1294,7 +1294,7 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-50 bg-black/70 flex items-center justify-center"
+                        className="absolute inset-0 z-[200] bg-black/70 flex items-center justify-center"
                         onClick={() => setShowSettings(false)}
                     >
                         <motion.div
