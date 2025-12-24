@@ -874,14 +874,6 @@ app.get('/api/stats/:username/tier3', async (req, res) => {
     }
 });
 
-// SPA catch-all route - must be after all API routes
-// Express 5 requires named parameter for wildcards
-if (isProduction) {
-    app.get('/{*splat}', (req, res) => {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
-    });
-}
-
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0'; // Listen on all interfaces for Docker/Fly.io
 server.listen(PORT, HOST, () => {
