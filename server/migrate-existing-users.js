@@ -4,10 +4,10 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-// Use /app directory in production (Docker mount), local directory otherwise
+// Use /data directory in production (Docker volume mount), local directory otherwise
 const isProduction = process.env.NODE_ENV === 'production';
 const dbPath = isProduction
-    ? '/app/database.sqlite'
+    ? '/data/database.sqlite'
     : path.join(__dirname, 'database.sqlite');
 
 console.log(`Connecting to database at: ${dbPath}`);

@@ -8,8 +8,8 @@ services:
     container_name: chor-dai-dee-server
     restart: unless-stopped
     volumes:
-      # Persist the database
-      - ./server/database.sqlite:/app/database.sqlite
+      # Persist the database in a data directory
+      - ./data:/data
     environment:
       - NODE_ENV=production
     network_mode: service:tailscale
