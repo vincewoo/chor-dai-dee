@@ -119,38 +119,14 @@ jobs:
             # Enable Tailscale Funnel for public HTTPS access
             echo "Setting up Tailscale Funnel on port 443..."
             # Funnel will handle HTTPS termination and proxy to nginx's HTTP on port 80
-            sudo docker-compose exec -T tailscale tailscale serve --bg --https 443 http://localhost:80 || echo "Serve configuration initiated"
-            sudo docker-compose exec -T tailscale tailscale funnel 443 on || echo "Funnel enabled"
 
-            # Wait for Funnel to provision certificates
-            echo "Waiting for Funnel to provision certificates..."
-            sleep 10
+            echo "Enabling Tailscale Funnel for public HTTPS access..."
+            sudo docker-compose exec -T tailscale tailscale funnel --bg --https=443 localhost:80
 
-            # Try to copy certificates with retries
-            ATTEMPTS=0
-            MAX_ATTEMPTS=6
-            while [ \$ATTEMPTS -lt \$MAX_ATTEMPTS ]; do
-              ATTEMPTS=\$((ATTEMPTS + 1))
-              echo "Attempt \$ATTEMPTS of \$MAX_ATTEMPTS: Checking for certificates..."
+            echo "Verifying funnel status..."
+            sudo docker-compose exec -T tailscale tailscale funnel status
 
-              if sudo docker-compose exec -T tailscale ls /var/lib/tailscale/certs/ 2>/dev/null | grep -q ".crt"; then
-                echo "Certificates found in Tailscale container!"
-                sudo docker cp chor-dai-dee-tailscale:/var/lib/tailscale/certs/ ./certs/ 2>/dev/null && break
-              fi
-
-              if [ \$ATTEMPTS -lt \$MAX_ATTEMPTS ]; then
-                sleep 5
-              fi
-            done
-
-            # Restart client container to pick up certificates if they were copied
-            if [ -f "./certs/certs/chor-dai-dee.tail83fc6d.ts.net.crt" ]; then
-              echo "Certificates found, restarting client container with HTTPS support..."
-              sudo docker-compose restart client
-              echo "✅ HTTPS enabled with Tailscale Funnel - publicly accessible at https://chor-dai-dee.tail83fc6d.ts.net"
-            else
-              echo "Running with HTTP-only for now. HTTPS will be enabled on next deployment once certificates are available."
-            fi
+            echo "✅ Deployment complete - Application should be publicly accessible at https://chor-dai-dee.tail83fc6d.ts.net"
 
             # Remove .env file for security
             rm -f .env
