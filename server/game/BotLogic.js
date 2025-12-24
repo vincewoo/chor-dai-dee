@@ -289,12 +289,51 @@ const BotLogic = {
 
         // Sort by priority (Straight Flush > Quads > Full House > Flush > Straight)
         fiveCardMoves.sort((a, b) => {
+            // Apply "Preservation Hierarchy" for late game/general logic
+            // 1. Straight Flush / Quads (Highest)
+            // 2. Boss Full House (K, A, 2)
+            // 3. Ace-High (or 2-High) Flush/Straight
+            // 4. Low Full House
+            // 5. Other Flushes
+            // 6. Other Straights (Lowest)
+
+            const getPreservationPriority = (move) => {
+                const type = move.type;
+
+                // 1. Game Enders
+                if (type === HAND_TYPES.STRAIGHT_FLUSH || type === HAND_TYPES.QUADS) return 6;
+
+                // 2. Boss Full House (Triple is K, A, or 2)
+                if (type === HAND_TYPES.FULL_HOUSE) {
+                    // In a sorted Full House, the middle card (index 2) is always part of the triple
+                    // e.g., AAA BB or BB AAA -> middle is A
+                    const tripleRank = move.cards[2].rank;
+                    if (['K', 'A', '2'].includes(tripleRank)) return 5;
+                    return 3; // Low Full House
+                }
+
+                // 3. High Flush or Straight (Top card is A or 2)
+                if (type === HAND_TYPES.FLUSH || type === HAND_TYPES.STRAIGHT) {
+                    // Cards are sorted by value, so index 4 is the highest
+                    const highRank = move.cards[4].rank;
+                    if (['A', '2'].includes(highRank)) return 4;
+
+                    if (type === HAND_TYPES.FLUSH) return 2; // Other Flush
+                    return 1; // Other Straight
+                }
+
+                return 0;
+            };
+
+            const priorityA = getPreservationPriority(a);
+            const priorityB = getPreservationPriority(b);
+
+            if (priorityA !== priorityB) return priorityB - priorityA;
+
             const typeScoreA = FIVE_CARD_PRIORITY[a.type] || 0;
             const typeScoreB = FIVE_CARD_PRIORITY[b.type] || 0;
             if (typeScoreA !== typeScoreB) return typeScoreB - typeScoreA;
-            return b.value - a.value; // Higher value preferred? Or lower to save high?
-            // Heuristic says "Shed 5 cards". Usually best to play what you have.
-            // Let's prioritize stronger structures to "lock" them in.
+            return b.value - a.value; // Higher value preferred
         });
 
         // Greedily pick
