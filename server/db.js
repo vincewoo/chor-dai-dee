@@ -3,10 +3,10 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const path = require('path');
 
-// Use /data directory in production (Fly.io volume mount), local directory otherwise
+// Use /app directory in production (Docker mount), local directory otherwise
 const isProduction = process.env.NODE_ENV === 'production';
 const dbPath = isProduction
-    ? '/data/database.sqlite'
+    ? '/app/database.sqlite'
     : path.join(__dirname, 'database.sqlite');
 
 const db = new sqlite3.Database(dbPath, (err) => {

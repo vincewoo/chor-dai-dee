@@ -29,11 +29,6 @@ const corsOptions = isProduction
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Serve static files in production
-if (isProduction) {
-  app.use(express.static(path.join(__dirname, 'public')));
-}
-
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: corsOptions
