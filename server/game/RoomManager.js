@@ -425,7 +425,7 @@ class Room {
         // Record this player's played hand (visible until round ends)
         this.playOrder++; // Increment play order for z-index stacking
         this.playerLastPlayed[playerId] = { type: 'play', ...validatedHand, playerId, timestamp: Date.now(), playOrder: this.playOrder };
-        // Note: Don't clear passedPlayers here - players who passed stay out until round is won
+        this.passedPlayers.clear(); // Clear passed players as new card allows everyone to play
         this.passes = 0; // Reset consecutive pass counter
 
         // Track played cards for card counting
