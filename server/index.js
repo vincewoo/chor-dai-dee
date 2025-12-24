@@ -236,6 +236,19 @@ io.on('connection', (socket) => {
           const gameWinner = room.getGameWinner();
           room.gameState = 'finished';
 
+          const sanitizedGameWinner = {
+              id: gameWinner.id,
+              name: gameWinner.name,
+              isBot: gameWinner.isBot
+          };
+
+          io.to(roomId).emit('game_over', {
+              winner: sanitizedGameWinner,
+              scores: scoresWithCumulative,
+              finalScores: room.cumulativeScores,
+              roundNumber: room.roundNumber
+          });
+
           // 1. Fetch current ratings for all humans (mode-specific)
           // We need to fetch stats to get current mu/sigma
           const playersWithStats = await Promise.all(room.players.map(async (p) => {
@@ -503,18 +516,6 @@ io.on('connection', (socket) => {
               }
           }
 
-          const sanitizedGameWinner = {
-              id: gameWinner.id,
-              name: gameWinner.name,
-              isBot: gameWinner.isBot
-          };
-
-          io.to(roomId).emit('game_over', {
-              winner: sanitizedGameWinner,
-              scores: scoresWithCumulative,
-              finalScores: room.cumulativeScores,
-              roundNumber: room.roundNumber
-          });
       } else {
           // Round is over, but game continues
           io.to(roomId).emit('round_over', {
