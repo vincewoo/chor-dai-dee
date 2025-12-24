@@ -106,8 +106,8 @@ jobs:
             # Stop and remove old containers
             sudo docker-compose down
 
-            # Create certs directory if it doesn't exist
-            mkdir -p certs
+            # Create required directories if they don't exist
+            mkdir -p certs data
 
             # Start new containers (docker-compose will read .env automatically)
             sudo docker-compose up -d
