@@ -417,6 +417,7 @@ const GameRoom = ({ user, socket }) => {
         })
     );
 
+    const [isDragging, setIsDragging] = useState(false);
     const [gameState, setGameState] = useState(null);
     const [myHand, setMyHand] = useState([]);
     const [selectedCards, setSelectedCards] = useState([]);
@@ -630,18 +631,22 @@ const GameRoom = ({ user, socket }) => {
             const isSelected = selectedCards.some(c => c.rank === rank && c.suit === suit);
             touchStartRef.current = {
                 mode: isSelected ? 'deselect' : 'select',
-                lastToggled: cardId
+                lastToggled: cardId, // Initialize as last toggled to prevent re-toggle if we stay on it
+                startCardId: cardId,
+                startCardProcessed: false
             };
 
-            // Toggle the start card immediately
-            toggleCard({ rank, suit });
+            // NOTE: We do NOT toggle immediately here.
+            // If it's a tap, the click handler on the Card component will handle it.
+            // If it's a swipe, handleTouchMove will handle it when moving off the start card.
         } else {
             touchStartRef.current = null;
         }
     };
 
     const handleTouchMove = (e) => {
-        if (!touchStartRef.current) return;
+        // Abort if no touch session or if a drag-and-drop operation is active
+        if (!touchStartRef.current || isDragging) return;
 
         // e.preventDefault(); // Stop scrolling while painting selection
 
@@ -652,7 +657,16 @@ const GameRoom = ({ user, socket }) => {
         if (cardElement) {
             const cardId = cardElement.getAttribute('data-card-id');
 
-            // If we moved to a new card
+            // Check if we need to process the start card (first move off it)
+            if (!touchStartRef.current.startCardProcessed && cardId !== touchStartRef.current.startCardId) {
+                // We have moved off the start card to a NEW card.
+                // Now we must toggle the start card to confirm the action on it (swipe start).
+                const [startRank, startSuit] = touchStartRef.current.startCardId.split('-');
+                toggleCard({ rank: startRank, suit: startSuit });
+                touchStartRef.current.startCardProcessed = true;
+            }
+
+            // If we moved to a new card (different from last toggled)
             if (cardId !== touchStartRef.current.lastToggled) {
                 const [rank, suit] = cardId.split('-');
                 const isSelected = selectedCards.some(c => c.rank === rank && c.suit === suit);
@@ -703,8 +717,13 @@ const GameRoom = ({ user, socket }) => {
         return result;
     };
 
+    const handleDragStart = () => {
+        setIsDragging(true);
+    };
+
     // Handle drag end event
     const handleDragEnd = (event) => {
+        setIsDragging(false);
         const { active, over } = event;
 
         if (!over || active.id === over.id) return;
@@ -1162,6 +1181,7 @@ const GameRoom = ({ user, socket }) => {
                     <DndContext
                         sensors={sensors}
                         collisionDetection={closestCenter}
+                        onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                     >
                         <SortableContext
