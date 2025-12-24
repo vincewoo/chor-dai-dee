@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from './Card';
+import CardCountIndicator from './CardCountIndicator';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
 import HandHelper from './HandHelper';
@@ -208,8 +209,10 @@ const TopPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandO
                     <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
                     </div>
-                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{player.cardCount} Cards</div>
+                    <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
+                {/* Card count indicator - right side (mobile only) */}
+                <CardCountIndicator cardCount={player.cardCount} className="md:hidden" />
             </div>
             {/* Played cards or PASS - below player */}
             <PlayedCards
@@ -248,7 +251,8 @@ const LeftPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHand
                     <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
                     </div>
-                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{player.cardCount} Cards</div>
+                    <CardCountIndicator cardCount={player.cardCount} className="md:hidden mt-1" />
+                    <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
                 {/* Cards - horizontal stack (hidden on mobile) */}
                 <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
@@ -294,7 +298,8 @@ const RightPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHan
                     <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
                         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
                     </div>
-                    <div className="text-yellow-300 text-xs md:text-[0.7vmax]">{player.cardCount} Cards</div>
+                    <CardCountIndicator cardCount={player.cardCount} className="md:hidden mt-1" />
+                    <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
                 {/* Cards - horizontal stack (hidden on mobile) */}
                 <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
