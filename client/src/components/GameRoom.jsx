@@ -1190,7 +1190,7 @@ const GameRoom = ({ user, socket }) => {
                         >
                             <div
                                 ref={handContainerRef}
-                                className="flex justify-center transition-all duration-300 hover:gap-2 md:hover:gap-[0.5vmax]"
+                                className="flex justify-center transition-all duration-300 hover:gap-2 md:hover:gap-[0.5vmax] w-full md:w-auto"
                                 onTouchStart={handleTouchStart}
                                 onTouchMove={handleTouchMove}
                                 onTouchEnd={handleTouchEnd}
