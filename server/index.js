@@ -875,7 +875,7 @@ app.get('/api/stats/:username/tier3', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0'; // Listen on all interfaces for Docker/Fly.io
+const HOST = '0.0.0.0'; // Listen on all interfaces for Docker
 server.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);
 });
