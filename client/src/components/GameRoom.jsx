@@ -450,35 +450,33 @@ const GameRoom = ({ user, socket }) => {
     // Calculate dynamic overlap
     const dynamicOverlap = useMemo(() => {
         const cardCount = sortedHand.length;
-        if (cardCount <= 1 || containerWidth === 0) return '-45px'; // Default fallback
 
-        // Card width is roughly 70px on standard view, or 5.5vmax on mobile
-        // We'll estimate based on a standard "xlarge" card width approx 70px
-        const cardWidth = 70;
+        // Calculate estimated card width based on device type
+        // Mobile (default): 70px (matches 'xlarge' size for mobile)
+        // Desktop: 5.5vmax (matches 'xlarge' md size)
+        let cardWidth = 70;
+        if (isDesktop && typeof window !== 'undefined') {
+            const vmax = Math.max(window.innerWidth, window.innerHeight);
+            cardWidth = vmax * 0.055;
+        }
+
+        if (cardCount <= 1 || containerWidth === 0) return `-${cardWidth * 0.6}px`; // Default fallback
 
         // Available width for overlaps = Container Width - One Full Card
         const availableWidthForOverlaps = containerWidth - cardWidth;
 
         // If we have N cards, we have N-1 overlaps
-        // Max needed width if no overlap = cardWidth * cardCount
-        // Target width = containerWidth
-        // Width = cardWidth + (cardCount - 1) * (cardWidth + overlap)  <-- where overlap is negative
-        // overlap = (containerWidth - cardWidth) / (cardCount - 1) - cardWidth
-
         const calculatedOverlap = (availableWidthForOverlaps / (cardCount - 1)) - cardWidth;
 
-        // Clamp the overlap
-        // We want a minimum visible strip of ~30px (so overlap = -40px)
-        // Max spread should probably not be positive (gaps) unless few cards?
-        // Let's cap at -10px (slight overlap) to keep "hand" feel, or 0 if we want gaps.
-        // And cap at -60px (very tight)
-
-        const minOverlap = -55; // Max compression
-        const maxOverlap = -20; // Max spread
+        // Clamp the overlap relative to card size
+        // Max compression: 80% overlap (only 20% visible)
+        const minOverlap = -(cardWidth * 0.8);
+        // Max spread: 20% overlap (80% visible) - increased visibility from previous fixed value
+        const maxOverlap = -(cardWidth * 0.2);
 
         const clamped = Math.max(minOverlap, Math.min(maxOverlap, calculatedOverlap));
         return `${clamped}px`;
-    }, [sortedHand.length, containerWidth]);
+    }, [sortedHand.length, containerWidth, isDesktop]);
 
     useEffect(() => {
         // Join room first (handles reconnection if needed), then request state
@@ -1092,7 +1090,7 @@ const GameRoom = ({ user, socket }) => {
             />
 
             {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-auto px-2 md:px-0">
+            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-2 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
                 <div className="md:hidden w-full mb-2 mt-14">
                     {gameState.gameState === 'playing' && (
@@ -1190,7 +1188,7 @@ const GameRoom = ({ user, socket }) => {
                         >
                             <div
                                 ref={handContainerRef}
-                                className="flex justify-center transition-all duration-300 hover:gap-2 md:hover:gap-[0.5vmax] w-full md:w-auto"
+                                className="flex justify-center transition-all duration-300 hover:gap-2 md:hover:gap-[0.5vmax] w-full"
                                 onTouchStart={handleTouchStart}
                                 onTouchMove={handleTouchMove}
                                 onTouchEnd={handleTouchEnd}
@@ -1205,7 +1203,7 @@ const GameRoom = ({ user, socket }) => {
                                             isSelected={isSelected}
                                             onClick={() => toggleCard(card)}
                                             index={index}
-                                            dynamicMargin={isDesktop ? undefined : dynamicOverlap}
+                                            dynamicMargin={dynamicOverlap}
                                         />
                                     );
                                 })}
