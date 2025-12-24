@@ -14,7 +14,7 @@ const CardCountIndicator = ({ cardCount, className = '' }) => {
         >
             {/* Card back with red diamond pattern */}
             <div
-                className="absolute inset-0 rounded-md border-2 border-white shadow-md flex items-center justify-center"
+                className="absolute inset-0 rounded-xl border-2 border-white shadow-md flex items-center justify-center"
                 style={{
                     background: `
                         repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
@@ -25,7 +25,7 @@ const CardCountIndicator = ({ cardCount, className = '' }) => {
             >
                 {/* Inner white border frame */}
                 <div
-                    className="absolute inset-1 border border-white rounded-sm"
+                    className="absolute inset-1 border border-white rounded-lg"
                     style={{
                         borderWidth: '1px',
                     }}

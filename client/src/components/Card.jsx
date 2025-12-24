@@ -125,36 +125,27 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
     if (isBack) {
         return (
             <motion.div
-                className={`${sizeClass} rounded-lg border-2 border-white shadow-md m-[0.25vmax] relative overflow-hidden`}
+                className={`${sizeClass} rounded-xl border-2 border-white shadow-md m-[0.25vmax] relative overflow-hidden`}
                 style={{
-                    background: 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1e3a8a 100%)'
+                    background: `
+                        repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
+                        repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
+                        linear-gradient(135deg, #c41e3a 0%, #dc143c 50%, #c41e3a 100%)
+                    `
                 }}
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: index * 0.05 }}
             >
-                {/* Diamond pattern on back */}
-                <div className="absolute inset-[8%] border-2 border-blue-300 rounded opacity-50" />
-                <div className="absolute inset-[15%] border border-blue-400 rounded opacity-30" />
-                <div
-                    className="absolute inset-[20%] rounded"
-                    style={{
-                        backgroundImage: `repeating-linear-gradient(
-                            45deg,
-                            transparent,
-                            transparent 3px,
-                            rgba(255,255,255,0.1) 3px,
-                            rgba(255,255,255,0.1) 6px
-                        )`
-                    }}
-                />
+                {/* Inner white border frame */}
+                <div className="absolute inset-[4%] border border-white rounded-lg" />
             </motion.div>
         );
     }
 
     return (
         <motion.div
-            className={`${sizeClass} bg-white rounded-lg border-2 shadow-md m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
+            className={`${sizeClass} bg-white rounded-xl border-2 shadow-md m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
                 ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : 'border-gray-300 hover:-translate-y-[0.5vmax]'}`}
             onClick={onClick}
             initial={{ scale: 0.8, opacity: 0 }}
