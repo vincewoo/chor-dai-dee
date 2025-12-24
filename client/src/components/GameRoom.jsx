@@ -856,7 +856,7 @@ const GameRoom = ({ user, socket }) => {
             />
 
             {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-auto">
+            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-auto px-2 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
                 <div className="md:hidden w-full mb-2">
                     {gameState.gameState === 'playing' && (
@@ -882,47 +882,49 @@ const GameRoom = ({ user, socket }) => {
                 </div>
 
                 {/* Controls Row with Avatar (Mobile) */}
-                <div className="flex items-center gap-2 md:gap-[1vmax] mb-2 md:mb-[0.75vmax] flex-wrap justify-center w-full relative">
-                    <button
-                        onClick={playCards}
-                        disabled={!isMyTurn || selectedCards.length === 0}
-                        className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
-                            ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
-                    >
-                        Play
-                    </button>
-                    <button
-                        onClick={passTurn}
-                        disabled={!isMyTurn || !gameState.lastPlayedHand}
-                        className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
-                            ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
-                    >
-                        Pass
-                    </button>
-                    <button
-                        onClick={handleSortClick}
-                        className={`
-                            px-3 md:px-[1vmax] py-2 md:py-[0.5vmax] rounded-full font-bold shadow-lg
-                            transition transform hover:scale-105 text-sm md:text-[0.85vmax]
-                            ${isCustomOrder
-                                ? 'bg-orange-500 text-white hover:bg-orange-400 ring-2 ring-orange-300'
-                                : 'bg-purple-600 text-white hover:bg-purple-500'
+                <div className="flex items-start justify-between gap-2 md:gap-[1vmax] mb-2 md:mb-[0.75vmax] w-full">
+                    <div className="flex items-center gap-2 flex-wrap justify-center flex-1 md:gap-[1vmax]">
+                        <button
+                            onClick={playCards}
+                            disabled={!isMyTurn || selectedCards.length === 0}
+                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
+                                ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                        >
+                            Play
+                        </button>
+                        <button
+                            onClick={passTurn}
+                            disabled={!isMyTurn || !gameState.lastPlayedHand}
+                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
+                                ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                        >
+                            Pass
+                        </button>
+                        <button
+                            onClick={handleSortClick}
+                            className={`
+                                px-3 md:px-[1vmax] py-2 md:py-[0.5vmax] rounded-full font-bold shadow-lg
+                                transition transform hover:scale-105 text-sm md:text-[0.85vmax]
+                                ${isCustomOrder
+                                    ? 'bg-orange-500 text-white hover:bg-orange-400 ring-2 ring-orange-300'
+                                    : 'bg-purple-600 text-white hover:bg-purple-500'
+                                }
+                            `}
+                            title={
+                                isCustomOrder
+                                    ? 'Custom order - Click to resort'
+                                    : `Currently sorting by ${sortMode}. Click to sort by ${sortMode === 'rank' ? 'suit' : 'rank'}.`
                             }
-                        `}
-                        title={
-                            isCustomOrder
-                                ? 'Custom order - Click to resort'
-                                : `Currently sorting by ${sortMode}. Click to sort by ${sortMode === 'rank' ? 'suit' : 'rank'}.`
-                        }
-                    >
-                        {isCustomOrder
-                            ? '🔀 Custom'
-                            : `Sort: ${sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}`
-                        }
-                    </button>
+                        >
+                            {isCustomOrder
+                                ? '🔀 Custom'
+                                : `Sort: ${sortMode === 'rank' ? '🔢 Rank' : '♠ Suit'}`
+                            }
+                        </button>
+                    </div>
 
-                    {/* Avatar - Mobile only, positioned on right */}
-                    <div className="md:hidden flex flex-col items-center absolute right-2">
+                    {/* Avatar - Mobile only, in flex layout */}
+                    <div className="md:hidden flex flex-col items-center shrink-0">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-4 shadow-lg
                             ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
                             {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
@@ -938,7 +940,7 @@ const GameRoom = ({ user, socket }) => {
                 </div>
 
                 {/* My Hand and Avatar Row - Desktop layout */}
-                <div className="flex items-end gap-[1vmax]">
+                <div className="flex items-end gap-[1vmax] w-full md:w-auto">
                     {/* Cards */}
                     <DndContext
                         sensors={sensors}
