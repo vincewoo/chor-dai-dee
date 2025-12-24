@@ -109,9 +109,98 @@ class Room {
         return null;
     }
 
+    // Remove a player from reconnection tracking (for intentional leaves)
+    removeFromReconnectionTracking(socketId) {
+        const player = this.players.find(p => p.id === socketId);
+        if (player && player.name && !player.isBot) {
+            delete this.playersByUsername[player.name];
+            return player;
+        }
+        return null;
+    }
+
+    // Replace a disconnected player with a bot (for intentional leaves)
+    replaceWithBot(socketId) {
+        const playerIndex = this.players.findIndex(p => p.id === socketId);
+        if (playerIndex === -1) return null;
+
+        const oldPlayer = this.players[playerIndex];
+        if (oldPlayer.isBot) return null; // Already a bot
+
+        // Create a bot with Advanced difficulty to replace the player
+        const botId = `bot_${Date.now()}_replacement`;
+        const mu = 35; // Advanced bot rating
+        const sigma = 3;
+        const displayRating = calculateDisplayRating(mu, sigma);
+
+        const botPlayer = {
+            id: botId,
+            name: `Bot (${oldPlayer.name})`,
+            isBot: true,
+            difficulty: 'advanced',
+            rating_mu: mu,
+            rating_sigma: sigma,
+            rating: displayRating,
+            hand: oldPlayer.hand, // Keep the same hand
+            isDisconnected: false
+        };
+
+        // Replace the player in the array
+        this.players[playerIndex] = botPlayer;
+
+        // Update all references from old player ID to bot ID
+        if (this.cumulativeScores[socketId] !== undefined) {
+            this.cumulativeScores[botId] = this.cumulativeScores[socketId];
+            delete this.cumulativeScores[socketId];
+        }
+
+        if (this.playerLastPlayed[socketId]) {
+            this.playerLastPlayed[botId] = this.playerLastPlayed[socketId];
+            this.playerLastPlayed[botId].playerId = botId;
+            delete this.playerLastPlayed[socketId];
+        }
+
+        if (this.passedPlayers.has(socketId)) {
+            this.passedPlayers.delete(socketId);
+            this.passedPlayers.add(botId);
+        }
+
+        if (this.lastPlayedHand && this.lastPlayedHand.playerId === socketId) {
+            this.lastPlayedHand.playerId = botId;
+        }
+
+        if (this.lastRoundWinnerId === socketId) {
+            this.lastRoundWinnerId = botId;
+        }
+
+        // Update round play stats
+        if (this.roundPlayStats && this.roundPlayStats[socketId]) {
+            this.roundPlayStats[botId] = this.roundPlayStats[socketId];
+            delete this.roundPlayStats[socketId];
+        }
+
+        // Update tier3 decision tracking
+        if (this.tier3DecisionTracking && this.tier3DecisionTracking[socketId]) {
+            delete this.tier3DecisionTracking[socketId];
+        }
+
+        // Remove from playersByUsername if it exists
+        if (oldPlayer.name && this.playersByUsername[oldPlayer.name]) {
+            delete this.playersByUsername[oldPlayer.name];
+        }
+
+        console.log(`Replaced player ${oldPlayer.name} with bot at index ${playerIndex}`);
+        return { oldPlayer, botPlayer, wasCurrentTurn: this.currentTurnIndex === playerIndex };
+    }
+
     // Check if a player slot is available (including disconnected slots for new players)
     hasAvailableSlot() {
         return this.players.length < 4;
+    }
+
+    // Check if all players are bots
+    hasOnlyBots() {
+        return this.players.length > 0 && this.players.every(p => p.isBot);
     }
 
     // Get disconnected player by socket ID
@@ -666,6 +755,10 @@ class RoomManager {
         return this.rooms.get(roomId);
     }
 
+    deleteRoom(roomId) {
+        return this.rooms.delete(roomId);
+    }
+
     // Find a room where this username can reconnect
     findRoomForReconnect(username) {
         for (const [roomId, room] of this.rooms) {
@@ -676,10 +769,10 @@ class RoomManager {
         return null;
     }
 
-    // Find which room a socket is in
+    // Find which room a socket is in (ignores disconnected players)
     findRoomBySocketId(socketId) {
         for (const [roomId, room] of this.rooms) {
-            const player = room.players.find(p => p.id === socketId);
+            const player = room.players.find(p => p.id === socketId && !p.isDisconnected);
             if (player) {
                 return { roomId, room, player };
             }

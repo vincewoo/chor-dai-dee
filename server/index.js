@@ -694,14 +694,33 @@ io.on('connection', (socket) => {
         console.log(`Room ${roomId} deleted (empty)`);
       }
     } else {
-      // During active game, mark as disconnected instead
-      const disconnectedPlayer = room.markDisconnected(socket.id);
+      // During active game, replace the player with an Advanced Bot
+      const replacement = room.replaceWithBot(socket.id);
       socket.leave(roomId);
 
-      if (disconnectedPlayer) {
-        console.log(`Player ${playerName} left during game, marked as disconnected in room ${roomId}`);
+      if (replacement) {
+        console.log(`Player ${playerName} left and was replaced by ${replacement.botPlayer.name} in room ${roomId}`);
+
+        // Check if the room now has only bots - if so, delete it
+        if (room.hasOnlyBots()) {
+          console.log(`Room ${roomId} now has only bots, deleting room`);
+          roomManager.deleteRoom(roomId);
+          return;
+        }
+
+        // Notify other players about the replacement
         io.to(roomId).emit('room_update', room.getGameState());
-        io.to(roomId).emit('player_disconnected', { playerName: disconnectedPlayer.name });
+        io.to(roomId).emit('player_disconnected', {
+          playerName: playerName,
+          replacedWithBot: true,
+          botName: replacement.botPlayer.name
+        });
+
+        // If it was the leaving player's turn, trigger bot to play immediately
+        if (replacement.wasCurrentTurn && room.gameState === 'playing') {
+          console.log(`It was ${playerName}'s turn, triggering bot to play`);
+          processBotTurns(room, roomId);
+        }
       }
     }
   });

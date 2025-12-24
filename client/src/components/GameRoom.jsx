@@ -402,8 +402,11 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setError(''), 3000);
         });
 
-        socket.on('player_disconnected', ({ playerName }) => {
-            setNotification({ type: 'warning', message: `${playerName} disconnected` });
+        socket.on('player_disconnected', ({ playerName, replacedWithBot, botName }) => {
+            const message = replacedWithBot
+                ? `${playerName} left and was replaced by ${botName}`
+                : `${playerName} disconnected`;
+            setNotification({ type: 'warning', message });
             setTimeout(() => setNotification(null), 3000);
         });
 
@@ -858,7 +861,7 @@ const GameRoom = ({ user, socket }) => {
             {/* Bottom: My Hand & Controls */}
             <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-auto px-2 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
-                <div className="md:hidden w-full mb-2">
+                <div className="md:hidden w-full mb-2 mt-14">
                     {gameState.gameState === 'playing' && (
                         <HandHelper
                             playerHand={myHand}
