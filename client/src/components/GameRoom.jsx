@@ -451,7 +451,7 @@ const GameRoom = ({ user, socket }) => {
         // Calculate estimated card width based on device type
         // Mobile (default): 60px (matches 'xlarge' size for mobile)
         // Desktop: 5.5vmax (matches 'xlarge' md size)
-        let cardWidth = 60;
+        let cardWidth = 63;
         if (isDesktop && typeof window !== 'undefined') {
             const vmax = Math.max(window.innerWidth, window.innerHeight);
             cardWidth = vmax * 0.055;
@@ -467,8 +467,8 @@ const GameRoom = ({ user, socket }) => {
         const calculatedOverlap = (availableWidthForOverlaps / (cardCount - 1)) - cardWidth;
 
         // Clamp the overlap relative to card size
-        // Max compression: 87% overlap (only 13% visible) - increased for mobile to fit more cards
-        const minOverlap = -(cardWidth * 0.87);
+        // Max compression: 85% overlap (only 15% visible) - increased for mobile to fit more cards
+        const minOverlap = -(cardWidth * 0.85);
         // Max spread: 20% overlap (80% visible) - increased visibility from previous fixed value
         const maxOverlap = -(cardWidth * 0.2);
 
