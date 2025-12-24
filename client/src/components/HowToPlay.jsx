@@ -32,7 +32,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
             <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
                 {/* Header */}
                 <div className="bg-green-700 text-white p-6 flex justify-between items-center">
-                    <h2 className="text-2xl font-bold">How to Play Big 2 (Hong Kong Style)</h2>
+                    <h2 className="text-2xl font-bold">How to Play Big 2</h2>
                     <button
                         onClick={onClose}
                         className="text-white hover:text-gray-200 text-3xl leading-none"
@@ -46,7 +46,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
                 <div className="flex border-b border-gray-200 bg-gray-50">
                     <button
                         onClick={() => setActiveTab('overview')}
-                        className={`flex-1 px-4 py-3 font-medium transition ${
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
                             activeTab === 'overview'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
@@ -56,27 +56,37 @@ const HowToPlay = ({ isOpen, onClose }) => {
                     </button>
                     <button
                         onClick={() => setActiveTab('rankings')}
-                        className={`flex-1 px-4 py-3 font-medium transition ${
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
                             activeTab === 'rankings'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
                         }`}
                     >
-                        Card & Hand Rankings
+                        Rankings
                     </button>
                     <button
                         onClick={() => setActiveTab('rules')}
-                        className={`flex-1 px-4 py-3 font-medium transition ${
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
                             activeTab === 'rules'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
                         }`}
                     >
-                        Game Rules
+                        Rules
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('features')}
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
+                            activeTab === 'features'
+                                ? 'bg-white text-green-700 border-b-2 border-green-700'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Features
                     </button>
                     <button
                         onClick={() => setActiveTab('scoring')}
-                        className={`flex-1 px-4 py-3 font-medium transition ${
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
                             activeTab === 'scoring'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
@@ -93,7 +103,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
                             <section>
                                 <h3 className="text-xl font-bold text-gray-800 mb-2">What is Big 2?</h3>
                                 <p className="text-gray-700 leading-relaxed">
-                                    Big 2 (also known as Deuces or Choi Dai Di) is a popular card game in East Asia.
+                                    Big 2 (also known as Deuces or Chor Dai Dee) is a popular card game in East Asia.
                                     The objective is to be the first player to get rid of all your cards by playing higher-ranking
                                     hands than your opponents.
                                 </p>
@@ -323,6 +333,156 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                     <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
                                     <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (Spades &gt; Hearts &gt; Clubs &gt; Diamonds)</li>
                                 </ul>
+                            </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'features' && (
+                        <div className="space-y-4">
+                            <section>
+                                <h3 className="text-xl font-bold text-gray-800 mb-3">Game Features</h3>
+                                <p className="text-gray-700 mb-4">
+                                    This implementation includes several quality-of-life features to enhance your gameplay experience.
+                                    Access most of these through the settings gear icon during gameplay.
+                                </p>
+                            </section>
+
+                            <section>
+                                <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🎨</span>
+                                        Four-Color Deck Mode
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Toggle between traditional 2-color (red/black) and colorblind-friendly 4-color deck modes.
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li><strong>2-Color:</strong> Red (Hearts/Diamonds), Black (Spades/Clubs)</li>
+                                        <li><strong>4-Color:</strong> Red (Hearts), Blue (Diamonds), Black (Spades), Green (Clubs)</li>
+                                    </ul>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Access via settings gear icon in-game</p>
+                                </div>
+
+                                <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">⚡</span>
+                                        Auto-Pass
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Automatically pass your turn when you have no valid moves. Saves time and speeds up gameplay.
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Access via settings gear icon in-game</p>
+                                </div>
+
+                                <div className="border-l-4 border-purple-500 bg-purple-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🎯</span>
+                                        Hand Helper / Quick Select
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Shows all valid hands you can play from your current cards. Highlights winning hands in green!
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>Auto-detects all playable combinations (singles, pairs, triples, 5-card hands)</li>
+                                        <li>Green highlighting for hands that beat the current pile</li>
+                                        <li>Click to select cards, cycle through alternatives with repeated clicks</li>
+                                        <li>Shows counts and percentages for each hand type</li>
+                                    </ul>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Always visible during your turn</p>
+                                </div>
+
+                                <div className="border-l-4 border-orange-500 bg-orange-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">👆</span>
+                                        Swipe/Slide Selection
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Select multiple cards quickly by swiping across them. Works on both mobile and desktop.
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Click and drag across cards to select/deselect</p>
+                                </div>
+
+                                <div className="border-l-4 border-pink-500 bg-pink-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🔄</span>
+                                        Card Reorganization & Sorting
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Drag and drop to reorder your hand cards. Organize them however you prefer!
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>Full touch and mouse support</li>
+                                        <li>Reorder cards to group by rank or suit</li>
+                                        <li>Position stays consistent throughout the round</li>
+                                    </ul>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Click and drag cards to reorder</p>
+                                </div>
+
+                                {/* <div className="border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🤖</span>
+                                        Advanced Bot AI
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Choose between simple and advanced bot difficulty. Advanced bots use sophisticated strategies.
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>"Poker First" strategy - preserves strong 5-card hands</li>
+                                        <li>Card counting and strategic passing</li>
+                                        <li>Combo-breaking heuristics</li>
+                                        <li>Optional debug panel to see bot reasoning</li>
+                                    </ul>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Access via settings gear icon in-game</p>
+                                </div>  */}
+
+                                <div className="border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">👥</span>
+                                        Multiplayer Support
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Play with friends online in real-time. Create a room and share the code!
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>Real-time multiplayer using WebSocket technology</li>
+                                        <li>Create private rooms with shareable room codes</li>
+                                        <li>Join existing games with a room code</li>
+                                        <li>Automatic bot filling if fewer than 4 players</li>
+                                        <li>Play with any combination of human players and bots</li>
+                                    </ul>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Create a room in the lobby and share the code with friends</p>
+                                </div>
+
+                                <div className="border-l-4 border-cyan-500 bg-cyan-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">📱</span>
+                                        Mobile Optimized
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Fully responsive design with mobile-specific optimizations for the best experience.
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>Dynamic card spacing based on screen size and card count</li>
+                                        <li>Touch-friendly controls and swipe support</li>
+                                        <li>Improved touch targets for buttons and cards</li>
+                                        <li>Card count indicators for opponent hands</li>
+                                    </ul>
+                                </div>
+
+                                <div className="border-l-4 border-indigo-500 bg-indigo-50 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🔌</span>
+                                        Auto-Reconnection
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Automatically rejoin your game if you get disconnected. Your progress is saved!
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>Seamless reconnection to in-progress games</li>
+                                        <li>Connection status indicators</li>
+                                        <li>Game state fully restored on reconnect</li>
+                                    </ul>
+                                </div>
                             </section>
                         </div>
                     )}
