@@ -94,7 +94,7 @@ const Lobby = ({ user, socket, setUser }) => {
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white">
-            <img src={logoImage} alt="Chor Dai Dee Logo" className="w-32 mb-8" />
+            <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-8" />
             <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96 text-center">
                 <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
                     {reconnecting ? '● Checking for existing game...' : connected ? '● Connected' : '● Disconnected - Is the server running?'}
