@@ -370,7 +370,6 @@ const GameRoom = ({ user, socket }) => {
     const [roundResult, setRoundResult] = useState(null);
     const [gameOver, setGameOver] = useState(null);
     const autoPassTriggered = useRef(false);
-    const [useAdvancedBots, setUseAdvancedBots] = useState(false);
     const [notification, setNotification] = useState(null);
     const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
     const [isCustomOrder, setIsCustomOrder] = useState(false); // Track if hand is manually arranged
@@ -506,7 +505,7 @@ const GameRoom = ({ user, socket }) => {
     }, [autoPass, gameState, myHand, socket, roomId]);
 
     const startGame = () => {
-        socket.emit('start_game', { roomId, useAdvancedBots });
+        socket.emit('start_game', { roomId });
     };
 
     const nextRound = () => {
@@ -861,23 +860,9 @@ const GameRoom = ({ user, socket }) => {
                         )}
                     </div>
 
-                    <div className="flex flex-col items-center gap-3 md:gap-2 mb-4 md:mb-[1vmax]">
-                        <div className="flex items-center gap-2 bg-black/40 px-4 py-2 md:px-3 md:py-1 rounded">
-                            <input
-                                type="checkbox"
-                                id="advancedBots"
-                                checked={useAdvancedBots}
-                                onChange={(e) => setUseAdvancedBots(e.target.checked)}
-                                className="w-5 h-5 md:w-4 md:h-4 cursor-pointer"
-                            />
-                            <label htmlFor="advancedBots" className="cursor-pointer select-none text-base md:text-[1vmax]">
-                                Enable Advanced AI Bots
-                            </label>
-                        </div>
-                        <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 md:px-[2vmax] md:py-[0.75vmax] rounded-full font-bold text-lg md:text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105">
-                            Start Game (Fill with Bots)
-                        </button>
-                    </div>
+                    <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 md:px-[2vmax] md:py-[0.75vmax] rounded-full font-bold text-lg md:text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-4 md:mb-[1vmax]">
+                        Start Game (Fill with Bots)
+                    </button>
                     <button onClick={leaveRoom} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax]">
                         Leave Room
                     </button>
