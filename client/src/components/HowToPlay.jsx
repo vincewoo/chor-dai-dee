@@ -75,16 +75,6 @@ const HowToPlay = ({ isOpen, onClose }) => {
                         Rules
                     </button>
                     <button
-                        onClick={() => setActiveTab('features')}
-                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
-                            activeTab === 'features'
-                                ? 'bg-white text-green-700 border-b-2 border-green-700'
-                                : 'text-gray-600 hover:text-gray-800'
-                        }`}
-                    >
-                        Features
-                    </button>
-                    <button
                         onClick={() => setActiveTab('scoring')}
                         className={`flex-1 px-2 py-3 font-medium transition text-xs ${
                             activeTab === 'scoring'
@@ -93,6 +83,16 @@ const HowToPlay = ({ isOpen, onClose }) => {
                         }`}
                     >
                         Scoring
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('features')}
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
+                            activeTab === 'features'
+                                ? 'bg-white text-green-700 border-b-2 border-green-700'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Features
                     </button>
                 </div>
 
@@ -145,12 +145,12 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                 <h3 className="text-xl font-bold text-gray-800 mb-3">Suit Rankings (Lowest to Highest)</h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                                     <div className="border border-gray-300 rounded-lg p-3 text-center">
-                                        <div className="text-4xl mb-2 text-blue-500">{SUIT_SYMBOLS.D}</div>
+                                        <div className="text-4xl mb-2 text-red-600">{SUIT_SYMBOLS.D}</div>
                                         <div className="font-bold text-gray-800">Diamonds</div>
                                         <div className="text-sm text-gray-600">Lowest</div>
                                     </div>
                                     <div className="border border-gray-300 rounded-lg p-3 text-center">
-                                        <div className="text-4xl mb-2 text-green-600">{SUIT_SYMBOLS.C}</div>
+                                        <div className="text-4xl mb-2 text-black">{SUIT_SYMBOLS.C}</div>
                                         <div className="font-bold text-gray-800">Clubs</div>
                                         <div className="text-sm text-gray-600">Low</div>
                                     </div>
@@ -331,7 +331,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                 <ul className="list-disc list-inside space-y-2 text-gray-700">
                                     <li><strong>5-Card Hands:</strong> Can only be beaten by stronger 5-card hands (e.g., a straight flush beats a flush)</li>
                                     <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
-                                    <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (Spades &gt; Hearts &gt; Clubs &gt; Diamonds)</li>
+                                    <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (<span className="text-black">{SUIT_SYMBOLS.S}</span> Spades &gt; <span className="text-red-600">{SUIT_SYMBOLS.H}</span> Hearts &gt; <span className="text-black">{SUIT_SYMBOLS.C}</span> Clubs &gt; <span className="text-red-600">{SUIT_SYMBOLS.D}</span> Diamonds)</li>
                                 </ul>
                             </section>
                         </div>
