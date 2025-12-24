@@ -10,6 +10,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GAME_MODES } from '../constants/gameModes';
+import logoImage from '../assets/chor-dai-dee-logo.png';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -587,13 +588,23 @@ const GameRoom = ({ user, socket }) => {
         navigate('/lobby');
     };
 
-    if (!gameState) return <div className="text-white text-center mt-20">Loading...</div>;
+    if (!gameState) return (
+        <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+            <img
+                src={logoImage}
+                alt="Chor Dai Dee Logo"
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30%] opacity-[0.15] pointer-events-none z-0"
+            />
+            <div className="text-white text-center text-xl font-bold relative z-10">Loading...</div>
+        </div>
+    );
 
-    const myIndex = gameState.players.findIndex(p => p.id === socket.id);
+    const myIndex = gameState?.players ? gameState.players.findIndex(p => p.id === socket.id) : -1;
     const isMyTurn = gameState.currentTurn === socket.id;
 
     // Helper to get relative player positions (Bottom=0, Right=1, Top=2, Left=3)
     const getRelativePlayer = (offset) => {
+        if (!gameState) return null;
         if (myIndex === -1) return gameState.players[offset]; // Spectator view
         const idx = (myIndex + offset) % 4;
         return gameState.players[idx];
@@ -601,6 +612,13 @@ const GameRoom = ({ user, socket }) => {
 
     return (
         <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+            {/* Game Logo - Background */}
+            <img
+                src={logoImage}
+                alt="Chor Dai Dee Logo"
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30%] opacity-[0.15] pointer-events-none z-0"
+            />
+
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">
                 <h1 className="text-xl md:text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
