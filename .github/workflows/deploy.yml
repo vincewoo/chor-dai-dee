@@ -107,7 +107,7 @@ jobs:
             sudo docker-compose down
 
             # Create required directories if they don't exist
-            mkdir -p certs data
+            mkdir -p certs
 
             # Start new containers (docker-compose will read .env automatically)
             sudo docker-compose up -d
