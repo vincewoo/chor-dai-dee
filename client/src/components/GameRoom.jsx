@@ -95,10 +95,12 @@ const SortableCard = ({ card, isSelected, onClick, index }) => {
 const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, hasActiveHandOnTable = false }) => {
     // Mobile: position near avatars; Desktop: original positions
     // Bottom position adjusted higher to be visible above controls
-    const positionClasses = {
+    // Add vertical offset for side players
+    // z-index is calculated dynamically based on timestamp (later plays = higher z-index)
+    const basePositions = {
         top: "absolute top-[90px] md:top-[18vh] left-1/2 -translate-x-1/2",
-        left: "absolute left-[50px] md:left-[12vw] top-[calc(50%-150px)] md:top-1/2 md:-translate-y-1/2",
-        right: "absolute right-[40px] md:right-[12vw] top-[calc(50%-150px)] md:top-1/2 md:-translate-y-1/2",
+        left: "absolute left-[40px] md:left-[12vw] top-[calc(50%-185px)] md:top-[calc(50vh+45px)]",
+        right: "absolute right-[20px] md:right-[12vw] top-[calc(50%-175px)] md:top-[calc(50vh+35px)]",
         bottom: "absolute bottom-[35vh] md:bottom-[32vh] left-1/2 -translate-x-1/2"
     };
 
@@ -113,6 +115,17 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
     const showTurnIndicator = !hasActiveHandOnTable && isCurrentTurn;
     const showPlayedCards = !!lastPlayed;
 
+    // Calculate z-index based on play order: later plays appear on top
+    // Use playOrder if available, otherwise fall back to position-based z-index
+    const getZIndex = () => {
+        if (lastPlayed?.playOrder !== undefined) {
+            // Use play order directly (simple incrementing counter)
+            return 100 + lastPlayed.playOrder;
+        }
+        // Fallback to position-based z-index
+        return position === 'bottom' ? 40 : position === 'left' || position === 'right' ? 30 : 20;
+    };
+
     // Return null if nothing to show
     if (!showTurnIndicator && !showPlayedCards) {
         return null;
@@ -124,7 +137,8 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                 // Turn indicator display
                 <motion.div
                     key={`turn-${position}-${playerName}`}
-                    className={positionClasses[position]}
+                    className={basePositions[position]}
+                    style={{ zIndex: 50 }}
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.5, opacity: 0 }}
@@ -138,9 +152,13 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                 </motion.div>
             ) : showPlayedCards ? (
                 // Played cards display (existing logic with enhancements)
+                // Apply z-index directly to motion.div for proper stacking
                 <motion.div
                     key={`played-${position}-${getPlayedHandKey(lastPlayed)}`}
-                    className={positionClasses[position]}
+                    className={basePositions[position]}
+                    style={{
+                        zIndex: getZIndex()
+                    }}
                     initial={{ opacity: 0 }}
                     animate={{
                         opacity: 1
@@ -157,21 +175,21 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                             gap: '-8px md:-1vmax'
                         }}
                     >
-                        {lastPlayed.type === 'pass' ? (
-                            <div className={`text-red-400 font-bold bg-black/50 rounded-lg ${
-                                isSidePlayer
-                                    ? 'text-base md:text-[2vmax] px-3 py-1.5 md:px-[1.5vmax] md:py-[0.75vmax]'
-                                    : 'text-2xl md:text-[2vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.75vmax]'
-                            }`}>
-                                PASS
+                    {lastPlayed.type === 'pass' ? (
+                        <div className={`text-red-400 font-bold bg-black/50 rounded-lg ${
+                            isSidePlayer
+                                ? 'text-base md:text-[2vmax] px-3 py-1.5 md:px-[1.5vmax] md:py-[0.75vmax]'
+                                : 'text-2xl md:text-[2vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.75vmax]'
+                        }`}>
+                            PASS
+                        </div>
+                    ) : (
+                        lastPlayed.cards?.map((card) => (
+                            <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
+                                <Card rank={card.rank} suit={card.suit} size={cardSize} />
                             </div>
-                        ) : (
-                            lastPlayed.cards?.map((card) => (
-                                <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
-                                    <Card rank={card.rank} suit={card.suit} size={cardSize} />
-                                </div>
-                            ))
-                        )}
+                        ))
+                    )}
                     </div>
                 </motion.div>
             ) : null}
@@ -180,7 +198,7 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 };
 
 // Top Player Area - cards horizontal on left, avatar on right
-const TopPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandOnTable }) => {
+const TopPlayerArea = ({ player, isTurn }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -214,21 +232,12 @@ const TopPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandO
                 {/* Card count indicator - right side (mobile only) */}
                 <CardCountIndicator cardCount={player.cardCount} className="md:hidden" />
             </div>
-            {/* Played cards or PASS - below player */}
-            <PlayedCards
-                lastPlayed={player.lastPlayed}
-                position="top"
-                isCurrentTurn={isCurrentTurn}
-                playerName={player.name}
-                isMe={player.id === socketId}
-                hasActiveHandOnTable={hasActiveHandOnTable}
-            />
         </>
     );
 };
 
 // Left Player Area - cards vertical (rotated 90°), avatar at top
-const LeftPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandOnTable }) => {
+const LeftPlayerArea = ({ player, isTurn }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -261,21 +270,12 @@ const LeftPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHand
                     ))}
                 </div>
             </div>
-            {/* Played cards or PASS - to the right of player */}
-            <PlayedCards
-                lastPlayed={player.lastPlayed}
-                position="left"
-                isCurrentTurn={isCurrentTurn}
-                playerName={player.name}
-                isMe={player.id === socketId}
-                hasActiveHandOnTable={hasActiveHandOnTable}
-            />
         </>
     );
 };
 
 // Right Player Area - cards vertical (rotated 90°), avatar at top
-const RightPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHandOnTable }) => {
+const RightPlayerArea = ({ player, isTurn }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -308,15 +308,6 @@ const RightPlayerArea = ({ player, isTurn, isCurrentTurn, socketId, hasActiveHan
                     ))}
                 </div>
             </div>
-            {/* Played cards or PASS - to the left of player */}
-            <PlayedCards
-                lastPlayed={player.lastPlayed}
-                position="right"
-                isCurrentTurn={isCurrentTurn}
-                playerName={player.name}
-                isMe={player.id === socketId}
-                hasActiveHandOnTable={hasActiveHandOnTable}
-            />
         </>
     );
 };
@@ -367,6 +358,15 @@ const GameRoom = ({ user, socket }) => {
         // Join room first (handles reconnection if needed), then request state
         socket.emit('join_room', { roomId, username: user?.username });
 
+        // Set a timeout to detect if room doesn't exist (server restarted)
+        const roomLoadTimeout = setTimeout(() => {
+            if (!gameState) {
+                // Room doesn't exist, redirect to lobby
+                console.warn('Room not found, redirecting to lobby');
+                navigate('/lobby');
+            }
+        }, 3000); // Wait 3 seconds for room state
+
         // Small delay to allow reconnection to complete before requesting state
         setTimeout(() => {
             socket.emit('get_room_state', { roomId });
@@ -374,12 +374,14 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('room_update', (state) => {
             setGameState(state);
+            clearTimeout(roomLoadTimeout); // Room exists, clear timeout
         });
 
         socket.on('game_started', (state) => {
             setGameState(state);
             setRoundResult(null);
             setGameOver(null);
+            clearTimeout(roomLoadTimeout); // Room exists, clear timeout
         });
 
         socket.on('hand_update', (hand) => {
@@ -391,6 +393,7 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('game_update', (state) => {
             setGameState(state);
+            clearTimeout(roomLoadTimeout); // Room exists, clear timeout
         });
 
         socket.on('round_over', (data) => {
@@ -404,6 +407,10 @@ const GameRoom = ({ user, socket }) => {
         socket.on('error', (err) => {
             setError(err);
             setTimeout(() => setError(''), 3000);
+            // If error is "Room not found", redirect to lobby
+            if (err && err.toLowerCase().includes('room not found')) {
+                setTimeout(() => navigate('/lobby'), 1500);
+            }
         });
 
         socket.on('player_disconnected', ({ playerName, replacedWithBot, botName }) => {
@@ -420,6 +427,7 @@ const GameRoom = ({ user, socket }) => {
         });
 
         return () => {
+            clearTimeout(roomLoadTimeout); // Clean up timeout on unmount
             socket.off('room_update');
             socket.off('game_started');
             socket.off('hand_update');
@@ -430,7 +438,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('player_disconnected');
             socket.off('player_reconnected');
         };
-    }, [socket]);
+    }, [socket, navigate]);
 
     // Auto-pass effect: check if we should auto-pass when it becomes our turn
     useEffect(() => {
@@ -846,30 +854,45 @@ const GameRoom = ({ user, socket }) => {
             <TopPlayerArea
                 player={getRelativePlayer(2)}
                 isTurn={gameState.currentTurn === getRelativePlayer(2)?.id}
-                isCurrentTurn={isPlayersTurn(getRelativePlayer(2))}
-                socketId={socket?.id}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
 
             {/* Left Player (Offset 3) */}
             <LeftPlayerArea
                 player={getRelativePlayer(3)}
                 isTurn={gameState.currentTurn === getRelativePlayer(3)?.id}
-                isCurrentTurn={isPlayersTurn(getRelativePlayer(3))}
-                socketId={socket?.id}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
 
             {/* Right Player (Offset 1) */}
             <RightPlayerArea
                 player={getRelativePlayer(1)}
                 isTurn={gameState.currentTurn === getRelativePlayer(1)?.id}
-                isCurrentTurn={isPlayersTurn(getRelativePlayer(1))}
-                socketId={socket?.id}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
 
-            {/* Bottom player's played cards or PASS */}
+            {/* All played cards - rendered together for proper z-index stacking */}
+            <PlayedCards
+                lastPlayed={getRelativePlayer(2)?.lastPlayed}
+                position="top"
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(2))}
+                playerName={getRelativePlayer(2)?.name}
+                isMe={getRelativePlayer(2)?.id === socket?.id}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
+            <PlayedCards
+                lastPlayed={getRelativePlayer(3)?.lastPlayed}
+                position="left"
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(3))}
+                playerName={getRelativePlayer(3)?.name}
+                isMe={getRelativePlayer(3)?.id === socket?.id}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
+            <PlayedCards
+                lastPlayed={getRelativePlayer(1)?.lastPlayed}
+                position="right"
+                isCurrentTurn={isPlayersTurn(getRelativePlayer(1))}
+                playerName={getRelativePlayer(1)?.name}
+                isMe={getRelativePlayer(1)?.id === socket?.id}
+                hasActiveHandOnTable={!!gameState.lastPlayedHand}
+            />
             <PlayedCards
                 lastPlayed={getRelativePlayer(0)?.lastPlayed}
                 position="bottom"

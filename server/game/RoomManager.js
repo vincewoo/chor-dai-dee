@@ -32,6 +32,7 @@ class Room {
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`; // Unique game ID for round tracking
         this.turnNumber = 0; // Track turn number within each round for decision tracking
         this.tier3DecisionTracking = {}; // Track Tier 3 decision data per player
+        this.playOrder = 0; // Incrementing counter for z-index stacking order
     }
 
     addPlayer(player) {
@@ -297,6 +298,7 @@ class Room {
         this.winners = [];
         this.playedCards = []; // Reset card tracking for new round
         this.turnNumber = 0; // Reset turn counter for new round
+        this.playOrder = 0; // Reset play order for z-index stacking
         // DON'T reset tier3DecisionTracking - accumulate across all rounds in the game
 
         // Initialize round play stats for advanced stats tracking
@@ -421,7 +423,8 @@ class Room {
         player.hand = newPlayerHand; // Update hand
         this.lastPlayedHand = { ...validatedHand, playerId };
         // Record this player's played hand (visible until round ends)
-        this.playerLastPlayed[playerId] = { type: 'play', ...validatedHand, playerId };
+        this.playOrder++; // Increment play order for z-index stacking
+        this.playerLastPlayed[playerId] = { type: 'play', ...validatedHand, playerId, timestamp: Date.now(), playOrder: this.playOrder };
         // Note: Don't clear passedPlayers here - players who passed stay out until round is won
         this.passes = 0; // Reset consecutive pass counter
 
@@ -486,6 +489,9 @@ class Room {
             this.winners.push(player);
             this.gameState = 'round_over';
             this.lastRoundWinnerId = player.id;
+            // Clear all displayed hands when round ends
+            this.playerLastPlayed = {};
+            this.lastPlayedHand = null;
             return { success: true, roundOver: true, roundWinner: player };
         }
 
@@ -501,7 +507,8 @@ class Room {
         if (!this.lastPlayedHand) return { error: 'Cannot pass on free turn' }; // Can't pass if you are leading
 
         // Record that this player passed
-        this.playerLastPlayed[playerId] = { type: 'pass', playerId };
+        this.playOrder++; // Increment play order for z-index stacking
+        this.playerLastPlayed[playerId] = { type: 'pass', playerId, timestamp: Date.now(), playOrder: this.playOrder };
         this.passedPlayers.add(playerId); // Mark player as passed for this round
 
         // Track pass stats for advanced stats
@@ -560,7 +567,7 @@ class Room {
         const allOthersPassed = activePlayers.every(p => this.passedPlayers.has(p.id));
 
         if (allOthersPassed) {
-            // Round won - last player who played gets control
+            // Trick won - last player who played gets control
             // Track lead success for advanced stats
             if (this.roundPlayStats[lastPlayerId]) {
                 this.roundPlayStats[lastPlayerId].leadsWon++;
@@ -570,7 +577,8 @@ class Room {
             this.playerLastPlayed = {}; // Clear all displayed hands
             this.passedPlayers = new Set(); // Clear passed players
             this.passes = 0;
-            // Set turn to the player who won the round
+            this.playOrder = 0; // Reset play order for new trick
+            // Set turn to the player who won the trick
             this.currentTurnIndex = this.players.findIndex(p => p.id === lastPlayerId);
         } else {
             this.advanceTurn();
