@@ -1099,6 +1099,7 @@ const GameRoom = ({ user, socket }) => {
                             lastPlayedHand={gameState.lastPlayedHand}
                             onSelectCards={handleSelectCards}
                             isMyTurn={isMyTurn}
+                            selectedCards={selectedCards}
                         />
                     )}
                 </div>
@@ -1111,6 +1112,7 @@ const GameRoom = ({ user, socket }) => {
                             lastPlayedHand={gameState.lastPlayedHand}
                             onSelectCards={handleSelectCards}
                             isMyTurn={isMyTurn}
+                            selectedCards={selectedCards}
                         />
                     )}
                 </div>
