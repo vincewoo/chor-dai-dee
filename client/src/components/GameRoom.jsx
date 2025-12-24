@@ -71,22 +71,18 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin }) => {
     };
 
     // Apply margin logic:
-    // 1. If index is 0, margin is 0.
-    // 2. If dynamicMargin is provided (mobile), use it.
-    // 3. If dynamicMargin is undefined (desktop), use '-45px' to match original behavior,
-    //    overriding the Tailwind class 'md:-ml-[1.5vmax]' if necessary to ensure exact restoration.
-    //    However, to respect the user's "desktop compatible" request and potential existing responsive logic,
-    //    we should stick to the inline style if that was the primary driver.
-    //    Original code: marginLeft: index === 0 ? 0 : '-45px'
+    // 1. First card: No left margin (save space)
+    // 2. Other cards: Use dynamic overlap (mobile) or fixed overlap (desktop)
 
-    if (index !== 0) {
+    if (index === 0) {
+        style.marginLeft = '0';
+    } else {
+        // Subsequent cards: use overlap
         if (dynamicMargin !== undefined) {
             style.marginLeft = dynamicMargin;
         } else {
             style.marginLeft = '-45px';
         }
-    } else {
-        style.marginLeft = 0;
     }
 
     return (
@@ -402,7 +398,7 @@ const GameRoom = ({ user, socket }) => {
 
     // Configure drag-and-drop sensors with hybrid input handling
     // Mouse: Instant drag (distance constraint)
-    // Touch: Long press to drag (delay constraint), allowing swipes to pass through
+    // Touch: Reduced delay for better responsiveness (150ms instead of 250ms)
     const sensors = useSensors(
         useSensor(MouseSensor, {
             activationConstraint: {
@@ -411,7 +407,7 @@ const GameRoom = ({ user, socket }) => {
         }),
         useSensor(TouchSensor, {
             activationConstraint: {
-                delay: 250,
+                delay: 150, // Reduced from 250ms for better touch responsiveness
                 tolerance: 5,
             },
         })
@@ -453,9 +449,9 @@ const GameRoom = ({ user, socket }) => {
         const cardCount = sortedHand.length;
 
         // Calculate estimated card width based on device type
-        // Mobile (default): 70px (matches 'xlarge' size for mobile)
+        // Mobile (default): 60px (matches 'xlarge' size for mobile)
         // Desktop: 5.5vmax (matches 'xlarge' md size)
-        let cardWidth = 70;
+        let cardWidth = 60;
         if (isDesktop && typeof window !== 'undefined') {
             const vmax = Math.max(window.innerWidth, window.innerHeight);
             cardWidth = vmax * 0.055;
@@ -463,6 +459,7 @@ const GameRoom = ({ user, socket }) => {
 
         if (cardCount <= 1 || containerWidth === 0) return `-${cardWidth * 0.6}px`; // Default fallback
 
+        // containerWidth already accounts for padding (contentRect.width)
         // Available width for overlaps = Container Width - One Full Card
         const availableWidthForOverlaps = containerWidth - cardWidth;
 
@@ -470,8 +467,8 @@ const GameRoom = ({ user, socket }) => {
         const calculatedOverlap = (availableWidthForOverlaps / (cardCount - 1)) - cardWidth;
 
         // Clamp the overlap relative to card size
-        // Max compression: 80% overlap (only 20% visible)
-        const minOverlap = -(cardWidth * 0.8);
+        // Max compression: 87% overlap (only 13% visible) - increased for mobile to fit more cards
+        const minOverlap = -(cardWidth * 0.87);
         // Max spread: 20% overlap (80% visible) - increased visibility from previous fixed value
         const maxOverlap = -(cardWidth * 0.2);
 
@@ -634,14 +631,16 @@ const GameRoom = ({ user, socket }) => {
         socket.emit('next_round', { roomId });
     };
 
-    const toggleCard = (card) => {
-        const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
-        if (isSelected) {
-            setSelectedCards(selectedCards.filter(c => !(c.rank === card.rank && c.suit === card.suit)));
-        } else {
-            setSelectedCards([...selectedCards, card]);
-        }
-    };
+    const toggleCard = useCallback((card) => {
+        setSelectedCards(prevSelected => {
+            const isSelected = prevSelected.some(c => c.rank === card.rank && c.suit === card.suit);
+            if (isSelected) {
+                return prevSelected.filter(c => !(c.rank === card.rank && c.suit === card.suit));
+            } else {
+                return [...prevSelected, card];
+            }
+        });
+    }, []);
 
     // Swipe Selection Logic
     const handleTouchStart = (e) => {
@@ -822,6 +821,14 @@ const GameRoom = ({ user, socket }) => {
 
     const playCards = () => {
         if (selectedCards.length === 0) return;
+
+        // Optimistic update: immediately remove cards from hand for better responsiveness
+        const newHand = myHand.filter(card =>
+            !selectedCards.some(sc => sc.rank === card.rank && sc.suit === card.suit)
+        );
+        setMyHand(newHand);
+        setSelectedCards([]);
+
         socket.emit('play_card', { roomId, cards: selectedCards });
     };
 
@@ -1136,7 +1143,7 @@ const GameRoom = ({ user, socket }) => {
             />
 
             {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-2 md:px-0">
+            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-1 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
                 <div className="md:hidden w-full mb-2 mt-14">
                     {gameState.gameState === 'playing' && (
@@ -1169,16 +1176,16 @@ const GameRoom = ({ user, socket }) => {
                         <button
                             onClick={playCards}
                             disabled={!isMyTurn || selectedCards.length === 0}
-                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
-                                ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition-all transform text-base md:text-[1vmax]
+                                ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105 active:scale-95' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Play
                         </button>
                         <button
                             onClick={passTurn}
                             disabled={!isMyTurn || !gameState.lastPlayedHand}
-                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition transform text-base md:text-[1vmax]
-                                ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                            className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition-all transform text-base md:text-[1vmax]
+                                ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105 active:scale-95' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
                         >
                             Pass
                         </button>
@@ -1222,7 +1229,7 @@ const GameRoom = ({ user, socket }) => {
                 </div>
 
                 {/* My Hand and Avatar Row - Desktop layout */}
-                <div className="flex items-end gap-[1vmax] w-full md:w-auto">
+                <div className="flex items-end gap-[1vmax] w-full md:w-auto overflow-visible">
                     {/* Cards */}
                     <DndContext
                         sensors={sensors}
@@ -1240,7 +1247,11 @@ const GameRoom = ({ user, socket }) => {
                                 onTouchStart={handleTouchStart}
                                 onTouchMove={handleTouchMove}
                                 onTouchEnd={handleTouchEnd}
-                                style={{ touchAction: 'pan-y' }}
+                                style={{
+                                    touchAction: 'pan-y',
+                                    // Shift RIGHT on mobile when we have many cards to show first card better
+                                    transform: sortedHand.length >= 10 && dynamicOverlap ? 'translateX(8px)' : 'none'
+                                }}
                             >
                                 {sortedHand.map((card, index) => {
                                     const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);

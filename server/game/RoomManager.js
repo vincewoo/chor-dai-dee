@@ -690,7 +690,7 @@ class Room {
                         this.passTurn(currentPlayer.id);
                         callback({ type: 'pass', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
                     }
-                }, 500); // 500ms delay for realism
+                }, 250); // 250ms delay for realism (reduced from 500ms for better responsiveness)
             };
 
             // Choose bot logic based on settings
