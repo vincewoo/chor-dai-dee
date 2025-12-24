@@ -34,10 +34,15 @@ const Login = ({ setUser }) => {
             <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
             <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
                 <h2 className="text-2xl font-bold mb-4 text-center">{isRegistering ? 'Register' : 'Login'}</h2>
-                {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">{error}</div>}
+                {error && (
+                    <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                        {error}
+                    </div>
+                )}
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <input
                         type="text"
+                        aria-label="Username"
                         placeholder="Username"
                         className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
                         value={username}
@@ -45,6 +50,7 @@ const Login = ({ setUser }) => {
                     />
                     <input
                         type="password"
+                        aria-label="Password"
                         placeholder="Password"
                         className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
                         value={password}
