@@ -501,10 +501,14 @@ const BotLogic = {
         // "Freeze the Winner" Check
         const nextPlayerLow = nextPlayerCards < 5;
 
+        // Define common variables for heuristics
+        const minOpponentCards = Math.min(...playerCardCounts);
+
         // Priority Scoring
         const scoredMoves = candidates.map(move => {
             let score = 0;
             const factors = captureReasoning ? [] : null;
+            const isWin = move.cards.length === hand.length;
 
             // Base score: prefer lower value (standard shedding)
             // Invert value so lower = higher score
@@ -616,8 +620,45 @@ const BotLogic = {
                 if (factors) factors.push({ factor: 'Breaks Organized Hand', points: -150 });
             }
 
+            // Rule 3: Top-Heavy Pair Protection
+            // Don't break pairs of A, K, Q to beat a single card
+            if (move.type === HAND_TYPES.SINGLE && !isWin) {
+                const rank = move.cards[0].rank;
+                if (['A', 'K', 'Q'].includes(rank)) {
+                    // Check if this card comes from an organized Pair
+                    const isFromPair = handOrganization.pairs.some(p =>
+                        p.cards.some(pc => pc.rank === rank && pc.suit === move.cards[0].suit)
+                    );
+
+                    if (isFromPair) {
+                        // Penalty for breaking high pair
+                        score -= 100;
+                        if (factors) factors.push({ factor: 'Break High Pair Protection', points: -100 });
+                    }
+                }
+            }
+
+            // Rule 4: The "2" Breaker Rule
+            // Only split a pair of 2s if desperate
+            if (move.type === HAND_TYPES.SINGLE && move.cards[0].rank === '2') {
+                const isFromPairOfTwos = handOrganization.pairs.some(p => p.rank === '2');
+
+                if (isFromPairOfTwos) {
+                    // Check if desperate:
+                    // 1. We are winning (handled by isWin check in 'score' bonuses?) -> Actually need explicit check here
+                    // 2. Next player low on cards (Danger mode) -> maybe valid then?
+                    // Rule says "regain control right now to play a 5-card hand or end the game"
+
+                    const isDesperate = isWin || (nextPlayerLow && minOpponentCards <= 2);
+
+                    if (!isDesperate) {
+                        score -= 300; // Major penalty for breaking Pair of 2s unnecessarily
+                        if (factors) factors.push({ factor: 'Break Pair of 2s (Not Desperate)', points: -300 });
+                    }
+                }
+            }
+
             // Save 2 of Spades (Nuclear Option) - unless winning
-            const isWin = hand.length === move.cards.length;
             if (move.cards.some(c => c.rank === '2' && c.suit === 'S') && !isWin) {
                 // Only use if "must stop opponent"
                 if (nextPlayerLow || ctx.playerCardCounts.some(c => c <= 3)) {
