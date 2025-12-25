@@ -8,6 +8,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
 
     // Helper to render a row of example cards (stacked like in-game)
+    // Uses traditional red-black colors instead of 4-color mode
     const CardRow = ({ cards }) => (
         <div className="flex justify-center items-center my-2">
             <div className="flex">
@@ -20,7 +21,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
                             zIndex: idx
                         }}
                     >
-                        <Card rank={card.rank} suit={card.suit} size="large" />
+                        <Card rank={card.rank} suit={card.suit} size="large" forceTraditionalColors={true} />
                     </div>
                 ))}
             </div>
@@ -333,6 +334,22 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                     <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
                                     <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (<span className="text-black">{SUIT_SYMBOLS.S}</span> Spades &gt; <span className="text-red-600">{SUIT_SYMBOLS.H}</span> Hearts &gt; <span className="text-black">{SUIT_SYMBOLS.C}</span> Clubs &gt; <span className="text-red-600">{SUIT_SYMBOLS.D}</span> Diamonds)</li>
                                 </ul>
+
+                                <div className="mt-4 border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-gray-800 mb-2">Hong Kong Rules: Straights with 2s</h4>
+                                    <p className="text-gray-700 mb-2">
+                                        This game follows Hong Kong Big 2 rules for straights containing 2s:
+                                    </p>
+                                    <ul className="list-disc list-inside space-y-1 text-gray-700 ml-4">
+                                        <li><strong>A-2-3-4-5 (Highest Straight):</strong> The strongest possible straight, valued by the 2</li>
+                                        <li><strong>2-3-4-5-6 (Second Highest):</strong> Second strongest straight, also valued by the 2</li>
+                                        <li><strong>Invalid: J-Q-K-A-2:</strong> The 2 cannot be used as the high end of a straight</li>
+                                        <li><strong>Invalid: Any other combinations with 2:</strong> Only A-2-3-4-5 and 2-3-4-5-6 are valid</li>
+                                    </ul>
+                                    <p className="text-sm text-gray-600 mt-2">
+                                        💡 The same rules apply to straight flushes: A-2-3-4-5 flush is the highest straight flush.
+                                    </p>
+                                </div>
                             </section>
                         </div>
                     )}
@@ -507,7 +524,7 @@ const HowToPlay = ({ isOpen, onClose }) => {
                             <section>
                                 <h3 className="text-xl font-bold text-gray-800 mb-3">Penalty Points per Round</h3>
                                 <p className="text-gray-700 mb-3">
-                                    If you lose a round badly (>= 10 cards remaining), you receive a higher penalty multiplier.
+                                    If you lose a round badly ({'>='} 10 cards remaining), you receive a higher penalty multiplier.
                                     The multiplier increases as the number of remaining cards increases.
                                 </p>
                                 <div className="space-y-3">

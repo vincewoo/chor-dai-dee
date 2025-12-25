@@ -1,5 +1,5 @@
 import React from 'react';
-import { SUIT_SYMBOLS } from '../constants';
+import { SUIT_SYMBOLS, SUIT_COLORS } from '../constants';
 import { motion } from 'framer-motion';
 import { useSuitColors } from '../contexts/SuitColorContext';
 
@@ -98,8 +98,11 @@ const FaceCard = ({ rank }) => {
     );
 };
 
-const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' }) => {
-    const { suitColors } = useSuitColors();
+const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', forceTraditionalColors = false }) => {
+    const { suitColors: contextSuitColors } = useSuitColors();
+
+    // Use traditional red-black colors if forced, otherwise use context colors
+    const suitColors = forceTraditionalColors ? SUIT_COLORS : contextSuitColors;
 
     const sizeClasses = {
         small: 'w-[18px] h-[26px] md:w-[3vmax] md:h-[4.5vmax]',
