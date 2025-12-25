@@ -625,6 +625,8 @@ io.on('connection', (socket) => {
           const result = room.playHand(socket.id, cards);
           if (result.error) {
               socket.emit('error', result.error);
+              // Restore the player's hand on the client (undo optimistic update)
+              socket.emit('hand_update', room.getPlayerHand(socket.id));
           } else {
               io.to(roomId).emit('game_update', room.getGameState());
               socket.emit('hand_update', room.getPlayerHand(socket.id));
