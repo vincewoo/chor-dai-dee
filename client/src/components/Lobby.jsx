@@ -102,7 +102,7 @@ const Lobby = ({ user, socket, setUser }) => {
                     {reconnecting ? '● Checking for existing game...' : connected ? '● Connected' : '● Disconnected - Is the server running?'}
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Welcome, {user.username}!</h2>
-                <div className="flex justify-center gap-4 mb-4">
+                <div className="flex justify-center gap-4 mb-4 flex-wrap">
                     <button
                         onClick={() => setShowHowToPlay(true)}
                         className="text-sm text-green-600 hover:text-green-800 underline font-medium"
@@ -115,6 +115,13 @@ const Lobby = ({ user, socket, setUser }) => {
                         className="text-sm text-blue-600 hover:text-blue-800 underline font-medium"
                     >
                         View Stats
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                        onClick={() => navigate('/leaderboard')}
+                        className="text-sm text-purple-600 hover:text-purple-800 underline font-medium"
+                    >
+                        Leaderboard
                     </button>
                     <span className="text-gray-300">|</span>
                     <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline">

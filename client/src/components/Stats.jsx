@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3000';
 
 const Stats = ({ user }) => {
+    const { username: urlUsername } = useParams();
     const [mode, setMode] = useState('standard');
     const [stats, setStats] = useState(null);
     const [headToHead, setHeadToHead] = useState([]);
@@ -13,18 +14,23 @@ const Stats = ({ user }) => {
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
+    // Use URL username if provided, otherwise use logged-in user's username
+    const viewingUsername = urlUsername || user?.username;
+
     useEffect(() => {
-        fetchStats();
-    }, [mode]);
+        if (viewingUsername) {
+            fetchStats();
+        }
+    }, [mode, viewingUsername]);
 
     const fetchStats = async () => {
         setLoading(true);
         setError('');
         try {
             const [statsRes, h2hRes, tier3Res] = await Promise.all([
-                axios.get(`${API_BASE}/api/stats/${user.username}/detailed?mode=${mode}`),
-                axios.get(`${API_BASE}/api/stats/${user.username}/head-to-head?mode=${mode}`),
-                axios.get(`${API_BASE}/api/stats/${user.username}/tier3?mode=${mode}`)
+                axios.get(`${API_BASE}/api/stats/${viewingUsername}/detailed?mode=${mode}`),
+                axios.get(`${API_BASE}/api/stats/${viewingUsername}/head-to-head?mode=${mode}`),
+                axios.get(`${API_BASE}/api/stats/${viewingUsername}/tier3?mode=${mode}`)
             ]);
             setStats(statsRes.data);
             setHeadToHead(h2hRes.data.headToHead || []);
@@ -58,7 +64,15 @@ const Stats = ({ user }) => {
                 {/* Username */}
                 <div className="text-xl mb-4">
                     <span className="text-gray-300">Player:</span>
-                    <span className="text-yellow-300 font-bold ml-2">{user.username}</span>
+                    <span className="text-yellow-300 font-bold ml-2">{viewingUsername}</span>
+                    {urlUsername && urlUsername !== user.username && (
+                        <button
+                            onClick={() => navigate('/stats')}
+                            className="ml-4 text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded transition"
+                        >
+                            View My Stats
+                        </button>
+                    )}
                 </div>
 
                 {/* Mode Selector */}

@@ -1061,6 +1061,141 @@ const getTier3Stats = (userId, gameMode) => {
     });
 };
 
+// ========== LEADERBOARD FUNCTIONS ==========
+
+// Get leaderboard data
+const getLeaderboard = (options = {}) => {
+    const {
+        gameMode = 'standard',
+        sortBy = 'rating',
+        limit = 100,
+        offset = 0,
+        minGames = 0
+    } = options;
+
+    return new Promise((resolve, reject) => {
+        const tableName = gameMode === 'short' ? 'stats_short' : 'stats_standard';
+
+        // Build ORDER BY clause based on sortBy parameter
+        let orderByClause;
+        switch (sortBy) {
+            case 'games':
+                orderByClause = 'games_played DESC, rating_display DESC';
+                break;
+            case 'wins':
+                orderByClause = 'wins DESC, rating_display DESC';
+                break;
+            case 'winRate':
+                orderByClause = 'win_rate DESC, games_played DESC';
+                break;
+            case 'firstPlace':
+                orderByClause = 'first_place DESC, rating_display DESC';
+                break;
+            case 'avgPlacement':
+                orderByClause = 'avg_placement ASC, rating_display DESC';
+                break;
+            case 'rating':
+            default:
+                orderByClause = 'rating_display DESC, games_played DESC';
+                break;
+        }
+
+        const query = `
+            SELECT
+                u.username,
+                s.games_played,
+                s.wins,
+                s.losses,
+                s.rating_mu,
+                s.rating_sigma,
+                (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) as rating_display,
+                s.first_place,
+                s.second_place,
+                s.third_place,
+                s.fourth_place,
+                CASE WHEN s.games_played > 0
+                    THEN CAST(s.wins AS REAL) / s.games_played
+                    ELSE 0
+                END as win_rate,
+                CASE WHEN s.total_rounds > 0
+                    THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL)
+                    ELSE 0
+                END as avg_placement,
+                s.leads_won,
+                b.player_archetype as archetype
+            FROM ${tableName} s
+            INNER JOIN users u ON s.user_id = u.id
+            LEFT JOIN behavioral_stats b ON b.user_id = s.user_id AND b.game_mode = ?
+            WHERE s.games_played >= ?
+            ORDER BY ${orderByClause}
+            LIMIT ? OFFSET ?
+        `;
+
+        db.all(query, [gameMode, minGames, limit, offset], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows || []);
+        });
+    });
+};
+
+// Get player's rank on leaderboard
+const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
+    return new Promise((resolve, reject) => {
+        const tableName = gameMode === 'short' ? 'stats_short' : 'stats_standard';
+
+        let orderByClause;
+        switch (sortBy) {
+            case 'games':
+                orderByClause = 'games_played DESC, rating_display DESC';
+                break;
+            case 'wins':
+                orderByClause = 'wins DESC, rating_display DESC';
+                break;
+            case 'winRate':
+                orderByClause = 'win_rate DESC, games_played DESC';
+                break;
+            case 'firstPlace':
+                orderByClause = 'first_place DESC, rating_display DESC';
+                break;
+            case 'avgPlacement':
+                orderByClause = 'avg_placement ASC, rating_display DESC';
+                break;
+            case 'rating':
+            default:
+                orderByClause = 'rating_display DESC, games_played DESC';
+                break;
+        }
+
+        const query = `
+            WITH RankedPlayers AS (
+                SELECT
+                    u.username,
+                    (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) as rating_display,
+                    s.games_played,
+                    s.wins,
+                    CASE WHEN s.games_played > 0
+                        THEN CAST(s.wins AS REAL) / s.games_played
+                        ELSE 0
+                    END as win_rate,
+                    s.first_place,
+                    CASE WHEN s.total_rounds > 0
+                        THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL)
+                        ELSE 0
+                    END as avg_placement,
+                    ROW_NUMBER() OVER (ORDER BY ${orderByClause}) as rank
+                FROM ${tableName} s
+                INNER JOIN users u ON s.user_id = u.id
+            )
+            SELECT rank FROM RankedPlayers WHERE username = ?
+        `;
+
+        db.get(query, [username], (err, row) => {
+            if (err) return reject(err);
+            resolve(row ? row.rank : null);
+        });
+    });
+};
+
 module.exports = {
     db,
     createUser,
@@ -1092,5 +1227,8 @@ module.exports = {
     updateVarianceScores,
     // User preferences
     getUserPreferences,
-    updateUserPreferences
+    updateUserPreferences,
+    // Leaderboard
+    getLeaderboard,
+    getPlayerRank
 };

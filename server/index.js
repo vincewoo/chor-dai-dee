@@ -898,6 +898,51 @@ app.get('/api/stats/:username/tier3', async (req, res) => {
     }
 });
 
+// Get leaderboard
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const {
+            mode = 'standard',
+            sortBy = 'rating',
+            limit = 100,
+            offset = 0,
+            minGames = 0
+        } = req.query;
+
+        const leaderboardData = await require('./db').getLeaderboard({
+            gameMode: mode,
+            sortBy,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            minGames: parseInt(minGames)
+        });
+
+        res.json(leaderboardData);
+    } catch (err) {
+        console.error('Error fetching leaderboard:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get player's rank on leaderboard
+app.get('/api/leaderboard/:username/rank', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const { mode = 'standard', sortBy = 'rating' } = req.query;
+
+        const rank = await require('./db').getPlayerRank(username, mode, sortBy);
+
+        if (rank === null) {
+            return res.status(404).json({ error: 'Player not found' });
+        }
+
+        res.json({ username, rank, mode, sortBy });
+    } catch (err) {
+        console.error('Error fetching player rank:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0'; // Listen on all interfaces for Docker
 server.listen(PORT, HOST, () => {
