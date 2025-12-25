@@ -309,6 +309,16 @@ class Room {
             player.hand = Big2Rules.sortCards(player.hand);
         }
 
+        // Check for Hong Kong Dragon rule - player with all 13 different ranks wins immediately
+        for (let player of this.players) {
+            if (Big2Rules.isDragon(player.hand)) {
+                // Dragon detected! This player wins the entire game immediately
+                this.dragonWinner = player;
+                this.gameState = 'dragon_win';
+                return; // Exit early, don't set up normal round
+            }
+        }
+
         this.gameState = 'playing';
         this.lastPlayedHand = null;
         this.playerLastPlayed = {};

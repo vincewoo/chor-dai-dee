@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
 const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences } = require('./db');
-const { calculateRoundScores } = require('./game/Scoring');
+const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
 
@@ -163,6 +163,81 @@ io.on('connection', (socket) => {
         socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
     }
   });
+
+  const handleDragonWin = async (room, roomId, dragonWinner) => {
+      // Dragon win - player with all 13 different ranks wins the entire game immediately
+      const dragonScores = calculateDragonScores(dragonWinner, room.players);
+      room.updateScores(dragonScores);
+      room.gameState = 'finished';
+
+      // Add cumulative scores to the dragon scores for display
+      const scoresWithCumulative = dragonScores.map(s => ({
+          ...s,
+          cumulativeScore: room.cumulativeScores[s.id] || 0
+      }));
+
+      const sanitizedDragonWinner = {
+          id: dragonWinner.id,
+          name: dragonWinner.name,
+          isBot: dragonWinner.isBot
+      };
+
+      // Emit special dragon_win event
+      io.to(roomId).emit('dragon_win', {
+          winner: sanitizedDragonWinner,
+          scores: scoresWithCumulative,
+          finalScores: room.cumulativeScores,
+          roundNumber: room.roundNumber
+      });
+
+      // Handle rating updates similar to game_over (fetch stats, calculate new ratings, update DB)
+      const playersWithStats = await Promise.all(room.players.map(async (p) => {
+          if (p.isBot) return { ...p };
+          try {
+              const stats = await getUserStatsByMode(p.name, room.gameMode);
+              return {
+                  ...p,
+                  rating_mu: stats ? stats.rating_mu : undefined,
+                  rating_sigma: stats ? stats.rating_sigma : undefined
+              };
+          } catch (e) {
+              console.error("Error fetching stats for rating calc:", p.name, e);
+              return { ...p };
+          }
+      }));
+
+      // Calculate placements for rating purposes (winner is 1st, all others are tied for last)
+      const placements = room.players.map(p => {
+          if (p.id === dragonWinner.id) return 1;
+          return 4; // All losers get worst placement
+      });
+
+      // Update ratings for all human players
+      const newRatings = calculateNewRatings(playersWithStats, placements);
+
+      for (let i = 0; i < room.players.length; i++) {
+          const player = room.players[i];
+          if (!player.isBot && newRatings[i]) {
+              try {
+                  const user = await getUserByUsername(player.name);
+                  if (user) {
+                      // Update mode-specific stats
+                      await updateUserStatsByMode(user.id, room.gameMode, {
+                          games: 1,
+                          wins: player.id === dragonWinner.id ? 1 : 0,
+                          rating_mu: newRatings[i].mu,
+                          rating_sigma: newRatings[i].sigma
+                      });
+
+                      // Save placement history for variance tracking
+                      await savePlacementHistory(user.id, room.gameMode, placements[i]);
+                  }
+              } catch (e) {
+                  console.error("Failed to update stats for", player.name, e);
+              }
+          }
+      }
+  };
 
   const handleRoundOver = async (room, roomId, roundWinner) => {
       const roundScores = calculateRoundScores(roundWinner, room.players);
@@ -532,6 +607,20 @@ io.on('connection', (socket) => {
       room.roundNumber++;
       room.startRound();
 
+      // Check if dragon was dealt (Hong Kong variation)
+      if (room.gameState === 'dragon_win' && room.dragonWinner) {
+          // Send hands first so players can see the dragon
+          room.players.forEach(p => {
+              if (!p.isBot) {
+                  console.log(`Sending hand_update to ${p.name} (${p.id}) with DRAGON, ${p.hand?.length} cards`);
+                  io.to(p.id).emit('hand_update', p.hand);
+              }
+          });
+          // Handle dragon win
+          handleDragonWin(room, roomId, room.dragonWinner);
+          return;
+      }
+
       const gameState = room.getGameState();
       console.log(`Next round ${room.roundNumber} starting. Current turn: ${gameState.currentTurn}, Players:`,
           room.players.map(p => ({ id: p.id, name: p.name, isBot: p.isBot })));
@@ -605,6 +694,21 @@ io.on('connection', (socket) => {
       const room = roomManager.getRoom(roomId);
       if (room) {
           room.startGame(useAdvancedBots);
+
+          // Check if dragon was dealt (Hong Kong variation)
+          if (room.gameState === 'dragon_win' && room.dragonWinner) {
+              // Send hands first so players can see the dragon
+              room.players.forEach(p => {
+                  if (!p.isBot) {
+                      io.to(p.id).emit('hand_update', p.hand);
+                  }
+              });
+              // Handle dragon win
+              handleDragonWin(room, roomId, room.dragonWinner);
+              return;
+          }
+
+          // Normal game start
           // Broadcast full state
           io.to(roomId).emit('game_started', room.getGameState());
           // Send individual hands

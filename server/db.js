@@ -1146,23 +1146,23 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
         let orderByClause;
         switch (sortBy) {
             case 'games':
-                orderByClause = 'games_played DESC, rating_display DESC';
+                orderByClause = 's.games_played DESC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
                 break;
             case 'wins':
-                orderByClause = 'wins DESC, rating_display DESC';
+                orderByClause = 's.wins DESC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
                 break;
             case 'winRate':
-                orderByClause = 'win_rate DESC, games_played DESC';
+                orderByClause = 'CASE WHEN s.games_played > 0 THEN CAST(s.wins AS REAL) / s.games_played ELSE 0 END DESC, s.games_played DESC';
                 break;
             case 'firstPlace':
-                orderByClause = 'first_place DESC, rating_display DESC';
+                orderByClause = 's.first_place DESC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
                 break;
             case 'avgPlacement':
-                orderByClause = 'avg_placement ASC, rating_display DESC';
+                orderByClause = 'CASE WHEN s.total_rounds > 0 THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL) ELSE 0 END ASC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
                 break;
             case 'rating':
             default:
-                orderByClause = 'rating_display DESC, games_played DESC';
+                orderByClause = '(1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC, s.games_played DESC';
                 break;
         }
 
@@ -1170,18 +1170,6 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
             WITH RankedPlayers AS (
                 SELECT
                     u.username,
-                    (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) as rating_display,
-                    s.games_played,
-                    s.wins,
-                    CASE WHEN s.games_played > 0
-                        THEN CAST(s.wins AS REAL) / s.games_played
-                        ELSE 0
-                    END as win_rate,
-                    s.first_place,
-                    CASE WHEN s.total_rounds > 0
-                        THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL)
-                        ELSE 0
-                    END as avg_placement,
                     ROW_NUMBER() OVER (ORDER BY ${orderByClause}) as rank
                 FROM ${tableName} s
                 INNER JOIN users u ON s.user_id = u.id

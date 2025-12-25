@@ -136,6 +136,7 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `game_update` - Game state changes (plays, turns, etc.)
 - `round_over` - Round has ended with scores
 - `game_over` - Game has ended with final results
+- `dragon_win` - Dragon detected, instant game win (Hong Kong variation)
 - `bot_reasoning` - Bot decision analysis (for debug panel)
 - `reconnected` - Client successfully reconnected
 - `error` - Error messages
@@ -167,6 +168,7 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - Must beat the table or pass
 - When all other players pass, the last player who played gets free control
 - First to empty hand wins the round
+- **Hong Kong Dragon Rule:** If a player is dealt all 13 different ranks (3-4-5-6-7-8-9-10-J-Q-K-A-2), they instantly win the entire game. All other players receive 39 penalty points.
 
 ### Game Modes
 - **Short Game:** First to 50 points ends the game (~30 minutes)

@@ -215,6 +215,23 @@ const Big2Rules = {
         }
 
         return false;
+    },
+
+    // Check if a hand is a dragon (one card of each rank: A-2-3-4-5-6-7-8-9-10-J-Q-K)
+    // Hong Kong variation: player with dragon immediately wins the game
+    isDragon: (cards) => {
+        if (!cards || cards.length !== 13) return false;
+
+        // Get all ranks in the hand
+        const ranks = cards.map(c => c.rank);
+        const uniqueRanks = new Set(ranks);
+
+        // Dragon requires exactly one card of each rank (13 unique ranks)
+        if (uniqueRanks.size !== 13) return false;
+
+        // Verify all 13 ranks are present
+        const allRanks = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+        return allRanks.every(rank => uniqueRanks.has(rank));
     }
 };
 

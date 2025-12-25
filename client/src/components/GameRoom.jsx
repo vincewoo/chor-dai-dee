@@ -557,6 +557,11 @@ const GameRoom = ({ user, socket }) => {
             setGameOver(data);
         });
 
+        socket.on('dragon_win', (data) => {
+            // Dragon win is treated like game_over but with special messaging
+            setGameOver({ ...data, isDragonWin: true });
+        });
+
         socket.on('error', (err) => {
             setError(err);
             setTimeout(() => setError(''), 3000);
@@ -587,6 +592,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('game_update');
             socket.off('round_over');
             socket.off('game_over');
+            socket.off('dragon_win');
             socket.off('error');
             socket.off('player_disconnected');
             socket.off('player_reconnected');
@@ -1004,9 +1010,17 @@ const GameRoom = ({ user, socket }) => {
             {/* Game Over Modal */}
             {gameOver && (
                 <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-8">
-                    <h2 className="text-6xl font-bold text-yellow-400 mb-4 animate-bounce">Game Over!</h2>
+                    <h2 className="text-6xl font-bold text-yellow-400 mb-4 animate-bounce">
+                        {gameOver.isDragonWin ? '🐉 DRAGON! 🐉' : 'Game Over!'}
+                    </h2>
                     <div className="text-2xl mb-2 text-green-300">Winner: {gameOver.winner.name}</div>
-                    <div className="text-lg mb-4 text-gray-400">Completed in {gameOver.roundNumber} rounds</div>
+                    {gameOver.isDragonWin ? (
+                        <div className="text-lg mb-4 text-yellow-300 font-bold">
+                            Won with a DRAGON (13-card Straight)!
+                        </div>
+                    ) : (
+                        <div className="text-lg mb-4 text-gray-400">Completed in {gameOver.roundNumber} rounds</div>
+                    )}
 
                     <div className="bg-white/10 rounded-lg p-6 mb-8 w-full max-w-md">
                         <h3 className="text-xl font-bold mb-4 border-b pb-2">Final Scores</h3>

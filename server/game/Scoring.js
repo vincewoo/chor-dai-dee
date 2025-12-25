@@ -40,4 +40,39 @@ const calculateRoundScores = (winner, players) => {
     return scores;
 };
 
-module.exports = { calculateRoundScores };
+/**
+ * Calculate scores for dragon win (Hong Kong variation).
+ * Dragon winner gets 0 points.
+ * All other players get 39 points (13 cards * 3x multiplier - as if they lost without playing).
+ */
+const calculateDragonScores = (dragonWinner, players) => {
+    const scores = [];
+    const dragonPenalty = 39; // 13 cards with 3x multiplier
+
+    players.forEach(p => {
+        if (p.id === dragonWinner.id) {
+            scores.push({
+                id: p.id,
+                name: p.name,
+                isBot: p.isBot,
+                roundPoints: 0,
+                cardsLeft: 0,
+                isRoundWinner: true,
+                isDragonWinner: true
+            });
+        } else {
+            scores.push({
+                id: p.id,
+                name: p.name,
+                isBot: p.isBot,
+                roundPoints: dragonPenalty,
+                cardsLeft: 13,
+                isRoundWinner: false
+            });
+        }
+    });
+
+    return scores;
+};
+
+module.exports = { calculateRoundScores, calculateDragonScores };
