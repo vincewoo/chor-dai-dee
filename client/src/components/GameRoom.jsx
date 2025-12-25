@@ -88,7 +88,7 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin }) => {
     return (
         <div
             ref={setNodeRef}
-            style={style}
+            style={{...style, touchAction: 'none'}}
             data-card-id={`${card.rank}-${card.suit}`}
             className={`hover:ml-0 md:hover:-ml-[1.5vmax] ${index !== 0 ? 'md:-ml-[1.5vmax]' : ''} ${isDragging ? 'opacity-50' : ''}`}
             {...attributes}
@@ -398,7 +398,7 @@ const GameRoom = ({ user, socket }) => {
 
     // Configure drag-and-drop sensors with hybrid input handling
     // Mouse: Instant drag (distance constraint)
-    // Touch: Reduced delay for better responsiveness (150ms instead of 250ms)
+    // Touch: Balanced settings for both taps and drags
     const sensors = useSensors(
         useSensor(MouseSensor, {
             activationConstraint: {
@@ -408,7 +408,7 @@ const GameRoom = ({ user, socket }) => {
         useSensor(TouchSensor, {
             activationConstraint: {
                 delay: 150, // Reduced from 250ms for better touch responsiveness
-                tolerance: 5,
+                tolerance: 8, // Increased from 5px to allow natural finger wobble during taps
             },
         })
     );
@@ -467,8 +467,10 @@ const GameRoom = ({ user, socket }) => {
         const calculatedOverlap = (availableWidthForOverlaps / (cardCount - 1)) - cardWidth;
 
         // Clamp the overlap relative to card size
-        // Max compression: 85% overlap (only 15% visible) - increased for mobile to fit more cards
-        const minOverlap = -(cardWidth * 0.85);
+        // Max compression: Different for mobile vs desktop
+        // Mobile: 70% overlap (30% visible = ~19px for better touch targets, prevents overflow on small screens)
+        // Desktop: 85% overlap (15% visible = fine for mouse precision)
+        const minOverlap = isDesktop ? -(cardWidth * 0.85) : -(cardWidth * 0.70);
         // Max spread: 20% overlap (80% visible) - increased visibility from previous fixed value
         const maxOverlap = -(cardWidth * 0.2);
 
