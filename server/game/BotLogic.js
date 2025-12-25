@@ -446,6 +446,12 @@ const BotLogic = {
             return result(false);
         }
 
+        // --- Emergency Override: Next player has 1 card ---
+        if (playerCardCounts[0] === 1) {
+            if (factors) factors.push('Emergency: Next player has 1 card - MUST PLAY');
+            return result(false, "Must try to stop next player (1 card left)");
+        }
+
         // Always play if we can win right now
         const winningMove = candidates.find(m => m.cards.length === hand.length);
         if (winningMove) {
@@ -548,6 +554,41 @@ const BotLogic = {
             let score = 0;
             const factors = captureReasoning ? [] : null;
             const isWin = move.cards.length === hand.length;
+
+            // Special Case: Next player has 1 card
+            if (playerCardCounts[0] === 1) {
+                // 1. Free Play Scenario
+                if (!lastPlayedHand) {
+                    // Priority 1: Play ANY Multi-card hand (Pair, Triple, 5-card)
+                    if (move.type !== HAND_TYPES.SINGLE) {
+                        // Massive score to ensure it beats any single
+                        // Base 50000.
+                        // Prefer lower multi-card hands? Or any?
+                        // User said "prioritize playing any multi-card hand".
+                        // Let's use standard shedding logic (inverted value) within this tier.
+                        score = 50000 + (100 - move.value);
+                        if (factors) factors.push({ factor: 'EMERGENCY: Play Multi-Card Hand (Free Play)', points: 50000 });
+                        return { move, score, factors };
+                    }
+
+                    // Priority 2: Play Highest Single (if no multi-card hand available/chosen)
+                    if (move.type === HAND_TYPES.SINGLE) {
+                        // Score lower than Multi-card (20000 range) but higher than normal
+                        // Value * 100 to prioritize rank
+                        score = 20000 + (move.value * 100);
+                        if (factors) factors.push({ factor: 'EMERGENCY: Play Highest Single (Free Play)', points: 20000 });
+                        return { move, score, factors };
+                    }
+                }
+
+                // 2. Responding to Single
+                else if (lastPlayedHand.type === HAND_TYPES.SINGLE && move.type === HAND_TYPES.SINGLE) {
+                    // MUST play Highest Single
+                    score = 20000 + (move.value * 100);
+                    if (factors) factors.push({ factor: 'EMERGENCY: Play Highest Single (Response)', points: 20000 });
+                    return { move, score, factors };
+                }
+            }
 
             // Base score: prefer lower value (standard shedding)
             // Invert value so lower = higher score
