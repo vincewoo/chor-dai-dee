@@ -108,6 +108,10 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                     The objective is to be the first player to get rid of all your cards by playing higher-ranking
                                     hands than your opponents.
                                 </p>
+                                <p className="text-gray-700 leading-relaxed">
+                                    Many variations exist, but this implementation follows the Hong Kong ruleset with some common house rules.
+                                    See the <strong>Rules</strong> tab for detailed gameplay instructions.
+                                </p>
                             </section>
 
                             <section>
@@ -334,25 +338,8 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                     <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
                                     <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (<span className="text-black">{SUIT_SYMBOLS.S}</span> Spades &gt; <span className="text-red-600">{SUIT_SYMBOLS.H}</span> Hearts &gt; <span className="text-black">{SUIT_SYMBOLS.C}</span> Clubs &gt; <span className="text-red-600">{SUIT_SYMBOLS.D}</span> Diamonds)</li>
                                 </ul>
-
-                                <div className="mt-4 border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded-r-lg">
-                                    <h4 className="font-bold text-gray-800 mb-2">🐉 Hong Kong Rules: Dragon (Instant Win)</h4>
-                                    <p className="text-gray-700 mb-2">
-                                        If a player is dealt a <strong>Dragon</strong> (one card of each rank: 3-4-5-6-7-8-9-10-J-Q-K-A-2),
-                                        they immediately win the entire game!
-                                    </p>
-                                    <ul className="list-disc list-inside space-y-1 text-gray-700 ml-4">
-                                        <li><strong>Instant Victory:</strong> No playing required - the game ends immediately</li>
-                                        <li><strong>Dragon Winner:</strong> Gets 0 points</li>
-                                        <li><strong>All Other Players:</strong> Each receives 39 penalty points (13 cards × 3 multiplier)</li>
-                                    </ul>
-                                    <p className="text-sm text-gray-600 mt-2">
-                                        💡 Dragons are extremely rare! The odds are approximately 1 in 158 million hands.
-                                    </p>
-                                </div>
-
                                 <div className="mt-4 border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r-lg">
-                                    <h4 className="font-bold text-gray-800 mb-2">Hong Kong Rules: Straights with 2s</h4>
+                                    <h4 className="font-bold text-gray-800 mb-2">Hong Kong Variant: Straights with 2s</h4>
                                     <p className="text-gray-700 mb-2">
                                         This game follows Hong Kong Big 2 rules for straights containing 2s:
                                     </p>
@@ -364,6 +351,21 @@ const HowToPlay = ({ isOpen, onClose }) => {
                                     </ul>
                                     <p className="text-sm text-gray-600 mt-2">
                                         💡 The same rules apply to straight flushes: A-2-3-4-5 flush is the highest straight flush.
+                                    </p>
+                                </div>
+                                <div className="mt-4 border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-gray-800 mb-2">🐉 Hong Kong Variant: Dragon (Instant Win)</h4>
+                                    <p className="text-gray-700 mb-2">
+                                        If a player is dealt a <strong>Dragon</strong> (one card of each rank: 3-4-5-6-7-8-9-10-J-Q-K-A-2),
+                                        they immediately win the entire game!
+                                    </p>
+                                    <ul className="list-disc list-inside space-y-1 text-gray-700 ml-4">
+                                        <li><strong>Instant Victory:</strong> No playing required - the game ends immediately</li>
+                                        <li><strong>Dragon Winner:</strong> Gets 0 points</li>
+                                        <li><strong>All Other Players:</strong> Each receives 39 penalty points (13 cards × 3 multiplier)</li>
+                                    </ul>
+                                    <p className="text-sm text-gray-600 mt-2">
+                                        💡 Dragons are extremely rare! The odds are approximately 1 in 158 million hands.
                                     </p>
                                 </div>
                             </section>
