@@ -125,7 +125,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
     if (isBack) {
         return (
             <motion.div
-                className={`${sizeClass} rounded-xl border-2 border-white shadow-md m-[0.25vmax] relative overflow-hidden`}
+                className={`${sizeClass} rounded-xl border-2 border-white shadow-md md:m-[0.25vmax] relative overflow-hidden`}
                 style={{
                     background: `
                         repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
@@ -145,7 +145,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal' })
 
     return (
         <motion.div
-            className={`${sizeClass} bg-white rounded-xl border-2 shadow-md m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
+            className={`${sizeClass} bg-white rounded-xl border-2 shadow-md md:m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
                 ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : 'border-gray-300 hover:-translate-y-[0.5vmax]'}`}
             onClick={onClick}
             initial={{ scale: 0.8, opacity: 0 }}
