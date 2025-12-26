@@ -5,10 +5,12 @@ import HowToPlay from './HowToPlay';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
+    const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [reconnecting, setReconnecting] = useState(false);
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
+    const [joinableRooms, setJoinableRooms] = useState([]);
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -23,7 +25,36 @@ const Lobby = ({ user, socket, setUser }) => {
 
     const joinRoom = () => {
         if (!roomId) return;
-        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username });
+        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, password: password || undefined });
+        setPassword(''); // Clear password after joining
+    };
+
+    const joinInProgressRoom = (targetRoomId) => {
+        const room = joinableRooms.find(r => r.roomId === targetRoomId);
+        if (!room) return;
+
+        // If room requires password, prompt for it
+        if (room.hasPassword) {
+            const roomPassword = prompt('This room is password protected. Enter password:');
+            if (!roomPassword) return; // User cancelled
+            socket.emit('join_room', { roomId: targetRoomId, username: user.username, password: roomPassword });
+        } else {
+            socket.emit('join_room', { roomId: targetRoomId, username: user.username });
+        }
+    };
+
+    // Fetch joinable rooms on mount and periodically
+    const fetchJoinableRooms = async () => {
+        try {
+            const apiUrl = import.meta.env.PROD ? '/api/rooms/joinable' : 'http://localhost:3000/api/rooms/joinable';
+            const response = await fetch(apiUrl);
+            if (response.ok) {
+                const rooms = await response.json();
+                setJoinableRooms(rooms);
+            }
+        } catch (error) {
+            console.error('Error fetching joinable rooms:', error);
+        }
     };
 
     // Attempt to reconnect to an existing game on mount
@@ -85,12 +116,17 @@ const Lobby = ({ user, socket, setUser }) => {
             attemptReconnect();
         }
 
+        // Fetch joinable rooms initially and every 5 seconds
+        fetchJoinableRooms();
+        const interval = setInterval(fetchJoinableRooms, 5000);
+
         return () => {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
             socket.off('joined_room');
             socket.off('reconnected');
             socket.off('error');
+            clearInterval(interval);
         };
     }, [socket, navigate, user?.username]);
 
@@ -140,18 +176,61 @@ const Lobby = ({ user, socket, setUser }) => {
                         <div className="flex-grow border-t border-gray-300"></div>
                     </div>
 
-                    <div className="flex space-x-2">
+                    <div className="space-y-2">
+                        <div className="flex space-x-2">
+                            <input
+                                type="text"
+                                placeholder="Enter Room Code"
+                                className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
+                                value={roomId}
+                                onChange={e => setRoomId(e.target.value)}
+                            />
+                            <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
+                                Join
+                            </button>
+                        </div>
                         <input
-                            type="text"
-                            placeholder="Enter Room Code"
-                            className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
-                            value={roomId}
-                            onChange={e => setRoomId(e.target.value)}
+                            type="password"
+                            placeholder="Password (if required)"
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
                         />
-                        <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
-                            Join
-                        </button>
                     </div>
+
+                    {joinableRooms.length > 0 && (
+                        <>
+                            <div className="relative flex py-2 items-center">
+                                <div className="flex-grow border-t border-gray-300"></div>
+                                <span className="flex-shrink mx-4 text-gray-400 text-sm">Join In-Progress Game</span>
+                                <div className="flex-grow border-t border-gray-300"></div>
+                            </div>
+
+                            <div className="max-h-48 overflow-y-auto space-y-2">
+                                {joinableRooms.map(room => (
+                                    <div
+                                        key={room.roomId}
+                                        className="border border-gray-300 rounded p-3 hover:bg-gray-50 cursor-pointer transition"
+                                        onClick={() => joinInProgressRoom(room.roomId)}
+                                    >
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="font-bold text-green-600">{room.roomId}</span>
+                                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                                {room.gameMode === 'short' ? 'Short' : 'Standard'}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-gray-600">
+                                            Round {room.roundNumber} • {room.botCount} bot{room.botCount !== 1 ? 's' : ''} available
+                                            {room.hasPassword && <span className="ml-2 text-orange-600">🔒 Password protected</span>}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            {room.players.filter(p => !p.isBot).map(p => p.name).join(', ')}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
                 {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
             </div>

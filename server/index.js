@@ -39,7 +39,7 @@ const roomManager = new RoomManager();
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  socket.on('join_room', async ({ roomId, username }) => {
+  socket.on('join_room', async ({ roomId, username, password }) => {
     console.log(`join_room event received: roomId=${roomId}, username=${username}`);
 
     // Fetch user stats to get rating
@@ -162,6 +162,56 @@ io.on('connection', (socket) => {
         socket,
         rating: displayRating
     };
+
+    // Verify password if room exists and is private
+    if (finalTargetRoom && finalTargetRoom.isPrivate) {
+        if (!finalTargetRoom.verifyPassword(password)) {
+            console.log(`Password verification failed for room ${targetRoomId}`);
+            socket.emit('error', 'Incorrect password');
+            return;
+        }
+    }
+
+    // Check if room is in-progress and has bots to replace
+    if (finalTargetRoom && (finalTargetRoom.gameState === 'playing' || finalTargetRoom.gameState === 'round_over') && finalTargetRoom.hasReplacableBots()) {
+        console.log(`Room ${targetRoomId} is in-progress. Attempting to replace a bot with ${username}`);
+        const replaceResult = finalTargetRoom.replaceBot(player);
+
+        if (replaceResult.error) {
+            socket.emit('error', replaceResult.error);
+            return;
+        }
+
+        socket.join(targetRoomId);
+        const room = finalTargetRoom;
+
+        console.log(`Successfully replaced bot ${replaceResult.oldBot.name} with ${username}`);
+
+        // Send the player's hand (from the bot)
+        if (replaceResult.humanPlayer.hand) {
+            socket.emit('hand_update', replaceResult.humanPlayer.hand);
+        }
+
+        // Send joined confirmation
+        socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
+
+        // Notify everyone in room about the replacement
+        io.to(targetRoomId).emit('room_update', room.getGameState());
+        io.to(targetRoomId).emit('player_joined_in_progress', {
+            playerName: username,
+            replacedBot: replaceResult.oldBot.name
+        });
+
+        // If it was the bot's turn and now it's the human's turn, don't process bot turn
+        if (replaceResult.wasCurrentTurn && room.gameState === 'playing') {
+            console.log(`It's now ${username}'s turn after replacing bot`);
+        } else if (room.gameState === 'playing') {
+            // Check if current player is still a bot and trigger bot turn processing
+            processBotTurns(room, targetRoomId);
+        }
+
+        return;
+    }
 
     const result = roomManager.joinRoom(targetRoomId, player);
     console.log(`Join result:`, result.error || 'success');
@@ -686,13 +736,42 @@ io.on('connection', (socket) => {
       }
   });
 
+  socket.on('set_privacy', ({ isPrivate, password }) => {
+      const result = roomManager.findRoomBySocketId(socket.id);
+      if (!result) {
+          return socket.emit('error', 'Not in a room');
+      }
+
+      const { room, roomId, player } = result;
+
+      // Verify that the requesting player is the host
+      if (!player || player.name !== room.hostUsername) {
+          return socket.emit('error', 'Only the room host can change privacy settings');
+      }
+
+      const setResult = room.setPrivacy(isPrivate, password, player.name);
+      if (setResult.error) {
+          return socket.emit('error', setResult.error);
+      }
+
+      console.log(`Room ${roomId} privacy set to ${isPrivate ? 'private' : 'public'}`);
+
+      // Notify all players in the room
+      io.to(roomId).emit('room_update', room.getGameState());
+  });
+
   socket.on('set_game_mode', async ({ gameMode }) => {
       const result = roomManager.findRoomBySocketId(socket.id);
       if (!result) {
           return socket.emit('error', 'Not in a room');
       }
 
-      const { room, roomId } = result;
+      const { room, roomId, player } = result;
+
+      // Verify that the requesting player is the host
+      if (!player || player.name !== room.hostUsername) {
+          return socket.emit('error', 'Only the room host can change the game mode');
+      }
 
       // Only allow changing mode in waiting state
       const setResult = room.setGameMode(gameMode);
@@ -721,6 +800,13 @@ io.on('connection', (socket) => {
   socket.on('start_game', ({ roomId, useAdvancedBots }) => {
       const room = roomManager.getRoom(roomId);
       if (room) {
+          // Verify that the requesting player is the host
+          const player = room.players.find(p => p.id === socket.id);
+          if (!player || player.name !== room.hostUsername) {
+              socket.emit('error', 'Only the room host can start the game');
+              return;
+          }
+
           room.startGame(useAdvancedBots);
 
           // Check if dragon was dealt (Hong Kong variation)
@@ -1026,6 +1112,17 @@ app.get('/api/stats/:username/tier3', async (req, res) => {
         res.json(tier3Stats);
     } catch (err) {
         console.error('Error fetching Tier 3 stats:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get joinable rooms (rooms in-progress with bots)
+app.get('/api/rooms/joinable', (_req, res) => {
+    try {
+        const joinableRooms = roomManager.getJoinableRooms();
+        res.json(joinableRooms);
+    } catch (err) {
+        console.error('Error fetching joinable rooms:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });

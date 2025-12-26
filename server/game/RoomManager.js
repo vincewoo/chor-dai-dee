@@ -34,6 +34,8 @@ class Room {
         this.turnNumber = 0; // Track turn number within each round for decision tracking
         this.tier3DecisionTracking = {}; // Track Tier 3 decision data per player
         this.playOrder = 0; // Incrementing counter for z-index stacking order
+        this.isPrivate = false; // Whether room is private (prevents random joins)
+        this.password = null; // Room password for private rooms
     }
 
     addPlayer(player) {
@@ -247,6 +249,89 @@ class Room {
         return this.players.length > 0 && this.players.every(p => p.isBot);
     }
 
+    // Check if room has any bots that can be replaced
+    hasReplacableBots() {
+        return this.players.some(p => p.isBot);
+    }
+
+    // Replace a bot with a human player
+    replaceBot(newPlayer) {
+        // Find the first bot in the players array
+        const botIndex = this.players.findIndex(p => p.isBot);
+        if (botIndex === -1) return { error: 'No bots available to replace' };
+
+        const oldBot = this.players[botIndex];
+        const botId = oldBot.id;
+
+        // Create human player with bot's hand
+        const humanPlayer = {
+            id: newPlayer.id,
+            name: newPlayer.name,
+            socket: newPlayer.socket,
+            rating: newPlayer.rating,
+            hand: oldBot.hand, // Transfer the bot's hand to the human
+            isBot: false,
+            isDisconnected: false
+        };
+
+        // Replace the bot in the array
+        this.players[botIndex] = humanPlayer;
+
+        // Update all references from bot ID to human player ID
+        if (this.cumulativeScores[botId] !== undefined) {
+            this.cumulativeScores[newPlayer.id] = this.cumulativeScores[botId];
+            delete this.cumulativeScores[botId];
+        }
+
+        if (this.playerLastPlayed[botId]) {
+            this.playerLastPlayed[newPlayer.id] = this.playerLastPlayed[botId];
+            this.playerLastPlayed[newPlayer.id].playerId = newPlayer.id;
+            delete this.playerLastPlayed[botId];
+        }
+
+        if (this.passedPlayers.has(botId)) {
+            this.passedPlayers.delete(botId);
+            this.passedPlayers.add(newPlayer.id);
+        }
+
+        if (this.lastPlayedHand && this.lastPlayedHand.playerId === botId) {
+            this.lastPlayedHand.playerId = newPlayer.id;
+        }
+
+        if (this.lastRoundWinnerId === botId) {
+            this.lastRoundWinnerId = newPlayer.id;
+        }
+
+        // Update round play stats
+        if (this.roundPlayStats && this.roundPlayStats[botId]) {
+            this.roundPlayStats[newPlayer.id] = this.roundPlayStats[botId];
+            delete this.roundPlayStats[botId];
+        }
+
+        // Initialize tier3 decision tracking for the new human player
+        if (this.tier3DecisionTracking && this.tier3DecisionTracking[botId]) {
+            // Don't transfer bot decision tracking to human
+            delete this.tier3DecisionTracking[botId];
+        }
+
+        // Add to playersByUsername for reconnection tracking
+        this.playersByUsername[newPlayer.name] = humanPlayer;
+
+        // Set host if there's none
+        if (!this.hostUsername) {
+            this.hostUsername = newPlayer.name;
+            console.log(`Room ${this.id}: ${newPlayer.name} is now the host (replaced bot)`);
+        }
+
+        console.log(`Replaced bot ${oldBot.name} with human player ${newPlayer.name} at index ${botIndex}`);
+        return {
+            success: true,
+            humanPlayer,
+            oldBot,
+            wasCurrentTurn: this.currentTurnIndex === botIndex
+        };
+    }
+
     // Get disconnected player by socket ID
     getDisconnectedPlayer(socketId) {
         return this.players.find(p => p.id === socketId && p.isDisconnected);
@@ -411,6 +496,28 @@ class Room {
         this.gameMode = gameMode;
         this.pointThreshold = getPointThreshold(gameMode);
         return { success: true };
+    }
+
+    setPrivacy(isPrivate, password, requesterUsername) {
+        // Only host can change privacy
+        if (requesterUsername !== this.hostUsername) {
+            return { error: 'Only the host can change privacy settings' };
+        }
+
+        this.isPrivate = isPrivate;
+        // Set password only if room is private
+        if (isPrivate && password) {
+            this.password = password;
+        } else {
+            this.password = null;
+        }
+        return { success: true };
+    }
+
+    verifyPassword(password) {
+        if (!this.isPrivate) return true; // Public rooms don't need password
+        if (!this.password) return true; // Private room without password
+        return this.password === password;
     }
 
     getGameWinner() {
@@ -784,7 +891,9 @@ class Room {
             cumulativeScores: this.cumulativeScores,
             debugMode: this.debugMode,
             gameMode: this.gameMode,
-            pointThreshold: this.pointThreshold
+            pointThreshold: this.pointThreshold,
+            isPrivate: this.isPrivate,
+            hasPassword: !!this.password
         };
     }
 
@@ -842,6 +951,29 @@ class RoomManager {
             }
         }
         return null;
+    }
+
+    // Get all rooms that can be joined (have bots and are in progress, not private)
+    getJoinableRooms() {
+        const joinableRooms = [];
+        for (const [roomId, room] of this.rooms) {
+            if (!room.isPrivate && room.hasReplacableBots() && (room.gameState === 'playing' || room.gameState === 'round_over')) {
+                joinableRooms.push({
+                    roomId,
+                    gameState: room.gameState,
+                    playerCount: room.players.length,
+                    botCount: room.players.filter(p => p.isBot).length,
+                    roundNumber: room.roundNumber,
+                    gameMode: room.gameMode,
+                    players: room.players.map(p => ({
+                        name: p.name,
+                        isBot: p.isBot,
+                        rating: p.rating
+                    }))
+                });
+            }
+        }
+        return joinableRooms;
     }
 }
 

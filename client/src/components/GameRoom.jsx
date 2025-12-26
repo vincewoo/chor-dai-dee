@@ -588,6 +588,11 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setNotification(null), 3000);
         });
 
+        socket.on('player_joined_in_progress', ({ playerName, replacedBot }) => {
+            setNotification({ type: 'success', message: `${playerName} joined and replaced ${replacedBot}!` });
+            setTimeout(() => setNotification(null), 3000);
+        });
+
         return () => {
             clearTimeout(roomLoadTimeout); // Clean up timeout on unmount
             socket.off('room_update');
@@ -600,6 +605,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('error');
             socket.off('player_disconnected');
             socket.off('player_reconnected');
+            socket.off('player_joined_in_progress');
             socket.off('reconnected', handleReconnect);
             socket.off('joined_room');
         };
@@ -1071,7 +1077,8 @@ const GameRoom = ({ user, socket }) => {
                         <div className="text-sm md:text-[1vmax] text-green-300 mb-3 md:mb-[0.75vmax] text-center">Game Mode</div>
                         <div className="flex flex-col md:flex-row gap-3 md:gap-[1vmax] md:justify-center">
                             {Object.values(GAME_MODES).map(mode => {
-                                const isHost = gameState.players[0]?.id === myPlayerId;
+                                const hostPlayer = gameState.players.find(p => p.name === gameState.hostUsername);
+                                const isHost = hostPlayer?.id === myPlayerId;
                                 const isSelected = gameState.gameMode === mode.id;
                                 return (
                                     <button
@@ -1092,16 +1099,78 @@ const GameRoom = ({ user, socket }) => {
                                 );
                             })}
                         </div>
-                        {gameState.players[0]?.id !== myPlayerId && (
-                            <div className="text-sm md:text-[0.8vmax] text-yellow-300 mt-3 md:mt-[0.5vmax] text-center">
-                                Only the room host can change the game mode
-                            </div>
-                        )}
+                        {(() => {
+                            const hostPlayer = gameState.players.find(p => p.name === gameState.hostUsername);
+                            return hostPlayer?.id !== myPlayerId && (
+                                <div className="text-sm md:text-[0.8vmax] text-yellow-300 mt-3 md:mt-[0.5vmax] text-center">
+                                    Only the room host can change the game mode
+                                </div>
+                            );
+                        })()}
                     </div>
 
-                    <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 md:px-[2vmax] md:py-[0.75vmax] rounded-full font-bold text-lg md:text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-4 md:mb-[1vmax]">
-                        Start Game (Fill with Bots)
-                    </button>
+                    {/* Room Privacy Settings - Only host can change */}
+                    {(() => {
+                        const hostPlayer = gameState.players.find(p => p.name === gameState.hostUsername);
+                        const isHost = hostPlayer?.id === myPlayerId;
+                        return isHost && (
+                            <div className="mb-6 md:mb-[2vmax] w-full max-w-2xl">
+                                <div className="text-sm md:text-[1vmax] text-green-300 mb-3 md:mb-[0.75vmax] text-center">Room Privacy</div>
+                                <div className="flex flex-col md:flex-row gap-3 md:gap-[1vmax] md:justify-center">
+                                    <button
+                                        onClick={() => {
+                                            if (!gameState.isPrivate) {
+                                                const password = prompt('Set a password for the room (optional, leave empty for no password):');
+                                                socket.emit('set_privacy', { isPrivate: true, password: password || undefined });
+                                            } else {
+                                                socket.emit('set_privacy', { isPrivate: false, password: undefined });
+                                            }
+                                        }}
+                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
+                                            !gameState.isPrivate
+                                                ? 'bg-green-500 text-white shadow-lg'
+                                                : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
+                                        }`}
+                                    >
+                                        <div className="font-bold">Public Room</div>
+                                        <div className="text-sm md:text-[0.7vmax] opacity-80">Anyone can join</div>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (!gameState.isPrivate) {
+                                                const password = prompt('Set a password for the room (optional, leave empty for no password):');
+                                                socket.emit('set_privacy', { isPrivate: true, password: password || undefined });
+                                            } else {
+                                                socket.emit('set_privacy', { isPrivate: false, password: undefined });
+                                            }
+                                        }}
+                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
+                                            gameState.isPrivate
+                                                ? 'bg-orange-500 text-white shadow-lg'
+                                                : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
+                                        }`}
+                                    >
+                                        <div className="font-bold">Private Room {gameState.hasPassword && '🔒'}</div>
+                                        <div className="text-sm md:text-[0.7vmax] opacity-80">Only by room code</div>
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {(() => {
+                        const hostPlayer = gameState.players.find(p => p.name === gameState.hostUsername);
+                        const isHost = hostPlayer?.id === myPlayerId;
+                        return isHost ? (
+                            <button onClick={startGame} className="bg-yellow-500 text-black px-8 py-3 md:px-[2vmax] md:py-[0.75vmax] rounded-full font-bold text-lg md:text-[1.2vmax] hover:bg-yellow-400 shadow-lg transform transition hover:scale-105 mb-4 md:mb-[1vmax]">
+                                Start Game (Fill with Bots)
+                            </button>
+                        ) : (
+                            <div className="text-sm md:text-[0.8vmax] text-yellow-300 mb-4 md:mb-[1vmax] text-center">
+                                Waiting for host to start the game...
+                            </div>
+                        );
+                    })()}
                     <button onClick={handleLeaveClick} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax]">
                         Leave Room
                     </button>
