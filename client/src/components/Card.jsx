@@ -108,7 +108,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
         small: 'w-[18px] h-[26px] md:w-[3vmax] md:h-[4.5vmax]',
         normal: 'w-[32px] h-[48px] md:w-[4vmax] md:h-[6vmax]',
         large: 'w-[62px] h-[93px] md:w-[5vmax] md:h-[7.5vmax]',
-        xlarge: 'w-[67px] h-[105px] md:w-[5.5vmax] md:h-[8.25vmax]'
+        xlarge: 'w-[64px] h-[98px] md:w-[5.5vmax] md:h-[8.25vmax]'
     };
 
     const fontSizes = {
