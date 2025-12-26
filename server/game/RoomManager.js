@@ -66,7 +66,19 @@ class Room {
         const oldId = existingPlayer.id;
         console.log(`Reconnecting ${username}: old ID=${oldId}, new ID=${newSocketId}, hand size=${existingPlayer.hand ? existingPlayer.hand.length : 0}`);
 
-        // Update player's socket info
+        // Find the player in the players array first
+        const playerIndex = this.players.findIndex(p => p.name === username && !p.isBot);
+        if (playerIndex === -1) {
+            console.error(`ERROR: Player ${username} not found in players array during reconnect!`);
+            return null;
+        }
+
+        // Update player's socket info directly in the array to ensure consistency
+        this.players[playerIndex].id = newSocketId;
+        this.players[playerIndex].socket = newSocket;
+        this.players[playerIndex].isDisconnected = false;
+
+        // Also update the reference (should be the same object, but being explicit)
         existingPlayer.id = newSocketId;
         existingPlayer.socket = newSocket;
         existingPlayer.isDisconnected = false;
@@ -96,14 +108,26 @@ class Room {
             this.lastRoundWinnerId = newSocketId;
         }
 
+        // Update tier3 decision tracking
+        if (this.tier3DecisionTracking && this.tier3DecisionTracking[oldId]) {
+            this.tier3DecisionTracking[newSocketId] = this.tier3DecisionTracking[oldId];
+            delete this.tier3DecisionTracking[oldId];
+        }
+
+        // Update round play stats
+        if (this.roundPlayStats && this.roundPlayStats[oldId]) {
+            this.roundPlayStats[newSocketId] = this.roundPlayStats[oldId];
+            delete this.roundPlayStats[oldId];
+        }
+
         // Update playersByUsername reference
-        this.playersByUsername[username] = existingPlayer;
+        this.playersByUsername[username] = this.players[playerIndex];
 
         // Verify the player in the players array was updated
         const playerInArray = this.players.find(p => p.id === newSocketId);
         console.log(`After reconnect - player in array: ${playerInArray ? 'found' : 'NOT FOUND'}, hand: ${playerInArray?.hand?.length || 0} cards`);
 
-        return existingPlayer;
+        return this.players[playerIndex];
     }
 
     // Mark a player as disconnected

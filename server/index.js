@@ -43,10 +43,11 @@ io.on('connection', (socket) => {
     console.log(`join_room event received: roomId=${roomId}, username=${username}`);
 
     // Fetch user stats to get rating
+    // Use 'standard' mode as default when joining (mode can change later via set_game_mode)
     let ratingMu, ratingSigma, displayRating;
     if (username) {
         try {
-            const stats = await getUserStats(username);
+            const stats = await getUserStatsByMode(username, 'standard');
             if (stats) {
                 ratingMu = stats.rating_mu;
                 ratingSigma = stats.rating_sigma;
@@ -140,6 +141,19 @@ io.on('connection', (socket) => {
     if (roomId === 'create') {
         targetRoomId = roomManager.createRoom();
         console.log(`Created new room: ${targetRoomId}`);
+    }
+
+    // Final safety check: Verify player doesn't already exist in target room
+    const finalTargetRoom = roomManager.getRoom(targetRoomId);
+    if (finalTargetRoom && username) {
+        const duplicatePlayer = finalTargetRoom.players.find(p => p.name === username && !p.isBot);
+        if (duplicatePlayer) {
+            console.error(`ERROR: Player ${username} already exists in room ${targetRoomId} but was not caught by reconnection logic!`);
+            console.error(`Existing player ID: ${duplicatePlayer.id}, isDisconnected: ${duplicatePlayer.isDisconnected}`);
+            console.error(`Attempting to add with socket ID: ${socket.id}`);
+            socket.emit('error', 'You are already in this room. Please refresh the page.');
+            return;
+        }
     }
 
     const player = {
@@ -672,7 +686,7 @@ io.on('connection', (socket) => {
       }
   });
 
-  socket.on('set_game_mode', ({ gameMode }) => {
+  socket.on('set_game_mode', async ({ gameMode }) => {
       const result = roomManager.findRoomBySocketId(socket.id);
       if (!result) {
           return socket.emit('error', 'Not in a room');
@@ -684,6 +698,20 @@ io.on('connection', (socket) => {
       const setResult = room.setGameMode(gameMode);
       if (setResult.error) {
           return socket.emit('error', setResult.error);
+      }
+
+      // Update all players' ratings for the selected game mode
+      for (const player of room.players) {
+          if (!player.isBot && player.name) {
+              try {
+                  const stats = await getUserStatsByMode(player.name, gameMode);
+                  if (stats) {
+                      player.rating = calculateDisplayRating(stats.rating_mu, stats.rating_sigma);
+                  }
+              } catch (e) {
+                  console.error(`Error updating rating for ${player.name} in mode ${gameMode}:`, e);
+              }
+          }
       }
 
       // Broadcast updated state to all players in room

@@ -370,6 +370,8 @@ const GameRoom = ({ user, socket }) => {
     const { autoPass, toggleAutoPass } = useUserPreferences();
     const handContainerRef = useRef(null);
     const [containerWidth, setContainerWidth] = useState(0);
+    // Track our actual player ID (may differ from socket.id due to reconnection timing)
+    const [myPlayerId, setMyPlayerId] = useState(socket.id);
     // Determine desktop mode for dynamic card spacing
     // Initialize with a safe check for SSR (though this is a client app)
     const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
@@ -495,9 +497,10 @@ const GameRoom = ({ user, socket }) => {
         let wasReconnected = false;
 
         // Handler for reconnection
-        const handleReconnect = ({ roomId: reconnectedRoomId, gameState: reconnectedGameState }) => {
-            console.log(`Reconnected to room ${reconnectedRoomId}`, reconnectedGameState);
+        const handleReconnect = ({ roomId: reconnectedRoomId, playerId, gameState: reconnectedGameState }) => {
+            console.log(`Reconnected to room ${reconnectedRoomId} with playerId ${playerId}`, reconnectedGameState);
             wasReconnected = true;
+            setMyPlayerId(playerId); // Update our player ID
             setGameState(reconnectedGameState);
             clearTimeout(roomLoadTimeout);
             // If we were reconnected to a different room, navigate to it
@@ -510,9 +513,10 @@ const GameRoom = ({ user, socket }) => {
         socket.on('reconnected', handleReconnect);
 
         // Also handle the case where we're already in the room (fast refresh)
-        socket.on('joined_room', ({ roomId: joinedRoomId }) => {
-            console.log(`Joined room ${joinedRoomId} (fast reconnect)`);
+        socket.on('joined_room', ({ roomId: joinedRoomId, playerId }) => {
+            console.log(`Joined room ${joinedRoomId} (fast reconnect) with playerId ${playerId}`);
             wasReconnected = true;
+            if (playerId) setMyPlayerId(playerId); // Update our player ID
             clearTimeout(roomLoadTimeout);
             // Don't need to set game state here, room_update will handle it
         });
@@ -605,7 +609,7 @@ const GameRoom = ({ user, socket }) => {
     useEffect(() => {
         if (!autoPass || !gameState || gameState.gameState !== 'playing') return;
 
-        const isMyTurn = gameState.currentTurn === socket.id;
+        const isMyTurn = gameState.currentTurn === myPlayerId;
         const hasLastPlayedHand = !!gameState.lastPlayedHand;
 
         // Only auto-pass if it's our turn and there's a hand to beat
@@ -628,7 +632,7 @@ const GameRoom = ({ user, socket }) => {
         if (!isMyTurn) {
             autoPassTriggered.current = false;
         }
-    }, [autoPass, gameState, myHand, socket, roomId]);
+    }, [autoPass, gameState, myHand, myPlayerId, socket, roomId]);
 
     const startGame = () => {
         socket.emit('start_game', { roomId });
@@ -874,8 +878,8 @@ const GameRoom = ({ user, socket }) => {
         </div>
     );
 
-    const myIndex = gameState?.players ? gameState.players.findIndex(p => p.id === socket.id) : -1;
-    const isMyTurn = gameState.currentTurn === socket.id;
+    const myIndex = gameState?.players ? gameState.players.findIndex(p => p.id === myPlayerId) : -1;
+    const isMyTurn = gameState.currentTurn === myPlayerId;
 
     // Helper to get relative player positions (Bottom=0, Right=1, Top=2, Left=3)
     const getRelativePlayer = (offset) => {
@@ -926,7 +930,7 @@ const GameRoom = ({ user, socket }) => {
                         .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
                         .map(p => (
                         <div key={p.id} className="flex justify-between gap-4 md:gap-[1vmax]">
-                            <span className={p.id === socket.id ? 'text-yellow-300' : ''}>{p.name}</span>
+                            <span className={p.id === myPlayerId ? 'text-yellow-300' : ''}>{p.name}</span>
                             <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
                                 {p.cumulativeScore}
                             </span>
@@ -1067,7 +1071,7 @@ const GameRoom = ({ user, socket }) => {
                         <div className="text-sm md:text-[1vmax] text-green-300 mb-3 md:mb-[0.75vmax] text-center">Game Mode</div>
                         <div className="flex flex-col md:flex-row gap-3 md:gap-[1vmax] md:justify-center">
                             {Object.values(GAME_MODES).map(mode => {
-                                const isHost = gameState.players[0]?.id === socket.id;
+                                const isHost = gameState.players[0]?.id === myPlayerId;
                                 const isSelected = gameState.gameMode === mode.id;
                                 return (
                                     <button
@@ -1088,7 +1092,7 @@ const GameRoom = ({ user, socket }) => {
                                 );
                             })}
                         </div>
-                        {gameState.players[0]?.id !== socket.id && (
+                        {gameState.players[0]?.id !== myPlayerId && (
                             <div className="text-sm md:text-[0.8vmax] text-yellow-300 mt-3 md:mt-[0.5vmax] text-center">
                                 Only the room host can change the game mode
                             </div>
@@ -1130,7 +1134,7 @@ const GameRoom = ({ user, socket }) => {
                 position="top"
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(2))}
                 playerName={getRelativePlayer(2)?.name}
-                isMe={getRelativePlayer(2)?.id === socket?.id}
+                isMe={getRelativePlayer(2)?.id === myPlayerId}
                 hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
             <PlayedCards
@@ -1138,7 +1142,7 @@ const GameRoom = ({ user, socket }) => {
                 position="left"
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(3))}
                 playerName={getRelativePlayer(3)?.name}
-                isMe={getRelativePlayer(3)?.id === socket?.id}
+                isMe={getRelativePlayer(3)?.id === myPlayerId}
                 hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
             <PlayedCards
@@ -1146,7 +1150,7 @@ const GameRoom = ({ user, socket }) => {
                 position="right"
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(1))}
                 playerName={getRelativePlayer(1)?.name}
-                isMe={getRelativePlayer(1)?.id === socket?.id}
+                isMe={getRelativePlayer(1)?.id === myPlayerId}
                 hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
             <PlayedCards
