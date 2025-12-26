@@ -63,6 +63,84 @@ io.on('connection', (socket) => {
         displayRating = calculateDisplayRating(undefined, undefined);
     }
 
+    // OPTION 2: Auto-leave any previous rooms before joining a new one
+    // Find all rooms this username is currently in
+    const existingRooms = roomManager.findAllRoomsByUsername(username);
+
+    // Determine the target room ID early to check if it's a different room
+    let targetRoomId = roomId;
+    if (roomId === 'create') {
+        targetRoomId = roomManager.createRoom();
+        console.log(`Created new room: ${targetRoomId}`);
+    }
+
+    // If player is in other rooms (not the target room), leave them
+    for (const { roomId: existingRoomId, room: existingRoom, player: existingPlayer } of existingRooms) {
+        if (existingRoomId !== targetRoomId) {
+            console.log(`${username} is already in room ${existingRoomId}, leaving it to join ${targetRoomId}`);
+
+            // Handle leaving based on game state
+            if (existingRoom.gameState === 'waiting') {
+                // Just remove the player during waiting
+                existingRoom.players = existingRoom.players.filter(p => p.id !== existingPlayer.id);
+
+                // Remove from reconnection tracking
+                if (existingRoom.playersByUsername[username]) {
+                    delete existingRoom.playersByUsername[username];
+                }
+
+                // Transfer host if needed
+                if (existingRoom.hostUsername === username) {
+                    const newHost = existingRoom.players.find(p => !p.isBot);
+                    existingRoom.hostUsername = newHost ? newHost.name : null;
+                    if (newHost) {
+                        console.log(`Room ${existingRoomId}: Host transferred to ${newHost.name}`);
+                    }
+                }
+
+                // Notify others in the old room
+                io.to(existingRoomId).emit('room_update', existingRoom.getGameState());
+                io.to(existingRoomId).emit('player_left', { playerName: username });
+
+                // Leave the socket room
+                socket.leave(existingRoomId);
+
+                // Delete room if empty
+                if (existingRoom.players.length === 0) {
+                    roomManager.deleteRoom(existingRoomId);
+                    console.log(`Room ${existingRoomId} deleted (empty after ${username} left)`);
+                }
+            } else {
+                // Game in progress - replace with bot
+                const replacement = existingRoom.replaceWithBot(existingPlayer.id);
+                socket.leave(existingRoomId);
+
+                if (replacement) {
+                    console.log(`${username} left room ${existingRoomId} (game in progress) and was replaced by ${replacement.botPlayer.name}`);
+
+                    // Check if room now has only bots
+                    if (existingRoom.hasOnlyBots()) {
+                        console.log(`Room ${existingRoomId} now has only bots, deleting room`);
+                        roomManager.deleteRoom(existingRoomId);
+                    } else {
+                        // Notify others in the old room
+                        io.to(existingRoomId).emit('room_update', existingRoom.getGameState());
+                        io.to(existingRoomId).emit('player_left', {
+                            playerName: username,
+                            replacedWithBot: true,
+                            botName: replacement.botPlayer.name
+                        });
+
+                        // If it was their turn, trigger bot to play
+                        if (replacement.wasCurrentTurn && existingRoom.gameState === 'playing') {
+                            processBotTurns(existingRoom, existingRoomId);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Check if user is already in a room (either disconnected or still connected)
     const reconnectInfo = roomManager.findRoomForReconnect(username);
     if (reconnectInfo) {
@@ -136,12 +214,7 @@ io.on('connection', (socket) => {
         }
     }
 
-    // Normal join flow
-    let targetRoomId = roomId;
-    if (roomId === 'create') {
-        targetRoomId = roomManager.createRoom();
-        console.log(`Created new room: ${targetRoomId}`);
-    }
+    // Normal join flow (targetRoomId already set above)
 
     // Final safety check: Verify player doesn't already exist in target room
     const finalTargetRoom = roomManager.getRoom(targetRoomId);
@@ -194,6 +267,13 @@ io.on('connection', (socket) => {
 
         // Send joined confirmation
         socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
+
+        // Notify the joining player that stats won't be recorded for mid-game joins
+        socket.emit('mid_game_join_info', {
+            message: 'You joined mid-game. Stats will not be recorded for this game.',
+            joinedAtRound: replaceResult.humanPlayer.joinedAtRound,
+            inheritedScore: replaceResult.humanPlayer.joinedWithScore
+        });
 
         // Notify everyone in room about the replacement
         io.to(targetRoomId).emit('room_update', room.getGameState());
@@ -255,8 +335,9 @@ io.on('connection', (socket) => {
       });
 
       // Handle rating updates similar to game_over (fetch stats, calculate new ratings, update DB)
+      // Exclude mid-game joiners from rating calculations (treat as bots)
       const playersWithStats = await Promise.all(room.players.map(async (p) => {
-          if (p.isBot) return { ...p };
+          if (p.isBot || p.joinedMidGame) return { ...p, isBot: true }; // Treat mid-game joiners as bots for rating calc
           try {
               const stats = await getUserStatsByMode(p.name, room.gameMode);
               return {
@@ -276,12 +357,16 @@ io.on('connection', (socket) => {
           return 4; // All losers get worst placement
       });
 
-      // Update ratings for all human players
+      // Update ratings for all human players (excluding mid-game joiners)
       const newRatings = calculateNewRatings(playersWithStats, placements);
 
       for (let i = 0; i < room.players.length; i++) {
           const player = room.players[i];
-          if (!player.isBot && newRatings[i]) {
+          // Skip bots and mid-game joiners (no stats recorded for mid-game joiners)
+          if (player.joinedMidGame) {
+              console.log(`Dragon win: Skipping stats for ${player.name} (joined mid-game at round ${player.joinedAtRound})`);
+          }
+          if (!player.isBot && !player.joinedMidGame && newRatings[i]) {
               try {
                   const user = await getUserByUsername(player.name);
                   if (user) {
@@ -392,8 +477,9 @@ io.on('connection', (socket) => {
 
           // 1. Fetch current ratings for all humans (mode-specific)
           // We need to fetch stats to get current mu/sigma
+          // Exclude mid-game joiners from rating calculations (treat as bots)
           const playersWithStats = await Promise.all(room.players.map(async (p) => {
-            if (p.isBot) return { ...p };
+            if (p.isBot || p.joinedMidGame) return { ...p, isBot: true }; // Treat mid-game joiners as bots for rating calc
             try {
                 const stats = await getUserStatsByMode(p.name, room.gameMode);
                 return {
@@ -407,7 +493,7 @@ io.on('connection', (socket) => {
             }
           }));
 
-          // 2. Calculate new ratings
+          // 2. Calculate new ratings (mid-game joiners excluded from rating calculation)
           const newRatings = calculateNewRatings(playersWithStats, room.cumulativeScores);
 
           // Map new ratings by name for easy lookup
@@ -429,7 +515,11 @@ io.on('connection', (socket) => {
 
           // 3. Update DB for human players (final game results + ratings + aggregate stats, mode-specific)
           for (const p of room.players) {
-              if (!p.isBot) {
+              // Skip bots and mid-game joiners (no stats recorded for mid-game joiners)
+              if (p.joinedMidGame) {
+                  console.log(`Skipping stats for ${p.name} (joined mid-game at round ${p.joinedAtRound} with score ${p.joinedWithScore})`);
+              }
+              if (!p.isBot && !p.joinedMidGame) {
                   try {
                       const isWinner = p.id === gameWinner.id;
                       const totalScore = room.cumulativeScores[p.id] || 0;
@@ -890,6 +980,56 @@ io.on('connection', (socket) => {
       }
   });
 
+  socket.on('kick_player', ({ roomId, kickedPlayerId }) => {
+    console.log(`Kick player request: roomId=${roomId}, kickedPlayerId=${kickedPlayerId}, requester=${socket.id}`);
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      socket.emit('error', 'Room not found');
+      return;
+    }
+
+    const requester = room.players.find(p => p.id === socket.id);
+    if (!requester) {
+      socket.emit('error', 'You are not in this room');
+      return;
+    }
+
+    const result = room.kickPlayer(kickedPlayerId, requester.name);
+    if (result.error) {
+      socket.emit('error', result.error);
+      return;
+    }
+
+    // Notify the kicked player
+    const kickedSocket = io.sockets.sockets.get(kickedPlayerId);
+    if (kickedSocket) {
+      kickedSocket.emit('kicked_from_room', {
+        roomId: roomId,
+        message: `You have been kicked from the room by the host`
+      });
+      kickedSocket.leave(roomId);
+    }
+
+    // Notify all players in the room
+    if (result.replacedWithBot) {
+      io.to(roomId).emit('player_kicked', {
+        playerName: result.kickedPlayer.name,
+        replacedWithBot: true,
+        botName: result.botPlayer.name
+      });
+    } else {
+      io.to(roomId).emit('player_kicked', {
+        playerName: result.kickedPlayer.name,
+        replacedWithBot: false
+      });
+    }
+
+    // Send updated room state
+    io.to(roomId).emit('room_update', room.getGameState());
+    console.log(`Player ${result.kickedPlayer.name} was kicked from room ${roomId}`);
+  });
+
   socket.on('leave_room', ({ roomId }) => {
     console.log(`User ${socket.id} leaving room ${roomId}`);
 
@@ -1177,6 +1317,18 @@ const HOST = '0.0.0.0'; // Listen on all interfaces for Docker
 server.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);
 });
+
+// Periodic cleanup of inactive rooms
+// Runs every 5 minutes
+const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+setInterval(() => {
+  const deletedCount = roomManager.cleanupInactiveRooms();
+  if (deletedCount > 0) {
+    console.log(`[Cleanup] Removed ${deletedCount} inactive room(s)`);
+  }
+}, CLEANUP_INTERVAL);
+
+console.log(`[Cleanup] Automatic room cleanup enabled (every ${CLEANUP_INTERVAL / 60000} minutes)`);
 
 // Error handlers to catch crashes
 process.on('uncaughtException', (error) => {

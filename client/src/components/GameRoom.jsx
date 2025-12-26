@@ -213,7 +213,7 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 };
 
 // Top Player Area - cards horizontal on left, avatar on right
-const TopPlayerArea = ({ player, isTurn }) => {
+const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -242,12 +242,17 @@ const TopPlayerArea = ({ player, isTurn }) => {
                 </div>
                 {/* Avatar */}
                 <div className="flex flex-col items-center shrink-0 relative">
-                    <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                    <div
+                        className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
+                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
+                        ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
+                        onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
+                        title={isClickable ? 'Click to kick player' : ''}
+                    >
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
                     {isDisconnected && (
-                        <div className="absolute -top-[0.5vmax] -right-[0.5vmax] bg-red-500 text-white text-[0.6vmax] px-[0.3vmax] rounded">
+                        <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
                             DC
                         </div>
                     )}
@@ -264,7 +269,7 @@ const TopPlayerArea = ({ player, isTurn }) => {
 };
 
 // Left Player Area - cards vertical (rotated 90°), avatar at top
-const LeftPlayerArea = ({ player, isTurn }) => {
+const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -275,12 +280,17 @@ const LeftPlayerArea = ({ player, isTurn }) => {
             <div className={`absolute left-[2px] md:left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
                 <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                    <div
+                        className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
+                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
+                        ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
+                        onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
+                        title={isClickable ? 'Click to kick player' : ''}
+                    >
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
                     {isDisconnected && (
-                        <div className="absolute -top-[0.5vmax] -right-[0.5vmax] bg-red-500 text-white text-[0.6vmax] px-[0.3vmax] rounded">
+                        <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
                             DC
                         </div>
                     )}
@@ -314,7 +324,7 @@ const LeftPlayerArea = ({ player, isTurn }) => {
 };
 
 // Right Player Area - cards vertical (rotated 90°), avatar at top
-const RightPlayerArea = ({ player, isTurn }) => {
+const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -325,12 +335,17 @@ const RightPlayerArea = ({ player, isTurn }) => {
             <div className={`absolute right-[2px] md:right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
                 <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <div className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}`}>
+                    <div
+                        className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
+                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
+                        ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
+                        onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
+                        title={isClickable ? 'Click to kick player' : ''}
+                    >
                         {player.name.substring(0, 2).toUpperCase()}
                     </div>
                     {isDisconnected && (
-                        <div className="absolute -top-[0.5vmax] -right-[0.5vmax] bg-red-500 text-white text-[0.6vmax] px-[0.3vmax] rounded">
+                        <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
                             DC
                         </div>
                     )}
@@ -429,6 +444,8 @@ const GameRoom = ({ user, socket }) => {
     const [customHandOrder, setCustomHandOrder] = useState(null); // Store custom card order
     const [showSettings, setShowSettings] = useState(false); // Settings modal
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // Leave confirmation modal
+    const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
+    const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -593,6 +610,29 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setNotification(null), 3000);
         });
 
+        socket.on('player_kicked', ({ playerName, replacedWithBot, botName }) => {
+            const message = replacedWithBot
+                ? `${playerName} was kicked and replaced by ${botName}`
+                : `${playerName} was kicked from the room`;
+            setNotification({ type: 'warning', message });
+            setTimeout(() => setNotification(null), 3000);
+        });
+
+        socket.on('kicked_from_room', ({ message }) => {
+            setNotification({ type: 'warning', message });
+            setTimeout(() => {
+                navigate('/lobby');
+            }, 2000);
+        });
+
+        socket.on('mid_game_join_info', ({ message, joinedAtRound, inheritedScore }) => {
+            setNotification({
+                type: 'info',
+                message: `${message} (Round ${joinedAtRound}, inherited ${inheritedScore} points)`
+            });
+            setTimeout(() => setNotification(null), 5000);
+        });
+
         return () => {
             clearTimeout(roomLoadTimeout); // Clean up timeout on unmount
             socket.off('room_update');
@@ -606,6 +646,9 @@ const GameRoom = ({ user, socket }) => {
             socket.off('player_disconnected');
             socket.off('player_reconnected');
             socket.off('player_joined_in_progress');
+            socket.off('player_kicked');
+            socket.off('kicked_from_room');
+            socket.off('mid_game_join_info');
             socket.off('reconnected', handleReconnect);
             socket.off('joined_room');
         };
@@ -873,6 +916,34 @@ const GameRoom = ({ user, socket }) => {
         setShowLeaveConfirm(false);
     };
 
+    const handlePlayerClick = (player) => {
+        // Only host can kick players
+        const hostPlayer = gameState.players.find(p => p.name === gameState.hostUsername);
+        const isHost = hostPlayer?.id === myPlayerId;
+
+        // Can't kick yourself, bots, or if you're not the host
+        if (!isHost || player.isBot || player.id === myPlayerId) {
+            return;
+        }
+
+        // Show kick confirmation
+        setPlayerToKick(player);
+        setShowKickConfirm(true);
+    };
+
+    const confirmKick = () => {
+        if (playerToKick) {
+            socket.emit('kick_player', { roomId, kickedPlayerId: playerToKick.id });
+        }
+        setShowKickConfirm(false);
+        setPlayerToKick(null);
+    };
+
+    const cancelKick = () => {
+        setShowKickConfirm(false);
+        setPlayerToKick(null);
+    };
+
     if (!gameState) return (
         <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             <img
@@ -893,6 +964,15 @@ const GameRoom = ({ user, socket }) => {
         if (myIndex === -1) return gameState.players[offset]; // Spectator view
         const idx = (myIndex + offset) % 4;
         return gameState.players[idx];
+    };
+
+    // Check if current user is host
+    const hostPlayer = gameState?.players?.find(p => p.name === gameState.hostUsername);
+    const isHost = hostPlayer?.id === myPlayerId;
+
+    // Helper to determine if a player can be kicked
+    const canKickPlayer = (player) => {
+        return isHost && player && !player.isBot && player.id !== myPlayerId;
     };
 
     return (
@@ -1183,18 +1263,24 @@ const GameRoom = ({ user, socket }) => {
             <TopPlayerArea
                 player={getRelativePlayer(2)}
                 isTurn={gameState.currentTurn === getRelativePlayer(2)?.id}
+                onPlayerClick={handlePlayerClick}
+                isClickable={canKickPlayer(getRelativePlayer(2))}
             />
 
             {/* Left Player (Offset 3) */}
             <LeftPlayerArea
                 player={getRelativePlayer(3)}
                 isTurn={gameState.currentTurn === getRelativePlayer(3)?.id}
+                onPlayerClick={handlePlayerClick}
+                isClickable={canKickPlayer(getRelativePlayer(3))}
             />
 
             {/* Right Player (Offset 1) */}
             <RightPlayerArea
                 player={getRelativePlayer(1)}
                 isTurn={gameState.currentTurn === getRelativePlayer(1)?.id}
+                onPlayerClick={handlePlayerClick}
+                isClickable={canKickPlayer(getRelativePlayer(1))}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}
@@ -1512,6 +1598,60 @@ const GameRoom = ({ user, socket }) => {
                                     className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
                                 >
                                     Leave Room
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Kick Player Confirmation Modal */}
+            <AnimatePresence>
+                {showKickConfirm && playerToKick && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-[200] bg-black/80 flex items-center justify-center"
+                        onClick={cancelKick}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white mb-4">Kick Player?</h2>
+
+                            <div className="text-gray-300 mb-6 space-y-2">
+                                <p>
+                                    Are you sure you want to kick <span className="font-bold text-yellow-400">{playerToKick.name}</span>?
+                                </p>
+                                <ul className="list-disc ml-5 space-y-1 mt-3">
+                                    {gameState?.gameState === 'playing' || gameState?.gameState === 'round_over' ? (
+                                        <>
+                                            <li>They will be replaced with a bot</li>
+                                            <li>They will NOT be able to rejoin this game</li>
+                                        </>
+                                    ) : (
+                                        <li>They will be removed from the room</li>
+                                    )}
+                                </ul>
+                            </div>
+
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    onClick={cancelKick}
+                                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmKick}
+                                    className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
+                                >
+                                    Kick Player
                                 </button>
                             </div>
                         </motion.div>

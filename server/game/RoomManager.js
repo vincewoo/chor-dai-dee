@@ -36,12 +36,18 @@ class Room {
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
         this.password = null; // Room password for private rooms
+        this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
+        this.createdAt = Date.now(); // Track when room was created
     }
 
     addPlayer(player) {
         if (this.players.length >= 4) return false;
         player.isDisconnected = false;
         this.players.push(player);
+
+        // Update activity timestamp
+        this.updateActivity();
+
         // Track by username for reconnection
         if (player.name && !player.isBot) {
             this.playersByUsername[player.name] = player;
@@ -67,6 +73,9 @@ class Room {
 
         const oldId = existingPlayer.id;
         console.log(`Reconnecting ${username}: old ID=${oldId}, new ID=${newSocketId}, hand size=${existingPlayer.hand ? existingPlayer.hand.length : 0}`);
+
+        // Update activity timestamp
+        this.updateActivity();
 
         // Find the player in the players array first
         const playerIndex = this.players.findIndex(p => p.name === username && !p.isBot);
@@ -150,6 +159,55 @@ class Room {
             return player;
         }
         return null;
+    }
+
+    // Kick a player from the room (host only)
+    kickPlayer(kickedPlayerId, requesterUsername) {
+        // Only host can kick players
+        if (requesterUsername !== this.hostUsername) {
+            return { error: 'Only the host can kick players' };
+        }
+
+        const kickedPlayer = this.players.find(p => p.id === kickedPlayerId);
+        if (!kickedPlayer) {
+            return { error: 'Player not found' };
+        }
+
+        // Cannot kick bots
+        if (kickedPlayer.isBot) {
+            return { error: 'Cannot kick bots' };
+        }
+
+        // Cannot kick yourself
+        if (kickedPlayer.name === requesterUsername) {
+            return { error: 'Cannot kick yourself' };
+        }
+
+        // Remove from reconnection tracking
+        this.removeFromReconnectionTracking(kickedPlayerId);
+
+        // Replace with bot if game is in progress
+        if (this.gameState === 'playing' || this.gameState === 'round_over') {
+            const result = this.replaceWithBot(kickedPlayerId);
+            if (result) {
+                return {
+                    success: true,
+                    kickedPlayer: kickedPlayer,
+                    replacedWithBot: true,
+                    botPlayer: result.botPlayer
+                };
+            }
+        } else {
+            // Just remove from room if game hasn't started
+            this.players = this.players.filter(p => p.id !== kickedPlayerId);
+            return {
+                success: true,
+                kickedPlayer: kickedPlayer,
+                replacedWithBot: false
+            };
+        }
+
+        return { error: 'Failed to kick player' };
     }
 
     // Replace a disconnected player with a bot (for intentional leaves)
@@ -254,6 +312,22 @@ class Room {
         return this.players.some(p => p.isBot);
     }
 
+    // Check if this is a single-player game (only 1 human player)
+    isSinglePlayer() {
+        const humanPlayers = this.players.filter(p => !p.isBot);
+        return humanPlayers.length === 1;
+    }
+
+    // Update last activity timestamp
+    updateActivity() {
+        this.lastActivityTimestamp = Date.now();
+    }
+
+    // Get inactive duration in milliseconds
+    getInactiveDuration() {
+        return Date.now() - this.lastActivityTimestamp;
+    }
+
     // Replace a bot with a human player
     replaceBot(newPlayer) {
         // Find the first bot in the players array
@@ -271,7 +345,10 @@ class Room {
             rating: newPlayer.rating,
             hand: oldBot.hand, // Transfer the bot's hand to the human
             isBot: false,
-            isDisconnected: false
+            isDisconnected: false,
+            joinedMidGame: true, // Mark as mid-game joiner (no stats will be recorded)
+            joinedAtRound: this.roundNumber,
+            joinedWithScore: this.cumulativeScores[botId] || 0
         };
 
         // Replace the bot in the array
@@ -361,6 +438,9 @@ class Room {
     startGame(useAdvancedBots = false) {
         this.settings.useAdvancedBots = useAdvancedBots;
 
+        // Update activity timestamp
+        this.updateActivity();
+
         if (this.players.length < 4) {
             // Auto-fill with bots if < 4
             while (this.players.length < 4) {
@@ -406,6 +486,9 @@ class Room {
     }
 
     startRound() {
+        // Update activity timestamp
+        this.updateActivity();
+
         this.deck.reset();
         this.deck.shuffle();
 
@@ -542,6 +625,9 @@ class Room {
 
         const player = this.players[playerIndex];
 
+        // Update activity timestamp
+        this.updateActivity();
+
         // Validate that player actually has these cards
         // cards is usually just an array of card objects or indices?
         // Let's assume input is array of card objects sent from client.
@@ -587,8 +673,27 @@ class Room {
         // Record this player's played hand (visible until round ends)
         this.playOrder++; // Increment play order for z-index stacking
         this.playerLastPlayed[playerId] = { type: 'play', ...validatedHand, playerId, timestamp: Date.now(), playOrder: this.playOrder };
-        this.passedPlayers.clear(); // Clear passed players as new card allows everyone to play
-        this.passes = 0; // Reset consecutive pass counter
+
+        // Check if this is a single Big 2 (2 of Spades) - auto-pass all other players
+        const isSingleBig2 = validatedHand.type === 'SINGLE' &&
+                             validatedHand.cards.length === 1 &&
+                             validatedHand.cards[0].rank === '2' &&
+                             validatedHand.cards[0].suit === 'S';
+
+        if (isSingleBig2) {
+            // Auto-pass all other players since Big 2 (2 of Spades) cannot be beaten as a single
+            this.players.forEach(p => {
+                if (p.id !== playerId) {
+                    this.passedPlayers.add(p.id);
+                    this.playOrder++;
+                    this.playerLastPlayed[p.id] = { type: 'pass', playerId: p.id, timestamp: Date.now(), playOrder: this.playOrder };
+                }
+            });
+            this.passes = 3; // All other players passed
+        } else {
+            this.passedPlayers.clear(); // Clear passed players as new card allows everyone to play
+            this.passes = 0; // Reset consecutive pass counter
+        }
 
         // Track played cards for card counting
         for (const card of handToPlay) {
@@ -657,6 +762,22 @@ class Room {
             return { success: true, roundOver: true, roundWinner: player };
         }
 
+        // If Big 2 was played, all others auto-passed, so give control back to this player
+        if (isSingleBig2) {
+            // Track lead success for advanced stats
+            if (this.roundPlayStats[playerId]) {
+                this.roundPlayStats[playerId].leadsWon++;
+            }
+
+            this.lastPlayedHand = null;
+            this.playerLastPlayed = {}; // Clear all displayed hands
+            this.passedPlayers = new Set(); // Clear passed players
+            this.passes = 0;
+            this.playOrder = 0; // Reset play order for new trick
+            // Turn stays with the current player (they won the trick)
+            return { success: true, wonTrick: true };
+        }
+
         this.advanceTurn();
         return { success: true };
     }
@@ -667,6 +788,9 @@ class Room {
         if (playerIndex !== this.currentTurnIndex) return { error: 'Not your turn' };
 
         if (!this.lastPlayedHand) return { error: 'Cannot pass on free turn' }; // Can't pass if you are leading
+
+        // Update activity timestamp
+        this.updateActivity();
 
         // Record that this player passed
         this.playOrder++; // Increment play order for z-index stacking
@@ -953,6 +1077,18 @@ class RoomManager {
         return null;
     }
 
+    // Find all rooms that a username is in (connected or disconnected)
+    findAllRoomsByUsername(username) {
+        const foundRooms = [];
+        for (const [roomId, room] of this.rooms) {
+            const player = room.players.find(p => p.name === username && !p.isBot);
+            if (player) {
+                foundRooms.push({ roomId, room, player });
+            }
+        }
+        return foundRooms;
+    }
+
     // Get all rooms that can be joined (have bots and are in progress, not private)
     getJoinableRooms() {
         const joinableRooms = [];
@@ -975,6 +1111,62 @@ class RoomManager {
         }
         return joinableRooms;
     }
+
+    // Clean up inactive rooms based on type
+    cleanupInactiveRooms() {
+        const roomsToDelete = [];
+
+        // Timeout constants (in milliseconds)
+        const SINGLE_PLAYER_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+        const MULTIPLAYER_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+        const WAITING_ROOM_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+        const FINISHED_GAME_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
+        for (const [roomId, room] of this.rooms) {
+            const inactiveDuration = room.getInactiveDuration();
+            let shouldDelete = false;
+            let reason = '';
+
+            // Rule 1: All bots - delete immediately
+            if (room.hasOnlyBots()) {
+                shouldDelete = true;
+                reason = 'all bots';
+            }
+            // Rule 2: Finished games - delete after 5 minutes
+            else if (room.gameState === 'finished' && inactiveDuration > FINISHED_GAME_TIMEOUT) {
+                shouldDelete = true;
+                reason = 'finished game timeout';
+            }
+            // Rule 3: Waiting rooms - delete after 30 minutes
+            else if (room.gameState === 'waiting' && inactiveDuration > WAITING_ROOM_TIMEOUT) {
+                shouldDelete = true;
+                reason = 'waiting room timeout';
+            }
+            // Rule 4: Single-player games - delete after 24 hours
+            else if (room.isSinglePlayer() && inactiveDuration > SINGLE_PLAYER_TIMEOUT) {
+                shouldDelete = true;
+                reason = 'single-player timeout (24h)';
+            }
+            // Rule 5: Multiplayer games - delete after 30 minutes
+            else if (!room.isSinglePlayer() && (room.gameState === 'playing' || room.gameState === 'round_over') && inactiveDuration > MULTIPLAYER_TIMEOUT) {
+                shouldDelete = true;
+                reason = 'multiplayer timeout (30min)';
+            }
+
+            if (shouldDelete) {
+                roomsToDelete.push({ roomId, reason, room });
+            }
+        }
+
+        // Delete marked rooms
+        for (const { roomId, reason, room } of roomsToDelete) {
+            this.deleteRoom(roomId);
+            console.log(`[Cleanup] Deleted room ${roomId}: ${reason} (inactive for ${Math.round(room.getInactiveDuration() / 60000)}min)`);
+        }
+
+        return roomsToDelete.length;
+    }
 }
+
 
 module.exports = { RoomManager, Room };
