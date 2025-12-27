@@ -446,6 +446,7 @@ const GameRoom = ({ user, socket }) => {
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // Leave confirmation modal
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
+    const [isConnected, setIsConnected] = useState(socket.connected); // Track socket connection status
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -653,6 +654,69 @@ const GameRoom = ({ user, socket }) => {
             socket.off('joined_room');
         };
     }, [socket, navigate]);
+
+    // Handle socket disconnect/reconnect events - critical for iOS Safari
+    useEffect(() => {
+        const handleDisconnect = (reason) => {
+            console.log('Socket disconnected:', reason);
+            setIsConnected(false);
+        };
+
+        const handleConnect = () => {
+            console.log('Socket connected, requesting room state...');
+            setIsConnected(true);
+            // Re-join room and request fresh state after reconnection
+            socket.emit('join_room', { roomId, username: user?.username });
+        };
+
+        socket.on('disconnect', handleDisconnect);
+        socket.on('connect', handleConnect);
+
+        return () => {
+            socket.off('disconnect', handleDisconnect);
+            socket.off('connect', handleConnect);
+        };
+    }, [socket, roomId, user?.username]);
+
+    // Handle page visibility changes - critical for iOS Safari background/foreground
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                console.log('Page became visible, checking connection...');
+                // When page becomes visible again, check if socket is connected
+                if (!socket.connected) {
+                    console.log('Socket disconnected while backgrounded, reconnecting...');
+                    socket.connect();
+                } else {
+                    // Socket thinks it's connected, but iOS may have silently killed it
+                    // Request fresh room state to ensure we're in sync
+                    console.log('Refreshing room state after visibility change...');
+                    socket.emit('join_room', { roomId, username: user?.username });
+                }
+            }
+        };
+
+        // Also handle iOS-specific events
+        const handlePageShow = (event) => {
+            // persisted = true means the page was restored from bfcache
+            if (event.persisted) {
+                console.log('Page restored from bfcache, reconnecting...');
+                if (!socket.connected) {
+                    socket.connect();
+                } else {
+                    socket.emit('join_room', { roomId, username: user?.username });
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pageshow', handlePageShow);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('pageshow', handlePageShow);
+        };
+    }, [socket, roomId, user?.username]);
 
     // Auto-pass effect: check if we should auto-pass when it becomes our turn
     useEffect(() => {
@@ -1027,6 +1091,20 @@ const GameRoom = ({ user, socket }) => {
                     </div>
                 </div>
             )}
+
+            {/* Connection Status Indicator */}
+            <AnimatePresence>
+                {!isConnected && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -50 }}
+                        className="absolute top-[5vh] left-1/2 -translate-x-1/2 bg-orange-600 text-white px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-50 font-bold text-base md:text-[1vmax] flex items-center gap-2"
+                    >
+                        <span className="animate-pulse">●</span> Reconnecting...
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Error Toast */}
             <AnimatePresence>
