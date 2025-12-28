@@ -1091,7 +1091,8 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="md:hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center"
+                        className="md:hidden fixed inset-0 bg-black/70 flex items-center justify-center"
+                        style={{ zIndex: 200 }}
                         onClick={() => setShowMobileScoreboard(false)}
                     >
                         <motion.div
