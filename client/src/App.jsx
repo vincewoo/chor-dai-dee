@@ -6,6 +6,7 @@ import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 import Stats from './components/Stats';
 import Leaderboard from './components/Leaderboard';
+import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
 
@@ -52,6 +53,7 @@ function App() {
                 <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
             </Routes>
         </Router>
+        <PWAUpdatePrompt />
       </SuitColorProvider>
     </UserPreferencesProvider>
   )
