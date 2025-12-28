@@ -448,6 +448,7 @@ const GameRoom = ({ user, socket }) => {
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // Leave confirmation modal
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
+    const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -1012,7 +1013,7 @@ const GameRoom = ({ user, socket }) => {
     };
 
     if (!gameState) return (
-        <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+        <div className="h-screen-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             <img
                 src={logoImage}
                 alt="Chor Dai Dee Logo"
@@ -1043,7 +1044,7 @@ const GameRoom = ({ user, socket }) => {
     };
 
     return (
-        <div className="h-screen w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+        <div className="h-screen-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             {/* Game Logo - Background */}
             <img
                 src={logoImage}
@@ -1071,8 +1072,60 @@ const GameRoom = ({ user, socket }) => {
                     >
                         ⚙️ Settings
                     </button>
+                    {/* Mobile scores button */}
+                    {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
+                        <button
+                            onClick={() => setShowMobileScoreboard(true)}
+                            className="md:hidden text-xs px-2 py-0.5 rounded bg-yellow-600 text-white hover:bg-yellow-500"
+                        >
+                            Scores
+                        </button>
+                    )}
                 </div>
             </div>
+
+            {/* Mobile Scoreboard Overlay */}
+            <AnimatePresence>
+                {showMobileScoreboard && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="md:hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center"
+                        onClick={() => setShowMobileScoreboard(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-gray-800 rounded-lg p-4 min-w-[200px]"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="font-bold mb-3 text-yellow-400 text-lg text-center">Scores</div>
+                            {gameState.players
+                                .slice()
+                                .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
+                                .map(p => (
+                                <div key={p.id} className="flex justify-between gap-6 text-white py-1">
+                                    <span className={p.id === myPlayerId ? 'text-yellow-300 font-medium' : ''}>{p.name}</span>
+                                    <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
+                                        {p.cumulativeScore}
+                                    </span>
+                                </div>
+                            ))}
+                            <div className="text-xs text-gray-400 mt-3 border-t border-white/20 pt-2 text-center">
+                                First to {gameState.pointThreshold || 100} loses
+                            </div>
+                            <button
+                                onClick={() => setShowMobileScoreboard(false)}
+                                className="mt-3 w-full py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
+                            >
+                                Close
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Scoreboard - hidden on mobile */}
             {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (

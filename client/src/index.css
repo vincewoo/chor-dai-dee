@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/* Mobile viewport height fix - accounts for browser chrome (address bar) */
+:root {
+  --vh-full: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --vh-full: 100dvh;
+  }
+}
+
+.h-screen-safe {
+  height: 100vh;
+  height: 100dvh;
+}
+
 /* Custom scrollbar styles */
 .scrollbar-thin::-webkit-scrollbar {
   height: 6px;
