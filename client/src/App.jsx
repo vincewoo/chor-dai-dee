@@ -13,16 +13,21 @@ import { SuitColorProvider } from './contexts/SuitColorContext';
 // In production, connect to same origin; in development, connect to localhost:3000
 const socketUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:3000';
 const socket = io(socketUrl, {
-  // Reconnection options optimized for mobile browsers (especially iOS Safari)
+  // Reconnection options optimized for mobile browsers
   reconnection: true,
   reconnectionAttempts: Infinity,
-  reconnectionDelay: 500,        // Start reconnecting quickly
-  reconnectionDelayMax: 3000,    // Don't wait too long between attempts
-  timeout: 10000,                // Connection timeout
-  // Prefer WebSocket but fall back to polling if needed
-  transports: ['websocket', 'polling'],
-  // Upgrade from polling to websocket when possible
-  upgrade: true,
+  reconnectionDelay: 1000,        // Wait 1 second before first reconnect attempt
+  reconnectionDelayMax: 5000,     // Max 5 seconds between attempts
+  timeout: 20000,                 // 20 seconds connection timeout (matches server)
+  // Force WebSocket to avoid polling issues on mobile networks
+  transports: ['websocket'],
+  // Disable upgrade to prevent connection instability
+  upgrade: false,
+  // Match server's ping settings
+  pingTimeout: 20000,
+  pingInterval: 15000,
+  // Prevent aggressive reconnection on mobile
+  randomizationFactor: 0.5
 });
 
 function App() {

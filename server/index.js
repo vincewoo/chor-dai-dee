@@ -31,13 +31,32 @@ app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: corsOptions
+  cors: corsOptions,
+  // Balance between responsiveness and stability for mobile connections
+  pingTimeout: 20000,     // 20 seconds to wait for pong (allowing for network latency)
+  pingInterval: 15000,    // Send ping every 15 seconds (more frequent than default 25s)
+  connectTimeout: 45000,  // 45 seconds for initial connection
+  // Allow both transports for better compatibility
+  transports: ['websocket', 'polling'],
+  // Allow upgrade from polling to websocket
+  allowUpgrades: true,
+  // Increase max HTTP buffer size for larger game states
+  maxHttpBufferSize: 1e6,
+  // Disable perMessageDeflate to reduce CPU usage and improve stability on mobile
+  perMessageDeflate: false
 });
 
 const roomManager = new RoomManager();
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  console.log(`User connected: ${socket.id} from ${socket.handshake.headers['user-agent']?.substring(0, 50)}`);
+
+  // Handle explicit ping from client (for keep-alive)
+  socket.on('ping', () => {
+    // Socket.io handles this automatically, but we can log it for debugging
+    // Respond with pong to keep connection alive
+    socket.emit('pong');
+  });
 
   socket.on('join_room', async ({ roomId, username, password }) => {
     console.log(`join_room event received: roomId=${roomId}, username=${username}`);
@@ -1203,8 +1222,8 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`User disconnected: ${socket.id}, reason: ${reason}`);
 
     // Find which room this player was in
     const result = roomManager.findRoomBySocketId(socket.id);
