@@ -129,7 +129,7 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn, selec
             <div className="flex items-center gap-2 md:gap-[0.5vmax] px-2 justify-center md:justify-start">
                 <span className="hidden md:inline text-white/60 text-xs md:text-[0.7vmax] mr-1 md:mr-[0.25vmax] flex-shrink-0">Quick Select:</span>
 
-                <div className="flex items-center gap-2 md:gap-[0.5vmax] overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent flex-1 justify-center md:justify-start">
+                <div className="flex items-center gap-2 md:gap-[0.5vmax] overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent flex-1 justify-center md:justify-start">
                     {availableHandTypes.map(({ type, count }) => {
                         const isActive = activeType === type && isActiveTypeValid;
                         const canBeat = beatableHandTypes.has(type);
