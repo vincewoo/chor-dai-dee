@@ -169,6 +169,12 @@ io.on('connection', (socket) => {
                 socket.emit('hand_update', player.hand || []);
             }
 
+            // Send round_over event if the room is in round_over state
+            if (room.gameState === 'round_over' && room.lastRoundResults) {
+                console.log(`Sending round_over to ${username} on reconnect`);
+                socket.emit('round_over', room.lastRoundResults);
+            }
+
             // Notify everyone in room about the reconnection
             io.to(existingRoomId).emit('room_update', room.getGameState());
             io.to(existingRoomId).emit('player_reconnected', { playerName: username });
@@ -203,6 +209,12 @@ io.on('connection', (socket) => {
             if (targetRoom.gameState === 'playing' || targetRoom.gameState === 'round_over') {
                 console.log(`Sending hand to ${username} (already in room): ${player.hand ? player.hand.length : 0} cards`);
                 socket.emit('hand_update', player.hand || []);
+            }
+
+            // Send round_over event if the room is in round_over state
+            if (targetRoom.gameState === 'round_over' && targetRoom.lastRoundResults) {
+                console.log(`Sending round_over to ${username} (already in room)`);
+                socket.emit('round_over', targetRoom.lastRoundResults);
             }
 
             // Check if current player is a bot and trigger bot turn processing
@@ -263,6 +275,12 @@ io.on('connection', (socket) => {
         // Send the player's hand (from the bot)
         if (replaceResult.humanPlayer.hand) {
             socket.emit('hand_update', replaceResult.humanPlayer.hand);
+        }
+
+        // Send round_over event if the room is in round_over state
+        if (room.gameState === 'round_over' && room.lastRoundResults) {
+            console.log(`Sending round_over to ${username} (replaced bot)`);
+            socket.emit('round_over', room.lastRoundResults);
         }
 
         // Send joined confirmation
@@ -749,16 +767,22 @@ io.on('connection', (socket) => {
 
       } else {
           // Round is over, but game continues
-          io.to(roomId).emit('round_over', {
+          const roundResults = {
               roundWinner: sanitizedRoundWinner,
               scores: scoresWithCumulative,
               roundNumber: room.roundNumber
-          });
+          };
+
+          // Store round results in room for reconnection handling
+          room.lastRoundResults = roundResults;
+
+          io.to(roomId).emit('round_over', roundResults);
       }
   };
 
   const handleNextRound = (room, roomId) => {
       room.roundNumber++;
+      room.lastRoundResults = null; // Clear stored round results
       room.startRound();
 
       // Check if dragon was dealt (Hong Kong variation)
@@ -825,13 +849,22 @@ io.on('connection', (socket) => {
       const room = roomManager.getRoom(roomId);
       if (room) {
           socket.emit('room_update', room.getGameState());
-          // Also send hand if game is in progress
-          if (room.gameState === 'playing') {
+          // Also send hand if game is in progress or round is over
+          if (room.gameState === 'playing' || room.gameState === 'round_over') {
               const hand = room.getPlayerHand(socket.id);
               console.log(`get_room_state: Sending hand to ${socket.id}: ${hand ? hand.length : 0} cards`);
               socket.emit('hand_update', hand);
+
+              // Send round_over event if in round_over state
+              if (room.gameState === 'round_over' && room.lastRoundResults) {
+                  console.log(`get_room_state: Sending round_over to ${socket.id}`);
+                  socket.emit('round_over', room.lastRoundResults);
+              }
+
               // Check if current player is a bot and trigger bot turn processing
-              processBotTurns(room, roomId);
+              if (room.gameState === 'playing') {
+                  processBotTurns(room, roomId);
+              }
           }
       }
   });
