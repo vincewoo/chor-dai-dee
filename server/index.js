@@ -899,7 +899,17 @@ io.on('connection', (socket) => {
   const processBotTurns = (room, roomId) => {
       room.checkBotTurn((result) => {
           if (result.type === 'roundOver') {
-              handleRoundOver(room, roomId, result.roundWinner);
+              // Add delay to show final winning card before round ends
+              if (result.roundWinDelay) {
+                  // Emit the game state first to show the winning card
+                  io.to(roomId).emit('game_update', room.getGameState());
+                  setTimeout(() => {
+                      room.clearRoundEndCards();
+                      handleRoundOver(room, roomId, result.roundWinner);
+                  }, 1500); // 1.5 second delay to see the winning card
+              } else {
+                  handleRoundOver(room, roomId, result.roundWinner);
+              }
           } else {
               io.to(roomId).emit('game_update', room.getGameState());
               // Emit bot reasoning if debug mode is enabled
@@ -1070,7 +1080,15 @@ io.on('connection', (socket) => {
               socket.emit('hand_update', room.getPlayerHand(socket.id));
 
               if (result.roundOver) {
-                  handleRoundOver(room, roomId, result.roundWinner);
+                  // Add delay to show final winning card before round ends
+                  if (result.roundWinDelay) {
+                      setTimeout(() => {
+                          room.clearRoundEndCards();
+                          handleRoundOver(room, roomId, result.roundWinner);
+                      }, 1500); // 1.5 second delay to see the winning card
+                  } else {
+                      handleRoundOver(room, roomId, result.roundWinner);
+                  }
               } else if (result.trickWinDelay) {
                   // Big 2 was played or trick was won - delay before clearing state
                   // This gives players time to see the winning hand and passes
