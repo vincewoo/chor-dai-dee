@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'app-icon.svg', 'vite.svg'],
       manifest: {
         name: 'Chor Dai Dee - Big 2 Card Game',
