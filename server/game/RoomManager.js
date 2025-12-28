@@ -760,10 +760,9 @@ class Room {
             this.winners.push(player);
             this.gameState = 'round_over';
             this.lastRoundWinnerId = player.id;
-            // Clear all displayed hands when round ends
-            this.playerLastPlayed = {};
-            this.lastPlayedHand = null;
-            return { success: true, roundOver: true, roundWinner: player };
+            // Don't clear cards immediately - let them be visible during delay
+            // Cards will be cleared when handleRoundOver is called after delay
+            return { success: true, roundOver: true, roundWinner: player, roundWinDelay: true };
         }
 
         // If Big 2 was played, all others auto-passed, so give control back to this player
@@ -903,6 +902,12 @@ class Room {
         return true;
     }
 
+    // Clear cards after round ends - called after delay
+    clearRoundEndCards() {
+        this.playerLastPlayed = {};
+        this.lastPlayedHand = null;
+    }
+
     // New method to check if current player is bot and play
     checkBotTurn(callback) {
         const currentPlayer = this.players[this.currentTurnIndex];
@@ -963,7 +968,7 @@ class Room {
                         const res = this.playHand(currentPlayer.id, move);
                         if (res.success) {
                             if (res.roundOver) {
-                                callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning });
+                                callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning, roundWinDelay: res.roundWinDelay || false });
                             } else {
                                 callback({
                                     type: 'play',
