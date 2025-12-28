@@ -48,7 +48,7 @@ const Stats = ({ user }) => {
     }
 
     return (
-        <div className="min-h-screen bg-green-900 text-white p-4">
+        <div className="min-h-screen bg-green-800 text-white p-4">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6">

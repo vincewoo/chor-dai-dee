@@ -34,7 +34,7 @@ const Login = ({ setUser }) => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white">
+        <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
             <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
             <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
                 <h2 className="text-2xl font-bold mb-4 text-center">{isRegistering ? 'Register' : 'Login'}</h2>
