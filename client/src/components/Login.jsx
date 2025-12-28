@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 
 // In production, use same origin; in development, use localhost:3000
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 const Login = ({ setUser }) => {
     const [isRegistering, setIsRegistering] = useState(false);
@@ -27,7 +27,10 @@ const Login = ({ setUser }) => {
                 navigate('/lobby');
             }
         } catch (err) {
-            setError(err.response?.data?.error || 'An error occurred');
+            console.error('Login/Register error:', err);
+            console.error('Error response:', err.response);
+            console.error('Error message:', err.message);
+            setError(err.response?.data?.error || err.message || 'An error occurred');
         } finally {
             setIsLoading(false);
         }

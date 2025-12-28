@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const UserPreferencesContext = createContext();
 
 // Determine API URL based on environment
-const API_URL = import.meta.env.PROD ? window.location.origin : 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3000');
 
 export const useUserPreferences = () => {
     const context = useContext(UserPreferencesContext);
