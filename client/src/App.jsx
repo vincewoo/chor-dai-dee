@@ -11,7 +11,7 @@ import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
 
 // In production, connect to same origin; in development, connect to localhost:3000
-const socketUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:3000';
+const socketUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3000');
 const socket = io(socketUrl, {
   // Reconnection options optimized for mobile browsers
   reconnection: true,

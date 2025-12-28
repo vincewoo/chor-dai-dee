@@ -46,8 +46,8 @@ const Lobby = ({ user, socket, setUser }) => {
     // Fetch joinable rooms on mount and periodically
     const fetchJoinableRooms = async () => {
         try {
-            const apiUrl = import.meta.env.PROD ? '/api/rooms/joinable' : 'http://localhost:3000/api/rooms/joinable';
-            const response = await fetch(apiUrl);
+            const baseUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+            const response = await fetch(`${baseUrl}/api/rooms/joinable`);
             if (response.ok) {
                 const rooms = await response.json();
                 setJoinableRooms(rooms);

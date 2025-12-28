@@ -22,8 +22,24 @@ const corsOptions = isProduction
       methods: ['GET', 'POST']
     }
   : {
-      origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174'],
-      methods: ['GET', 'POST']
+      origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps or Postman)
+        if (!origin) return callback(null, true);
+
+        // Allow localhost and local network IPs
+        const allowedPatterns = [
+          /^http:\/\/localhost:\d+$/,
+          /^http:\/\/127\.0\.0\.1:\d+$/,
+          /^http:\/\/192\.168\.\d+\.\d+:\d+$/,  // Local network IPs
+          /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,     // Local network IPs
+          /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:\d+$/ // Local network IPs
+        ];
+
+        const allowed = allowedPatterns.some(pattern => pattern.test(origin));
+        callback(null, allowed);
+      },
+      methods: ['GET', 'POST'],
+      credentials: true
     };
 
 app.use(cors(corsOptions));
