@@ -41,6 +41,7 @@ class Room {
         this.trickWinPending = false; // Flag to indicate a trick win is pending (delay before clearing)
         this.trickWinner = null; // The player who won the current trick
         this.lastRoundResults = null; // Store round results for reconnection handling
+        this.lastGameResults = null; // Store game over results for reconnection handling
     }
 
     addPlayer(player) {
