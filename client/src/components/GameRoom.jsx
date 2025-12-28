@@ -1435,9 +1435,9 @@ const GameRoom = ({ user, socket }) => {
             />
 
             {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-[2vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-1 md:px-0">
+            <div className="absolute bottom-[1vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-1 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
-                <div className="md:hidden w-full mb-2 mt-14">
+                <div className="md:hidden w-full mb-2">
                     {gameState.gameState === 'playing' && (
                         <HandHelper
                             playerHand={myHand}
