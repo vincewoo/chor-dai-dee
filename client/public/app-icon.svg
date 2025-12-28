@@ -1,24 +1,59 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Background -->
-  <rect width="512" height="512" fill="#1e293b" rx="80"/>
+  <!-- Green felt background -->
+  <rect width="512" height="512" fill="#1b5e20" rx="80"/>
 
-  <!-- Card stack effect -->
-  <g transform="translate(80, 80)">
-    <!-- Back card -->
-    <rect x="40" y="20" width="260" height="360" rx="20" fill="#334155" opacity="0.6"/>
+  <!-- Darker green pattern for texture -->
+  <circle cx="100" cy="100" r="150" fill="#145214" opacity="0.3"/>
+  <circle cx="412" cy="412" r="150" fill="#145214" opacity="0.3"/>
 
-    <!-- Middle card -->
-    <rect x="20" y="10" width="260" height="360" rx="20" fill="#475569" opacity="0.8"/>
-
-    <!-- Front card -->
-    <rect x="0" y="0" width="260" height="360" rx="20" fill="#f8fafc"/>
-
-    <!-- Diamond suit (red) -->
-    <g transform="translate(130, 120)">
-      <path d="M 0,-60 L 40,0 L 0,60 L -40,0 Z" fill="#ef4444"/>
+  <g transform="translate(256, 256)">
+    <!-- Card 1 (leftmost) - 2 of Diamonds (rotated left) -->
+    <g transform="rotate(-20) translate(-140, -10)">
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="#ffffff"/>
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="none" stroke="#e0e0e0" stroke-width="2"/>
+      <!-- 2 -->
+      <text x="-35" y="-35" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#d32f2f">2</text>
+      <!-- Diamond suit -->
+      <path d="M 0,-10 L 15,5 L 0,20 L -15,5 Z" fill="#d32f2f" transform="translate(0, 10)"/>
     </g>
 
-    <!-- Number "2" -->
-    <text x="40" y="80" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="#1e293b">2</text>
+    <!-- Card 2 - 2 of Clubs (slightly rotated left) -->
+    <g transform="rotate(-7) translate(-50, -5)">
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="#ffffff"/>
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="none" stroke="#e0e0e0" stroke-width="2"/>
+      <!-- 2 -->
+      <text x="-35" y="-35" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#1a1a1a">2</text>
+      <!-- Club suit -->
+      <g transform="translate(0, 15)" fill="#1a1a1a">
+        <circle cx="0" cy="-5" r="8"/>
+        <circle cx="-7" cy="3" r="8"/>
+        <circle cx="7" cy="3" r="8"/>
+        <path d="M -6,8 L -3,18 L 3,18 L 6,8 Z"/>
+      </g>
+    </g>
+
+    <!-- Card 3 - 2 of Hearts (slightly rotated right) -->
+    <g transform="rotate(7) translate(50, 0)">
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="#ffffff"/>
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="none" stroke="#e0e0e0" stroke-width="2"/>
+      <!-- 2 -->
+      <text x="-35" y="-35" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#d32f2f">2</text>
+      <!-- Heart suit -->
+      <g transform="translate(0, 10)" fill="#d32f2f">
+        <path d="M 0,18 L -15,0 C -15,-8 -8,-13 0,-8 C 8,-13 15,-8 15,0 Z"/>
+      </g>
+    </g>
+
+    <!-- Card 4 (rightmost) - 2 of Spades (rotated right) -->
+    <g transform="rotate(20) translate(140, 5)">
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="#ffffff"/>
+      <rect x="-50" y="-70" width="100" height="140" rx="8" fill="none" stroke="#e0e0e0" stroke-width="2"/>
+      <!-- 2 -->
+      <text x="-35" y="-35" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#1a1a1a">2</text>
+      <!-- Spade suit -->
+      <g transform="translate(0, 10)" fill="#1a1a1a">
+        <path d="M 0,-12 L -12,8 C -12,8 -6,8 -4,10 L -4,18 L 4,18 L 4,10 C 6,8 12,8 12,8 Z"/>
+      </g>
+    </g>
   </g>
 </svg>
