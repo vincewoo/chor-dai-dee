@@ -805,8 +805,18 @@ io.on('connection', (socket) => {
               if (room.debugMode && result.reasoning) {
                   io.to(roomId).emit('bot_reasoning', result.reasoning);
               }
-              // Continue checking if next player is bot
-              processBotTurns(room, roomId);
+              // If a trick was won, delay before clearing and continuing
+              if (result.trickWinDelay) {
+                  setTimeout(() => {
+                      room.clearTrickState();
+                      io.to(roomId).emit('game_update', room.getGameState());
+                      // Continue checking if next player is bot
+                      processBotTurns(room, roomId);
+                  }, 1500); // 1.5 second delay to see the trick result
+              } else {
+                  // Continue checking if next player is bot
+                  processBotTurns(room, roomId);
+              }
           }
       });
   };
@@ -941,6 +951,15 @@ io.on('connection', (socket) => {
 
               if (result.roundOver) {
                   handleRoundOver(room, roomId, result.roundWinner);
+              } else if (result.trickWinDelay) {
+                  // Big 2 was played or trick was won - delay before clearing state
+                  // This gives players time to see the winning hand and passes
+                  setTimeout(() => {
+                      room.clearTrickState();
+                      io.to(roomId).emit('game_update', room.getGameState());
+                      // Check if next player is bot
+                      processBotTurns(room, roomId);
+                  }, 1500); // 1.5 second delay to see the trick result
               } else {
                   // Check if next player is bot
                   processBotTurns(room, roomId);
@@ -964,8 +983,19 @@ io.on('connection', (socket) => {
               socket.emit('error', result.error);
           } else {
               io.to(roomId).emit('game_update', room.getGameState());
-              // Check if next player is bot
-              processBotTurns(room, roomId);
+              if (result.trickWinDelay) {
+                  // Trick was won by passing - delay before clearing state
+                  // This gives players time to see all the passes before the trick clears
+                  setTimeout(() => {
+                      room.clearTrickState();
+                      io.to(roomId).emit('game_update', room.getGameState());
+                      // Check if next player is bot
+                      processBotTurns(room, roomId);
+                  }, 1500); // 1.5 second delay to see the trick result
+              } else {
+                  // Check if next player is bot
+                  processBotTurns(room, roomId);
+              }
           }
       }
   });

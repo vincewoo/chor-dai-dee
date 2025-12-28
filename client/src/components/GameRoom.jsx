@@ -721,6 +721,9 @@ const GameRoom = ({ user, socket }) => {
     useEffect(() => {
         if (!autoPass || !gameState || gameState.gameState !== 'playing') return;
 
+        // Don't auto-pass while a trick win is being displayed
+        if (gameState.trickWinPending) return;
+
         const isMyTurn = gameState.currentTurn === myPlayerId;
         const hasLastPlayedHand = !!gameState.lastPlayedHand;
 
@@ -730,12 +733,13 @@ const GameRoom = ({ user, socket }) => {
             const canBeat = canBeatWithAnyHand(myHand, gameState.lastPlayedHand);
 
             if (!canBeat) {
-                // Small delay to give visual feedback before auto-passing
+                // Delay to give visual feedback before auto-passing
+                // Longer delay allows players to see the game state before passing
                 autoPassTriggered.current = true;
                 const timer = setTimeout(() => {
                     socket.emit('pass_turn', { roomId });
                     autoPassTriggered.current = false;
-                }, 500);
+                }, 1000); // 1 second delay for better visibility
                 return () => clearTimeout(timer);
             }
         }

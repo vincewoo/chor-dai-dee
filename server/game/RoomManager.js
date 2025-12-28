@@ -38,6 +38,8 @@ class Room {
         this.password = null; // Room password for private rooms
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
         this.createdAt = Date.now(); // Track when room was created
+        this.trickWinPending = false; // Flag to indicate a trick win is pending (delay before clearing)
+        this.trickWinner = null; // The player who won the current trick
     }
 
     addPlayer(player) {
@@ -769,13 +771,12 @@ class Room {
                 this.roundPlayStats[playerId].leadsWon++;
             }
 
-            this.lastPlayedHand = null;
-            this.playerLastPlayed = {}; // Clear all displayed hands
-            this.passedPlayers = new Set(); // Clear passed players
-            this.passes = 0;
-            this.playOrder = 0; // Reset play order for new trick
+            // Don't clear state immediately - set pending flag for delayed clear
+            // This allows clients to see the Big 2 play and all the auto-passes before clearing
+            this.trickWinPending = true;
+            this.trickWinner = playerId;
             // Turn stays with the current player (they won the trick)
-            return { success: true, wonTrick: true };
+            return { success: true, wonTrick: true, trickWinDelay: true };
         }
 
         this.advanceTurn();
@@ -859,13 +860,13 @@ class Room {
                 this.roundPlayStats[lastPlayerId].leadsWon++;
             }
 
-            this.lastPlayedHand = null;
-            this.playerLastPlayed = {}; // Clear all displayed hands
-            this.passedPlayers = new Set(); // Clear passed players
-            this.passes = 0;
-            this.playOrder = 0; // Reset play order for new trick
+            // Don't clear state immediately - set pending flag for delayed clear
+            // This allows clients to see all the passes and the winning hand before clearing
+            this.trickWinPending = true;
+            this.trickWinner = lastPlayerId;
             // Set turn to the player who won the trick
             this.currentTurnIndex = this.players.findIndex(p => p.id === lastPlayerId);
+            return { success: true, trickWon: true, trickWinDelay: true };
         } else {
             this.advanceTurn();
         }
@@ -883,6 +884,21 @@ class Room {
             this.passedPlayers.has(this.players[this.currentTurnIndex]?.id) &&
             attempts < 4
         );
+    }
+
+    // Clear trick state after a delay - called by server after showing the trick win
+    clearTrickState() {
+        if (!this.trickWinPending) return false;
+
+        this.lastPlayedHand = null;
+        this.playerLastPlayed = {}; // Clear all displayed hands
+        this.passedPlayers = new Set(); // Clear passed players
+        this.passes = 0;
+        this.playOrder = 0; // Reset play order for new trick
+        this.trickWinPending = false;
+        this.trickWinner = null;
+
+        return true;
     }
 
     // New method to check if current player is bot and play
@@ -947,13 +963,23 @@ class Room {
                             if (res.roundOver) {
                                 callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning });
                             } else {
-                                callback({ type: 'play', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
+                                callback({
+                                    type: 'play',
+                                    playerId: currentPlayer.id,
+                                    reasoning: this.lastBotReasoning,
+                                    trickWinDelay: res.trickWinDelay || false
+                                });
                             }
                         }
                     } else {
                         // Pass
-                        this.passTurn(currentPlayer.id);
-                        callback({ type: 'pass', playerId: currentPlayer.id, reasoning: this.lastBotReasoning });
+                        const res = this.passTurn(currentPlayer.id);
+                        callback({
+                            type: 'pass',
+                            playerId: currentPlayer.id,
+                            reasoning: this.lastBotReasoning,
+                            trickWinDelay: res.trickWinDelay || false
+                        });
                     }
                 }, 250); // 250ms delay for realism (reduced from 500ms for better responsiveness)
             };
@@ -1017,7 +1043,9 @@ class Room {
             gameMode: this.gameMode,
             pointThreshold: this.pointThreshold,
             isPrivate: this.isPrivate,
-            hasPassword: !!this.password
+            hasPassword: !!this.password,
+            trickWinPending: this.trickWinPending || false,
+            trickWinner: this.trickWinner
         };
     }
 
