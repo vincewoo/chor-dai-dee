@@ -175,6 +175,16 @@ io.on('connection', (socket) => {
                 socket.emit('round_over', room.lastRoundResults);
             }
 
+            // Send game_over event if the game is finished
+            if (room.gameState === 'finished' && room.lastGameResults) {
+                console.log(`Sending game_over to ${username} on reconnect`);
+                if (room.lastGameResults.isDragonWin) {
+                    socket.emit('dragon_win', room.lastGameResults);
+                } else {
+                    socket.emit('game_over', room.lastGameResults);
+                }
+            }
+
             // Notify everyone in room about the reconnection
             io.to(existingRoomId).emit('room_update', room.getGameState());
             io.to(existingRoomId).emit('player_reconnected', { playerName: username });
@@ -215,6 +225,16 @@ io.on('connection', (socket) => {
             if (targetRoom.gameState === 'round_over' && targetRoom.lastRoundResults) {
                 console.log(`Sending round_over to ${username} (already in room)`);
                 socket.emit('round_over', targetRoom.lastRoundResults);
+            }
+
+            // Send game_over event if the game is finished
+            if (targetRoom.gameState === 'finished' && targetRoom.lastGameResults) {
+                console.log(`Sending game_over to ${username} (already in room)`);
+                if (targetRoom.lastGameResults.isDragonWin) {
+                    socket.emit('dragon_win', targetRoom.lastGameResults);
+                } else {
+                    socket.emit('game_over', targetRoom.lastGameResults);
+                }
             }
 
             // Check if current player is a bot and trigger bot turn processing
@@ -283,6 +303,16 @@ io.on('connection', (socket) => {
             socket.emit('round_over', room.lastRoundResults);
         }
 
+        // Send game_over event if the game is finished
+        if (room.gameState === 'finished' && room.lastGameResults) {
+            console.log(`Sending game_over to ${username} (replaced bot)`);
+            if (room.lastGameResults.isDragonWin) {
+                socket.emit('dragon_win', room.lastGameResults);
+            } else {
+                socket.emit('game_over', room.lastGameResults);
+            }
+        }
+
         // Send joined confirmation
         socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
 
@@ -344,13 +374,19 @@ io.on('connection', (socket) => {
           isBot: dragonWinner.isBot
       };
 
-      // Emit special dragon_win event
-      io.to(roomId).emit('dragon_win', {
+      const dragonResults = {
           winner: sanitizedDragonWinner,
           scores: scoresWithCumulative,
           finalScores: room.cumulativeScores,
-          roundNumber: room.roundNumber
-      });
+          roundNumber: room.roundNumber,
+          isDragonWin: true
+      };
+
+      // Store dragon win results for reconnection handling
+      room.lastGameResults = dragonResults;
+
+      // Emit special dragon_win event
+      io.to(roomId).emit('dragon_win', dragonResults);
 
       // Handle rating updates similar to game_over (fetch stats, calculate new ratings, update DB)
       // Exclude mid-game joiners from rating calculations (treat as bots)
@@ -486,12 +522,18 @@ io.on('connection', (socket) => {
               isBot: gameWinner.isBot
           };
 
-          io.to(roomId).emit('game_over', {
+          const gameResults = {
               winner: sanitizedGameWinner,
               scores: scoresWithCumulative,
               finalScores: room.cumulativeScores,
               roundNumber: room.roundNumber
-          });
+          };
+
+          // Store game results for reconnection handling
+          room.lastGameResults = gameResults;
+          room.gameState = 'finished';
+
+          io.to(roomId).emit('game_over', gameResults);
 
           // 1. Fetch current ratings for all humans (mode-specific)
           // We need to fetch stats to get current mu/sigma
@@ -864,6 +906,16 @@ io.on('connection', (socket) => {
               // Check if current player is a bot and trigger bot turn processing
               if (room.gameState === 'playing') {
                   processBotTurns(room, roomId);
+              }
+          }
+
+          // Send game_over event if the game is finished
+          if (room.gameState === 'finished' && room.lastGameResults) {
+              console.log(`get_room_state: Sending game_over to ${socket.id}`);
+              if (room.lastGameResults.isDragonWin) {
+                  socket.emit('dragon_win', room.lastGameResults);
+              } else {
+                  socket.emit('game_over', room.lastGameResults);
               }
           }
       }
