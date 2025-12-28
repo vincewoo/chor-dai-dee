@@ -1,5 +1,3 @@
-# Palette's Journal
-
-## 2024-05-22 - Async Button Feedback
-**Learning:** Users often click submit buttons multiple times if there's no immediate feedback, especially on slower connections.
-**Action:** Always implement a loading state with a spinner and disabled attribute on async action buttons.
+## 2024-05-23 - Login Form Accessibility
+**Learning:** Implicit labeling (via `placeholder` or `aria-label` alone) is insufficient for robust accessibility and best practices. Explicit, visible `<label>` elements linked via `htmlFor`/`id` provide better usability for all users and are preferred over hidden labels unless design strictly forbids them.
+**Action:** When auditing forms, prioritize converting implicit labels to explicit visible labels. Ensure `id` attributes are unique and correctly linked.

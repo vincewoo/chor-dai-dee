@@ -44,25 +44,37 @@ const Login = ({ setUser }) => {
                     </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <input
-                        type="text"
-                        aria-label="Username"
-                        placeholder="Username"
-                        autoFocus
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                        value={username}
-                        onChange={e => setUsername(e.target.value)}
-                        disabled={isLoading}
-                    />
-                    <input
-                        type="password"
-                        aria-label="Password"
-                        placeholder="Password"
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        disabled={isLoading}
-                    />
+                    <div>
+                        <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                            Username
+                        </label>
+                        <input
+                            id="username"
+                            type="text"
+                            placeholder="Username"
+                            autoFocus
+                            required
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                            value={username}
+                            onChange={e => setUsername(e.target.value)}
+                            disabled={isLoading}
+                        />
+                    </div>
+                    <div>
+                        <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                            Password
+                        </label>
+                        <input
+                            id="password"
+                            type="password"
+                            placeholder="Password"
+                            required
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            disabled={isLoading}
+                        />
+                    </div>
                     <button
                         type="submit"
                         disabled={isLoading}
