@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import ArchetypeDialog from './ArchetypeDialog';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
@@ -19,81 +20,6 @@ const Leaderboard = ({ user }) => {
     useEffect(() => {
         fetchLeaderboard();
     }, [mode, sortBy, minGames]);
-
-    const archetypeDescriptions = {
-        'Aggressive': {
-            title: 'Aggressive Player',
-            color: 'text-red-600',
-            description: 'High intensity play style that constantly applies pressure to opponents.',
-            strengths: [
-                'Quick to take control of the table',
-                'Forces opponents to make difficult decisions',
-                'Maintains strong momentum',
-                'Excellent at capitalizing on weak opponents'
-            ],
-            improvements: [
-                'May exhaust strong cards too early',
-                'Can be predictable when always attacking',
-                'Sometimes takes unnecessary risks',
-                'Vulnerable to counter-plays from patient opponents'
-            ],
-            strategy: 'This aggressive style can overwhelm opponents, but players should be careful not to exhaust strong cards too early.'
-        },
-        'Conservative': {
-            title: 'Conservative Player',
-            color: 'text-blue-600',
-            description: 'Prioritizes safety and card preservation over aggressive plays.',
-            strengths: [
-                'Excellent hand management',
-                'Strong endgame presence',
-                'Minimizes penalty risk',
-                'Hard to pressure into mistakes'
-            ],
-            improvements: [
-                'May miss opportunities to take control',
-                'Can appear passive or predictable',
-                'Struggles when forced to lead',
-                'Sometimes lets aggressive players dominate'
-            ],
-            strategy: 'This patient approach often pays off in the endgame, but watch for opportunities to seize control when opponents are weak.'
-        },
-        'Balanced': {
-            title: 'Balanced Player',
-            color: 'text-green-600',
-            description: 'Maintains equilibrium between aggressive and conservative strategies.',
-            strengths: [
-                'Adapts well to different situations',
-                'Consistent decision-making',
-                'Difficult to exploit',
-                'Well-rounded skill set'
-            ],
-            improvements: [
-                'Jack of all trades, master of none',
-                'May lack a decisive edge in critical moments',
-                'Can be indecisive when multiple options exist',
-                'Sometimes too middle-of-the-road'
-            ],
-            strategy: 'Versatility is the key strength. Continue reading the game flow and adjusting tactics accordingly.'
-        },
-        'Adaptive': {
-            title: 'Adaptive Player',
-            color: 'text-purple-600',
-            description: 'Dynamically adjusts strategy based on opponents and game state.',
-            strengths: [
-                'Highly unpredictable',
-                'Excellent at reading opponents',
-                'Can counter any play style',
-                'Thrives in complex situations'
-            ],
-            improvements: [
-                'May overthink simple situations',
-                'Can confuse allies in team variants',
-                'Sometimes changes strategy too frequently',
-                'Requires high mental energy to maintain'
-            ],
-            strategy: 'The ability to shift strategies keeps opponents guessing. Use this unpredictability to maintain a psychological edge.'
-        }
-    };
 
     const handleArchetypeClick = (archetype) => {
         setSelectedArchetype(archetype);
@@ -429,65 +355,11 @@ const Leaderboard = ({ user }) => {
                 </div>
 
                 {/* Archetype Dialog */}
-                {showArchetypeDialog && selectedArchetype && archetypeDescriptions[selectedArchetype] && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                            <div className="p-6">
-                                <div className="flex justify-between items-start mb-4">
-                                    <h2 className={`text-3xl font-bold ${archetypeDescriptions[selectedArchetype].color}`}>
-                                        {archetypeDescriptions[selectedArchetype].title}
-                                    </h2>
-                                    <button
-                                        onClick={() => setShowArchetypeDialog(false)}
-                                        className="text-gray-500 hover:text-gray-700 text-2xl"
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-
-                                <p className="text-gray-700 text-lg mb-6">
-                                    {archetypeDescriptions[selectedArchetype].description}
-                                </p>
-
-                                <div className="mb-6">
-                                    <h3 className="text-xl font-semibold text-gray-800 mb-3">Strengths</h3>
-                                    <ul className="space-y-2 mb-6">
-                                        {archetypeDescriptions[selectedArchetype].strengths.map((strength, index) => (
-                                            <li key={index} className="flex items-start">
-                                                <span className="text-green-500 mr-2">✓</span>
-                                                <span className="text-gray-700">{strength}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-
-                                    <h3 className="text-xl font-semibold text-gray-800 mb-3">Areas for Improvement</h3>
-                                    <ul className="space-y-2">
-                                        {archetypeDescriptions[selectedArchetype].improvements.map((improvement, index) => (
-                                            <li key={index} className="flex items-start">
-                                                <span className="text-amber-500 mr-2">•</span>
-                                                <span className="text-gray-700">{improvement}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-
-                                <div className="p-4 bg-blue-50 rounded-lg">
-                                    <h3 className="text-lg font-semibold text-blue-800 mb-2">Strategic Insight</h3>
-                                    <p className="text-blue-700">
-                                        {archetypeDescriptions[selectedArchetype].strategy}
-                                    </p>
-                                </div>
-
-                                <button
-                                    onClick={() => setShowArchetypeDialog(false)}
-                                    className="mt-6 w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 transition"
-                                >
-                                    Got it!
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <ArchetypeDialog
+                    archetype={selectedArchetype}
+                    isOpen={showArchetypeDialog}
+                    onClose={() => setShowArchetypeDialog(false)}
+                />
             </div>
         </div>
     );
