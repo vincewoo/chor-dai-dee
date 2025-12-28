@@ -148,8 +148,8 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 
     return (
         <AnimatePresence>
-            {showTurnIndicator ? (
-                // Turn indicator display
+            {showTurnIndicator && !showPlayedCards ? (
+                // Turn indicator display (only show when there are no played cards)
                 <motion.div
                     key={`turn-${position}-${playerName}`}
                     className={basePositions[position]}
