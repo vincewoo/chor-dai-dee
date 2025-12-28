@@ -49,11 +49,17 @@ const Stats = ({ user }) => {
             title: 'Aggressive Player',
             color: 'text-red-600',
             description: 'You play with high intensity and constantly apply pressure to opponents.',
-            traits: [
+            strengths: [
                 'Quick to take control of the table',
-                'Frequently plays high-value hands',
-                'Takes calculated risks to maintain momentum',
-                'Forces opponents to make difficult decisions'
+                'Forces opponents to make difficult decisions',
+                'Maintains strong momentum',
+                'Excellent at capitalizing on weak opponents'
+            ],
+            improvements: [
+                'May exhaust strong cards too early',
+                'Can be predictable when always attacking',
+                'Sometimes takes unnecessary risks',
+                'Vulnerable to counter-plays from patient opponents'
             ],
             strategy: 'Your aggressive style can overwhelm opponents, but be careful not to exhaust your strong cards too early.'
         },
@@ -61,11 +67,17 @@ const Stats = ({ user }) => {
             title: 'Conservative Player',
             color: 'text-blue-600',
             description: 'You prioritize safety and card preservation over aggressive plays.',
-            traits: [
-                'Careful hand management',
-                'Saves strong cards for crucial moments',
-                'Minimizes risk-taking',
-                'Focuses on avoiding penalties'
+            strengths: [
+                'Excellent hand management',
+                'Strong endgame presence',
+                'Minimizes penalty risk',
+                'Hard to pressure into mistakes'
+            ],
+            improvements: [
+                'May miss opportunities to take control',
+                'Can appear passive or predictable',
+                'Struggles when forced to lead',
+                'Sometimes lets aggressive players dominate'
             ],
             strategy: 'Your patient approach often pays off in the endgame, but watch for opportunities to seize control when opponents are weak.'
         },
@@ -73,11 +85,17 @@ const Stats = ({ user }) => {
             title: 'Balanced Player',
             color: 'text-green-600',
             description: 'You maintain equilibrium between aggressive and conservative strategies.',
-            traits: [
-                'Adapts play style to game situation',
-                'Neither too aggressive nor too passive',
+            strengths: [
+                'Adapts well to different situations',
                 'Consistent decision-making',
-                'Well-rounded approach to all game phases'
+                'Difficult to exploit',
+                'Well-rounded skill set'
+            ],
+            improvements: [
+                'Jack of all trades, master of none',
+                'May lack a decisive edge in critical moments',
+                'Can be indecisive when multiple options exist',
+                'Sometimes too middle-of-the-road'
             ],
             strategy: 'Your versatility is your strength. Continue reading the game flow and adjusting your tactics accordingly.'
         },
@@ -85,11 +103,17 @@ const Stats = ({ user }) => {
             title: 'Adaptive Player',
             color: 'text-purple-600',
             description: 'You dynamically adjust your strategy based on opponents and game state.',
-            traits: [
-                'Highly flexible play style',
+            strengths: [
+                'Highly unpredictable',
                 'Excellent at reading opponents',
-                'Changes tactics mid-game',
-                'Unpredictable and hard to counter'
+                'Can counter any play style',
+                'Thrives in complex situations'
+            ],
+            improvements: [
+                'May overthink simple situations',
+                'Can confuse allies in team variants',
+                'Sometimes changes strategy too frequently',
+                'Requires high mental energy to maintain'
             ],
             strategy: 'Your ability to shift strategies keeps opponents guessing. Use this unpredictability to maintain a psychological edge.'
         }
@@ -233,12 +257,22 @@ const Stats = ({ user }) => {
                             </p>
 
                             <div className="mb-6">
-                                <h3 className="text-xl font-semibold text-gray-800 mb-3">Key Traits</h3>
-                                <ul className="space-y-2">
-                                    {archetypeDescriptions[selectedArchetype].traits.map((trait, index) => (
+                                <h3 className="text-xl font-semibold text-gray-800 mb-3">Strengths</h3>
+                                <ul className="space-y-2 mb-6">
+                                    {archetypeDescriptions[selectedArchetype].strengths.map((strength, index) => (
                                         <li key={index} className="flex items-start">
                                             <span className="text-green-500 mr-2">✓</span>
-                                            <span className="text-gray-700">{trait}</span>
+                                            <span className="text-gray-700">{strength}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+
+                                <h3 className="text-xl font-semibold text-gray-800 mb-3">Areas for Improvement</h3>
+                                <ul className="space-y-2">
+                                    {archetypeDescriptions[selectedArchetype].improvements.map((improvement, index) => (
+                                        <li key={index} className="flex items-start">
+                                            <span className="text-amber-500 mr-2">•</span>
+                                            <span className="text-gray-700">{improvement}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -766,7 +800,13 @@ const BehavioralCard = ({ stats, onArchetypeClick }) => {
 
             <div className="mt-4 text-sm text-gray-600">
                 <p><strong>Behavioral Profile:</strong> AI-classified play style based on decision patterns.</p>
-                <p><strong>Archetypes:</strong> Aggressive (high pressure), Conservative (safe play), Balanced (mixed), Adaptive (flexible).</p>
+                <p>
+                    <strong>Archetypes:</strong>{' '}
+                    <button onClick={() => onArchetypeClick('Aggressive')} className="text-red-600 hover:underline">Aggressive</button> (high pressure),{' '}
+                    <button onClick={() => onArchetypeClick('Conservative')} className="text-blue-600 hover:underline">Conservative</button> (safe play),{' '}
+                    <button onClick={() => onArchetypeClick('Balanced')} className="text-green-600 hover:underline">Balanced</button> (mixed),{' '}
+                    <button onClick={() => onArchetypeClick('Adaptive')} className="text-purple-600 hover:underline">Adaptive</button> (flexible).
+                </p>
             </div>
         </div>
     );
