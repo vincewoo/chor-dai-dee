@@ -1154,7 +1154,7 @@ const GameRoom = ({ user, socket }) => {
                             </div>
                         ))}
                         <div className="mt-4 pt-2 border-t border-white/20 text-sm text-gray-400">
-                            First to 100 points loses. Lowest score wins!
+                            First to {gameState.pointThreshold || 100} points loses. Lowest score wins!
                         </div>
                     </div>
 
