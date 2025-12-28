@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#1e293b" rx="80"/>
+
+  <!-- Card stack effect -->
+  <g transform="translate(80, 80)">
+    <!-- Back card -->
+    <rect x="40" y="20" width="260" height="360" rx="20" fill="#334155" opacity="0.6"/>
+
+    <!-- Middle card -->
+    <rect x="20" y="10" width="260" height="360" rx="20" fill="#475569" opacity="0.8"/>
+
+    <!-- Front card -->
+    <rect x="0" y="0" width="260" height="360" rx="20" fill="#f8fafc"/>
+
+    <!-- Diamond suit (red) -->
+    <g transform="translate(130, 120)">
+      <path d="M 0,-60 L 40,0 L 0,60 L -40,0 Z" fill="#ef4444"/>
+    </g>
+
+    <!-- Number "2" -->
+    <text x="40" y="80" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="#1e293b">2</text>
+  </g>
+</svg>
