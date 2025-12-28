@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import ArchetypeDialog from './ArchetypeDialog';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
@@ -12,11 +13,18 @@ const Leaderboard = ({ user }) => {
     const [playerRank, setPlayerRank] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [showArchetypeDialog, setShowArchetypeDialog] = useState(false);
+    const [selectedArchetype, setSelectedArchetype] = useState(null);
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchLeaderboard();
     }, [mode, sortBy, minGames]);
+
+    const handleArchetypeClick = (archetype) => {
+        setSelectedArchetype(archetype);
+        setShowArchetypeDialog(true);
+    };
 
     const fetchLeaderboard = async () => {
         setLoading(true);
@@ -58,16 +66,20 @@ const Leaderboard = ({ user }) => {
         if (!archetype) return null;
 
         const colors = {
-            'Aggressive': 'bg-red-600',
-            'Conservative': 'bg-blue-600',
-            'Balanced': 'bg-green-600',
-            'Adaptive': 'bg-purple-600'
+            'Aggressive': 'bg-red-600 hover:bg-red-700',
+            'Conservative': 'bg-blue-600 hover:bg-blue-700',
+            'Balanced': 'bg-green-600 hover:bg-green-700',
+            'Adaptive': 'bg-purple-600 hover:bg-purple-700'
         };
 
         return (
-            <span className={`text-xs px-2 py-1 rounded ${colors[archetype] || 'bg-gray-600'}`}>
+            <button
+                onClick={() => handleArchetypeClick(archetype)}
+                className={`text-xs px-2 py-1 rounded cursor-pointer transition-all hover:scale-105 ${colors[archetype] || 'bg-gray-600 hover:bg-gray-700'}`}
+                title="Click to learn more"
+            >
                 {archetype}
-            </span>
+            </button>
         );
     };
 
@@ -300,23 +312,54 @@ const Leaderboard = ({ user }) => {
                     <h3 className="text-lg font-bold text-yellow-400 mb-3">Player Types</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                         <div className="flex items-center gap-2">
-                            <span className="bg-red-600 px-2 py-1 rounded text-xs">Aggressive</span>
+                            <button
+                                onClick={() => handleArchetypeClick('Aggressive')}
+                                className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs cursor-pointer transition-all hover:scale-105"
+                                title="Click to learn more"
+                            >
+                                Aggressive
+                            </button>
                             <span className="text-gray-300">High play rate, takes control</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="bg-blue-600 px-2 py-1 rounded text-xs">Conservative</span>
+                            <button
+                                onClick={() => handleArchetypeClick('Conservative')}
+                                className="bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-all hover:scale-105"
+                                title="Click to learn more"
+                            >
+                                Conservative
+                            </button>
                             <span className="text-gray-300">Cautious, strategic passing</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="bg-green-600 px-2 py-1 rounded text-xs">Balanced</span>
+                            <button
+                                onClick={() => handleArchetypeClick('Balanced')}
+                                className="bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs cursor-pointer transition-all hover:scale-105"
+                                title="Click to learn more"
+                            >
+                                Balanced
+                            </button>
                             <span className="text-gray-300">Mix of play and pass</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="bg-purple-600 px-2 py-1 rounded text-xs">Adaptive</span>
+                            <button
+                                onClick={() => handleArchetypeClick('Adaptive')}
+                                className="bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded text-xs cursor-pointer transition-all hover:scale-105"
+                                title="Click to learn more"
+                            >
+                                Adaptive
+                            </button>
                             <span className="text-gray-300">Adjusts to opponents</span>
                         </div>
                     </div>
                 </div>
+
+                {/* Archetype Dialog */}
+                <ArchetypeDialog
+                    archetype={selectedArchetype}
+                    isOpen={showArchetypeDialog}
+                    onClose={() => setShowArchetypeDialog(false)}
+                />
             </div>
         </div>
     );
