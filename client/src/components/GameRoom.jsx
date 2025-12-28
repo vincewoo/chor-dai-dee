@@ -107,7 +107,7 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin }) => {
 };
 
 // Played cards display component - extracted to prevent re-renders
-const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, hasActiveHandOnTable = false }) => {
+const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false }) => {
     // Mobile: position near avatars; Desktop: original positions
     // Bottom position adjusted higher to be visible above controls
     // Add vertical offset for side players
@@ -126,8 +126,8 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
     const cardSize = 'large'; // Use large for all on mobile
 
     // Determine what to display
-    // Only show turn indicator when it's their turn AND there's no active hand on the table (free control)
-    const showTurnIndicator = !hasActiveHandOnTable && isCurrentTurn;
+    // Show turn indicator whenever it's their turn
+    const showTurnIndicator = isCurrentTurn;
     const showPlayedCards = !!lastPlayed;
 
     // Calculate z-index based on play order: later plays appear on top
@@ -153,14 +153,16 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                 <motion.div
                     key={`turn-${position}-${playerName}`}
                     className={basePositions[position]}
-                    style={{ zIndex: 50 }}
+                    style={{ zIndex: 150 }}
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.5, opacity: 0 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15 }}
                 >
-                    <div className={`px-4 py-2 md:px-[1.5vmax] md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] shadow-lg ${
-                        isMe ? 'bg-yellow-500 text-black animate-pulse' : 'bg-black/60 text-white'
+                    <div className={`px-4 py-2 md:px-[1.5vmax] md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] ${
+                        isMe
+                            ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-black animate-pulse shadow-lg shadow-orange-400/60 border-2 border-amber-300'
+                            : 'bg-black/60 text-white shadow-lg'
                     }`}>
                         {isMe ? "Your Turn!" : `${playerName}'s Turn`}
                     </div>
@@ -446,7 +448,6 @@ const GameRoom = ({ user, socket }) => {
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false); // Leave confirmation modal
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
-    const [isConnected, setIsConnected] = useState(socket.connected); // Track socket connection status
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -659,12 +660,10 @@ const GameRoom = ({ user, socket }) => {
     useEffect(() => {
         const handleDisconnect = (reason) => {
             console.log('Socket disconnected:', reason);
-            setIsConnected(false);
         };
 
         const handleConnect = () => {
             console.log('Socket connected, requesting room state...');
-            setIsConnected(true);
             // Re-join room and request fresh state after reconnection
             socket.emit('join_room', { roomId, username: user?.username });
         };
@@ -1092,20 +1091,6 @@ const GameRoom = ({ user, socket }) => {
                 </div>
             )}
 
-            {/* Connection Status Indicator */}
-            <AnimatePresence>
-                {!isConnected && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -50 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -50 }}
-                        className="absolute top-[5vh] left-1/2 -translate-x-1/2 bg-orange-600 text-white px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-50 font-bold text-base md:text-[1vmax] flex items-center gap-2"
-                    >
-                        <span className="animate-pulse">●</span> Reconnecting...
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
             {/* Error Toast */}
             <AnimatePresence>
                 {error && (
@@ -1368,7 +1353,6 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(2))}
                 playerName={getRelativePlayer(2)?.name}
                 isMe={getRelativePlayer(2)?.id === myPlayerId}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(3)?.lastPlayed}
@@ -1376,7 +1360,6 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(3))}
                 playerName={getRelativePlayer(3)?.name}
                 isMe={getRelativePlayer(3)?.id === myPlayerId}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(1)?.lastPlayed}
@@ -1384,7 +1367,6 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(1))}
                 playerName={getRelativePlayer(1)?.name}
                 isMe={getRelativePlayer(1)?.id === myPlayerId}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(0)?.lastPlayed}
@@ -1392,7 +1374,6 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(0))}
                 playerName={getRelativePlayer(0)?.name}
                 isMe={true}
-                hasActiveHandOnTable={!!gameState.lastPlayedHand}
             />
 
             {/* Bottom: My Hand & Controls */}
