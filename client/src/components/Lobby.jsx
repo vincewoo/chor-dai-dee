@@ -177,25 +177,33 @@ const Lobby = ({ user, socket, setUser }) => {
                     </div>
 
                     <div className="space-y-2">
-                        <div className="flex space-x-2">
-                            <input
-                                type="text"
-                                placeholder="Enter Room Code"
-                                className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
-                                value={roomId}
-                                onChange={e => setRoomId(e.target.value)}
-                            />
-                            <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
-                                Join
-                            </button>
+                        <div>
+                            <label htmlFor="room-code-input" className="sr-only">Room Code</label>
+                            <div className="flex space-x-2">
+                                <input
+                                    id="room-code-input"
+                                    type="text"
+                                    placeholder="Enter Room Code"
+                                    className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
+                                    value={roomId}
+                                    onChange={e => setRoomId(e.target.value)}
+                                />
+                                <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
+                                    Join
+                                </button>
+                            </div>
                         </div>
-                        <input
-                            type="password"
-                            placeholder="Password (if required)"
-                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                        />
+                        <div>
+                            <label htmlFor="room-password-input" className="sr-only">Room Password</label>
+                            <input
+                                id="room-password-input"
+                                type="password"
+                                placeholder="Password (if required)"
+                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                            />
+                        </div>
                     </div>
 
                     {joinableRooms.length > 0 && (

@@ -1601,6 +1601,7 @@ const GameRoom = ({ user, socket }) => {
                                 <button
                                     onClick={() => setShowSettings(false)}
                                     className="text-gray-400 hover:text-white text-3xl md:text-[2vmax] font-bold leading-none"
+                                    aria-label="Close settings"
                                 >
                                     ×
                                 </button>
