@@ -221,7 +221,7 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 };
 
 // Top Player Area - cards horizontal on left, avatar on right
-const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
+const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -283,7 +283,7 @@ const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
 };
 
 // Left Player Area - cards vertical (rotated 90°), avatar at top
-const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
+const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -344,7 +344,7 @@ const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
 };
 
 // Right Player Area - cards vertical (rotated 90°), avatar at top
-const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
+const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -1492,6 +1492,7 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(2)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(2))}
+                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* Left Player (Offset 3) */}
@@ -1500,6 +1501,7 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(3)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(3))}
+                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* Right Player (Offset 1) */}
@@ -1508,6 +1510,7 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(1)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(1))}
+                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}

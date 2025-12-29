@@ -10,6 +10,9 @@
       "Bash(lsof:*)",
       "Bash(kill:*)",
       "Bash(killall:*)",
+      "Bash(curl:*)",
+      "Bash(nvm list:*)",
+      "Bash(nvm use:*)",
       "Bash(git add:*)",
       "Bash(git rebase:*)"
     ],
