@@ -24,6 +24,11 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return saved === 'true';
     });
 
+    const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
+        const saved = localStorage.getItem('voiceChatEnabled');
+        return saved !== 'false'; // Default to true
+    });
+
     const [isLoading, setIsLoading] = useState(false);
 
     // Load preferences from server when user logs in (skip for guests)
@@ -37,9 +42,15 @@ export const UserPreferencesProvider = ({ children, user }) => {
                     if (!cancelled) {
                         setFourColorMode(data.fourColorMode);
                         setAutoPass(data.autoPass);
+                        if (data.voiceChatEnabled !== undefined) {
+                            setVoiceChatEnabled(data.voiceChatEnabled);
+                        }
                         // Also update localStorage
                         localStorage.setItem('fourColorMode', data.fourColorMode);
                         localStorage.setItem('autoPass', data.autoPass);
+                        if (data.voiceChatEnabled !== undefined) {
+                            localStorage.setItem('voiceChatEnabled', data.voiceChatEnabled);
+                        }
                     }
                 })
                 .catch(err => {
@@ -67,7 +78,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, autoPass }),
+                        body: JSON.stringify({ fourColorMode, autoPass, voiceChatEnabled }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -79,7 +90,8 @@ export const UserPreferencesProvider = ({ children, user }) => {
         // Also save to localStorage
         localStorage.setItem('fourColorMode', fourColorMode);
         localStorage.setItem('autoPass', autoPass);
-    }, [fourColorMode, autoPass, user?.id, isLoading]);
+        localStorage.setItem('voiceChatEnabled', voiceChatEnabled);
+    }, [fourColorMode, autoPass, voiceChatEnabled, user?.id, isLoading]);
 
     const toggleFourColorMode = () => {
         setFourColorMode(prev => !prev);
@@ -89,12 +101,18 @@ export const UserPreferencesProvider = ({ children, user }) => {
         setAutoPass(prev => !prev);
     };
 
+    const toggleVoiceChat = () => {
+        setVoiceChatEnabled(prev => !prev);
+    };
+
     return (
         <UserPreferencesContext.Provider value={{
             fourColorMode,
             autoPass,
+            voiceChatEnabled,
             toggleFourColorMode,
             toggleAutoPass,
+            toggleVoiceChat,
             setAutoPass,
             isLoading
         }}>

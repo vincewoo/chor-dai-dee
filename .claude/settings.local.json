@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git pull:*)",
+      "Read(//private/var/log/**)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(killall:*)",
+      "Bash(git add:*)",
+      "Bash(git rebase:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
