@@ -55,6 +55,34 @@ const Stats = ({ user }) => {
         return null;
     }
 
+    // Show message for guest users
+    if (user.isGuest) {
+        return (
+            <div className="min-h-screen bg-green-800 text-white p-4 flex items-center justify-center">
+                <div className="max-w-2xl bg-white text-gray-800 p-8 rounded-xl shadow-2xl text-center">
+                    <h1 className="text-3xl font-bold text-blue-600 mb-4">Guest User</h1>
+                    <p className="text-lg mb-4">
+                        Guest users don't have saved statistics. Create an account to track your performance!
+                    </p>
+                    <div className="flex gap-4 justify-center">
+                        <button
+                            onClick={() => navigate('/')}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition"
+                        >
+                            Create Account
+                        </button>
+                        <button
+                            onClick={() => navigate('/lobby')}
+                            className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-bold transition"
+                        >
+                            Back to Lobby
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-green-800 text-white p-4">
             <div className="max-w-6xl mx-auto">

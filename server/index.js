@@ -74,13 +74,16 @@ io.on('connection', (socket) => {
     socket.emit('pong');
   });
 
-  socket.on('join_room', async ({ roomId, username }) => {
-    console.log(`join_room event received: roomId=${roomId}, username=${username}`);
+  socket.on('join_room', async ({ roomId, username, isGuest }) => {
+    console.log(`join_room event received: roomId=${roomId}, username=${username}, isGuest=${isGuest}`);
 
     // Fetch user stats to get rating
-    // Use 'standard' mode as default when joining (mode can change later via set_game_mode)
+    // Skip database lookup for guest users
     let ratingMu, ratingSigma, displayRating;
-    if (username) {
+    if (isGuest) {
+        // Guest users get default rating
+        displayRating = calculateDisplayRating(undefined, undefined);
+    } else if (username) {
         try {
             const stats = await getUserStatsByMode(username, 'standard');
             if (stats) {
@@ -300,7 +303,8 @@ io.on('connection', (socket) => {
         id: socket.id,
         name: username || `Player ${socket.id.substring(0,4)}`,
         socket,
-        rating: displayRating
+        rating: displayRating,
+        isGuest: isGuest || false
     };
 
     // Check if room is in-progress and has bots to replace
@@ -415,9 +419,9 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('dragon_win', dragonResults);
 
       // Handle rating updates similar to game_over (fetch stats, calculate new ratings, update DB)
-      // Exclude mid-game joiners from rating calculations (treat as bots)
+      // Exclude guests and mid-game joiners from rating calculations (treat as bots)
       const playersWithStats = await Promise.all(room.players.map(async (p) => {
-          if (p.isBot || p.joinedMidGame) return { ...p, isBot: true }; // Treat mid-game joiners as bots for rating calc
+          if (p.isBot || p.isGuest || p.joinedMidGame) return { ...p, isBot: true }; // Treat guests and mid-game joiners as bots for rating calc
           try {
               const stats = await getUserStatsByMode(p.name, room.gameMode);
               return {
@@ -442,11 +446,11 @@ io.on('connection', (socket) => {
 
       for (let i = 0; i < room.players.length; i++) {
           const player = room.players[i];
-          // Skip bots and mid-game joiners (no stats recorded for mid-game joiners)
+          // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
           if (player.joinedMidGame) {
               console.log(`Dragon win: Skipping stats for ${player.name} (joined mid-game at round ${player.joinedAtRound})`);
           }
-          if (!player.isBot && !player.joinedMidGame && newRatings[i]) {
+          if (!player.isBot && !player.isGuest && !player.joinedMidGame && newRatings[i]) {
               try {
                   const user = await getUserByUsername(player.name);
                   if (user) {
@@ -490,9 +494,9 @@ io.on('connection', (socket) => {
           placement: index + 1
       }));
 
-      // Save round stats for each player (both human and bots)
+      // Save round stats for each player (only registered human players, not guests)
       for (const scoreData of roundScoresWithPlacements) {
-          if (!scoreData.isBot) {
+          if (!scoreData.isBot && !scoreData.isGuest) {
               try {
                   const user = await getUserByUsername(scoreData.name);
                   if (user) {
@@ -563,9 +567,9 @@ io.on('connection', (socket) => {
 
           // 1. Fetch current ratings for all humans (mode-specific)
           // We need to fetch stats to get current mu/sigma
-          // Exclude mid-game joiners from rating calculations (treat as bots)
+          // Exclude guests and mid-game joiners from rating calculations (treat as bots)
           const playersWithStats = await Promise.all(room.players.map(async (p) => {
-            if (p.isBot || p.joinedMidGame) return { ...p, isBot: true }; // Treat mid-game joiners as bots for rating calc
+            if (p.isBot || p.isGuest || p.joinedMidGame) return { ...p, isBot: true }; // Treat guests and mid-game joiners as bots for rating calc
             try {
                 const stats = await getUserStatsByMode(p.name, room.gameMode);
                 return {
@@ -601,11 +605,11 @@ io.on('connection', (socket) => {
 
           // 3. Update DB for human players (final game results + ratings + aggregate stats, mode-specific)
           for (const p of room.players) {
-              // Skip bots and mid-game joiners (no stats recorded for mid-game joiners)
+              // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
               if (p.joinedMidGame) {
                   console.log(`Skipping stats for ${p.name} (joined mid-game at round ${p.joinedAtRound} with score ${p.joinedWithScore})`);
               }
-              if (!p.isBot && !p.joinedMidGame) {
+              if (!p.isBot && !p.isGuest && !p.joinedMidGame) {
                   try {
                       const isWinner = p.id === gameWinner.id;
                       const totalScore = room.cumulativeScores[p.id] || 0;
@@ -792,8 +796,8 @@ io.on('connection', (socket) => {
               }
           }
 
-          // 4. Update head-to-head stats for all human player pairs
-          const humanPlayers = room.players.filter(p => !p.isBot);
+          // 4. Update head-to-head stats for all registered human player pairs (exclude guests)
+          const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest);
           for (let i = 0; i < humanPlayers.length; i++) {
               for (let j = i + 1; j < humanPlayers.length; j++) {
                   try {
