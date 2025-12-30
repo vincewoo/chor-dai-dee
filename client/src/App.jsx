@@ -6,6 +6,7 @@ import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 import Stats from './components/Stats';
 import Leaderboard from './components/Leaderboard';
+import ActivityFeed from './components/ActivityFeed';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
@@ -70,6 +71,7 @@ function App() {
                 <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
                 <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
                 <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
+                <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} /> : <Navigate to="/" />} />
                 <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
             </Routes>
         </Router>

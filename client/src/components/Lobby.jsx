@@ -10,6 +10,7 @@ const Lobby = ({ user, socket, setUser }) => {
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
+    const [recentGames, setRecentGames] = useState([]);
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -42,6 +43,20 @@ const Lobby = ({ user, socket, setUser }) => {
             }
         } catch (error) {
             console.error('Error fetching joinable rooms:', error);
+        }
+    };
+
+    // Fetch recent games for activity snippet
+    const fetchRecentGames = async () => {
+        try {
+            const baseUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+            const response = await fetch(`${baseUrl}/api/activity?limit=4&status=completed`);
+            if (response.ok) {
+                const data = await response.json();
+                setRecentGames(data.games || []);
+            }
+        } catch (error) {
+            console.error('Error fetching recent games:', error);
         }
     };
 
@@ -108,6 +123,9 @@ const Lobby = ({ user, socket, setUser }) => {
         fetchJoinableRooms();
         const interval = setInterval(fetchJoinableRooms, 5000);
 
+        // Fetch recent games
+        fetchRecentGames();
+
         return () => {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
@@ -166,6 +184,13 @@ const Lobby = ({ user, socket, setUser }) => {
                         className="text-sm text-purple-600 hover:text-purple-800 underline font-medium"
                     >
                         Leaderboard
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                        onClick={() => navigate('/activity')}
+                        className="text-sm text-green-600 hover:text-green-800 underline font-medium"
+                    >
+                        Activity Feed
                     </button>
                     <span className="text-gray-300">|</span>
                     <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline">
@@ -232,6 +257,62 @@ const Lobby = ({ user, socket, setUser }) => {
                 </div>
                 {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
             </div>
+
+            {/* Recent Games Activity Snippet */}
+            {recentGames.length > 0 && (
+                <div className="bg-white text-gray-800 p-4 rounded-xl shadow-xl w-full sm:max-w-md mt-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-gray-600">🔥 Recent Activity</h3>
+                        <button
+                            onClick={() => navigate('/activity')}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                            View All →
+                        </button>
+                    </div>
+                    <div className="space-y-2">
+                        {recentGames.slice(0, 3).map((game) => {
+                            const winner = game.participants?.find(p => p.placement === 1);
+                            const timeDiff = Date.now() - new Date(game.end_time);
+                            const minutesAgo = Math.floor(timeDiff / 60000);
+                            const hoursAgo = Math.floor(timeDiff / 3600000);
+                            const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;
+
+                            return (
+                                <div
+                                    key={game.game_id}
+                                    className="bg-gray-50 rounded-lg p-2 hover:bg-gray-100 transition cursor-pointer"
+                                    onClick={() => navigate('/activity')}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-lg">👑</span>
+                                            <div>
+                                                <div className="text-sm font-medium">
+                                                    {winner?.username || 'Unknown'}
+                                                </div>
+                                                <div className="text-xs text-gray-500">
+                                                    {game.participants?.filter(p => !p.isBot).length || 0} players • {game.total_rounds} rounds
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={`text-xs px-2 py-0.5 rounded inline-block ${
+                                                game.game_mode === 'short'
+                                                    ? 'bg-blue-100 text-blue-700'
+                                                    : 'bg-purple-100 text-purple-700'
+                                            }`}>
+                                                {game.game_mode === 'short' ? '⚡' : '🏆'}
+                                            </div>
+                                            <div className="text-xs text-gray-400 mt-1">{timeStr}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
         </div>

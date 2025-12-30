@@ -99,6 +99,61 @@ function initDb() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_h2h_player_mode
                 ON head_to_head_stats(player_id, game_mode)`);
 
+        // ========== ACTIVITY FEED / GAME HISTORY TABLES ==========
+
+        // Game history table for activity feed
+        db.run(`CREATE TABLE IF NOT EXISTS game_history (
+            game_id TEXT PRIMARY KEY,
+            room_name TEXT,
+            game_mode TEXT NOT NULL,
+            is_public INTEGER DEFAULT 1,
+            status TEXT NOT NULL CHECK(status IN ('completed', 'abandoned', 'in_progress')),
+            winner_id INTEGER,
+            winner_username TEXT,
+            start_time DATETIME NOT NULL,
+            end_time DATETIME,
+            duration_seconds INTEGER,
+            total_rounds INTEGER DEFAULT 0,
+            max_points INTEGER,
+            FOREIGN KEY(winner_id) REFERENCES users(id)
+        )`);
+
+        // Game participants for tracking who was in each game
+        db.run(`CREATE TABLE IF NOT EXISTS game_participants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL,
+            user_id INTEGER,
+            username TEXT NOT NULL,
+            is_bot INTEGER DEFAULT 0,
+            final_placement INTEGER,
+            final_score INTEGER,
+            rounds_won INTEGER DEFAULT 0,
+            FOREIGN KEY(game_id) REFERENCES game_history(game_id),
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(game_id, username)
+        )`);
+
+        // Notable events in games (for highlights)
+        db.run(`CREATE TABLE IF NOT EXISTS game_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_data TEXT,
+            round_number INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(game_id) REFERENCES game_history(game_id)
+        )`);
+
+        // Indexes for efficient activity feed queries
+        db.run(`CREATE INDEX IF NOT EXISTS idx_game_history_end_time
+                ON game_history(end_time DESC)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_game_history_status
+                ON game_history(status, end_time DESC)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_game_participants_user
+                ON game_participants(user_id, game_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_game_events_game
+                ON game_events(game_id)`);
+
         // Create Tier 3 advanced analytics tables
 
         // Decision Efficiency: Track each play decision for optimality analysis
@@ -1061,6 +1116,234 @@ const getTier3Stats = (userId, gameMode) => {
     });
 };
 
+// ========== GAME HISTORY / ACTIVITY FEED FUNCTIONS ==========
+
+// Create or update game history entry
+const saveGameHistory = (gameData) => {
+    return new Promise((resolve, reject) => {
+        const {
+            gameId,
+            roomName,
+            gameMode,
+            isPublic,
+            status,
+            winnerId,
+            winnerUsername,
+            startTime,
+            endTime,
+            durationSeconds,
+            totalRounds,
+            maxPoints
+        } = gameData;
+
+        const query = `INSERT INTO game_history
+            (game_id, room_name, game_mode, is_public, status, winner_id, winner_username,
+             start_time, end_time, duration_seconds, total_rounds, max_points)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(game_id) DO UPDATE SET
+                status = ?,
+                winner_id = ?,
+                winner_username = ?,
+                end_time = ?,
+                duration_seconds = ?,
+                total_rounds = ?,
+                max_points = ?`;
+
+        db.run(query, [
+            gameId, roomName, gameMode, isPublic ? 1 : 0, status, winnerId, winnerUsername,
+            startTime, endTime, durationSeconds, totalRounds, maxPoints,
+            status, winnerId, winnerUsername, endTime, durationSeconds, totalRounds, maxPoints
+        ], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Save game participant
+const saveGameParticipant = (participantData) => {
+    return new Promise((resolve, reject) => {
+        const {
+            gameId,
+            userId,
+            username,
+            isBot,
+            finalPlacement,
+            finalScore,
+            roundsWon
+        } = participantData;
+
+        const query = `INSERT INTO game_participants
+            (game_id, user_id, username, is_bot, final_placement, final_score, rounds_won)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(game_id, username) DO UPDATE SET
+                final_placement = ?,
+                final_score = ?,
+                rounds_won = ?`;
+
+        db.run(query, [
+            gameId, userId, username, isBot ? 1 : 0, finalPlacement, finalScore, roundsWon,
+            finalPlacement, finalScore, roundsWon
+        ], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Save notable game event
+const saveGameEvent = (gameId, eventType, eventData, roundNumber = null) => {
+    return new Promise((resolve, reject) => {
+        const query = `INSERT INTO game_events (game_id, event_type, event_data, round_number)
+            VALUES (?, ?, ?, ?)`;
+
+        db.run(query, [gameId, eventType, JSON.stringify(eventData), roundNumber], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+};
+
+// Get activity feed games
+const getActivityFeed = (options = {}) => {
+    const {
+        userId = null,
+        includeStatus = ['completed'],
+        gameMode = null,
+        limit = 20,
+        offset = 0
+    } = options;
+
+    return new Promise((resolve, reject) => {
+        // Build WHERE clause
+        let whereClauses = [];
+        let params = [];
+
+        // Filter by status
+        if (includeStatus.length > 0) {
+            const statusPlaceholders = includeStatus.map(() => '?').join(',');
+            whereClauses.push(`gh.status IN (${statusPlaceholders})`);
+            params.push(...includeStatus);
+        }
+
+        // Filter by game mode
+        if (gameMode) {
+            whereClauses.push('gh.game_mode = ?');
+            params.push(gameMode);
+        }
+
+        // Show ALL games for now (full transparency approach)
+        // We can add privacy filters later based on user feedback
+        // No filtering by is_public for now
+
+        const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+        const query = `
+            SELECT
+                gh.*,
+                GROUP_CONCAT(
+                    json_object(
+                        'username', gp.username,
+                        'isBot', gp.is_bot,
+                        'placement', gp.final_placement,
+                        'score', gp.final_score,
+                        'roundsWon', gp.rounds_won
+                    )
+                ) as participants_json,
+                (SELECT COUNT(*) FROM game_events ge WHERE ge.game_id = gh.game_id) as event_count
+            FROM game_history gh
+            LEFT JOIN game_participants gp ON gp.game_id = gh.game_id
+            ${whereClause}
+            GROUP BY gh.game_id
+            ORDER BY gh.end_time DESC, gh.start_time DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        params.push(limit, offset);
+
+        db.all(query, params, (err, rows) => {
+            if (err) return reject(err);
+
+            // Parse participants JSON
+            const games = (rows || []).map(row => {
+                const participants = row.participants_json
+                    ? row.participants_json.split(',').map(p => {
+                        try {
+                            return JSON.parse(p);
+                        } catch (e) {
+                            return null;
+                        }
+                    }).filter(Boolean)
+                    : [];
+
+                return {
+                    ...row,
+                    participants,
+                    participants_json: undefined
+                };
+            });
+
+            resolve(games);
+        });
+    });
+};
+
+// Get game events for a specific game
+const getGameEvents = (gameId) => {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT * FROM game_events WHERE game_id = ? ORDER BY timestamp ASC`;
+
+        db.all(query, [gameId], (err, rows) => {
+            if (err) return reject(err);
+
+            // Parse event_data JSON
+            const events = (rows || []).map(row => ({
+                ...row,
+                event_data: row.event_data ? JSON.parse(row.event_data) : null
+            }));
+
+            resolve(events);
+        });
+    });
+};
+
+// Get total count for pagination
+const getActivityFeedCount = (options = {}) => {
+    const {
+        userId = null,
+        includeStatus = ['completed'],
+        gameMode = null
+    } = options;
+
+    return new Promise((resolve, reject) => {
+        let whereClauses = [];
+        let params = [];
+
+        if (includeStatus.length > 0) {
+            const statusPlaceholders = includeStatus.map(() => '?').join(',');
+            whereClauses.push(`status IN (${statusPlaceholders})`);
+            params.push(...includeStatus);
+        }
+
+        if (gameMode) {
+            whereClauses.push('game_mode = ?');
+            params.push(gameMode);
+        }
+
+        // Show ALL games for now (full transparency approach)
+        // No filtering by is_public for now
+
+        const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+        const query = `SELECT COUNT(*) as count FROM game_history ${whereClause}`;
+
+        db.get(query, params, (err, row) => {
+            if (err) return reject(err);
+            resolve(row ? row.count : 0);
+        });
+    });
+};
+
 // ========== LEADERBOARD FUNCTIONS ==========
 
 // Get leaderboard data
@@ -1218,5 +1501,12 @@ module.exports = {
     updateUserPreferences,
     // Leaderboard
     getLeaderboard,
-    getPlayerRank
+    getPlayerRank,
+    // Activity Feed / Game History
+    saveGameHistory,
+    saveGameParticipant,
+    saveGameEvent,
+    getActivityFeed,
+    getGameEvents,
+    getActivityFeedCount
 };
