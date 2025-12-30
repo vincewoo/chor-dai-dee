@@ -1266,15 +1266,17 @@ const getActivityFeed = (options = {}) => {
 
             // Parse participants JSON
             const games = (rows || []).map(row => {
-                const participants = row.participants_json
-                    ? row.participants_json.split(',').map(p => {
-                        try {
-                            return JSON.parse(p);
-                        } catch (e) {
-                            return null;
-                        }
-                    }).filter(Boolean)
-                    : [];
+                let participants = [];
+                if (row.participants_json) {
+                    try {
+                        // The GROUP_CONCAT creates a comma-separated list of JSON objects
+                        // We need to wrap it in an array and parse it
+                        participants = JSON.parse(`[${row.participants_json}]`);
+                    } catch (e) {
+                        console.error('Failed to parse participants JSON:', e, row.participants_json);
+                        participants = [];
+                    }
+                }
 
                 return {
                     ...row,
