@@ -25,6 +25,72 @@ node index.js        # Start server on port 3000
 
 Note: No test framework is currently configured.
 
+## Running Multiple Instances
+
+The codebase supports running multiple development instances simultaneously (e.g., for testing multiplayer locally or running different versions side-by-side).
+
+### Environment Variable Support
+- **Server port**: Use `PORT` environment variable (default: 3000)
+- **Client API URL**: Use `VITE_SERVER_URL` environment variable (default: http://localhost:3000)
+- **Client dev port**: Use `--port` flag with npm run dev (default: 5173)
+
+### Example: Running Two Instances
+
+#### Instance 1 (default ports)
+```bash
+# Terminal 1 - Server
+cd server/
+node index.js                    # Runs on port 3000
+
+# Terminal 2 - Client
+cd client/
+npm run dev                      # Runs on port 5173, connects to localhost:3000
+```
+
+#### Instance 2 (custom ports)
+```bash
+# Terminal 3 - Server
+cd server/
+PORT=3001 node index.js          # Runs on port 3001
+
+# Terminal 4 - Client
+cd client/
+VITE_SERVER_URL=http://localhost:3001 npm run dev -- --port 5174
+                                 # Runs on port 5174, connects to localhost:3001
+```
+
+### Using .env Files
+Instead of command-line variables, you can create `.env` files:
+
+**Instance 1** - `server/.env`:
+```
+PORT=3000
+```
+
+**Instance 2** - `server/.env`:
+```
+PORT=3001
+```
+
+**Instance 2** - `client/.env`:
+```
+VITE_SERVER_URL=http://localhost:3001
+```
+
+### Database Isolation
+Each instance uses its own SQLite database:
+- Development: `server/database.sqlite` (relative to each clone)
+- Production: `/data/database.sqlite` (Docker volume)
+
+This means each instance has:
+- Separate user accounts and authentication
+- Independent game statistics
+- Isolated user preferences
+- No data conflicts between instances
+
+### CORS Configuration
+The server's CORS is configured to accept connections from any localhost port in development, so no additional configuration is needed for multiple instances.
+
 ## Architecture
 
 ### Data Flow
