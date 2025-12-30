@@ -11,57 +11,7 @@ const Lobby = ({ user, socket, setUser }) => {
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
-    // Hardcoded sample games for testing the UI
-    const [recentGames, setRecentGames] = useState([
-        {
-            game_id: 'game_1',
-            game_mode: 'short',
-            end_time: new Date(Date.now() - 5 * 60000).toISOString(), // 5 minutes ago
-            total_rounds: 8,
-            participants: [
-                { username: 'DragonMaster', placement: 1, score: 42, isBot: false },
-                { username: 'CardShark', placement: 2, score: 67, isBot: false },
-                { username: 'Lucky7', placement: 3, score: 89, isBot: false },
-                { username: 'Bot_Alice', placement: 4, score: 95, isBot: true }
-            ]
-        },
-        {
-            game_id: 'game_2',
-            game_mode: 'standard',
-            end_time: new Date(Date.now() - 32 * 60000).toISOString(), // 32 minutes ago
-            total_rounds: 15,
-            participants: [
-                { username: 'Bot_Genius', placement: 1, score: 78, isBot: true },  // Bot wins!
-                { username: 'ProPlayer', placement: 2, score: 101, isBot: false },
-                { username: 'Newbie123', placement: 3, score: 115, isBot: false },
-                { username: 'Bot_Charlie', placement: 4, score: 132, isBot: true }
-            ]
-        },
-        {
-            game_id: 'game_3',
-            game_mode: 'short',
-            end_time: new Date(Date.now() - 2 * 3600000).toISOString(), // 2 hours ago
-            total_rounds: 6,
-            participants: [
-                { username: 'SpeedRunner', placement: 1, score: 31, isBot: false },
-                { username: 'Bot_Master', placement: 2, score: 52, isBot: true },  // Bot places 2nd
-                { username: 'CasualGamer', placement: 3, score: 58, isBot: false },
-                { username: 'TryHard', placement: 4, score: 61, isBot: false }
-            ]
-        },
-        {
-            game_id: 'game_4',
-            game_mode: 'standard',
-            end_time: new Date(Date.now() - 5 * 3600000).toISOString(), // 5 hours ago
-            total_rounds: 12,
-            participants: [
-                { username: 'NightOwl', placement: 1, score: 88, isBot: false },
-                { username: 'Bot_Diana', placement: 2, score: 102, isBot: true },
-                { username: 'SleepyHead', placement: 3, score: 118, isBot: false },
-                { username: 'Bot_Eve', placement: 4, score: 145, isBot: true }
-            ]
-        }
-    ]);
+    const [recentGames, setRecentGames] = useState([]);
     const [selectedGame, setSelectedGame] = useState(null);
     const navigate = useNavigate();
 
@@ -194,7 +144,7 @@ const Lobby = ({ user, socket, setUser }) => {
         const interval = setInterval(fetchJoinableRooms, 5000);
 
         // Fetch recent games
-        // fetchRecentGames(); // Commented out to use hardcoded data for testing
+        fetchRecentGames();
 
         return () => {
             socket.off('connect', onConnect);
