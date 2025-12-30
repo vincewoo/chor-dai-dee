@@ -607,6 +607,17 @@ io.on('connection', (socket) => {
 
           io.to(roomId).emit('game_over', gameResults);
 
+          // Calculate final game placements BEFORE saving to database
+          const finalPlacements = [...room.players].sort((a, b) => {
+              const scoreA = room.cumulativeScores[a.id] || 0;
+              const scoreB = room.cumulativeScores[b.id] || 0;
+              return scoreA - scoreB; // Lower score = better placement
+          }).map((p, index) => ({
+              playerId: p.id,
+              playerName: p.name,
+              placement: index + 1
+          }));
+
           // Save game history when game completes
           try {
               const endTime = new Date();
@@ -681,17 +692,6 @@ io.on('connection', (socket) => {
           newRatings.forEach(r => {
             ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
           });
-
-          // Calculate final game placements (1st = lowest score, 2nd/3rd/4th by score ascending)
-          const finalPlacements = [...room.players].sort((a, b) => {
-              const scoreA = room.cumulativeScores[a.id] || 0;
-              const scoreB = room.cumulativeScores[b.id] || 0;
-              return scoreA - scoreB; // Lower score = better placement
-          }).map((p, index) => ({
-              playerId: p.id,
-              playerName: p.name,
-              placement: index + 1
-          }));
 
           // 3. Update DB for human players (final game results + ratings + aggregate stats, mode-specific)
           for (const p of room.players) {
