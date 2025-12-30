@@ -58,6 +58,29 @@ npm run dev
 ```
 Client runs on http://localhost:5173
 
+### Running Multiple Instances
+The codebase supports running multiple development instances simultaneously (e.g., for testing multiplayer locally):
+
+**Instance 1** (default ports):
+```bash
+# Server on port 3000
+cd server/ && node index.js
+
+# Client on port 5173
+cd client/ && npm run dev
+```
+
+**Instance 2** (custom ports):
+```bash
+# Server on port 3001
+cd server/ && PORT=3001 node index.js
+
+# Client on port 5174, connecting to server on 3001
+cd client/ && VITE_SERVER_URL=http://localhost:3001 npm run dev -- --port 5174
+```
+
+Each instance uses its own SQLite database (`server/database.sqlite`), providing complete isolation between instances.
+
 ## How to Play
 
 1. **Register or login** with your username
