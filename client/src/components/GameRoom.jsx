@@ -5,6 +5,7 @@ import CardCountIndicator from './CardCountIndicator';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
 import HandHelper from './HandHelper';
+import ScoreDialog from './ScoreDialog';
 import { useSuitColors } from '../contexts/SuitColorContext';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';

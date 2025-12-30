@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import HowToPlay from './HowToPlay';
+import ScoreDialog from './ScoreDialog';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -61,11 +62,30 @@ const Lobby = ({ user, socket, setUser }) => {
             ]
         }
     ]);
+    const [selectedGame, setSelectedGame] = useState(null);
     const navigate = useNavigate();
 
     const handleLogout = () => {
         setUser(null);
         navigate('/');
+    };
+
+    const handleGameClick = (game) => {
+        // Convert game data to format expected by ScoreDialog
+        const winner = game.participants?.find(p => p.placement === 1);
+        const gameDialogData = {
+            winner: winner ? { name: winner.username } : null,
+            scores: game.participants?.map(p => ({
+                name: p.username,
+                isBot: p.isBot,
+                cumulativeScore: p.score,
+                finalScore: p.score
+            })),
+            roundNumber: game.total_rounds,
+            gameMode: game.game_mode,
+            isDragonWin: false // We could detect this from events if needed
+        };
+        setSelectedGame(gameDialogData);
     };
 
     const createRoom = () => {
@@ -333,7 +353,7 @@ const Lobby = ({ user, socket, setUser }) => {
                                     <div
                                         key={game.game_id}
                                         className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition cursor-pointer"
-                                        onClick={() => navigate('/activity')}
+                                        onClick={() => handleGameClick(game)}
                                     >
                                         <div className="flex items-start justify-between mb-1">
                                             <div className="flex items-center gap-1">
@@ -378,6 +398,13 @@ const Lobby = ({ user, socket, setUser }) => {
             </div>
 
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
+
+            <ScoreDialog
+                isOpen={!!selectedGame}
+                onClose={() => setSelectedGame(null)}
+                gameData={selectedGame}
+                showActions={false}
+            />
         </div>
     );
 };

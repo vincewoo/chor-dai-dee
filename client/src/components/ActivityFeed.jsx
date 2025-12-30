@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
+import ScoreDialog from './ScoreDialog';
 
 const ActivityFeed = ({ serverUrl }) => {
     const [games, setGames] = useState([]);
@@ -12,6 +13,7 @@ const ActivityFeed = ({ serverUrl }) => {
     });
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [selectedGame, setSelectedGame] = useState(null);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -61,13 +63,34 @@ const ActivityFeed = ({ serverUrl }) => {
         }
     };
 
+    const handleGameClick = (game) => {
+        // Convert game data to format expected by ScoreDialog
+        const winner = game.participants?.find(p => p.placement === 1);
+        const gameDialogData = {
+            winner: winner ? { name: winner.username } : null,
+            scores: game.participants?.map(p => ({
+                name: p.username,
+                isBot: p.isBot,
+                cumulativeScore: p.score,
+                finalScore: p.score
+            })),
+            roundNumber: game.total_rounds,
+            gameMode: game.game_mode,
+            isDragonWin: false // Could be detected from events
+        };
+        setSelectedGame(gameDialogData);
+    };
+
     const renderGameCard = (game) => {
         const isPrivate = !game.is_public;
         const participants = game.participants || [];
         const sortedParticipants = [...participants].sort((a, b) => a.placement - b.placement);
 
         return (
-            <div key={game.game_id} className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
+            <div
+                key={game.game_id}
+                className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors cursor-pointer"
+                onClick={() => handleGameClick(game)}>
                 <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -297,6 +320,13 @@ const ActivityFeed = ({ serverUrl }) => {
                     </>
                 )}
             </div>
+
+            <ScoreDialog
+                isOpen={!!selectedGame}
+                onClose={() => setSelectedGame(null)}
+                gameData={selectedGame}
+                showActions={false}
+            />
         </div>
     );
 };
