@@ -1,6 +1,8 @@
 import { SUIT_SYMBOLS, SUIT_COLORS } from '../constants';
 import { motion } from 'framer-motion';
 import { useSuitColors } from '../contexts/SuitColorContext';
+import React, { memo } from 'react';
+import { areCardPropsEqual } from '../utils/memoUtils';
 
 // Pip layout positions for number cards (as percentages of the pip container)
 // Container is inset 12% from card edges, so these are relative to that inner area
@@ -267,4 +269,4 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
     );
 };
 
-export default Card;
+export default memo(Card, areCardPropsEqual);
