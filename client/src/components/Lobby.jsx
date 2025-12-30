@@ -19,16 +19,16 @@ const Lobby = ({ user, socket, setUser }) => {
 
     const createRoom = () => {
         console.log('createRoom called, socket connected:', socket.connected);
-        socket.emit('join_room', { roomId: 'create', username: user.username });
+        socket.emit('join_room', { roomId: 'create', username: user.username, isGuest: user.isGuest });
     };
 
     const joinRoom = () => {
         if (!roomId) return;
-        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username });
+        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, isGuest: user.isGuest });
     };
 
     const joinInProgressRoom = (targetRoomId) => {
-        socket.emit('join_room', { roomId: targetRoomId, username: user.username });
+        socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
     };
 
     // Fetch joinable rooms on mount and periodically
@@ -51,7 +51,7 @@ const Lobby = ({ user, socket, setUser }) => {
             console.log('Attempting to reconnect to existing game...');
             setReconnecting(true);
             // Use a dummy room ID to trigger reconnection check
-            socket.emit('join_room', { roomId: 'reconnect', username: user.username });
+            socket.emit('join_room', { roomId: 'reconnect', username: user.username, isGuest: user.isGuest });
             // Clear reconnecting state after a short delay if no reconnection happens
             setTimeout(() => setReconnecting(false), 2000);
         }
@@ -125,7 +125,27 @@ const Lobby = ({ user, socket, setUser }) => {
                 <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
                     {reconnecting ? '● Checking for existing game...' : connected ? '● Connected' : '● Disconnected - Is the server running?'}
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Welcome, {user.username}!</h2>
+                <div className="flex items-center justify-center gap-2 mb-2">
+                    <h2 className="text-2xl font-bold">Welcome, {user.username}!</h2>
+                    {user.isGuest && (
+                        <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded">
+                            Guest
+                        </span>
+                    )}
+                </div>
+                {user.isGuest && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                        <p className="text-sm text-blue-900 mb-2">
+                            Playing as a guest? Your stats won't be saved.
+                        </p>
+                        <button
+                            onClick={() => navigate('/')}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
+                        >
+                            Create Account to Save Progress
+                        </button>
+                    </div>
+                )}
                 <div className="flex justify-center gap-4 mb-4 flex-wrap">
                     <button
                         onClick={() => setShowHowToPlay(true)}

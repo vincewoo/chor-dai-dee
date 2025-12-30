@@ -503,7 +503,7 @@ const GameRoom = ({ user, socket }) => {
 
     useEffect(() => {
         // Join room first (handles reconnection if needed), then request state
-        socket.emit('join_room', { roomId, username: user?.username });
+        socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
 
         // Set a timeout to detect if room doesn't exist (server restarted)
         const roomLoadTimeout = setTimeout(() => {
@@ -667,7 +667,7 @@ const GameRoom = ({ user, socket }) => {
         const handleConnect = () => {
             console.log('Socket connected, requesting room state...');
             // Re-join room and request fresh state after reconnection
-            socket.emit('join_room', { roomId, username: user?.username });
+            socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
         };
 
         socket.on('disconnect', handleDisconnect);
@@ -692,7 +692,7 @@ const GameRoom = ({ user, socket }) => {
                     // Socket thinks it's connected, but iOS may have silently killed it
                     // Request fresh room state to ensure we're in sync
                     console.log('Refreshing room state after visibility change...');
-                    socket.emit('join_room', { roomId, username: user?.username });
+                    socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
                 }
             }
         };
@@ -705,7 +705,7 @@ const GameRoom = ({ user, socket }) => {
                 if (!socket.connected) {
                     socket.connect();
                 } else {
-                    socket.emit('join_room', { roomId, username: user?.username });
+                    socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
                 }
             }
         };
@@ -1052,6 +1052,17 @@ const GameRoom = ({ user, socket }) => {
                 alt="Chor Dai Dee Logo"
                 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] md:w-[30%] opacity-[0.15] pointer-events-none z-0"
             />
+
+            {/* Guest User Banner */}
+            {user?.isGuest && (
+                <div className="absolute top-[1vh] left-1/2 -translate-x-1/2 z-20 w-[90%] md:w-auto">
+                    <div className="bg-blue-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg text-center">
+                        <p className="text-xs md:text-sm font-medium">
+                            Playing as Guest - Stats not saved • <button onClick={() => navigate('/')} className="underline hover:text-blue-200">Create Account</button>
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">

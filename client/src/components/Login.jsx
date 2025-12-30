@@ -36,10 +36,47 @@ const Login = ({ setUser }) => {
         }
     };
 
+    const handleGuestLogin = () => {
+        // Get or create guest user from localStorage for persistence
+        let guestUser = localStorage.getItem('guestUser');
+
+        if (guestUser) {
+            guestUser = JSON.parse(guestUser);
+        } else {
+            guestUser = {
+                id: null,
+                username: `Guest_${Math.floor(1000 + Math.random() * 9000)}`,
+                isGuest: true,
+                sessionId: crypto.randomUUID(),
+            };
+            localStorage.setItem('guestUser', JSON.stringify(guestUser));
+        }
+
+        setUser(guestUser);
+        navigate('/lobby');
+    };
+
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
             <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
             <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
+                {/* Guest Login Button */}
+                <button
+                    onClick={handleGuestLogin}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-bold mb-4 flex items-center justify-center gap-2"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                    Play as Guest
+                </button>
+
+                <div className="flex items-center my-4">
+                    <div className="flex-1 border-t border-gray-300"></div>
+                    <span className="px-3 text-gray-500 text-sm">OR</span>
+                    <div className="flex-1 border-t border-gray-300"></div>
+                </div>
+
                 <h2 className="text-2xl font-bold mb-4 text-center">{isRegistering ? 'Register' : 'Login'}</h2>
                 {error && (
                     <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">

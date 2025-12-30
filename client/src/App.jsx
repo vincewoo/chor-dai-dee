@@ -32,15 +32,30 @@ const socket = io(socketUrl, {
 
 function App() {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    // Check for regular user first, then guest user
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      return JSON.parse(savedUser);
+    }
+    const savedGuest = localStorage.getItem('guestUser');
+    return savedGuest ? JSON.parse(savedGuest) : null;
   });
 
   const handleSetUser = (userData) => {
     if (userData) {
-      localStorage.setItem('user', JSON.stringify(userData));
+      if (userData.isGuest) {
+        // Store guest users separately
+        localStorage.setItem('guestUser', JSON.stringify(userData));
+        localStorage.removeItem('user'); // Clear any regular user
+      } else {
+        // Store regular users
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.removeItem('guestUser'); // Clear any guest user
+      }
     } else {
+      // Clear all user data on logout
       localStorage.removeItem('user');
+      localStorage.removeItem('guestUser');
     }
     setUser(userData);
   };

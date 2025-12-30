@@ -26,9 +26,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
 
     const [isLoading, setIsLoading] = useState(false);
 
-    // Load preferences from server when user logs in
+    // Load preferences from server when user logs in (skip for guests)
     useEffect(() => {
-        if (user?.id) {
+        if (user?.id && !user?.isGuest) {
             let cancelled = false;
             setIsLoading(true);
             fetch(`${API_URL}/api/preferences/${user.id}`)
@@ -57,9 +57,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
         }
     }, [user?.id]);
 
-    // Save preferences to server when they change
+    // Save preferences to server when they change (skip for guests)
     useEffect(() => {
-        if (user?.id && !isLoading) {
+        if (user?.id && !user?.isGuest && !isLoading) {
             const savePreferences = async () => {
                 try {
                     await fetch(`${API_URL}/api/preferences/${user.id}`, {
