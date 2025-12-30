@@ -12,6 +12,7 @@ import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dn
 import { CSS } from '@dnd-kit/utilities';
 import { GAME_MODES } from '../constants/gameModes';
 import logoImage from '../assets/chor-dai-dee-logo.png';
+import Modal from './Modal';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -449,6 +450,7 @@ const GameRoom = ({ user, socket }) => {
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
+    const [showPasswordModal, setShowPasswordModal] = useState(false); // Password prompt modal
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -1321,8 +1323,7 @@ const GameRoom = ({ user, socket }) => {
                                     <button
                                         onClick={() => {
                                             if (!gameState.isPrivate) {
-                                                const password = prompt('Set a password for the room (optional, leave empty for no password):');
-                                                socket.emit('set_privacy', { isPrivate: true, password: password || undefined });
+                                                setShowPasswordModal(true);
                                             } else {
                                                 socket.emit('set_privacy', { isPrivate: false, password: undefined });
                                             }
@@ -1339,8 +1340,7 @@ const GameRoom = ({ user, socket }) => {
                                     <button
                                         onClick={() => {
                                             if (!gameState.isPrivate) {
-                                                const password = prompt('Set a password for the room (optional, leave empty for no password):');
-                                                socket.emit('set_privacy', { isPrivate: true, password: password || undefined });
+                                                setShowPasswordModal(true);
                                             } else {
                                                 socket.emit('set_privacy', { isPrivate: false, password: undefined });
                                             }
@@ -1775,6 +1775,19 @@ const GameRoom = ({ user, socket }) => {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Password Modal */}
+            <Modal
+                isOpen={showPasswordModal}
+                onClose={() => setShowPasswordModal(false)}
+                title="Set Room Password"
+                message="Set a password for the room (optional, leave empty for no password):"
+                type="prompt"
+                placeholder="Enter password (optional)"
+                onConfirm={(password) => {
+                    socket.emit('set_privacy', { isPrivate: true, password: password || undefined });
+                }}
+            />
         </div>
     );
 };

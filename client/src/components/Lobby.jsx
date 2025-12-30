@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import HowToPlay from './HowToPlay';
+import Modal from './Modal';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -11,6 +12,8 @@ const Lobby = ({ user, socket, setUser }) => {
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [pendingRoomId, setPendingRoomId] = useState(null);
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -33,11 +36,10 @@ const Lobby = ({ user, socket, setUser }) => {
         const room = joinableRooms.find(r => r.roomId === targetRoomId);
         if (!room) return;
 
-        // If room requires password, prompt for it
+        // If room requires password, show modal
         if (room.hasPassword) {
-            const roomPassword = prompt('This room is password protected. Enter password:');
-            if (!roomPassword) return; // User cancelled
-            socket.emit('join_room', { roomId: targetRoomId, username: user.username, password: roomPassword });
+            setPendingRoomId(targetRoomId);
+            setShowPasswordModal(true);
         } else {
             socket.emit('join_room', { roomId: targetRoomId, username: user.username });
         }
@@ -236,6 +238,25 @@ const Lobby = ({ user, socket, setUser }) => {
             </div>
 
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
+
+            {/* Password Modal */}
+            <Modal
+                isOpen={showPasswordModal}
+                onClose={() => {
+                    setShowPasswordModal(false);
+                    setPendingRoomId(null);
+                }}
+                title="Password Required"
+                message="This room is password protected. Enter password:"
+                type="prompt"
+                placeholder="Enter password"
+                onConfirm={(roomPassword) => {
+                    if (roomPassword && pendingRoomId) {
+                        socket.emit('join_room', { roomId: pendingRoomId, username: user.username, password: roomPassword });
+                    }
+                    setPendingRoomId(null);
+                }}
+            />
         </div>
     );
 };
