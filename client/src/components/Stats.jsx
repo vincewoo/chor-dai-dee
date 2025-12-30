@@ -115,29 +115,22 @@ const Stats = ({ user }) => {
                     </button>
                 </div>
 
-                {/* Username and Rank */}
-                <div className="text-xl mb-4 flex items-center justify-between">
-                    <div>
-                        <span className="text-gray-300">Player:</span>
-                        <span className="text-yellow-300 font-bold ml-2">{viewingUsername}</span>
-                        {urlUsername && urlUsername !== user.username && (
-                            <button
-                                onClick={() => navigate('/stats')}
-                                className="ml-4 text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded transition"
-                            >
-                                View My Stats
-                            </button>
-                        )}
-                    </div>
-                    {playerRank && (
-                        <div className="text-gray-300">
-                            Leaderboard Rank: <span className="text-yellow-300 font-bold ml-1">{getRankEmoji(playerRank)}</span>
-                        </div>
+                {/* Username */}
+                <div className="text-xl mb-4">
+                    <span className="text-gray-300">Player:</span>
+                    <span className="text-yellow-300 font-bold ml-2">{viewingUsername}</span>
+                    {urlUsername && urlUsername !== user.username && (
+                        <button
+                            onClick={() => navigate('/stats')}
+                            className="ml-4 text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded transition"
+                        >
+                            View My Stats
+                        </button>
                     )}
                 </div>
 
-                {/* Mode Selector */}
-                <div className="flex gap-4 mb-6">
+                {/* Mode Selector and Rank */}
+                <div className="flex gap-4 mb-6 items-center">
                     <button
                         onClick={() => setMode('standard')}
                         className={`px-6 py-2 rounded font-bold transition ${
@@ -158,6 +151,11 @@ const Stats = ({ user }) => {
                     >
                         Short (50pts)
                     </button>
+                    {playerRank && (
+                        <div className="ml-auto text-lg text-gray-300">
+                            Leaderboard Rank: <span className="text-yellow-300 font-bold ml-1">{getRankEmoji(playerRank)}</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Loading/Error States */}
