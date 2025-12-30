@@ -72,8 +72,10 @@ const ActivityFeed = ({ serverUrl }) => {
 
         // Convert game data to format expected by ScoreDialog
         const winner = game.participants.find(p => p.placement === 1);
+
+        // For completed games from activity feed, always set a winner to trigger "Final Scores" display
         const gameDialogData = {
-            winner: winner ? { name: winner.username } : null,
+            winner: winner ? { name: winner.username } : { name: game.winner_username || 'Unknown' },
             scores: game.participants.map(p => ({
                 name: p.username || 'Unknown',
                 isBot: p.isBot || false,
