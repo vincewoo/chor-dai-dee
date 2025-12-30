@@ -35,7 +35,6 @@ class Room {
         this.tier3DecisionTracking = {}; // Track Tier 3 decision data per player
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
-        this.password = null; // Room password for private rooms
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
         this.createdAt = Date.now(); // Track when room was created
         this.trickWinPending = false; // Flag to indicate a trick win is pending (delay before clearing)
@@ -585,26 +584,14 @@ class Room {
         return { success: true };
     }
 
-    setPrivacy(isPrivate, password, requesterUsername) {
+    setPrivacy(isPrivate, requesterUsername) {
         // Only host can change privacy
         if (requesterUsername !== this.hostUsername) {
             return { error: 'Only the host can change privacy settings' };
         }
 
         this.isPrivate = isPrivate;
-        // Set password only if room is private
-        if (isPrivate && password) {
-            this.password = password;
-        } else {
-            this.password = null;
-        }
         return { success: true };
-    }
-
-    verifyPassword(password) {
-        if (!this.isPrivate) return true; // Public rooms don't need password
-        if (!this.password) return true; // Private room without password
-        return this.password === password;
     }
 
     getGameWinner() {
@@ -1050,7 +1037,6 @@ class Room {
             gameMode: this.gameMode,
             pointThreshold: this.pointThreshold,
             isPrivate: this.isPrivate,
-            hasPassword: !!this.password,
             trickWinPending: this.trickWinPending || false,
             trickWinner: this.trickWinner
         };

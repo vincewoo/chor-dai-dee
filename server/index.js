@@ -74,7 +74,7 @@ io.on('connection', (socket) => {
     socket.emit('pong');
   });
 
-  socket.on('join_room', async ({ roomId, username, password }) => {
+  socket.on('join_room', async ({ roomId, username }) => {
     console.log(`join_room event received: roomId=${roomId}, username=${username}`);
 
     // Fetch user stats to get rating
@@ -302,15 +302,6 @@ io.on('connection', (socket) => {
         socket,
         rating: displayRating
     };
-
-    // Verify password if room exists and is private
-    if (finalTargetRoom && finalTargetRoom.isPrivate) {
-        if (!finalTargetRoom.verifyPassword(password)) {
-            console.log(`Password verification failed for room ${targetRoomId}`);
-            socket.emit('error', 'Incorrect password');
-            return;
-        }
-    }
 
     // Check if room is in-progress and has bots to replace
     if (finalTargetRoom && (finalTargetRoom.gameState === 'playing' || finalTargetRoom.gameState === 'round_over') && finalTargetRoom.hasReplacableBots()) {
@@ -966,7 +957,7 @@ io.on('connection', (socket) => {
       }
   });
 
-  socket.on('set_privacy', ({ isPrivate, password }) => {
+  socket.on('set_privacy', ({ isPrivate }) => {
       const result = roomManager.findRoomBySocketId(socket.id);
       if (!result) {
           return socket.emit('error', 'Not in a room');
@@ -979,7 +970,7 @@ io.on('connection', (socket) => {
           return socket.emit('error', 'Only the room host can change privacy settings');
       }
 
-      const setResult = room.setPrivacy(isPrivate, password, player.name);
+      const setResult = room.setPrivacy(isPrivate, player.name);
       if (setResult.error) {
           return socket.emit('error', setResult.error);
       }
