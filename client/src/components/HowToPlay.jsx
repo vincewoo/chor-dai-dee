@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Card from './Card';
 import { SUIT_SYMBOLS } from '../constants';
 
-const HowToPlay = ({ isOpen, onClose }) => {
+const HowToPlay = React.memo(({ isOpen, onClose }) => {
     const [activeTab, setActiveTab] = useState('overview');
 
     if (!isOpen) return null;
@@ -608,6 +608,8 @@ const HowToPlay = ({ isOpen, onClose }) => {
             </div>
         </div>
     );
-};
+});
+
+HowToPlay.displayName = 'HowToPlay';
 
 export default HowToPlay;
