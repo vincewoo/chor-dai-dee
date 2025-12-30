@@ -64,18 +64,24 @@ const ActivityFeed = ({ serverUrl }) => {
     };
 
     const handleGameClick = (game) => {
+        // Check if game has valid data
+        if (!game || !game.participants) {
+            console.error('Invalid game data:', game);
+            return;
+        }
+
         // Convert game data to format expected by ScoreDialog
-        const winner = game.participants?.find(p => p.placement === 1);
+        const winner = game.participants.find(p => p.placement === 1);
         const gameDialogData = {
             winner: winner ? { name: winner.username } : null,
-            scores: game.participants?.map(p => ({
-                name: p.username,
-                isBot: p.isBot,
-                cumulativeScore: p.score,
-                finalScore: p.score
+            scores: game.participants.map(p => ({
+                name: p.username || 'Unknown',
+                isBot: p.isBot || false,
+                cumulativeScore: p.score || 0,
+                finalScore: p.score || 0
             })),
-            roundNumber: game.total_rounds,
-            gameMode: game.game_mode,
+            roundNumber: game.total_rounds || 0,
+            gameMode: game.game_mode || 'standard',
             isDragonWin: false // Could be detected from events
         };
         setSelectedGame(gameDialogData);

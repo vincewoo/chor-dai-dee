@@ -9,10 +9,17 @@ const ScoreDialog = ({
     onNextRound = null,
     onBackToLobby = null
 }) => {
-    if (!isOpen || !gameData) return null;
+    if (!isOpen) return null;
 
-    const isGameOver = gameData.winner !== undefined;
-    const isDragonWin = gameData.isDragonWin;
+    // Add better error handling for missing or malformed data
+    if (!gameData) {
+        console.error('ScoreDialog: No game data provided');
+        return null;
+    }
+
+    // Safely check for winner/roundWinner
+    const isGameOver = gameData.winner !== undefined && gameData.winner !== null;
+    const isDragonWin = gameData.isDragonWin || false;
     const isRoundOver = !isGameOver && gameData.roundWinner;
 
     // Sort scores by cumulative score (lowest first)
@@ -43,7 +50,7 @@ const ScoreDialog = ({
                                     {isDragonWin ? '🐉 DRAGON! 🐉' : '🏆 Game Over!'}
                                 </h2>
                                 <div className="text-xl mb-2 text-green-300 text-center">
-                                    Winner: {gameData.winner.name}
+                                    Winner: {gameData.winner?.name || 'Unknown'}
                                 </div>
                                 {isDragonWin ? (
                                     <div className="text-lg mb-4 text-yellow-300 font-bold text-center">
@@ -61,7 +68,7 @@ const ScoreDialog = ({
                                     Round {gameData.roundNumber} Complete!
                                 </h2>
                                 <div className="text-lg mb-4 text-green-300 text-center">
-                                    Round Winner: {gameData.roundWinner.name}
+                                    Round Winner: {gameData.roundWinner?.name || 'Unknown'}
                                 </div>
                             </>
                         ) : null}
