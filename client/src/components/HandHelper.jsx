@@ -170,12 +170,13 @@ const HandHelper = ({ playerHand, lastPlayedHand, onSelectCards, isMyTurn, selec
                 {((activeType && isActiveTypeValid) || hasSelection) && (
                     <button
                         onClick={handleClear}
-                        className="flex-shrink-0 px-2 md:px-[0.6vmax] py-1.5 md:py-[0.35vmax] rounded-lg font-bold text-xs md:text-[0.7vmax]
-                            bg-red-600/80 text-white hover:bg-red-500 shadow-lg
-                            transition-all duration-150 hover:scale-105 active:scale-95"
-                        title="Clear selection"
+                        className="flex-shrink-0 px-2.5 md:px-[0.75vmax] py-1.5 md:py-[0.35vmax] rounded-lg font-bold text-xs md:text-[0.75vmax]
+                            bg-orange-600 text-white hover:bg-orange-500 shadow-lg
+                            transition-all duration-150 hover:scale-105 active:scale-95 flex items-center gap-1 md:gap-[0.35vmax]"
+                        title="Clear selection and deselect all cards"
                     >
-                        ✕
+                        <span className="text-sm md:text-[0.9vmax]">↺</span>
+                        <span className="whitespace-nowrap">Clear</span>
                     </button>
                 )}
             </div>

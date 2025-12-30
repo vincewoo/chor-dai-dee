@@ -536,7 +536,13 @@ const GameRoom = ({ user, socket }) => {
         // Calculate card width based on 13 cards filling the container
         // This ensures consistent card size throughout the game
         const cardWidth = containerWidth / (1 + (MAX_CARDS - 1) * MIN_VISIBLE_RATIO);
-        const cardHeight = cardWidth * ASPECT_RATIO;
+        let cardHeight = cardWidth * ASPECT_RATIO;
+
+        // Cap card height to prevent vertical overflow (max ~22% of viewport height)
+        const maxCardHeight = (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.22;
+        if (cardHeight > maxCardHeight) {
+            cardHeight = maxCardHeight;
+        }
 
         // Calculate margin dynamically based on card count
         // With 13 cards: use MIN_VISIBLE_RATIO (35% visible, 65% overlap) to fit
@@ -1504,10 +1510,10 @@ const GameRoom = ({ user, socket }) => {
                 isMe={true}
             />
 
-            {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-[1vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-0 md:px-0">
+            {/* Bottom: My Hand & Controls - Anchored at bottom, flows upward */}
+            <div className="absolute bottom-[0.5vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-0 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
-                <div className="md:hidden w-full mb-2">
+                <div className="md:hidden w-full mb-1">
                     {gameState.gameState === 'playing' && (
                         <HandHelper
                             playerHand={myHand}
@@ -1533,7 +1539,7 @@ const GameRoom = ({ user, socket }) => {
                 </div>
 
                 {/* Controls Row with Avatar (Mobile) */}
-                <div className="flex items-start justify-between gap-2 md:gap-[1vmax] mb-2 md:mb-[0.75vmax] w-full">
+                <div className="flex items-start justify-between gap-2 md:gap-[1vmax] mb-1 md:mb-[0.75vmax] w-full">
                     <div className="flex items-center gap-2 flex-wrap justify-center flex-1 md:gap-[1vmax]">
                         <button
                             onClick={playCards}
