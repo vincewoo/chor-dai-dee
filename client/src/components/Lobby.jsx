@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import HowToPlay from './HowToPlay';
+import ScoreDialog from './ScoreDialog';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -10,11 +11,31 @@ const Lobby = ({ user, socket, setUser }) => {
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
+    const [recentGames, setRecentGames] = useState([]);
+    const [selectedGame, setSelectedGame] = useState(null);
     const navigate = useNavigate();
 
     const handleLogout = () => {
         setUser(null);
         navigate('/');
+    };
+
+    const handleGameClick = (game) => {
+        // Convert game data to format expected by ScoreDialog
+        const winner = game.participants?.find(p => p.placement === 1);
+        const gameDialogData = {
+            winner: winner ? { name: winner.username } : null,
+            scores: game.participants?.map(p => ({
+                name: p.username,
+                isBot: p.isBot,
+                cumulativeScore: p.score,
+                finalScore: p.score
+            })),
+            roundNumber: game.total_rounds,
+            gameMode: game.game_mode,
+            isDragonWin: false // We could detect this from events if needed
+        };
+        setSelectedGame(gameDialogData);
     };
 
     const createRoom = () => {
@@ -42,6 +63,20 @@ const Lobby = ({ user, socket, setUser }) => {
             }
         } catch (error) {
             console.error('Error fetching joinable rooms:', error);
+        }
+    };
+
+    // Fetch recent games for activity snippet
+    const fetchRecentGames = async () => {
+        try {
+            const baseUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+            const response = await fetch(`${baseUrl}/api/activity?limit=4&status=completed`);
+            if (response.ok) {
+                const data = await response.json();
+                setRecentGames(data.games || []);
+            }
+        } catch (error) {
+            console.error('Error fetching recent games:', error);
         }
     };
 
@@ -108,6 +143,9 @@ const Lobby = ({ user, socket, setUser }) => {
         fetchJoinableRooms();
         const interval = setInterval(fetchJoinableRooms, 5000);
 
+        // Fetch recent games
+        fetchRecentGames();
+
         return () => {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
@@ -166,6 +204,13 @@ const Lobby = ({ user, socket, setUser }) => {
                         className="text-sm text-purple-600 hover:text-purple-800 underline font-medium"
                     >
                         Leaderboard
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                        onClick={() => navigate('/activity')}
+                        className="text-sm text-green-600 hover:text-green-800 underline font-medium"
+                    >
+                        Activity Feed
                     </button>
                     <span className="text-gray-300">|</span>
                     <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline">
@@ -231,9 +276,85 @@ const Lobby = ({ user, socket, setUser }) => {
                     )}
                 </div>
                 {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
+
+                {/* Recent Games Activity Snippet */}
+                {recentGames.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-gray-300">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-bold text-gray-600">🔥 Recent Activity</h3>
+                            <button
+                                onClick={() => navigate('/activity')}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                View All →
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {recentGames.slice(0, 3).map((game) => {
+                                const winner = game.participants?.find(p => p.placement === 1);
+                                const humanPlayers = game.participants?.filter(p => !p.isBot) || [];
+                                const botCount = game.participants?.filter(p => p.isBot).length || 0;
+                                const timeDiff = Date.now() - new Date(game.end_time);
+                                const minutesAgo = Math.floor(timeDiff / 60000);
+                                const hoursAgo = Math.floor(timeDiff / 3600000);
+                                const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;
+
+                                return (
+                                    <div
+                                        key={game.game_id}
+                                        className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition cursor-pointer"
+                                        onClick={() => handleGameClick(game)}
+                                    >
+                                        <div className="flex items-start justify-between mb-1">
+                                            <div className="flex items-center gap-1">
+                                                <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                                    game.game_mode === 'short'
+                                                        ? 'bg-blue-100 text-blue-700'
+                                                        : 'bg-purple-100 text-purple-700'
+                                                }`}>
+                                                    {game.game_mode === 'short' ? '⚡ Short' : '🏆 Standard'}
+                                                </span>
+                                                <span className="text-xs text-gray-400">ended {timeStr}</span>
+                                            </div>
+                                            <span className="text-xs text-gray-500">{game.total_rounds} rounds</span>
+                                        </div>
+                                        <div className="text-sm">
+                                            <div className="flex flex-wrap items-center">
+                                                {game.participants?.sort((a, b) => a.placement - b.placement).map((p, idx) => (
+                                                    <React.Fragment key={idx}>
+                                                        {idx > 0 && <span className="text-gray-400 mr-1">, </span>}
+                                                        <span className="inline-flex items-center">
+                                                            {p.placement === 1 && <span className="mr-1">👑</span>}
+                                                            <span className={
+                                                                p.placement === 1 && !p.isBot
+                                                                    ? "font-semibold text-green-700"
+                                                                    : p.isBot
+                                                                    ? "text-gray-400 italic"
+                                                                    : "text-gray-700"
+                                                            }>
+                                                                {p.username}
+                                                            </span>
+                                                        </span>
+                                                    </React.Fragment>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
+
+            <ScoreDialog
+                isOpen={!!selectedGame}
+                onClose={() => setSelectedGame(null)}
+                gameData={selectedGame}
+                showActions={false}
+            />
         </div>
     );
 };

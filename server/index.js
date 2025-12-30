@@ -4,7 +4,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount } = require('./db');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
@@ -418,6 +418,48 @@ io.on('connection', (socket) => {
       // Emit special dragon_win event
       io.to(roomId).emit('dragon_win', dragonResults);
 
+      // Save game history for dragon win
+      try {
+          const endTime = new Date();
+          const startTime = new Date(room.createdAt);
+          const durationSeconds = Math.floor((endTime - startTime) / 1000);
+
+          await saveGameHistory({
+              gameId: room.gameId,
+              roomName: room.id,
+              gameMode: room.gameMode,
+              isPublic: !room.isPrivate,
+              status: 'completed',
+              winnerId: dragonWinner.isBot ? null : await getUserByUsername(dragonWinner.name).then(u => u ? u.id : null),
+              winnerUsername: dragonWinner.name,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+              durationSeconds: durationSeconds,
+              totalRounds: 1,
+              maxPoints: room.pointThreshold
+          });
+
+          // Save participants with dragon win placements
+          for (const p of room.players) {
+              await saveGameParticipant({
+                  gameId: room.gameId,
+                  userId: p.isBot ? null : await getUserByUsername(p.name).then(u => u ? u.id : null),
+                  username: p.name,
+                  isBot: p.isBot,
+                  finalPlacement: p.id === dragonWinner.id ? 1 : 4,
+                  finalScore: p.id === dragonWinner.id ? 0 : 39,
+                  roundsWon: p.id === dragonWinner.id ? 1 : 0
+              });
+          }
+
+          // Save dragon win event
+          await saveGameEvent(room.gameId, 'dragon_win', {
+              winner: dragonWinner.name
+          });
+      } catch (e) {
+          console.error("Failed to save game history for dragon win:", e);
+      }
+
       // Handle rating updates similar to game_over (fetch stats, calculate new ratings, update DB)
       // Exclude guests and mid-game joiners from rating calculations (treat as bots)
       const playersWithStats = await Promise.all(room.players.map(async (p) => {
@@ -564,6 +606,54 @@ io.on('connection', (socket) => {
           room.gameState = 'finished';
 
           io.to(roomId).emit('game_over', gameResults);
+
+          // Save game history when game completes
+          try {
+              const endTime = new Date();
+              const startTime = new Date(room.createdAt);
+              const durationSeconds = Math.floor((endTime - startTime) / 1000);
+
+              await saveGameHistory({
+                  gameId: room.gameId,
+                  roomName: room.id,
+                  gameMode: room.gameMode,
+                  isPublic: !room.isPrivate,
+                  status: 'completed',
+                  winnerId: gameWinner.isBot ? null : await getUserByUsername(gameWinner.name).then(u => u ? u.id : null),
+                  winnerUsername: gameWinner.name,
+                  startTime: startTime.toISOString(),
+                  endTime: endTime.toISOString(),
+                  durationSeconds: durationSeconds,
+                  totalRounds: room.roundNumber,
+                  maxPoints: room.pointThreshold
+              });
+
+              // Update participants with final placements
+              for (const p of finalPlacements) {
+                  const player = room.players.find(pl => pl.id === p.playerId);
+                  if (player) {
+                      const roundsWon = room.roundPlayStats[p.playerId]?.roundsWon || 0;
+                      await saveGameParticipant({
+                          gameId: room.gameId,
+                          userId: player.isBot ? null : await getUserByUsername(player.name).then(u => u ? u.id : null),
+                          username: player.name,
+                          isBot: player.isBot,
+                          finalPlacement: p.placement,
+                          finalScore: room.cumulativeScores[p.playerId] || 0,
+                          roundsWon: roundsWon
+                      });
+                  }
+              }
+
+              // Save notable events (e.g., perfect games, comebacks)
+              if (gameWinner && room.cumulativeScores[gameWinner.id] === 0) {
+                  await saveGameEvent(room.gameId, 'perfect_game', {
+                      winner: gameWinner.name
+                  });
+              }
+          } catch (e) {
+              console.error("Failed to save game history on completion:", e);
+          }
 
           // 1. Fetch current ratings for all humans (mode-specific)
           // We need to fetch stats to get current mu/sigma
@@ -1022,7 +1112,7 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('room_update', room.getGameState());
   });
 
-  socket.on('start_game', ({ roomId, useAdvancedBots }) => {
+  socket.on('start_game', async ({ roomId, useAdvancedBots }) => {
       const room = roomManager.getRoom(roomId);
       if (room) {
           // Verify that the requesting player is the host
@@ -1033,6 +1123,40 @@ io.on('connection', (socket) => {
           }
 
           room.startGame(useAdvancedBots);
+
+          // Save game history entry when game starts
+          try {
+              await saveGameHistory({
+                  gameId: room.gameId,
+                  roomName: room.id,
+                  gameMode: room.gameMode,
+                  isPublic: !room.isPrivate,
+                  status: 'in_progress',
+                  winnerId: null,
+                  winnerUsername: null,
+                  startTime: new Date().toISOString(),
+                  endTime: null,
+                  durationSeconds: null,
+                  totalRounds: 0,
+                  maxPoints: room.pointThreshold
+              });
+
+              // Save initial participants
+              for (const p of room.players) {
+                  const user = p.isBot ? null : await getUserByUsername(p.name);
+                  await saveGameParticipant({
+                      gameId: room.gameId,
+                      userId: user ? user.id : null,
+                      username: p.name,
+                      isBot: p.isBot,
+                      finalPlacement: null,
+                      finalScore: null,
+                      roundsWon: 0
+                  });
+              }
+          } catch (e) {
+              console.error("Failed to save game history on start:", e);
+          }
 
           // Check if dragon was dealt (Hong Kong variation)
           if (room.gameState === 'dragon_win' && room.dragonWinner) {
@@ -1270,6 +1394,52 @@ io.on('connection', (socket) => {
         }
     }
   });
+});
+
+// Activity Feed Routes
+app.get('/api/activity', async (req, res) => {
+    try {
+        const { userId, status, gameMode, page = 1, limit = 20 } = req.query;
+
+        // Parse status filter
+        let includeStatus = ['completed'];
+        if (status) {
+            if (status === 'all') {
+                includeStatus = ['completed', 'abandoned'];
+            } else {
+                includeStatus = status.split(',');
+            }
+        }
+
+        const offset = (page - 1) * limit;
+
+        const games = await getActivityFeed({
+            userId: userId ? parseInt(userId) : null,
+            includeStatus,
+            gameMode: gameMode || null,
+            limit: parseInt(limit),
+            offset: offset
+        });
+
+        const totalCount = await getActivityFeedCount({
+            userId: userId ? parseInt(userId) : null,
+            includeStatus,
+            gameMode: gameMode || null
+        });
+
+        res.json({
+            games,
+            pagination: {
+                total: totalCount,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(totalCount / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching activity feed:', error);
+        res.status(500).json({ error: 'Failed to fetch activity feed' });
+    }
 });
 
 // Auth Routes
