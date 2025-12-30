@@ -1396,6 +1396,35 @@ io.on('connection', (socket) => {
   });
 });
 
+// Debug endpoint for production data inspection (TEMPORARY - REMOVE AFTER DEBUGGING)
+app.get('/api/debug/game/:gameId', async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        const db = require('./db').getDb();
+
+        // Get game history
+        const game = await new Promise((resolve, reject) => {
+            db.get(`SELECT * FROM game_history WHERE game_id = ?`, [gameId], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+
+        // Get participants
+        const participants = await new Promise((resolve, reject) => {
+            db.all(`SELECT * FROM game_participants WHERE game_id = ?`, [gameId], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
+
+        res.json({ game, participants });
+    } catch (error) {
+        console.error('Debug endpoint error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Activity Feed Routes
 app.get('/api/activity', async (req, res) => {
     try {
