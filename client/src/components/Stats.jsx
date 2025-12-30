@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ArchetypeDialog from './ArchetypeDialog';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 const Stats = ({ user }) => {
     const { username: urlUsername } = useParams();
-    const [mode, setMode] = useState('standard');
+    const [searchParams] = useSearchParams();
+    const initialMode = searchParams.get('mode') || 'standard';
+    const [mode, setMode] = useState(initialMode);
     const [stats, setStats] = useState(null);
     const [headToHead, setHeadToHead] = useState([]);
     const [tier3Stats, setTier3Stats] = useState(null);
+    const [playerRank, setPlayerRank] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [showArchetypeDialog, setShowArchetypeDialog] = useState(false);
@@ -19,6 +22,12 @@ const Stats = ({ user }) => {
 
     // Use URL username if provided, otherwise use logged-in user's username
     const viewingUsername = urlUsername || user?.username;
+
+    // Update mode when URL parameter changes
+    useEffect(() => {
+        const modeFromUrl = searchParams.get('mode') || 'standard';
+        setMode(modeFromUrl);
+    }, [searchParams]);
 
     useEffect(() => {
         if (viewingUsername) {
@@ -30,14 +39,16 @@ const Stats = ({ user }) => {
         setLoading(true);
         setError('');
         try {
-            const [statsRes, h2hRes, tier3Res] = await Promise.all([
+            const [statsRes, h2hRes, tier3Res, rankRes] = await Promise.all([
                 axios.get(`${API_BASE}/api/stats/${viewingUsername}/detailed?mode=${mode}`),
                 axios.get(`${API_BASE}/api/stats/${viewingUsername}/head-to-head?mode=${mode}`),
-                axios.get(`${API_BASE}/api/stats/${viewingUsername}/tier3?mode=${mode}`)
+                axios.get(`${API_BASE}/api/stats/${viewingUsername}/tier3?mode=${mode}`),
+                axios.get(`${API_BASE}/api/leaderboard/${viewingUsername}/rank?mode=${mode}&sortBy=rating`).catch(() => ({ data: { rank: null } }))
             ]);
             setStats(statsRes.data);
             setHeadToHead(h2hRes.data.headToHead || []);
             setTier3Stats(tier3Res.data);
+            setPlayerRank(rankRes.data.rank);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load stats');
         } finally {
@@ -48,6 +59,13 @@ const Stats = ({ user }) => {
     const handleArchetypeClick = (archetype) => {
         setSelectedArchetype(archetype);
         setShowArchetypeDialog(true);
+    };
+
+    const getRankEmoji = (rank) => {
+        if (rank === 1) return '🥇';
+        if (rank === 2) return '🥈';
+        if (rank === 3) return '🥉';
+        return `#${rank}`;
     };
 
     if (!user) {
@@ -97,17 +115,24 @@ const Stats = ({ user }) => {
                     </button>
                 </div>
 
-                {/* Username */}
-                <div className="text-xl mb-4">
-                    <span className="text-gray-300">Player:</span>
-                    <span className="text-yellow-300 font-bold ml-2">{viewingUsername}</span>
-                    {urlUsername && urlUsername !== user.username && (
-                        <button
-                            onClick={() => navigate('/stats')}
-                            className="ml-4 text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded transition"
-                        >
-                            View My Stats
-                        </button>
+                {/* Username and Rank */}
+                <div className="text-xl mb-4 flex items-center justify-between">
+                    <div>
+                        <span className="text-gray-300">Player:</span>
+                        <span className="text-yellow-300 font-bold ml-2">{viewingUsername}</span>
+                        {urlUsername && urlUsername !== user.username && (
+                            <button
+                                onClick={() => navigate('/stats')}
+                                className="ml-4 text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded transition"
+                            >
+                                View My Stats
+                            </button>
+                        )}
+                    </div>
+                    {playerRank && (
+                        <div className="text-gray-300">
+                            Leaderboard Rank: <span className="text-yellow-300 font-bold ml-1">{getRankEmoji(playerRank)}</span>
+                        </div>
                     )}
                 </div>
 

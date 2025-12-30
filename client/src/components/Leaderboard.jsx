@@ -107,14 +107,7 @@ const Leaderboard = ({ user }) => {
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6">
-                    <div>
-                        <h1 className="text-4xl font-bold text-yellow-400 mb-2">Leaderboard</h1>
-                        {playerRank && (
-                            <p className="text-lg text-gray-300">
-                                Your Rank: <span className="text-yellow-300 font-bold">{getRankEmoji(playerRank)}</span>
-                            </p>
-                        )}
-                    </div>
+                    <h1 className="text-4xl font-bold text-yellow-400">Leaderboard</h1>
                     <button
                         onClick={() => navigate('/lobby')}
                         className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded transition"
@@ -128,7 +121,7 @@ const Leaderboard = ({ user }) => {
                     {/* Mode Selector */}
                     <div>
                         <label className="text-sm font-semibold text-gray-300 mb-2 block">Game Mode</label>
-                        <div className="flex gap-4">
+                        <div className="flex gap-4 items-center">
                             <button
                                 onClick={() => setMode('standard')}
                                 className={`px-6 py-2 rounded font-bold transition ${
@@ -149,6 +142,11 @@ const Leaderboard = ({ user }) => {
                             >
                                 Short (50pts)
                             </button>
+                            {playerRank && (
+                                <div className="ml-auto text-lg text-gray-300">
+                                    Your Rank: <span className="text-yellow-300 font-bold">{getRankEmoji(playerRank)}</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -253,7 +251,7 @@ const Leaderboard = ({ user }) => {
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-2">
                                                             <button
-                                                                onClick={() => navigate(`/stats/${player.username}`)}
+                                                                onClick={() => navigate(`/stats/${player.username}?mode=${mode}`)}
                                                                 className={`font-semibold hover:underline cursor-pointer transition ${
                                                                     isCurrentUser ? 'text-yellow-300 hover:text-yellow-200' : 'text-white hover:text-blue-300'
                                                                 }`}
