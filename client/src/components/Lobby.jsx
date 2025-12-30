@@ -10,7 +10,57 @@ const Lobby = ({ user, socket, setUser }) => {
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
-    const [recentGames, setRecentGames] = useState([]);
+    // Hardcoded sample games for testing the UI
+    const [recentGames, setRecentGames] = useState([
+        {
+            game_id: 'game_1',
+            game_mode: 'short',
+            end_time: new Date(Date.now() - 5 * 60000).toISOString(), // 5 minutes ago
+            total_rounds: 8,
+            participants: [
+                { username: 'DragonMaster', placement: 1, score: 42, isBot: false },
+                { username: 'CardShark', placement: 2, score: 67, isBot: false },
+                { username: 'Lucky7', placement: 3, score: 89, isBot: false },
+                { username: 'Bot_Alice', placement: 4, score: 95, isBot: true }
+            ]
+        },
+        {
+            game_id: 'game_2',
+            game_mode: 'standard',
+            end_time: new Date(Date.now() - 32 * 60000).toISOString(), // 32 minutes ago
+            total_rounds: 15,
+            participants: [
+                { username: 'Bot_Genius', placement: 1, score: 78, isBot: true },  // Bot wins!
+                { username: 'ProPlayer', placement: 2, score: 101, isBot: false },
+                { username: 'Newbie123', placement: 3, score: 115, isBot: false },
+                { username: 'Bot_Charlie', placement: 4, score: 132, isBot: true }
+            ]
+        },
+        {
+            game_id: 'game_3',
+            game_mode: 'short',
+            end_time: new Date(Date.now() - 2 * 3600000).toISOString(), // 2 hours ago
+            total_rounds: 6,
+            participants: [
+                { username: 'SpeedRunner', placement: 1, score: 31, isBot: false },
+                { username: 'Bot_Master', placement: 2, score: 52, isBot: true },  // Bot places 2nd
+                { username: 'CasualGamer', placement: 3, score: 58, isBot: false },
+                { username: 'TryHard', placement: 4, score: 61, isBot: false }
+            ]
+        },
+        {
+            game_id: 'game_4',
+            game_mode: 'standard',
+            end_time: new Date(Date.now() - 5 * 3600000).toISOString(), // 5 hours ago
+            total_rounds: 12,
+            participants: [
+                { username: 'NightOwl', placement: 1, score: 88, isBot: false },
+                { username: 'Bot_Diana', placement: 2, score: 102, isBot: true },
+                { username: 'SleepyHead', placement: 3, score: 118, isBot: false },
+                { username: 'Bot_Eve', placement: 4, score: 145, isBot: true }
+            ]
+        }
+    ]);
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -124,7 +174,7 @@ const Lobby = ({ user, socket, setUser }) => {
         const interval = setInterval(fetchJoinableRooms, 5000);
 
         // Fetch recent games
-        fetchRecentGames();
+        // fetchRecentGames(); // Commented out to use hardcoded data for testing
 
         return () => {
             socket.off('connect', onConnect);
@@ -256,63 +306,76 @@ const Lobby = ({ user, socket, setUser }) => {
                     )}
                 </div>
                 {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
-            </div>
 
-            {/* Recent Games Activity Snippet */}
-            {recentGames.length > 0 && (
-                <div className="bg-white text-gray-800 p-4 rounded-xl shadow-xl w-full sm:max-w-md mt-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-gray-600">🔥 Recent Activity</h3>
-                        <button
-                            onClick={() => navigate('/activity')}
-                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                            View All →
-                        </button>
-                    </div>
-                    <div className="space-y-2">
-                        {recentGames.slice(0, 3).map((game) => {
-                            const winner = game.participants?.find(p => p.placement === 1);
-                            const timeDiff = Date.now() - new Date(game.end_time);
-                            const minutesAgo = Math.floor(timeDiff / 60000);
-                            const hoursAgo = Math.floor(timeDiff / 3600000);
-                            const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;
+                {/* Recent Games Activity Snippet */}
+                {recentGames.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-gray-300">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-bold text-gray-600">🔥 Recent Activity</h3>
+                            <button
+                                onClick={() => navigate('/activity')}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                View All →
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {recentGames.slice(0, 3).map((game) => {
+                                const winner = game.participants?.find(p => p.placement === 1);
+                                const humanPlayers = game.participants?.filter(p => !p.isBot) || [];
+                                const botCount = game.participants?.filter(p => p.isBot).length || 0;
+                                const timeDiff = Date.now() - new Date(game.end_time);
+                                const minutesAgo = Math.floor(timeDiff / 60000);
+                                const hoursAgo = Math.floor(timeDiff / 3600000);
+                                const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;
 
-                            return (
-                                <div
-                                    key={game.game_id}
-                                    className="bg-gray-50 rounded-lg p-2 hover:bg-gray-100 transition cursor-pointer"
-                                    onClick={() => navigate('/activity')}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-lg">👑</span>
-                                            <div>
-                                                <div className="text-sm font-medium">
-                                                    {winner?.username || 'Unknown'}
-                                                </div>
-                                                <div className="text-xs text-gray-500">
-                                                    {game.participants?.filter(p => !p.isBot).length || 0} players • {game.total_rounds} rounds
-                                                </div>
+                                return (
+                                    <div
+                                        key={game.game_id}
+                                        className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition cursor-pointer"
+                                        onClick={() => navigate('/activity')}
+                                    >
+                                        <div className="flex items-start justify-between mb-1">
+                                            <div className="flex items-center gap-1">
+                                                <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                                    game.game_mode === 'short'
+                                                        ? 'bg-blue-100 text-blue-700'
+                                                        : 'bg-purple-100 text-purple-700'
+                                                }`}>
+                                                    {game.game_mode === 'short' ? '⚡ Short' : '🏆 Standard'}
+                                                </span>
+                                                <span className="text-xs text-gray-400">ended {timeStr}</span>
                                             </div>
+                                            <span className="text-xs text-gray-500">{game.total_rounds} rounds</span>
                                         </div>
-                                        <div className="text-right">
-                                            <div className={`text-xs px-2 py-0.5 rounded inline-block ${
-                                                game.game_mode === 'short'
-                                                    ? 'bg-blue-100 text-blue-700'
-                                                    : 'bg-purple-100 text-purple-700'
-                                            }`}>
-                                                {game.game_mode === 'short' ? '⚡' : '🏆'}
+                                        <div className="text-sm">
+                                            <div className="flex flex-wrap items-center">
+                                                {game.participants?.sort((a, b) => a.placement - b.placement).map((p, idx) => (
+                                                    <React.Fragment key={idx}>
+                                                        {idx > 0 && <span className="text-gray-400 mr-1">, </span>}
+                                                        <span className="inline-flex items-center">
+                                                            {p.placement === 1 && <span className="mr-1">👑</span>}
+                                                            <span className={
+                                                                p.placement === 1 && !p.isBot
+                                                                    ? "font-semibold text-green-700"
+                                                                    : p.isBot
+                                                                    ? "text-gray-400 italic"
+                                                                    : "text-gray-700"
+                                                            }>
+                                                                {p.username}
+                                                            </span>
+                                                        </span>
+                                                    </React.Fragment>
+                                                ))}
                                             </div>
-                                            <div className="text-xs text-gray-400 mt-1">{timeStr}</div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
 
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
         </div>
