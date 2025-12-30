@@ -1400,7 +1400,7 @@ io.on('connection', (socket) => {
 app.get('/api/debug/game/:gameId', async (req, res) => {
     try {
         const { gameId } = req.params;
-        const db = require('./db').getDb();
+        const { db } = require('./db');
 
         // Get game history
         const game = await new Promise((resolve, reject) => {
