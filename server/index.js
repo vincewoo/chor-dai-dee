@@ -64,6 +64,9 @@ const io = new Server(server, {
 
 const roomManager = new RoomManager();
 
+// Voice Chat WebRTC Signaling - Global voice rooms tracker
+const voiceRooms = {}; // Track voice participants by room
+
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id} from ${socket.handshake.headers['user-agent']?.substring(0, 50)}`);
 
@@ -1376,32 +1379,42 @@ io.on('connection', (socket) => {
   });
 
   // Voice Chat WebRTC Signaling Events
-  const voiceRooms = {}; // Track voice participants by room
 
   socket.on('voice:join', ({ roomId, username }) => {
     console.log(`Voice join: ${username} joining voice in room ${roomId}`);
 
+    // Make sure socket joins the room for broadcasting
+    socket.join(roomId);
+
     if (!voiceRooms[roomId]) {
       voiceRooms[roomId] = new Set();
     }
+
+    // Get users BEFORE adding the new user (for room state)
+    const existingUsers = Array.from(voiceRooms[roomId]);
 
     // Store username with socket id for tracking
     socket.voiceUsername = username;
     socket.voiceRoomId = roomId;
     voiceRooms[roomId].add(username);
 
+    console.log(`Voice room ${roomId} now has users:`, Array.from(voiceRooms[roomId]));
+
+    // Send current voice room state to the joining user (existing users before they joined)
+    // This tells them who to connect to
+    socket.emit('voice:room-state', {
+      users: existingUsers  // Send who was already in the room
+    });
+
     // Notify others in room that user joined voice
     socket.to(roomId).emit('voice:user-joined', { userId: username });
-
-    // Send current voice room state to the joining user
-    socket.emit('voice:room-state', {
-      users: Array.from(voiceRooms[roomId])
-    });
   });
 
   socket.on('voice:signal', ({ to, signal }) => {
     // Forward WebRTC signaling data between peers
     const from = socket.voiceUsername;
+    console.log(`Voice signal from ${from} to ${to}, signal type: ${signal.type}`);
+
     if (from && to) {
       // Find the target socket by username
       const targetSocket = [...io.sockets.sockets.values()].find(
@@ -1409,8 +1422,13 @@ io.on('connection', (socket) => {
       );
 
       if (targetSocket) {
+        console.log(`Forwarding signal from ${from} to ${to}`);
         targetSocket.emit('voice:signal', { from, signal });
+      } else {
+        console.log(`Target socket not found for ${to} in room ${socket.voiceRoomId}`);
       }
+    } else {
+      console.log(`Missing from (${from}) or to (${to}) in signal`);
     }
   });
 

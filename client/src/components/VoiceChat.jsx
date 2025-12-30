@@ -19,8 +19,14 @@ const VoiceChat = ({ socket, roomId, username, players, onAudioLevelsChange }) =
 
   // Pass audio levels to parent component for voice indicators
   useEffect(() => {
-    if (onAudioLevelsChange) {
-      onAudioLevelsChange(audioLevels);
+    // Only log when we have actual audio levels
+    if (Object.keys(audioLevels).length > 0 && Object.values(audioLevels).some(level => level > 0.1)) {
+      // Removed verbose logging for cleaner console
+      if (onAudioLevelsChange) {
+        onAudioLevelsChange(audioLevels);
+      } else {
+        console.log('ERROR: onAudioLevelsChange callback is not defined!');
+      }
     }
   }, [audioLevels, onAudioLevelsChange]);
 

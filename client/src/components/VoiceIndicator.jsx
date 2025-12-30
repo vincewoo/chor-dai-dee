@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 
 const VoiceIndicator = ({ isActive, level = 0 }) => {
+  // Removed verbose logging for cleaner console
   if (!isActive) return null;
 
   // Calculate pulse scale based on audio level (0-1)
@@ -8,8 +9,8 @@ const VoiceIndicator = ({ isActive, level = 0 }) => {
 
   return (
     <motion.div
-      className="absolute -top-2 -right-2 z-10"
-      initial={{ scale: 0 }}
+      className="absolute -top-2 -right-2 z-50"
+      initial={{ scale: 1 }}
       animate={{ scale: 1 }}
       exit={{ scale: 0 }}
     >

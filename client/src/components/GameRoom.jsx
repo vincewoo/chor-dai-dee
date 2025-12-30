@@ -261,7 +261,7 @@ const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioL
                             {player.name.substring(0, 2).toUpperCase()}
                         </div>
                         <VoiceIndicator
-                            isActive={voiceAudioLevels[player.name] > 0}
+                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
                             level={voiceAudioLevels[player.name] || 0}
                         />
                     </div>
@@ -305,7 +305,7 @@ const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudio
                             {player.name.substring(0, 2).toUpperCase()}
                         </div>
                         <VoiceIndicator
-                            isActive={voiceAudioLevels[player.name] > 0}
+                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
                             level={voiceAudioLevels[player.name] || 0}
                         />
                     </div>
@@ -366,7 +366,7 @@ const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudi
                             {player.name.substring(0, 2).toUpperCase()}
                         </div>
                         <VoiceIndicator
-                            isActive={voiceAudioLevels[player.name] > 0}
+                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
                             level={voiceAudioLevels[player.name] || 0}
                         />
                     </div>
@@ -501,6 +501,13 @@ const GameRoom = ({ user, socket }) => {
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
     const [voiceAudioLevels, setVoiceAudioLevels] = useState({}); // Track audio levels for voice indicators
+
+    // Debug callback for voice levels
+    const handleVoiceAudioLevels = useCallback((levels) => {
+        // Removed verbose logging for cleaner console
+        setVoiceAudioLevels(levels);
+        // Check if players match - removed verbose logging
+    }, [gameState]);
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -1165,7 +1172,7 @@ const GameRoom = ({ user, socket }) => {
                 roomId={roomId}
                 username={user?.username}
                 players={gameState?.players || []}
-                onAudioLevelsChange={setVoiceAudioLevels}
+                onAudioLevelsChange={handleVoiceAudioLevels}
             />
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">
@@ -1613,6 +1620,31 @@ const GameRoom = ({ user, socket }) => {
                         </button>
                     </div>
 
+                    {/* Avatar - Mobile only, in flex layout */}
+                    <div className="md:hidden flex flex-col items-center shrink-0 relative">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-4 shadow-lg
+                            ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
+                                ? 'border-green-400 bg-green-400 text-white animate-pulse'
+                                : isMyTurn
+                                    ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse'
+                                    : 'border-yellow-600 bg-yellow-500 text-black'}`}>
+                            {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
+                            {/* Voice indicator for mobile */}
+                            {voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05 && (
+                                <VoiceIndicator
+                                    isActive={true}
+                                    level={voiceAudioLevels[user?.username]}
+                                />
+                            )}
+                        </div>
+                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1 whitespace-nowrap">
+                            {user?.username || 'You'}
+                            {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
+                                <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
+                            )}
+                        </div>
+                        <div className="text-yellow-300 text-xs">{myHand.length} Cards</div>
+                    </div>
                 </div>
 
                 {/* My Hand and Avatar Row - Desktop layout */}
@@ -1662,9 +1694,19 @@ const GameRoom = ({ user, socket }) => {
 
                     {/* Avatar - Right side (Desktop only) */}
                     <div className="hidden md:flex flex-col items-center mb-[0.5vmax]">
-                        <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
-                            ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
-                            {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
+                        <div className="relative">
+                            <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
+                                ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
+                                    ? 'border-green-400 bg-green-400 text-white animate-pulse'
+                                    : isMyTurn
+                                        ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse'
+                                        : 'border-yellow-600 bg-yellow-500 text-black'}`}>
+                                {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
+                            </div>
+                            <VoiceIndicator
+                                isActive={voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05}
+                                level={voiceAudioLevels[user?.username] || 0}
+                            />
                         </div>
                         <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
                             {user?.username || 'You'}
