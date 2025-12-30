@@ -237,15 +237,21 @@ const Lobby = ({ user, socket, setUser }) => {
                         <div className="flex-grow border-t border-gray-300"></div>
                     </div>
 
-                    <div className="flex space-x-2">
-                        <input
-                            type="text"
-                            placeholder="Enter Room Code"
-                            className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
-                            value={roomId}
-                            onChange={e => setRoomId(e.target.value)}
-                        />
-                        <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
+                    <div className="flex space-x-2 items-end">
+                        <div className="flex-1 text-left">
+                            <label htmlFor="room-code" className="block text-sm font-medium text-gray-700 mb-1">
+                                Join Existing Room
+                            </label>
+                            <input
+                                id="room-code"
+                                type="text"
+                                placeholder="Enter Room Code"
+                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
+                                value={roomId}
+                                onChange={e => setRoomId(e.target.value)}
+                            />
+                        </div>
+                        <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition h-[42px]">
                             Join
                         </button>
                     </div>
