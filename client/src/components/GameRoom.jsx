@@ -44,7 +44,7 @@ const getPlayedHandKey = (lastPlayed) => {
 };
 
 // Sortable card wrapper component for drag-and-drop
-const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin }) => {
+const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamicWidth, dynamicHeight }) => {
     const {
         attributes,
         listeners,
@@ -80,7 +80,7 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin }) => {
     } else {
         // Subsequent cards: use overlap
         if (dynamicMargin !== undefined) {
-            style.marginLeft = dynamicMargin;
+            style.marginLeft = typeof dynamicMargin === 'number' ? `${dynamicMargin}px` : dynamicMargin;
         } else {
             style.marginLeft = '-45px';
         }
@@ -102,6 +102,8 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin }) => {
                 onClick={onClick}
                 index={index}
                 size="xlarge"
+                dynamicWidth={dynamicWidth}
+                dynamicHeight={dynamicHeight}
             />
         </div>
     );
@@ -397,24 +399,51 @@ const GameRoom = ({ user, socket }) => {
     useEffect(() => {
         const media = window.matchMedia('(min-width: 768px)');
 
+        // Set initial value from media query
+        setIsDesktop(media.matches);
+
         const listener = (e) => setIsDesktop(e.matches);
         media.addEventListener('change', listener);
         return () => media.removeEventListener('change', listener);
     }, []);
 
     // Measure container width for dynamic spacing
+    // On mobile, use window width directly since we want cards to fill the screen
     useEffect(() => {
-        if (!handContainerRef.current) return;
-
-        const observer = new ResizeObserver(entries => {
-            for (const entry of entries) {
-                setContainerWidth(entry.contentRect.width);
+        const updateWidth = () => {
+            if (!isDesktop) {
+                // Mobile: use window width (cards should fill the screen)
+                setContainerWidth(window.innerWidth);
+            } else if (handContainerRef.current) {
+                // Desktop: measure actual container
+                setContainerWidth(handContainerRef.current.getBoundingClientRect().width);
             }
-        });
+        };
 
-        observer.observe(handContainerRef.current);
-        return () => observer.disconnect();
-    }, []);
+        // Initial measurement
+        updateWidth();
+
+        // Listen for resize events
+        window.addEventListener('resize', updateWidth);
+
+        // Also use ResizeObserver for container changes (desktop)
+        let observer;
+        if (handContainerRef.current) {
+            observer = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    if (isDesktop) {
+                        setContainerWidth(entry.contentRect.width);
+                    }
+                }
+            });
+            observer.observe(handContainerRef.current);
+        }
+
+        return () => {
+            window.removeEventListener('resize', updateWidth);
+            if (observer) observer.disconnect();
+        };
+    }, [isDesktop]);
 
     // Configure drag-and-drop sensors with hybrid input handling
     // Mouse: Instant drag (distance constraint)
@@ -467,38 +496,76 @@ const GameRoom = ({ user, socket }) => {
         return sortByRank(myHand);
     }, [myHand, sortMode, isCustomOrder, customHandOrder]);
 
-    // Calculate dynamic overlap
-    const dynamicOverlap = useMemo(() => {
+    // Calculate card dimensions and overlap dynamically
+    // Mobile: Cards scale to fill container width with natural overlap
+    // Desktop: Uses vmax sizing (unchanged behavior)
+    const cardDimensions = useMemo(() => {
         const cardCount = sortedHand.length;
 
-        // Calculate estimated card width based on device type
-        // Mobile (default): 60px (matches 'xlarge' size for mobile)
-        // Desktop: 5.5vmax (matches 'xlarge' md size)
-        let cardWidth = 63;
-        if (isDesktop && typeof window !== 'undefined') {
-            const vmax = Math.max(window.innerWidth, window.innerHeight);
-            cardWidth = vmax * 0.055;
+        // Desktop: use existing vmax sizing with dynamic overlap
+        if (isDesktop) {
+            const vmax = typeof window !== 'undefined'
+                ? Math.max(window.innerWidth, window.innerHeight)
+                : 1000;
+            const cardWidth = vmax * 0.055; // 5.5vmax
+
+            if (cardCount <= 1 || containerWidth === 0) {
+                return { cardWidth, cardHeight: cardWidth * 1.5, margin: -(cardWidth * 0.6), useVmax: true };
+            }
+
+            const availableWidthForOverlaps = containerWidth - cardWidth;
+            const calculatedOverlap = (availableWidthForOverlaps / (cardCount - 1)) - cardWidth;
+            const minOverlap = -(cardWidth * 0.85);
+            const maxOverlap = -(cardWidth * 0.2);
+            const margin = Math.max(minOverlap, Math.min(maxOverlap, calculatedOverlap));
+
+            return { cardWidth, cardHeight: cardWidth * 1.5, margin, useVmax: true };
         }
 
-        if (cardCount <= 1 || containerWidth === 0) return `-${cardWidth * 0.6}px`; // Default fallback
+        // Mobile: consistent card sizing based on 13 cards filling the screen
+        const ASPECT_RATIO = 1.53;
+        const MIN_VISIBLE_RATIO = 0.35; // 35% visible (65% overlap) - for 13 cards
+        const MAX_VISIBLE_RATIO = 0.50; // 50% visible (50% overlap) - max spread for fewer cards
+        const MAX_CARDS = 13; // Always calculate card size as if we have 13 cards
 
-        // containerWidth already accounts for padding (contentRect.width)
-        // Available width for overlaps = Container Width - One Full Card
-        const availableWidthForOverlaps = containerWidth - cardWidth;
+        // Safe defaults
+        if (containerWidth === 0 || cardCount === 0) {
+            return { cardWidth: 64, cardHeight: 64 * ASPECT_RATIO, margin: -38 };
+        }
 
-        // If we have N cards, we have N-1 overlaps
-        const calculatedOverlap = (availableWidthForOverlaps / (cardCount - 1)) - cardWidth;
+        // Calculate card width based on 13 cards filling the container
+        // This ensures consistent card size throughout the game
+        const cardWidth = containerWidth / (1 + (MAX_CARDS - 1) * MIN_VISIBLE_RATIO);
+        const cardHeight = cardWidth * ASPECT_RATIO;
 
-        // Clamp the overlap relative to card size
-        // Max compression: Different for mobile vs desktop
-        // Mobile: 70% overlap (30% visible = ~19px for better touch targets, prevents overflow on small screens)
-        // Desktop: 85% overlap (15% visible = fine for mouse precision)
-        const minOverlap = isDesktop ? -(cardWidth * 0.85) : -(cardWidth * 0.70);
-        // Max spread: 20% overlap (80% visible) - increased visibility from previous fixed value
-        const maxOverlap = -(cardWidth * 0.2);
+        // Calculate margin dynamically based on card count
+        // With 13 cards: use MIN_VISIBLE_RATIO (35% visible, 65% overlap) to fit
+        // With fewer cards: spread up to MAX_VISIBLE_RATIO (50% visible, 50% overlap)
+        const minMargin = -(cardWidth * (1 - MIN_VISIBLE_RATIO)); // 65% overlap (most compressed)
+        const maxMargin = -(cardWidth * (1 - MAX_VISIBLE_RATIO)); // 50% overlap (most spread)
 
-        const clamped = Math.max(minOverlap, Math.min(maxOverlap, calculatedOverlap));
-        return `${clamped}px`;
+        // Calculate what margin we need to fit cards in container vs max spread
+        // For 1 card, no margin needed
+        let margin;
+        if (cardCount === 1) {
+            margin = 0;
+        } else {
+            // Calculate the margin that would make cards fit exactly in container
+            // totalWidth = cardWidth + (cardCount - 1) * (cardWidth + margin)
+            // containerWidth = cardWidth + (cardCount - 1) * visiblePart
+            // visiblePart = cardWidth + margin
+            // margin = (containerWidth - cardWidth) / (cardCount - 1) - cardWidth
+            const fittingMargin = (containerWidth - cardWidth) / (cardCount - 1) - cardWidth;
+
+            // Clamp between minMargin (most compressed) and maxMargin (most spread)
+            margin = Math.max(minMargin, Math.min(maxMargin, fittingMargin));
+        }
+
+        return {
+            cardWidth,
+            cardHeight,
+            margin,
+        };
     }, [sortedHand.length, containerWidth, isDesktop]);
 
     useEffect(() => {
@@ -1084,17 +1151,18 @@ const GameRoom = ({ user, socket }) => {
                     >
                         ⚙️ Settings
                     </button>
-                    {/* Mobile scores button */}
-                    {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
-                        <button
-                            onClick={() => setShowMobileScoreboard(true)}
-                            className="md:hidden text-xs px-2 py-0.5 rounded bg-yellow-600 text-white hover:bg-yellow-500"
-                        >
-                            Scores
-                        </button>
-                    )}
                 </div>
             </div>
+
+            {/* Mobile Scores button - top right corner */}
+            {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
+                <button
+                    onClick={() => setShowMobileScoreboard(true)}
+                    className="md:hidden absolute top-[1vh] right-[1vw] text-xs px-3 py-1.5 rounded-lg bg-yellow-600 text-white hover:bg-yellow-500 font-semibold shadow-lg z-10"
+                >
+                    Scores
+                </button>
+            )}
 
             {/* Mobile Scoreboard Overlay */}
             <AnimatePresence>
@@ -1437,7 +1505,7 @@ const GameRoom = ({ user, socket }) => {
             />
 
             {/* Bottom: My Hand & Controls */}
-            <div className="absolute bottom-[1vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-1 md:px-0">
+            <div className="absolute bottom-[1vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-0 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
                 <div className="md:hidden w-full mb-2">
                     {gameState.gameState === 'playing' && (
@@ -1506,45 +1574,31 @@ const GameRoom = ({ user, socket }) => {
                         </button>
                     </div>
 
-                    {/* Avatar - Mobile only, in flex layout */}
-                    <div className="md:hidden flex flex-col items-center shrink-0">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-4 shadow-lg
-                            ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
-                            {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
-                        </div>
-                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1 whitespace-nowrap">
-                            {user?.username || 'You'}
-                            {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
-                                <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
-                            )}
-                        </div>
-                        <div className="text-yellow-300 text-xs">{myHand.length} Cards</div>
-                    </div>
                 </div>
 
                 {/* My Hand and Avatar Row - Desktop layout */}
                 <div className="flex items-end gap-[1vmax] w-full md:w-auto overflow-visible">
-                    {/* Cards */}
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragStart={handleDragStart}
-                        onDragEnd={handleDragEnd}
-                    >
-                        <SortableContext
-                            items={sortedHand.map(card => `${card.rank}-${card.suit}`)}
-                            strategy={horizontalListSortingStrategy}
+                    {/* Cards - wrapper needs w-full to expand DndContext */}
+                    <div className="w-full md:w-auto">
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragStart={handleDragStart}
+                            onDragEnd={handleDragEnd}
                         >
-                            <div
-                                ref={handContainerRef}
-                                className="flex justify-center transition-all duration-300 hover:gap-2 md:hover:gap-[0.5vmax] w-full"
+                            <SortableContext
+                                items={sortedHand.map(card => `${card.rank}-${card.suit}`)}
+                                strategy={horizontalListSortingStrategy}
+                            >
+                                <div
+                                    ref={handContainerRef}
+                                    className="flex justify-center transition-all duration-300 md:hover:gap-[0.5vmax] w-full"
                                 onTouchStart={handleTouchStart}
                                 onTouchMove={handleTouchMove}
                                 onTouchEnd={handleTouchEnd}
                                 style={{
                                     touchAction: 'pan-y',
-                                    // Shift RIGHT on mobile when we have many cards to show first card better
-                                    transform: sortedHand.length >= 10 && dynamicOverlap ? 'translateX(8px)' : 'none'
+                                    minHeight: cardDimensions.cardHeight ? `${cardDimensions.cardHeight}px` : undefined,
                                 }}
                             >
                                 {sortedHand.map((card, index) => {
@@ -1556,13 +1610,16 @@ const GameRoom = ({ user, socket }) => {
                                             isSelected={isSelected}
                                             onClick={() => toggleCard(card)}
                                             index={index}
-                                            dynamicMargin={dynamicOverlap}
+                                            dynamicMargin={cardDimensions.margin}
+                                            dynamicWidth={cardDimensions.useVmax ? null : cardDimensions.cardWidth}
+                                            dynamicHeight={cardDimensions.useVmax ? null : cardDimensions.cardHeight}
                                         />
                                     );
                                 })}
                             </div>
                         </SortableContext>
                     </DndContext>
+                    </div>
 
                     {/* Avatar - Right side (Desktop only) */}
                     <div className="hidden md:flex flex-col items-center mb-[0.5vmax]">

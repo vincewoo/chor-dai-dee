@@ -1,4 +1,3 @@
-import React from 'react';
 import { SUIT_SYMBOLS, SUIT_COLORS } from '../constants';
 import { motion } from 'framer-motion';
 import { useSuitColors } from '../contexts/SuitColorContext';
@@ -98,7 +97,7 @@ const FaceCard = ({ rank }) => {
     );
 };
 
-const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', forceTraditionalColors = false }) => {
+const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', forceTraditionalColors = false, dynamicWidth = null, dynamicHeight = null }) => {
     const { suitColors: contextSuitColors } = useSuitColors();
 
     // Use traditional red-black colors if forced, otherwise use context colors
@@ -118,7 +117,22 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
         xlarge: { corner: 'text-[16px] md:text-[0.95vmax]', pip: 'text-[18px] md:text-[1.2vmax]' }
     };
 
-    const sizeClass = sizeClasses[size] || sizeClasses.normal;
+    // When dynamicWidth is provided, use inline styles for mobile sizing
+    // Otherwise fall back to Tailwind size classes
+    const useDynamicSizing = dynamicWidth !== null;
+    const dynamicStyle = useDynamicSizing ? {
+        width: `${dynamicWidth}px`,
+        height: `${dynamicHeight || dynamicWidth * 1.53}px`,
+    } : {};
+
+    // Scale font sizes proportionally when using dynamic sizing
+    // Base: 64px width = 16px corner font, 18px pip font
+    const fontScale = useDynamicSizing ? (dynamicWidth / 64) : 1;
+    const dynamicCornerFontSize = useDynamicSizing ? `${16 * fontScale}px` : null;
+    const dynamicPipFontSize = useDynamicSizing ? `${18 * fontScale}px` : null;
+
+    // Only apply sizeClass when not using dynamic sizing (desktop uses md: prefixed classes)
+    const sizeClass = useDynamicSizing ? 'md:w-[5.5vmax] md:h-[8.25vmax]' : (sizeClasses[size] || sizeClasses.normal);
     const fontSize = fontSizes[size] || fontSizes.normal;
     const suitSymbol = SUIT_SYMBOLS[suit];
     const color = suitColors[suit];
@@ -130,6 +144,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
             <motion.div
                 className={`${sizeClass} rounded-xl border-2 border-white shadow-md md:m-[0.25vmax] relative overflow-hidden`}
                 style={{
+                    ...dynamicStyle,
                     background: `
                         repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
                         repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
@@ -150,6 +165,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
         <motion.div
             className={`${sizeClass} bg-white rounded-xl border-2 shadow-md md:m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
                 ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : 'border-gray-300 hover:-translate-y-[0.5vmax]'}`}
+            style={dynamicStyle}
             onClick={onClick}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -158,7 +174,8 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
         >
             {/* Top-left corner */}
             <div
-                className={`absolute top-[4%] left-[8%] flex flex-col items-center leading-none ${color} ${fontSize.corner}`}
+                className={`absolute top-[4%] left-[8%] flex flex-col items-center leading-none ${color} ${useDynamicSizing ? '' : fontSize.corner}`}
+                style={useDynamicSizing ? { fontSize: dynamicCornerFontSize } : undefined}
             >
                 <span className="font-bold">{rank}</span>
                 <span className="text-[1.1em]">{suitSymbol}</span>
@@ -166,7 +183,8 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
 
             {/* Bottom-right corner (rotated) */}
             <div
-                className={`absolute bottom-[4%] right-[8%] flex flex-col items-center leading-none rotate-180 ${color} ${fontSize.corner}`}
+                className={`absolute bottom-[4%] right-[8%] flex flex-col items-center leading-none rotate-180 ${color} ${useDynamicSizing ? '' : fontSize.corner}`}
+                style={useDynamicSizing ? { fontSize: dynamicCornerFontSize } : undefined}
             >
                 <span className="font-bold">{rank}</span>
                 <span className="text-[1.1em]">{suitSymbol}</span>
@@ -178,11 +196,12 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
                 /* Aces always use large centered suit */
                 <div className="absolute inset-[12%]">
                     <div
-                        className={`absolute ${color} ${fontSize.pip}`}
+                        className={`absolute ${color} ${useDynamicSizing ? '' : fontSize.pip}`}
                         style={{
                             left: '50%',
                             top: '50%',
-                            transform: 'translate(-50%, -50%) scale(2.2)'
+                            transform: 'translate(-50%, -50%) scale(2.2)',
+                            ...(useDynamicSizing ? { fontSize: dynamicPipFontSize } : {})
                         }}
                     >
                         {suitSymbol}
@@ -198,7 +217,7 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
                                 left: '50%',
                                 top: '50%',
                                 transform: 'translate(-50%, -50%)',
-                                fontSize: '1.75em',
+                                fontSize: useDynamicSizing ? `${1.75 * fontScale}em` : '1.75em',
                                 lineHeight: 1
                             }}
                         >
@@ -215,11 +234,12 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
                     {/* Mobile: Large centered suit for number cards */}
                     <div className="md:hidden absolute inset-[12%]">
                         <div
-                            className={`absolute ${color} ${fontSize.pip}`}
+                            className={`absolute ${color} ${useDynamicSizing ? '' : fontSize.pip}`}
                             style={{
                                 left: '50%',
                                 top: '50%',
-                                transform: 'translate(-50%, -50%) scale(2.2)'
+                                transform: 'translate(-50%, -50%) scale(2.2)',
+                                ...(useDynamicSizing ? { fontSize: dynamicPipFontSize } : {})
                             }}
                         >
                             {suitSymbol}
