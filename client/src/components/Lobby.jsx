@@ -2,18 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import HowToPlay from './HowToPlay';
-import Modal from './Modal';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
-    const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [reconnecting, setReconnecting] = useState(false);
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
-    const [showPasswordModal, setShowPasswordModal] = useState(false);
-    const [pendingRoomId, setPendingRoomId] = useState(null);
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -28,21 +24,11 @@ const Lobby = ({ user, socket, setUser }) => {
 
     const joinRoom = () => {
         if (!roomId) return;
-        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, password: password || undefined });
-        setPassword(''); // Clear password after joining
+        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username });
     };
 
     const joinInProgressRoom = (targetRoomId) => {
-        const room = joinableRooms.find(r => r.roomId === targetRoomId);
-        if (!room) return;
-
-        // If room requires password, show modal
-        if (room.hasPassword) {
-            setPendingRoomId(targetRoomId);
-            setShowPasswordModal(true);
-        } else {
-            socket.emit('join_room', { roomId: targetRoomId, username: user.username });
-        }
+        socket.emit('join_room', { roomId: targetRoomId, username: user.username });
     };
 
     // Fetch joinable rooms on mount and periodically
@@ -178,26 +164,17 @@ const Lobby = ({ user, socket, setUser }) => {
                         <div className="flex-grow border-t border-gray-300"></div>
                     </div>
 
-                    <div className="space-y-2">
-                        <div className="flex space-x-2">
-                            <input
-                                type="text"
-                                placeholder="Enter Room Code"
-                                className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
-                                value={roomId}
-                                onChange={e => setRoomId(e.target.value)}
-                            />
-                            <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
-                                Join
-                            </button>
-                        </div>
+                    <div className="flex space-x-2">
                         <input
-                            type="password"
-                            placeholder="Password (if required)"
-                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
+                            type="text"
+                            placeholder="Enter Room Code"
+                            className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
+                            value={roomId}
+                            onChange={e => setRoomId(e.target.value)}
                         />
+                        <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition">
+                            Join
+                        </button>
                     </div>
 
                     {joinableRooms.length > 0 && (
@@ -223,7 +200,6 @@ const Lobby = ({ user, socket, setUser }) => {
                                         </div>
                                         <div className="text-xs text-gray-600">
                                             Round {room.roundNumber} • {room.botCount} bot{room.botCount !== 1 ? 's' : ''} available
-                                            {room.hasPassword && <span className="ml-2 text-orange-600">🔒 Password protected</span>}
                                         </div>
                                         <div className="text-xs text-gray-500 mt-1">
                                             {room.players.filter(p => !p.isBot).map(p => p.name).join(', ')}
@@ -238,25 +214,6 @@ const Lobby = ({ user, socket, setUser }) => {
             </div>
 
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
-
-            {/* Password Modal */}
-            <Modal
-                isOpen={showPasswordModal}
-                onClose={() => {
-                    setShowPasswordModal(false);
-                    setPendingRoomId(null);
-                }}
-                title="Password Required"
-                message="This room is password protected. Enter password:"
-                type="prompt"
-                placeholder="Enter password"
-                onConfirm={(roomPassword) => {
-                    if (roomPassword && pendingRoomId) {
-                        socket.emit('join_room', { roomId: pendingRoomId, username: user.username, password: roomPassword });
-                    }
-                    setPendingRoomId(null);
-                }}
-            />
         </div>
     );
 };

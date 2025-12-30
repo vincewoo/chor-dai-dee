@@ -450,7 +450,6 @@ const GameRoom = ({ user, socket }) => {
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
-    const [showPasswordModal, setShowPasswordModal] = useState(false); // Password prompt modal
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -1322,11 +1321,7 @@ const GameRoom = ({ user, socket }) => {
                                 <div className="flex flex-col md:flex-row gap-3 md:gap-[1vmax] md:justify-center">
                                     <button
                                         onClick={() => {
-                                            if (!gameState.isPrivate) {
-                                                setShowPasswordModal(true);
-                                            } else {
-                                                socket.emit('set_privacy', { isPrivate: false, password: undefined });
-                                            }
+                                            socket.emit('set_privacy', { isPrivate: false });
                                         }}
                                         className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
                                             !gameState.isPrivate
@@ -1339,11 +1334,7 @@ const GameRoom = ({ user, socket }) => {
                                     </button>
                                     <button
                                         onClick={() => {
-                                            if (!gameState.isPrivate) {
-                                                setShowPasswordModal(true);
-                                            } else {
-                                                socket.emit('set_privacy', { isPrivate: false, password: undefined });
-                                            }
+                                            socket.emit('set_privacy', { isPrivate: true });
                                         }}
                                         className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
                                             gameState.isPrivate
@@ -1351,7 +1342,7 @@ const GameRoom = ({ user, socket }) => {
                                                 : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
                                         }`}
                                     >
-                                        <div className="font-bold">Private Room {gameState.hasPassword && '🔒'}</div>
+                                        <div className="font-bold">Private Room</div>
                                         <div className="text-sm md:text-[0.7vmax] opacity-80">Only by room code</div>
                                     </button>
                                 </div>
@@ -1775,19 +1766,6 @@ const GameRoom = ({ user, socket }) => {
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {/* Password Modal */}
-            <Modal
-                isOpen={showPasswordModal}
-                onClose={() => setShowPasswordModal(false)}
-                title="Set Room Password"
-                message="Set a password for the room (optional, leave empty for no password):"
-                type="prompt"
-                placeholder="Enter password (optional)"
-                onConfirm={(password) => {
-                    socket.emit('set_privacy', { isPrivate: true, password: password || undefined });
-                }}
-            />
         </div>
     );
 };
