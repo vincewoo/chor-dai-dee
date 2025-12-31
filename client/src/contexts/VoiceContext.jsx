@@ -72,6 +72,7 @@ export const VoiceProvider = ({ socket, children }) => {
   const monitorAudioLevel = useCallback((userId, analyzer) => {
     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
     let animationId = null;
+    let errorLogged = false; // Only log error once per monitor session
 
     const checkLevel = () => {
       if (!analyzersRef.current[userId]) return;
@@ -95,9 +96,15 @@ export const VoiceProvider = ({ socket, children }) => {
           ...prev,
           [userId]: normalizedLevel
         }));
+
+        // Reset error flag on successful read
+        errorLogged = false;
       } catch (err) {
-        // Silently handle errors when AudioContext is suspended
-        console.debug('[VoiceContext] Audio level monitoring error (likely suspended context):', err);
+        // Only log once to avoid spamming (this runs 60fps)
+        if (!errorLogged) {
+          console.debug('[VoiceContext] Audio level monitoring paused (context suspended)');
+          errorLogged = true;
+        }
       }
 
       animationId = requestAnimationFrame(checkLevel);
