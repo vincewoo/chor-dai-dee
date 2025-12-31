@@ -10,6 +10,7 @@ import ActivityFeed from './components/ActivityFeed';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
+import { VoiceProvider } from './contexts/VoiceContext';
 import './utils/voiceDebug'; // Load voice debug utilities
 
 // In production, connect to same origin; in development, connect to localhost:3000
@@ -65,18 +66,20 @@ function App() {
   return (
     <UserPreferencesProvider user={user}>
       <SuitColorProvider>
-        <Router>
-            <Routes>
-                <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
-                <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
-                <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
-                <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
-                <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
-                <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} /> : <Navigate to="/" />} />
-                <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
-            </Routes>
-        </Router>
-        <PWAUpdatePrompt />
+        <VoiceProvider socket={socket}>
+          <Router>
+              <Routes>
+                  <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
+                  <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                  <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                  <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                  <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
+                  <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} /> : <Navigate to="/" />} />
+                  <Route path="/game/:roomId" element={user ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+              </Routes>
+          </Router>
+          <PWAUpdatePrompt />
+        </VoiceProvider>
       </SuitColorProvider>
     </UserPreferencesProvider>
   )

@@ -1378,6 +1378,208 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ============ Post-Game Flow Events ============
+
+  // Non-host player indicates they're ready for next game
+  socket.on('player_ready', ({ roomId }) => {
+    console.log(`player_ready: ${socket.id} in room ${roomId}`);
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      return socket.emit('error', 'Room not found');
+    }
+
+    if (room.gameState !== 'finished') {
+      return socket.emit('error', 'Game is not finished');
+    }
+
+    const result = room.setPlayerReady(socket.id);
+    if (result.error) {
+      return socket.emit('error', result.error);
+    }
+
+    // Broadcast ready status to all players
+    const readyStatus = room.getReadyStatus();
+    io.to(roomId).emit('ready_status', readyStatus);
+    console.log(`Ready status for room ${roomId}:`, readyStatus);
+  });
+
+  // Host initiates rematch (instant new game)
+  socket.on('host_rematch', async ({ roomId }) => {
+    console.log(`host_rematch: ${socket.id} in room ${roomId}`);
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      return socket.emit('error', 'Room not found');
+    }
+
+    if (room.gameState !== 'finished') {
+      return socket.emit('error', 'Game is not finished');
+    }
+
+    // Verify requester is host
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player || player.name !== room.hostUsername) {
+      return socket.emit('error', 'Only the host can start a rematch');
+    }
+
+    // Check if all non-host players are ready
+    if (!room.allPlayersReady()) {
+      const readyStatus = room.getReadyStatus();
+      return socket.emit('error', `Waiting for players to be ready: ${readyStatus.notReady.join(', ')}`);
+    }
+
+    // Start the rematch
+    const gameState = room.startRematch();
+    if (gameState.error) {
+      return socket.emit('error', gameState.error);
+    }
+
+    // Save new game history
+    try {
+      await saveGameHistory({
+        gameId: room.gameId,
+        roomName: room.id,
+        gameMode: room.gameMode,
+        isPublic: !room.isPrivate,
+        status: 'in_progress',
+        winnerId: null,
+        winnerUsername: null,
+        startTime: new Date().toISOString(),
+        endTime: null,
+        durationSeconds: null,
+        totalRounds: 0,
+        maxPoints: room.pointThreshold
+      });
+
+      // Save initial participants
+      for (const p of room.players) {
+        const user = p.isBot ? null : await getUserByUsername(p.name);
+        await saveGameParticipant({
+          gameId: room.gameId,
+          userId: user ? user.id : null,
+          username: p.name,
+          isBot: p.isBot,
+          finalPlacement: null,
+          finalScore: null,
+          roundsWon: 0
+        });
+      }
+    } catch (e) {
+      console.error("Failed to save game history for rematch:", e);
+    }
+
+    // Check for dragon
+    if (room.gameState === 'dragon_win' && room.dragonWinner) {
+      room.players.forEach(p => {
+        if (!p.isBot) {
+          io.to(p.id).emit('hand_update', p.hand);
+        }
+      });
+      handleDragonWin(room, roomId, room.dragonWinner);
+      return;
+    }
+
+    // Normal game start
+    io.to(roomId).emit('game_started', room.getGameState());
+    room.players.forEach(p => {
+      if (!p.isBot) {
+        io.to(p.id).emit('hand_update', p.hand);
+      }
+    });
+
+    console.log(`Rematch started in room ${roomId}`);
+    processBotTurns(room, roomId);
+  });
+
+  // Host sends everyone back to lobby
+  socket.on('host_back_to_lobby', ({ roomId }) => {
+    console.log(`host_back_to_lobby: ${socket.id} in room ${roomId}`);
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      return socket.emit('error', 'Room not found');
+    }
+
+    if (room.gameState !== 'finished') {
+      return socket.emit('error', 'Game is not finished');
+    }
+
+    // Verify requester is host
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player || player.name !== room.hostUsername) {
+      return socket.emit('error', 'Only the host can send everyone back to lobby');
+    }
+
+    // Transition room to lobby
+    const result = room.transitionToLobby();
+    if (result.error) {
+      return socket.emit('error', result.error);
+    }
+
+    // Notify all players to go to lobby
+    io.to(roomId).emit('lobby_ready', {
+      roomId: result.roomId,
+      players: result.players,
+      hostUsername: result.hostUsername
+    });
+
+    // Also send updated room state
+    io.to(roomId).emit('room_update', room.getGameState());
+
+    console.log(`Room ${roomId} transitioned back to lobby with ${result.players.length} players`);
+  });
+
+  // Player leaves after game ends (goes to main lobby)
+  socket.on('leave_after_game', ({ roomId }) => {
+    console.log(`leave_after_game: ${socket.id} in room ${roomId}`);
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      return socket.emit('error', 'Room not found');
+    }
+
+    if (room.gameState !== 'finished') {
+      return socket.emit('error', 'Game is not finished');
+    }
+
+    // Remove the player
+    const result = room.removePlayerPostGame(socket.id);
+    if (result.error) {
+      return socket.emit('error', result.error);
+    }
+
+    // Leave the socket room
+    socket.leave(roomId);
+
+    // If host changed, notify everyone
+    if (result.wasHost && result.newHost) {
+      io.to(roomId).emit('host_changed', { newHost: result.newHost });
+    }
+
+    // Notify other players
+    io.to(roomId).emit('player_left', { playerName: result.removedPlayer });
+
+    // If only 1 human remains, they can't rematch - cancel and send to main lobby
+    if (result.remainingHumans === 1) {
+      io.to(roomId).emit('game_cancelled', {
+        reason: 'Not enough players for rematch'
+      });
+      console.log(`Room ${roomId}: Only 1 human left, game cancelled`);
+    } else if (result.remainingHumans === 0) {
+      // No humans left, delete room
+      roomManager.deleteRoom(roomId);
+      console.log(`Room ${roomId} deleted (no humans left)`);
+    } else {
+      // Update ready status for remaining players
+      const readyStatus = room.getReadyStatus();
+      io.to(roomId).emit('ready_status', readyStatus);
+      io.to(roomId).emit('room_update', room.getGameState());
+    }
+
+    console.log(`Player ${result.removedPlayer} left room ${roomId} after game`);
+  });
+
   // Voice Chat WebRTC Signaling Events
 
   socket.on('voice:join', ({ roomId, username }) => {

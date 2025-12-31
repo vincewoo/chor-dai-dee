@@ -1,0 +1,435 @@
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import * as SimplePeerModule from 'simple-peer';
+
+// Handle both default export and named export scenarios
+const SimplePeer = SimplePeerModule.default || SimplePeerModule;
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' }
+];
+
+const VoiceContext = createContext(null);
+
+export const useVoice = () => {
+  const context = useContext(VoiceContext);
+  if (!context) {
+    throw new Error('useVoice must be used within a VoiceProvider');
+  }
+  return context;
+};
+
+export const VoiceProvider = ({ socket, children }) => {
+  // Voice state
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isVoiceConnected, setIsVoiceConnected] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isDeafened, setIsDeafened] = useState(false);
+  const [currentRoomId, setCurrentRoomId] = useState(null);
+  const [currentUsername, setCurrentUsername] = useState(null);
+  const [peers, setPeers] = useState({});
+  const [audioLevels, setAudioLevels] = useState({});
+  const [permissionError, setPermissionError] = useState(false);
+  const [playerVolumes, setPlayerVolumes] = useState({});
+
+  // Refs
+  const localStreamRef = useRef(null);
+  const peersRef = useRef({});
+  const audioContextRef = useRef(null);
+  const analyzersRef = useRef({});
+
+  // Initialize audio context
+  const initAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+    return audioContextRef.current;
+  }, []);
+
+  // Monitor audio levels
+  const monitorAudioLevel = useCallback((userId, analyzer) => {
+    const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+    let animationId = null;
+
+    const checkLevel = () => {
+      if (!analyzersRef.current[userId]) return;
+
+      analyzer.getByteFrequencyData(dataArray);
+
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+      const normalizedLevel = Math.min(rms / 128, 1);
+
+      setAudioLevels(prev => ({
+        ...prev,
+        [userId]: normalizedLevel
+      }));
+
+      animationId = requestAnimationFrame(checkLevel);
+    };
+
+    checkLevel();
+
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+    };
+  }, []);
+
+  // Create peer connection
+  const createPeer = useCallback((userId, initiator) => {
+    if (!localStreamRef.current) {
+      console.error('[VoiceContext] Cannot create peer - no local stream');
+      return null;
+    }
+
+    let peer;
+    try {
+      peer = new SimplePeer({
+        initiator,
+        stream: localStreamRef.current,
+        config: {
+          iceServers: ICE_SERVERS,
+          offerOptions: { offerToReceiveAudio: true },
+          answerOptions: { offerToReceiveAudio: true }
+        },
+        trickle: true
+      });
+    } catch (err) {
+      console.error(`[VoiceContext] Failed to create SimplePeer:`, err);
+      return null;
+    }
+
+    peer.on('signal', signal => {
+      socket.emit('voice:signal', { to: userId, signal });
+    });
+
+    peer.on('connect', () => {
+      console.log(`[VoiceContext] Peer connected with ${userId}`);
+    });
+
+    peer.on('stream', stream => {
+      console.log(`[VoiceContext] Received stream from ${userId}`);
+
+      const audio = document.createElement('audio');
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      audio.id = `audio-${userId}`;
+      audio.volume = playerVolumes[userId] ?? 1.0;
+      document.body.appendChild(audio);
+
+      audio.play().catch(err => {
+        console.error(`[VoiceContext] Failed to play audio for ${userId}:`, err);
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().then(() => {
+            audio.play().catch(() => {});
+          });
+        }
+      });
+
+      // Monitor remote audio levels
+      if (audioContextRef.current && stream.getAudioTracks().length > 0) {
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        const analyzer = audioContextRef.current.createAnalyser();
+        analyzer.fftSize = 256;
+        source.connect(analyzer);
+        analyzersRef.current[userId] = analyzer;
+        monitorAudioLevel(userId, analyzer);
+      }
+    });
+
+    peer.on('error', err => {
+      console.error(`[VoiceContext] Peer error with ${userId}:`, err);
+    });
+
+    peer.on('close', () => {
+      const audio = document.getElementById(`audio-${userId}`);
+      if (audio) audio.remove();
+      delete analyzersRef.current[userId];
+      setAudioLevels(prev => {
+        const newLevels = { ...prev };
+        delete newLevels[userId];
+        return newLevels;
+      });
+    });
+
+    return peer;
+  }, [socket, monitorAudioLevel, playerVolumes]);
+
+  // Join voice room
+  const joinVoiceRoom = useCallback(async (roomId, username) => {
+    if (!socket || !roomId || !username) return false;
+
+    // If already in a different room, leave it first
+    if (currentRoomId && currentRoomId !== roomId) {
+      leaveVoiceRoom();
+    }
+
+    try {
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      localStreamRef.current = stream;
+      setPermissionError(false);
+
+      // Initialize audio context and monitor local audio
+      const audioCtx = initAudioContext();
+      if (audioCtx.state === 'running') {
+        try {
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyzer = audioCtx.createAnalyser();
+          analyzer.fftSize = 256;
+          analyzer.smoothingTimeConstant = 0.8;
+          source.connect(analyzer);
+          analyzersRef.current[username] = analyzer;
+          monitorAudioLevel(username, analyzer);
+        } catch (err) {
+          console.error('[VoiceContext] Failed to setup audio analyzer:', err);
+        }
+      }
+
+      // Join the voice channel
+      socket.emit('voice:join', { roomId, username });
+      setCurrentRoomId(roomId);
+      setCurrentUsername(username);
+      setIsVoiceConnected(true);
+      setVoiceEnabled(true);
+
+      return true;
+    } catch (err) {
+      console.error('[VoiceContext] Failed to get user media:', err);
+      setPermissionError(true);
+      setIsVoiceConnected(false);
+      return false;
+    }
+  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel]);
+
+  // Leave voice room
+  const leaveVoiceRoom = useCallback(() => {
+    // Stop local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Destroy all peer connections
+    Object.values(peersRef.current).forEach(peer => {
+      try {
+        peer.destroy();
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+    });
+    peersRef.current = {};
+    setPeers({});
+
+    // Clear analyzers
+    analyzersRef.current = {};
+    setAudioLevels({});
+
+    // Notify server
+    if (socket && currentRoomId) {
+      socket.emit('voice:leave');
+    }
+
+    // Reset state
+    setCurrentRoomId(null);
+    setCurrentUsername(null);
+    setIsVoiceConnected(false);
+    setVoiceEnabled(false);
+    setIsMuted(false);
+    setIsDeafened(false);
+  }, [socket, currentRoomId]);
+
+  // Toggle voice on/off
+  const toggleVoice = useCallback(async (roomId, username) => {
+    if (voiceEnabled) {
+      leaveVoiceRoom();
+      return false;
+    } else {
+      return await joinVoiceRoom(roomId, username);
+    }
+  }, [voiceEnabled, leaveVoiceRoom, joinVoiceRoom]);
+
+  // Toggle mute
+  const toggleMute = useCallback(() => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+        socket?.emit('voice:mute', { muted: !audioTrack.enabled });
+      }
+    }
+  }, [socket]);
+
+  // Toggle deafen
+  const toggleDeafen = useCallback(() => {
+    const newDeafened = !isDeafened;
+    setIsDeafened(newDeafened);
+
+    Object.keys(peersRef.current).forEach(userId => {
+      const audio = document.getElementById(`audio-${userId}`);
+      if (audio) {
+        audio.volume = newDeafened ? 0 : (playerVolumes[userId] ?? 1);
+      }
+    });
+
+    socket?.emit('voice:deafen', { deafened: newDeafened });
+  }, [isDeafened, socket, playerVolumes]);
+
+  // Set volume for a specific peer
+  const setPlayerVolume = useCallback((userId, volume) => {
+    const clampedVolume = Math.max(0, Math.min(1, volume));
+    setPlayerVolumes(prev => ({ ...prev, [userId]: clampedVolume }));
+
+    const audio = document.getElementById(`audio-${userId}`);
+    if (audio) {
+      audio.volume = isDeafened ? 0 : clampedVolume;
+    }
+  }, [isDeafened]);
+
+  // Handle socket events for WebRTC signaling
+  useEffect(() => {
+    if (!socket || !voiceEnabled || !currentUsername) return;
+
+    const handleUserJoined = ({ userId }) => {
+      if (userId !== currentUsername && !peersRef.current[userId]) {
+        const shouldInitiate = currentUsername < userId;
+        if (shouldInitiate) {
+          const peer = createPeer(userId, true);
+          if (peer) {
+            peersRef.current[userId] = peer;
+            setPeers(prev => ({ ...prev, [userId]: peer }));
+          }
+        }
+      }
+    };
+
+    const handleSignal = ({ from, signal }) => {
+      if (from === currentUsername) return;
+
+      if (!peersRef.current[from]) {
+        const peer = createPeer(from, false);
+        if (peer) {
+          peersRef.current[from] = peer;
+          setPeers(prev => ({ ...prev, [from]: peer }));
+          setTimeout(() => {
+            try {
+              peer.signal(signal);
+            } catch (err) {
+              console.error(`[VoiceContext] Error signaling new peer:`, err);
+            }
+          }, 100);
+        }
+      } else {
+        const peer = peersRef.current[from];
+        try {
+          peer.signal(signal);
+        } catch (err) {
+          if (err.message?.includes('cannot signal after peer is destroyed')) return;
+          console.error(`[VoiceContext] Error signaling peer:`, err);
+        }
+      }
+    };
+
+    const handleUserLeft = ({ userId }) => {
+      if (peersRef.current[userId]) {
+        peersRef.current[userId].destroy();
+        delete peersRef.current[userId];
+        setPeers(prev => {
+          const newPeers = { ...prev };
+          delete newPeers[userId];
+          return newPeers;
+        });
+      }
+    };
+
+    const handleVoiceRoomState = ({ users }) => {
+      users.forEach(userId => {
+        if (userId !== currentUsername && !peersRef.current[userId]) {
+          const shouldInitiate = currentUsername < userId;
+          if (shouldInitiate) {
+            const peer = createPeer(userId, true);
+            if (peer) {
+              peersRef.current[userId] = peer;
+              setPeers(prev => ({ ...prev, [userId]: peer }));
+            }
+          }
+        }
+      });
+    };
+
+    socket.on('voice:user-joined', handleUserJoined);
+    socket.on('voice:signal', handleSignal);
+    socket.on('voice:user-left', handleUserLeft);
+    socket.on('voice:room-state', handleVoiceRoomState);
+
+    return () => {
+      socket.off('voice:user-joined', handleUserJoined);
+      socket.off('voice:signal', handleSignal);
+      socket.off('voice:user-left', handleUserLeft);
+      socket.off('voice:room-state', handleVoiceRoomState);
+    };
+  }, [socket, voiceEnabled, currentUsername, createPeer]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      Object.values(peersRef.current).forEach(peer => {
+        try {
+          peer.destroy();
+        } catch (e) {
+          // Ignore
+        }
+      });
+    };
+  }, []);
+
+  const value = {
+    // State
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
+    currentRoomId,
+    peers: Object.keys(peers),
+    audioLevels,
+    permissionError,
+    playerVolumes,
+
+    // Actions
+    joinVoiceRoom,
+    leaveVoiceRoom,
+    toggleVoice,
+    toggleMute,
+    toggleDeafen,
+    setPlayerVolume,
+    setVoiceEnabled
+  };
+
+  return (
+    <VoiceContext.Provider value={value}>
+      {children}
+    </VoiceContext.Provider>
+  );
+};
+
+export default VoiceContext;

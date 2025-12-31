@@ -14,6 +14,7 @@ export const useWebRTC = (socket, roomId, username, enabled = false) => {
   const [peers, setPeers] = useState({});
   const [audioLevels, setAudioLevels] = useState({});
   const [isMuted, setIsMuted] = useState(false);
+  const [isDeafened, setIsDeafened] = useState(false);
   const [isVoiceConnected, setIsVoiceConnected] = useState(false);
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
@@ -419,16 +420,34 @@ export const useWebRTC = (socket, roomId, username, enabled = false) => {
   const setVolume = useCallback((userId, volume) => {
     const audio = document.getElementById(`audio-${userId}`);
     if (audio) {
-      audio.volume = Math.max(0, Math.min(1, volume));
+      audio.volume = isDeafened ? 0 : Math.max(0, Math.min(1, volume));
     }
-  }, []);
+  }, [isDeafened]);
+
+  // Toggle deafen (mute all incoming audio)
+  const toggleDeafen = useCallback(() => {
+    const newDeafened = !isDeafened;
+    setIsDeafened(newDeafened);
+
+    // Mute/unmute all audio elements
+    Object.keys(peers).forEach(userId => {
+      const audio = document.getElementById(`audio-${userId}`);
+      if (audio) {
+        audio.volume = newDeafened ? 0 : 1;
+      }
+    });
+
+    socket.emit('voice:deafen', { deafened: newDeafened });
+  }, [isDeafened, peers, socket]);
 
   return {
     peers: Object.keys(peers),
     audioLevels,
     isMuted,
+    isDeafened,
     isVoiceConnected,
     toggleMute,
+    toggleDeafen,
     setVolume
   };
 };

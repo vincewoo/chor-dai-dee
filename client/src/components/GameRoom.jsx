@@ -16,6 +16,8 @@ import logoImage from '../assets/chor-dai-dee-logo.png';
 import Modal from './Modal';
 import VoiceChat from './VoiceChat';
 import VoiceIndicator from './VoiceIndicator';
+import VoiceControlBubble from './VoiceControlBubble';
+import { useVoice } from '../contexts/VoiceContext';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -501,6 +503,14 @@ const GameRoom = ({ user, socket }) => {
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
     const [voiceAudioLevels, setVoiceAudioLevels] = useState({}); // Track audio levels for voice indicators
+    const [voiceState, setVoiceState] = useState(null); // Voice state from VoiceChat component
+
+    // Post-game state for rematch/lobby flow
+    const [readyStatus, setReadyStatus] = useState(null); // { ready: [], notReady: [], host: 'username', allReady: bool }
+    const [isReady, setIsReady] = useState(false); // Whether current player clicked Ready
+
+    // Voice context for persistent voice across navigation
+    const voiceContext = useVoice();
 
     // Debug callback for voice levels
     const handleVoiceAudioLevels = useCallback((levels) => {
@@ -661,6 +671,8 @@ const GameRoom = ({ user, socket }) => {
             setGameState(state);
             setRoundResult(null);
             setGameOver(null);
+            setReadyStatus(null); // Reset post-game state
+            setIsReady(false);
             clearTimeout(roomLoadTimeout); // Room exists, clear timeout
         });
 
@@ -739,6 +751,33 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setNotification(null), 5000);
         });
 
+        // Post-game flow events
+        socket.on('ready_status', (status) => {
+            setReadyStatus(status);
+        });
+
+        socket.on('lobby_ready', ({ roomId: lobbyRoomId, players, hostUsername }) => {
+            // Navigate to lobby with room context
+            navigate('/lobby', { state: { roomId: lobbyRoomId, isRoomLobby: true, players, hostUsername } });
+        });
+
+        socket.on('game_cancelled', ({ reason }) => {
+            setNotification({ type: 'warning', message: reason || 'Game cancelled' });
+            setTimeout(() => {
+                navigate('/lobby');
+            }, 2000);
+        });
+
+        socket.on('host_changed', ({ newHost }) => {
+            setNotification({ type: 'info', message: `${newHost} is now the host` });
+            setTimeout(() => setNotification(null), 3000);
+        });
+
+        socket.on('player_left', ({ playerName }) => {
+            setNotification({ type: 'info', message: `${playerName} left the room` });
+            setTimeout(() => setNotification(null), 3000);
+        });
+
         return () => {
             clearTimeout(roomLoadTimeout); // Clean up timeout on unmount
             socket.off('room_update');
@@ -757,6 +796,11 @@ const GameRoom = ({ user, socket }) => {
             socket.off('mid_game_join_info');
             socket.off('reconnected', handleReconnect);
             socket.off('joined_room');
+            socket.off('ready_status');
+            socket.off('lobby_ready');
+            socket.off('game_cancelled');
+            socket.off('host_changed');
+            socket.off('player_left');
         };
     }, [socket, navigate]);
 
@@ -1173,6 +1217,7 @@ const GameRoom = ({ user, socket }) => {
                 username={user?.username}
                 players={gameState?.players || []}
                 onAudioLevelsChange={handleVoiceAudioLevels}
+                onVoiceStateChange={setVoiceState}
             />
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">
@@ -1293,7 +1338,7 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0, y: -50 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-50 font-bold text-base md:text-[1vmax] ${
+                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-[250] font-bold text-base md:text-[1vmax] ${
                             notification.type === 'warning' ? 'bg-yellow-600 text-white' : 'bg-green-600 text-white'
                         }`}
                     >
@@ -1373,9 +1418,132 @@ const GameRoom = ({ user, socket }) => {
                         ))}
                     </div>
 
-                    <button onClick={() => navigate('/lobby')} className="bg-green-600 px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition transform hover:scale-105">
-                        Back to Lobby
-                    </button>
+                    {/* Post-game buttons - different for host vs non-host */}
+                    {(() => {
+                        const humanPlayers = gameState?.players?.filter(p => !p.isBot) || [];
+                        const hasMultipleHumans = humanPlayers.length >= 2;
+                        const isHost = user?.username === gameState?.hostUsername;
+
+                        if (!hasMultipleHumans) {
+                            // Solo game - just show back to lobby
+                            return (
+                                <button
+                                    onClick={() => navigate('/lobby')}
+                                    className="bg-green-600 px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition transform hover:scale-105"
+                                >
+                                    Back to Lobby
+                                </button>
+                            );
+                        }
+
+                        if (isHost) {
+                            // Host sees: Rematch, Back to Lobby, Leave
+                            return (
+                                <div className="flex flex-col gap-3 items-center">
+                                    {/* Ready status display */}
+                                    {readyStatus && (
+                                        <div className="text-sm text-gray-300 mb-2">
+                                            {readyStatus.allReady ? (
+                                                <span className="text-green-400">All players ready!</span>
+                                            ) : (
+                                                <>
+                                                    {readyStatus.ready.length > 0 && (
+                                                        <span className="text-green-400">Ready: {readyStatus.ready.join(', ')}</span>
+                                                    )}
+                                                    {readyStatus.notReady.length > 0 && (
+                                                        <span className="text-yellow-400 ml-2">Waiting: {readyStatus.notReady.join(', ')}</span>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-3 flex-wrap justify-center">
+                                        <button
+                                            onClick={() => socket.emit('host_rematch', { roomId })}
+                                            disabled={readyStatus && !readyStatus.allReady}
+                                            className={`px-6 py-3 rounded-lg font-bold transition transform hover:scale-105 ${
+                                                readyStatus && !readyStatus.allReady
+                                                    ? 'bg-gray-600 cursor-not-allowed opacity-50'
+                                                    : 'bg-green-600 hover:bg-green-700'
+                                            }`}
+                                            title={readyStatus && !readyStatus.allReady ? 'Waiting for all players to be ready' : 'Start a new game immediately'}
+                                        >
+                                            Rematch
+                                        </button>
+                                        <button
+                                            onClick={() => socket.emit('host_back_to_lobby', { roomId })}
+                                            className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition transform hover:scale-105"
+                                            title="Return everyone to the room lobby"
+                                        >
+                                            Back to Lobby
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                socket.emit('leave_after_game', { roomId });
+                                                voiceContext.leaveVoiceRoom();
+                                                navigate('/lobby');
+                                            }}
+                                            className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700 transition transform hover:scale-105"
+                                            title="Leave and return to main lobby"
+                                        >
+                                            Leave
+                                        </button>
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-2">
+                                        You are the host
+                                    </div>
+                                </div>
+                            );
+                        } else {
+                            // Non-host sees: Ready toggle, Leave
+                            return (
+                                <div className="flex flex-col gap-3 items-center">
+                                    {/* Ready status display */}
+                                    {readyStatus && (
+                                        <div className="text-sm text-gray-300 mb-2">
+                                            {readyStatus.ready.length > 0 && (
+                                                <span className="text-green-400">Ready: {readyStatus.ready.join(', ')}</span>
+                                            )}
+                                            {readyStatus.notReady.length > 0 && (
+                                                <span className="text-yellow-400 ml-2">Waiting: {readyStatus.notReady.join(', ')}</span>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => {
+                                                if (!isReady) {
+                                                    setIsReady(true);
+                                                    socket.emit('player_ready', { roomId });
+                                                }
+                                            }}
+                                            disabled={isReady}
+                                            className={`px-6 py-3 rounded-lg font-bold transition transform hover:scale-105 ${
+                                                isReady
+                                                    ? 'bg-green-700 cursor-default'
+                                                    : 'bg-green-600 hover:bg-green-700'
+                                            }`}
+                                        >
+                                            {isReady ? '✓ Ready' : 'Ready'}
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                socket.emit('leave_after_game', { roomId });
+                                                voiceContext.leaveVoiceRoom();
+                                                navigate('/lobby');
+                                            }}
+                                            className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700 transition transform hover:scale-105"
+                                        >
+                                            Leave
+                                        </button>
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-2">
+                                        Waiting for host ({readyStatus?.host || gameState?.hostUsername}) to start
+                                    </div>
+                                </div>
+                            );
+                        }
+                    })()}
                 </div>
             )}
 
@@ -1579,8 +1747,8 @@ const GameRoom = ({ user, socket }) => {
                 </div>
 
                 {/* Controls Row with Avatar (Mobile) */}
-                <div className="flex items-start justify-between gap-2 md:gap-[1vmax] mb-1 md:mb-[0.75vmax] w-full">
-                    <div className="flex items-center gap-2 flex-wrap justify-center flex-1 md:gap-[1vmax]">
+                <div className="relative flex items-start justify-center gap-2 md:gap-[1vmax] mb-1 md:mb-[0.75vmax] w-full">
+                    <div className="flex items-center gap-2 flex-wrap justify-center md:gap-[1vmax]">
                         <button
                             onClick={playCards}
                             disabled={!isMyTurn || selectedCards.length === 0}
@@ -1620,30 +1788,24 @@ const GameRoom = ({ user, socket }) => {
                         </button>
                     </div>
 
-                    {/* Avatar - Mobile only, in flex layout */}
-                    <div className="md:hidden flex flex-col items-center shrink-0 relative">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-4 shadow-lg
-                            ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
-                                ? 'border-green-400 bg-green-400 text-white animate-pulse'
-                                : isMyTurn
-                                    ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse'
-                                    : 'border-yellow-600 bg-yellow-500 text-black'}`}>
-                            {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
-                            {/* Voice indicator for mobile */}
-                            {voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05 && (
-                                <VoiceIndicator
-                                    isActive={true}
-                                    level={voiceAudioLevels[user?.username]}
-                                />
-                            )}
-                        </div>
-                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1 whitespace-nowrap">
-                            {user?.username || 'You'}
-                            {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
-                                <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
-                            )}
-                        </div>
-                        <div className="text-yellow-300 text-xs">{myHand.length} Cards</div>
+                    {/* Voice Control Bubble - Mobile only, absolutely positioned */}
+                    <div className="md:hidden absolute right-2 top-0">
+                        <VoiceControlBubble
+                            username={user?.username}
+                            voiceEnabled={voiceState?.voiceEnabled || false}
+                            isVoiceConnected={voiceState?.isVoiceConnected || false}
+                            isMuted={voiceState?.isMuted || false}
+                            isDeafened={voiceState?.isDeafened || false}
+                            audioLevel={voiceAudioLevels[user?.username] || 0}
+                            onToggleVoice={voiceState?.handleVoiceToggle}
+                            onToggleMute={voiceState?.toggleMute}
+                            onToggleDeafen={voiceState?.toggleDeafen}
+                            onVolumeChange={voiceState?.handleVolumeChange}
+                            players={gameState?.players || []}
+                            peers={voiceState?.peers || []}
+                            playerVolumes={voiceState?.playerVolumes || {}}
+                            size="mobile"
+                        />
                     </div>
                 </div>
 

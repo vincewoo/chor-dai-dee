@@ -41,6 +41,9 @@ class Room {
         this.trickWinner = null; // The player who won the current trick
         this.lastRoundResults = null; // Store round results for reconnection handling
         this.lastGameResults = null; // Store game over results for reconnection handling
+
+        // Post-game state for rematch/lobby flow
+        this.postGameReadyPlayers = new Set(); // Players who clicked "Ready" after game ends
     }
 
     addPlayer(player) {
@@ -1045,6 +1048,190 @@ class Room {
     getPlayerHand(playerId) {
         const player = this.players.find(p => p.id === playerId);
         return player ? player.hand : [];
+    }
+
+    // ============ Post-Game Flow Methods ============
+
+    // Mark a non-host player as ready for rematch
+    setPlayerReady(playerId) {
+        const player = this.players.find(p => p.id === playerId);
+        if (!player || player.isBot) return { error: 'Player not found' };
+
+        // Don't allow host to use this (they have different buttons)
+        if (player.name === this.hostUsername) {
+            return { error: 'Host should use rematch or back to lobby' };
+        }
+
+        this.postGameReadyPlayers.add(playerId);
+        return { success: true };
+    }
+
+    // Get current ready status for post-game screen
+    getReadyStatus() {
+        const humanPlayers = this.players.filter(p => !p.isBot);
+        const ready = [];
+        const notReady = [];
+
+        for (const player of humanPlayers) {
+            if (player.name === this.hostUsername) {
+                // Host is always considered "ready" since they control the flow
+                continue;
+            }
+            if (this.postGameReadyPlayers.has(player.id)) {
+                ready.push(player.name);
+            } else {
+                notReady.push(player.name);
+            }
+        }
+
+        return {
+            ready,
+            notReady,
+            host: this.hostUsername,
+            allReady: notReady.length === 0
+        };
+    }
+
+    // Check if all non-host human players are ready
+    allPlayersReady() {
+        const humanPlayers = this.players.filter(p => !p.isBot && p.name !== this.hostUsername);
+        return humanPlayers.every(p => this.postGameReadyPlayers.has(p.id));
+    }
+
+    // Transition room back to waiting (lobby) state - removes bots, keeps humans
+    transitionToLobby() {
+        // Only allow transition from finished state
+        if (this.gameState !== 'finished') {
+            return { error: 'Can only transition to lobby from finished state' };
+        }
+
+        // Remove all bots
+        this.players = this.players.filter(p => !p.isBot);
+
+        // Reset game state
+        this.gameState = 'waiting';
+        this.roundNumber = 0;
+        this.lastRoundWinnerId = null;
+        this.cumulativeScores = {};
+        this.lastGameResults = null;
+        this.lastRoundResults = null;
+        this.postGameReadyPlayers.clear();
+
+        // Clear player hands
+        this.players.forEach(p => {
+            p.hand = [];
+        });
+
+        // Generate new game ID for next game
+        this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+        // Update activity timestamp
+        this.updateActivity();
+
+        return {
+            success: true,
+            players: this.players.map(p => ({
+                id: p.id,
+                name: p.name,
+                isBot: p.isBot,
+                rating: p.rating
+            })),
+            hostUsername: this.hostUsername,
+            roomId: this.id
+        };
+    }
+
+    // Start a rematch - reset game state and start new game immediately
+    startRematch(useAdvancedBots = null) {
+        // Only allow from finished state
+        if (this.gameState !== 'finished') {
+            return { error: 'Can only start rematch from finished state' };
+        }
+
+        // Remove all bots (new ones will be added)
+        this.players = this.players.filter(p => !p.isBot);
+
+        // Reset game state
+        this.roundNumber = 0;
+        this.lastRoundWinnerId = null;
+        this.cumulativeScores = {};
+        this.lastGameResults = null;
+        this.lastRoundResults = null;
+        this.postGameReadyPlayers.clear();
+
+        // Clear player hands
+        this.players.forEach(p => {
+            p.hand = [];
+        });
+
+        // Generate new game ID
+        this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+        // Use previous bot setting if not specified
+        const useBots = useAdvancedBots !== null ? useAdvancedBots : this.settings.useAdvancedBots;
+
+        // Start the game (this will auto-fill bots)
+        return this.startGame(useBots);
+    }
+
+    // Transfer host to another player
+    transferHost(newHostUsername) {
+        const newHost = this.players.find(p => p.name === newHostUsername && !p.isBot);
+        if (!newHost) {
+            return { error: 'New host not found' };
+        }
+
+        const oldHost = this.hostUsername;
+        this.hostUsername = newHostUsername;
+        console.log(`Room ${this.id}: Host transferred from ${oldHost} to ${newHostUsername}`);
+
+        return { success: true, oldHost, newHost: newHostUsername };
+    }
+
+    // Remove a player and handle host transfer if needed
+    removePlayerPostGame(playerId) {
+        const player = this.players.find(p => p.id === playerId);
+        if (!player) return { error: 'Player not found' };
+
+        const wasHost = player.name === this.hostUsername;
+        const playerName = player.name;
+
+        // Remove from players array
+        this.players = this.players.filter(p => p.id !== playerId);
+
+        // Remove from reconnection tracking
+        if (player.name && !player.isBot) {
+            delete this.playersByUsername[player.name];
+        }
+
+        // Remove from ready set
+        this.postGameReadyPlayers.delete(playerId);
+
+        // Count remaining humans
+        const remainingHumans = this.players.filter(p => !p.isBot);
+
+        // Handle host transfer if needed
+        let newHost = null;
+        if (wasHost && remainingHumans.length > 0) {
+            newHost = remainingHumans[0].name;
+            this.hostUsername = newHost;
+            console.log(`Room ${this.id}: Host transferred to ${newHost} after ${playerName} left`);
+        } else if (remainingHumans.length === 0) {
+            this.hostUsername = null;
+        }
+
+        return {
+            success: true,
+            removedPlayer: playerName,
+            wasHost,
+            newHost,
+            remainingHumans: remainingHumans.length
+        };
+    }
+
+    // Get count of human players
+    getHumanPlayerCount() {
+        return this.players.filter(p => !p.isBot).length;
     }
 }
 

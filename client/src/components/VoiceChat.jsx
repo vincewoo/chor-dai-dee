@@ -1,58 +1,97 @@
-import { useState, useEffect } from 'react';
-import { useWebRTC } from '../hooks/useWebRTC';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useVoice } from '../contexts/VoiceContext';
+import { AnimatePresence, motion } from 'framer-motion';
 
-const VoiceChat = ({ socket, roomId, username, players, onAudioLevelsChange }) => {
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+const VoiceChat = ({
+  roomId,
+  username,
+  players,
+  onAudioLevelsChange,
+  onVoiceStateChange
+}) => {
   const [showVolumeControls, setShowVolumeControls] = useState(false);
-  const [playerVolumes, setPlayerVolumes] = useState({});
-  const [permissionError, setPermissionError] = useState(false);
 
   const {
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
     peers,
     audioLevels,
-    isMuted,
-    isVoiceConnected,
+    permissionError,
+    playerVolumes,
+    joinVoiceRoom,
+    leaveVoiceRoom,
     toggleMute,
-    setVolume
-  } = useWebRTC(socket, roomId, username, voiceEnabled);
+    toggleDeafen,
+    setPlayerVolume
+  } = useVoice();
+
+  // Store stable callback refs to avoid infinite loops
+  const callbacksRef = useRef({});
 
   // Pass audio levels to parent component for voice indicators
   useEffect(() => {
-    // Only log when we have actual audio levels
     if (Object.keys(audioLevels).length > 0 && Object.values(audioLevels).some(level => level > 0.1)) {
-      // Removed verbose logging for cleaner console
       if (onAudioLevelsChange) {
         onAudioLevelsChange(audioLevels);
-      } else {
-        console.log('ERROR: onAudioLevelsChange callback is not defined!');
       }
     }
   }, [audioLevels, onAudioLevelsChange]);
 
   // Handle voice toggle
-  const handleVoiceToggle = async () => {
+  const handleVoiceToggle = useCallback(async () => {
     if (!voiceEnabled) {
-      // Request microphone permission
-      try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-        setVoiceEnabled(true);
-        setPermissionError(false);
-      } catch (err) {
-        console.error('Microphone permission denied:', err);
-        setPermissionError(true);
-      }
+      await joinVoiceRoom(roomId, username);
     } else {
-      setVoiceEnabled(false);
+      leaveVoiceRoom();
       setShowVolumeControls(false);
     }
-  };
+  }, [voiceEnabled, roomId, username, joinVoiceRoom, leaveVoiceRoom]);
 
   // Handle volume change for a player
-  const handleVolumeChange = (playerId, volume) => {
-    setPlayerVolumes(prev => ({ ...prev, [playerId]: volume }));
-    setVolume(playerId, volume / 100);
-  };
+  const handleVolumeChange = useCallback((playerId, volume) => {
+    const normalizedVolume = typeof volume === 'string' ? parseInt(volume) : volume;
+    setPlayerVolume(playerId, normalizedVolume / 100);
+  }, [setPlayerVolume]);
+
+  // Update callbacks ref
+  useEffect(() => {
+    callbacksRef.current = {
+      handleVoiceToggle,
+      toggleMute,
+      toggleDeafen,
+      handleVolumeChange
+    };
+  }, [handleVoiceToggle, toggleMute, toggleDeafen, handleVolumeChange]);
+
+  // Expose voice state to parent component for the mobile bubble
+  useEffect(() => {
+    if (onVoiceStateChange) {
+      onVoiceStateChange({
+        voiceEnabled,
+        isVoiceConnected,
+        isMuted,
+        isDeafened,
+        peers,
+        playerVolumes,
+        permissionError,
+        handleVoiceToggle: () => callbacksRef.current.handleVoiceToggle?.(),
+        toggleMute: () => callbacksRef.current.toggleMute?.(),
+        toggleDeafen: () => callbacksRef.current.toggleDeafen?.(),
+        handleVolumeChange: (playerId, vol) => callbacksRef.current.handleVolumeChange?.(playerId, vol)
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
+    JSON.stringify(peers),
+    JSON.stringify(playerVolumes),
+    permissionError
+  ]);
 
   // Get speaking indicator size based on audio level
   const getSpeakingIndicator = (level) => {
@@ -63,8 +102,8 @@ const VoiceChat = ({ socket, roomId, username, players, onAudioLevelsChange }) =
 
   return (
     <>
-      {/* Voice Control Panel */}
-      <div className="fixed bottom-4 left-4 z-40 flex items-center gap-2">
+      {/* Voice Control Panel - Desktop only (hidden on mobile) */}
+      <div className="hidden md:flex fixed bottom-4 left-4 z-40 items-center gap-2">
         {/* Main Voice Toggle */}
         <button
           onClick={handleVoiceToggle}
@@ -141,6 +180,42 @@ const VoiceChat = ({ socket, roomId, username, players, onAudioLevelsChange }) =
               </svg>
             </button>
 
+            {/* Deafen Button */}
+            <button
+              onClick={toggleDeafen}
+              className={`
+                p-2 rounded-lg transition-all
+                ${isDeafened
+                  ? 'bg-orange-600 hover:bg-orange-700'
+                  : 'bg-gray-700 hover:bg-gray-600'
+                } text-white
+              `}
+              title={isDeafened ? 'Undeafen' : 'Deafen'}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                {isDeafened ? (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
+                  />
+                ) : (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                  />
+                )}
+              </svg>
+            </button>
+
             {/* Volume Controls Button */}
             <button
               onClick={() => setShowVolumeControls(!showVolumeControls)}
@@ -172,14 +247,14 @@ const VoiceChat = ({ socket, roomId, username, players, onAudioLevelsChange }) =
         )}
       </div>
 
-      {/* Volume Control Panel */}
+      {/* Volume Control Panel - Desktop only */}
       <AnimatePresence>
         {showVolumeControls && voiceEnabled && isVoiceConnected && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-20 left-4 bg-gray-800 rounded-lg p-4 z-40 shadow-xl"
+            className="hidden md:block fixed bottom-20 left-4 bg-gray-800 rounded-lg p-4 z-40 shadow-xl"
           >
             <h3 className="text-white font-semibold mb-3">Volume Controls</h3>
             <div className="space-y-2">
@@ -192,12 +267,12 @@ const VoiceChat = ({ socket, roomId, username, players, onAudioLevelsChange }) =
                       type="range"
                       min="0"
                       max="100"
-                      value={playerVolumes[player.name] || 100}
+                      value={(playerVolumes[player.name] ?? 1) * 100}
                       onChange={(e) => handleVolumeChange(player.name, e.target.value)}
                       className="w-32"
                     />
                     <span className="text-gray-400 text-xs w-10">
-                      {playerVolumes[player.name] || 100}%
+                      {Math.round((playerVolumes[player.name] ?? 1) * 100)}%
                     </span>
                   </div>
                 ))}

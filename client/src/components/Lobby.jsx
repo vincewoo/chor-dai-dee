@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
+import { useVoice } from '../contexts/VoiceContext';
+import { GAME_MODES } from '../constants/gameModes';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -14,6 +16,114 @@ const Lobby = ({ user, socket, setUser }) => {
     const [recentGames, setRecentGames] = useState([]);
     const [selectedGame, setSelectedGame] = useState(null);
     const navigate = useNavigate();
+    const location = useLocation();
+    const voiceContext = useVoice();
+
+    // Room lobby state (when returning from a game)
+    const [roomLobbyData, setRoomLobbyData] = useState(null);
+    // { roomId, players, hostUsername, gameMode }
+    const [selectedGameMode, setSelectedGameMode] = useState('standard');
+
+    // Check if we're returning from a game to room lobby
+    useEffect(() => {
+        if (location.state?.isRoomLobby && location.state?.roomId) {
+            console.log('Returning to room lobby:', location.state);
+            setRoomLobbyData({
+                roomId: location.state.roomId,
+                players: location.state.players || [],
+                hostUsername: location.state.hostUsername
+            });
+            // Join the socket room to receive updates
+            socket.emit('get_room_state', { roomId: location.state.roomId });
+            // Clear the location state to prevent re-triggering on refresh
+            window.history.replaceState({}, document.title);
+        }
+    }, [location.state, socket]);
+
+    // Socket listeners for room lobby updates
+    useEffect(() => {
+        if (!roomLobbyData) return;
+
+        const handleRoomUpdate = (state) => {
+            if (state.id === roomLobbyData.roomId || state.roomId === roomLobbyData.roomId) {
+                setRoomLobbyData(prev => ({
+                    ...prev,
+                    players: state.players || prev.players,
+                    hostUsername: state.hostUsername || prev.hostUsername,
+                    gameMode: state.gameMode || prev.gameMode
+                }));
+                if (state.gameMode) {
+                    setSelectedGameMode(state.gameMode);
+                }
+            }
+        };
+
+        const handleGameStarted = (state) => {
+            // Game started, navigate to game room
+            navigate(`/game/${roomLobbyData.roomId}`);
+        };
+
+        const handlePlayerLeft = ({ playerName }) => {
+            setRoomLobbyData(prev => ({
+                ...prev,
+                players: prev.players.filter(p => p.name !== playerName)
+            }));
+        };
+
+        const handleHostChanged = ({ newHost }) => {
+            setRoomLobbyData(prev => ({
+                ...prev,
+                hostUsername: newHost
+            }));
+        };
+
+        socket.on('room_update', handleRoomUpdate);
+        socket.on('game_started', handleGameStarted);
+        socket.on('player_left', handlePlayerLeft);
+        socket.on('host_changed', handleHostChanged);
+
+        return () => {
+            socket.off('room_update', handleRoomUpdate);
+            socket.off('game_started', handleGameStarted);
+            socket.off('player_left', handlePlayerLeft);
+            socket.off('host_changed', handleHostChanged);
+        };
+    }, [roomLobbyData, socket, navigate]);
+
+    // Handle leaving room lobby
+    const handleLeaveRoomLobby = useCallback(() => {
+        if (roomLobbyData) {
+            socket.emit('leave_room', { roomId: roomLobbyData.roomId });
+            voiceContext.leaveVoiceRoom();
+        }
+        setRoomLobbyData(null);
+    }, [roomLobbyData, socket, voiceContext]);
+
+    // Handle starting game from room lobby
+    const handleStartGameFromLobby = useCallback(() => {
+        if (roomLobbyData) {
+            socket.emit('start_game', { roomId: roomLobbyData.roomId, useAdvancedBots: true });
+        }
+    }, [roomLobbyData, socket]);
+
+    // Handle game mode change in room lobby
+    const handleGameModeChange = useCallback((mode) => {
+        setSelectedGameMode(mode);
+        if (roomLobbyData) {
+            socket.emit('set_game_mode', { roomId: roomLobbyData.roomId, gameMode: mode });
+        }
+    }, [roomLobbyData, socket]);
+
+    // Handle voice toggle in room lobby
+    const handleVoiceToggle = useCallback(async () => {
+        if (roomLobbyData) {
+            if (voiceContext.voiceEnabled) {
+                voiceContext.leaveVoiceRoom();
+            } else {
+                await voiceContext.joinVoiceRoom(roomLobbyData.roomId, user.username);
+            }
+        }
+    }, [roomLobbyData, voiceContext, user.username]);
 
     const handleLogout = () => {
         setUser(null);
@@ -164,6 +274,167 @@ const Lobby = ({ user, socket, setUser }) => {
         };
     }, [socket, navigate, user?.username]);
 
+    // Room Lobby View - when returning from a game
+    if (roomLobbyData) {
+        const isHost = user.username === roomLobbyData.hostUsername;
+        const players = roomLobbyData.players || [];
+
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white p-6 sm:p-4">
+                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-48 sm:w-40 mb-6" />
+                <div className="bg-white text-gray-800 p-8 sm:p-6 rounded-xl shadow-2xl w-full sm:max-w-lg text-center">
+                    <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
+                        {connected ? '● Connected' : '● Disconnected'}
+                    </div>
+
+                    <h2 className="text-2xl font-bold mb-2">Room Lobby</h2>
+                    <div className="text-3xl font-mono font-bold text-green-600 mb-4 tracking-widest">
+                        {roomLobbyData.roomId}
+                    </div>
+
+                    {/* Players List */}
+                    <div className="mb-6">
+                        <h3 className="text-lg font-semibold mb-3">Players ({players.length}/4)</h3>
+                        <div className="flex flex-wrap justify-center gap-2">
+                            {players.map(p => (
+                                <div
+                                    key={p.id || p.name}
+                                    className={`px-4 py-2 rounded-lg ${
+                                        p.name === roomLobbyData.hostUsername
+                                            ? 'bg-yellow-100 border-2 border-yellow-400'
+                                            : 'bg-gray-100'
+                                    }`}
+                                >
+                                    {p.name === roomLobbyData.hostUsername && '👑 '}
+                                    {p.name}
+                                    {p.name === user.username && ' (You)'}
+                                </div>
+                            ))}
+                            {Array.from({ length: 4 - players.length }).map((_, i) => (
+                                <div key={`empty-${i}`} className="px-4 py-2 rounded-lg bg-gray-50 text-gray-400 border-2 border-dashed border-gray-300">
+                                    Empty
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Game Mode Selector - Host only */}
+                    {isHost && (
+                        <div className="mb-6">
+                            <h3 className="text-sm font-semibold mb-2 text-gray-600">Game Mode</h3>
+                            <div className="flex gap-2 justify-center">
+                                {Object.values(GAME_MODES).map(mode => (
+                                    <button
+                                        key={mode.id}
+                                        onClick={() => handleGameModeChange(mode.id)}
+                                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+                                            selectedGameMode === mode.id
+                                                ? 'bg-green-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {mode.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Voice Chat Toggle */}
+                    <div className="mb-6">
+                        <button
+                            onClick={handleVoiceToggle}
+                            className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 mx-auto ${
+                                voiceContext.voiceEnabled
+                                    ? voiceContext.isVoiceConnected
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-yellow-500 text-white'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d={voiceContext.voiceEnabled
+                                        ? "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                                        : "M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                                    }
+                                />
+                            </svg>
+                            {voiceContext.voiceEnabled
+                                ? voiceContext.isVoiceConnected ? 'Voice On' : 'Connecting...'
+                                : 'Join Voice'
+                            }
+                        </button>
+                        {voiceContext.voiceEnabled && voiceContext.isVoiceConnected && (
+                            <div className="flex gap-2 justify-center mt-2">
+                                <button
+                                    onClick={voiceContext.toggleMute}
+                                    className={`p-2 rounded-lg transition ${
+                                        voiceContext.isMuted ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                    title={voiceContext.isMuted ? 'Unmute' : 'Mute'}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        {voiceContext.isMuted ? (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2 2m0-2l-2 2" />
+                                        ) : (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                        )}
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={voiceContext.toggleDeafen}
+                                    className={`p-2 rounded-lg transition ${
+                                        voiceContext.isDeafened ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                    title={voiceContext.isDeafened ? 'Undeafen' : 'Deafen'}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        {voiceContext.isDeafened ? (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                                        ) : (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                        )}
+                                    </svg>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 justify-center">
+                        {isHost ? (
+                            <button
+                                onClick={handleStartGameFromLobby}
+                                className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition"
+                            >
+                                Start Game
+                            </button>
+                        ) : (
+                            <div className="text-gray-500 py-3">
+                                Waiting for host to start...
+                            </div>
+                        )}
+                        <button
+                            onClick={handleLeaveRoomLobby}
+                            className="bg-red-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-600 transition"
+                        >
+                            Leave Room
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Main Lobby View
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white p-6 sm:p-4">
             <img src={logoImage} alt="Chor Dai Dee Logo" className="w-64 sm:w-60 mb-8" />
