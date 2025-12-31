@@ -115,7 +115,7 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamic
 };
 
 // Played cards display component - extracted to prevent re-renders
-const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false }) => {
+const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, trickWinPending = false }) => {
     // Mobile: position near avatars; Desktop: original positions
     // Bottom position adjusted higher to be visible above controls
     // Add vertical offset for side players
@@ -134,8 +134,9 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
     const cardSize = 'large'; // Use large for all on mobile
 
     // Determine what to display
-    // Show turn indicator whenever it's their turn
-    const showTurnIndicator = isCurrentTurn;
+    // Show turn indicator whenever it's their turn, UNLESS a trick win is pending (we want to show the winning cards)
+    // Also prioritize turn indicator over played cards if it is their turn (e.g. if they played earlier in the trick)
+    const showTurnIndicator = isCurrentTurn && !trickWinPending;
     const showPlayedCards = !!lastPlayed;
 
     // Calculate z-index based on play order: later plays appear on top
@@ -156,8 +157,8 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 
     return (
         <AnimatePresence>
-            {showTurnIndicator && !showPlayedCards ? (
-                // Turn indicator display (only show when there are no played cards)
+            {showTurnIndicator ? (
+                // Turn indicator display (prioritized over played cards unless trick win pending)
                 <motion.div
                     key={`turn-${position}-${playerName}`}
                     className={basePositions[position]}
@@ -1695,6 +1696,7 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(2))}
                 playerName={getRelativePlayer(2)?.name}
                 isMe={getRelativePlayer(2)?.id === myPlayerId}
+                trickWinPending={gameState.trickWinPending}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(3)?.lastPlayed}
@@ -1702,6 +1704,7 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(3))}
                 playerName={getRelativePlayer(3)?.name}
                 isMe={getRelativePlayer(3)?.id === myPlayerId}
+                trickWinPending={gameState.trickWinPending}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(1)?.lastPlayed}
@@ -1709,6 +1712,7 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(1))}
                 playerName={getRelativePlayer(1)?.name}
                 isMe={getRelativePlayer(1)?.id === myPlayerId}
+                trickWinPending={gameState.trickWinPending}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(0)?.lastPlayed}
@@ -1716,6 +1720,7 @@ const GameRoom = ({ user, socket }) => {
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(0))}
                 playerName={getRelativePlayer(0)?.name}
                 isMe={true}
+                trickWinPending={gameState.trickWinPending}
             />
 
             {/* Bottom: My Hand & Controls - Anchored at bottom, flows upward */}
