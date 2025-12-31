@@ -37,105 +37,6 @@ const sortCards = (cards) => {
     return [...cards].sort((a, b) => a.value - b.value);
 };
 
-// Check if cards form a straight
-const checkStraight = (cards) => {
-    const ranks = cards.map(c => c.rank);
-    const has = (r) => ranks.includes(r);
-
-    // Special: A-2-3-4-5
-    if (has('A') && has('2') && has('3') && has('4') && has('5')) return true;
-    // Special: 2-3-4-5-6
-    if (has('2') && has('3') && has('4') && has('5') && has('6')) return true;
-    // No 2 in other straights
-    if (cards.some(c => c.rank === '2')) return false;
-
-    // Check consecutive
-    const sorted = sortCards(cards);
-    for (let i = 0; i < 4; i++) {
-        const rankIdx1 = RANKS.indexOf(sorted[i].rank);
-        const rankIdx2 = RANKS.indexOf(sorted[i + 1].rank);
-        if (rankIdx2 !== rankIdx1 + 1) return false;
-    }
-    return true;
-};
-
-// Validate and get hand info
-const validateHand = (cards) => {
-    if (!cards || cards.length === 0) return null;
-    const withValues = ensureCardValues(cards);
-    const sorted = sortCards(withValues);
-
-    if (cards.length === 1) {
-        return { type: HAND_TYPES.SINGLE, value: withValues[0].value, cards: withValues };
-    }
-
-    if (cards.length === 2) {
-        if (withValues[0].rank === withValues[1].rank) {
-            return { type: HAND_TYPES.PAIR, value: sorted[1].value, cards: sorted };
-        }
-        return null;
-    }
-
-    if (cards.length === 3) {
-        if (withValues[0].rank === withValues[1].rank && withValues[1].rank === withValues[2].rank) {
-            return { type: HAND_TYPES.TRIPLE, value: sorted[2].value, cards: sorted };
-        }
-        return null;
-    }
-
-    if (cards.length === 5) {
-        const isFlush = withValues.every(c => c.suit === withValues[0].suit);
-        const isStraight = checkStraight(withValues);
-
-        if (isFlush && isStraight) {
-            const ranks = withValues.map(c => c.rank);
-            if (ranks.includes('2')) {
-                const twoCard = withValues.find(c => c.rank === '2');
-                let value = twoCard.value;
-                if (ranks.includes('A')) value += 4;
-                return { type: HAND_TYPES.STRAIGHT_FLUSH, value, cards: sorted };
-            }
-            return { type: HAND_TYPES.STRAIGHT_FLUSH, value: sorted[4].value, cards: sorted };
-        }
-
-        // Check quads
-        const rankCounts = {};
-        withValues.forEach(c => { rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1; });
-        const quadRank = Object.keys(rankCounts).find(r => rankCounts[r] === 4);
-        if (quadRank) {
-            const quadCards = withValues.filter(c => c.rank === quadRank);
-            return { type: HAND_TYPES.QUADS, value: Math.max(...quadCards.map(c => c.value)), cards: sorted };
-        }
-
-        // Check full house
-        const tripleRank = Object.keys(rankCounts).find(r => rankCounts[r] === 3);
-        const pairRank = Object.keys(rankCounts).find(r => rankCounts[r] === 2);
-        if (tripleRank && pairRank) {
-            const tripleCards = withValues.filter(c => c.rank === tripleRank);
-            return { type: HAND_TYPES.FULL_HOUSE, value: Math.max(...tripleCards.map(c => c.value)), cards: sorted };
-        }
-
-        if (isFlush) {
-            return { type: HAND_TYPES.FLUSH, value: sorted[4].value, cards: sorted };
-        }
-
-        if (isStraight) {
-            const ranks = withValues.map(c => c.rank);
-            if (ranks.includes('2')) {
-                const twoCard = withValues.find(c => c.rank === '2');
-                let value = twoCard.value;
-                if (ranks.includes('A')) value += 4;
-                return { type: HAND_TYPES.STRAIGHT, value, cards: sorted };
-            }
-            return { type: HAND_TYPES.STRAIGHT, value: sorted[4].value, cards: sorted };
-        }
-
-        return null;
-    }
-
-    return null;
-};
-
 // Check if newHand beats oldHand
 const canBeat = (newHand, oldHand) => {
     if (!newHand || !oldHand) return false;
@@ -153,6 +54,7 @@ const canBeat = (newHand, oldHand) => {
 };
 
 // Generate all combinations of size k from array
+// Used for small sets (like generating pairs from 3 cards of same rank)
 const combinations = (arr, k) => {
     if (k === 0) return [[]];
     if (arr.length < k) return [];
@@ -173,6 +75,33 @@ const combinations = (arr, k) => {
     return result;
 };
 
+// Helper to group cards by rank
+const groupCardsByRank = (cards) => {
+    const groups = {};
+    cards.forEach(card => {
+        if (!groups[card.rank]) groups[card.rank] = [];
+        groups[card.rank].push(card);
+    });
+    return groups;
+};
+
+// Helper to group cards by suit
+const groupCardsBySuit = (cards) => {
+    const groups = {};
+    cards.forEach(card => {
+        if (!groups[card.suit]) groups[card.suit] = [];
+        groups[card.suit].push(card);
+    });
+    return groups;
+};
+
+// Cartesian product for generating straights from rank groups
+const cartesianProduct = (arrays) => {
+    return arrays.reduce((acc, curr) => {
+        return acc.flatMap(a => curr.map(c => [...a, c]));
+    }, [[]]);
+};
+
 // Find all valid hands of a specific type that can beat the current hand
 export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
     if (!playerHand || playerHand.length === 0) return [];
@@ -180,60 +109,178 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
     const handWithValues = ensureCardValues(playerHand);
     const eligibleHands = [];
 
-    // Determine the size we need based on the hand type
-    let cardCount;
-    switch (handType) {
-        case HAND_TYPES.SINGLE:
-            cardCount = 1;
-            break;
-        case HAND_TYPES.PAIR:
-            cardCount = 2;
-            break;
-        case HAND_TYPES.TRIPLE:
-            cardCount = 3;
-            break;
-        case HAND_TYPES.STRAIGHT:
-        case HAND_TYPES.FLUSH:
-        case HAND_TYPES.FULL_HOUSE:
-        case HAND_TYPES.QUADS:
-        case HAND_TYPES.STRAIGHT_FLUSH:
-            cardCount = 5;
-            break;
-        default:
-            return [];
-    }
+    // Helper to add hand if valid and beats lastPlayedHand
+    const addIfValid = (cards, type) => {
+        const sorted = sortCards(cards);
+        let value;
 
-    // If there's a hand to beat, we must match its size
-    if (lastPlayedHand && lastPlayedHand.cards) {
-        const requiredCount = lastPlayedHand.cards.length;
-        if (cardCount !== requiredCount) return [];
-    }
+        // Calculate value based on type logic matching server/Big2Rules.js and client/handChecker.js
+        if (type === HAND_TYPES.SINGLE) value = sorted[0].value;
+        else if (type === HAND_TYPES.PAIR) value = sorted[1].value;
+        else if (type === HAND_TYPES.TRIPLE) value = sorted[2].value;
+        else if (type === HAND_TYPES.FLUSH) value = sorted[4].value;
+        else if (type === HAND_TYPES.FULL_HOUSE) {
+             const rankCounts = {};
+             sorted.forEach(c => { rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1; });
+             const tripleRank = Object.keys(rankCounts).find(r => rankCounts[r] === 3);
+             const tripleCards = sorted.filter(c => c.rank === tripleRank);
+             value = Math.max(...tripleCards.map(c => c.value));
+        }
+        else if (type === HAND_TYPES.QUADS) {
+             const rankCounts = {};
+             sorted.forEach(c => { rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1; });
+             const quadRank = Object.keys(rankCounts).find(r => rankCounts[r] === 4);
+             const quadCards = sorted.filter(c => c.rank === quadRank);
+             value = Math.max(...quadCards.map(c => c.value));
+        }
+        else if (type === HAND_TYPES.STRAIGHT || type === HAND_TYPES.STRAIGHT_FLUSH) {
+             const ranks = sorted.map(c => c.rank);
+             if (ranks.includes('2')) {
+                 const twoCard = sorted.find(c => c.rank === '2');
+                 value = twoCard.value;
+                 if (ranks.includes('A')) value += 4;
+             } else {
+                 value = sorted[4].value;
+             }
+        }
 
-    // Generate all combinations of the required size
-    const allCombos = combinations(handWithValues, cardCount);
+        const handObj = { type, value, cards: sorted };
 
-    for (const combo of allCombos) {
-        const validated = validateHand(combo);
-        if (validated && validated.type === handType) {
-            // If there's a hand to beat, check if this beats it
-            if (lastPlayedHand && lastPlayedHand.type) {
-                const lastHandValidated = {
-                    type: lastPlayedHand.type,
-                    value: lastPlayedHand.value
-                };
-                if (canBeat(validated, lastHandValidated)) {
-                    eligibleHands.push(validated);
-                }
-            } else {
-                // Free play - any valid hand works
-                eligibleHands.push(validated);
+        if (lastPlayedHand) {
+            if (canBeat(handObj, lastPlayedHand)) {
+                eligibleHands.push(handObj);
             }
+        } else {
+            eligibleHands.push(handObj);
+        }
+    };
+
+    switch (handType) {
+        case HAND_TYPES.SINGLE: {
+            handWithValues.forEach(card => addIfValid([card], HAND_TYPES.SINGLE));
+            break;
+        }
+        case HAND_TYPES.PAIR: {
+            const rankGroups = groupCardsByRank(handWithValues);
+            Object.values(rankGroups).forEach(group => {
+                if (group.length >= 2) {
+                    const combos = combinations(group, 2);
+                    combos.forEach(combo => addIfValid(combo, HAND_TYPES.PAIR));
+                }
+            });
+            break;
+        }
+        case HAND_TYPES.TRIPLE: {
+            const rankGroups = groupCardsByRank(handWithValues);
+            Object.values(rankGroups).forEach(group => {
+                if (group.length >= 3) {
+                    const combos = combinations(group, 3);
+                    combos.forEach(combo => addIfValid(combo, HAND_TYPES.TRIPLE));
+                }
+            });
+            break;
+        }
+        case HAND_TYPES.QUADS: {
+            const rankGroups = groupCardsByRank(handWithValues);
+            const quads = [];
+            const others = [];
+
+            Object.values(rankGroups).forEach((group) => {
+                if (group.length === 4) {
+                    quads.push(group);
+                } else {
+                    others.push(...group);
+                }
+            });
+
+            quads.forEach(quad => {
+                const kickers = [...others];
+                quads.forEach(otherQuad => {
+                    if (otherQuad !== quad) kickers.push(...otherQuad);
+                });
+
+                kickers.forEach(kicker => {
+                    addIfValid([...quad, kicker], HAND_TYPES.QUADS);
+                });
+            });
+            break;
+        }
+        case HAND_TYPES.FULL_HOUSE: {
+            const rankGroups = groupCardsByRank(handWithValues);
+            const triples = [];
+            const pairs = [];
+
+            Object.values(rankGroups).forEach(group => {
+                if (group.length >= 3) {
+                    combinations(group, 3).forEach(c => triples.push({ cards: c, rank: group[0].rank }));
+                    combinations(group, 2).forEach(c => pairs.push({ cards: c, rank: group[0].rank }));
+                } else if (group.length === 2) {
+                    pairs.push({ cards: group, rank: group[0].rank });
+                }
+            });
+
+            triples.forEach(triple => {
+                pairs.forEach(pair => {
+                    if (triple.rank !== pair.rank) {
+                        addIfValid([...triple.cards, ...pair.cards], HAND_TYPES.FULL_HOUSE);
+                    }
+                });
+            });
+            break;
+        }
+        case HAND_TYPES.FLUSH: {
+            const suitGroups = groupCardsBySuit(handWithValues);
+            Object.values(suitGroups).forEach(group => {
+                if (group.length >= 5) {
+                    combinations(group, 5).forEach(combo => addIfValid(combo, HAND_TYPES.FLUSH));
+                }
+            });
+            break;
+        }
+        case HAND_TYPES.STRAIGHT: {
+            const rankGroups = groupCardsByRank(handWithValues);
+            const presentRanks = Object.keys(rankGroups);
+            const standardRanks = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+            const sequences = [];
+
+            // Standard sequences
+            for (let i = 0; i <= 8; i++) {
+                const seq = standardRanks.slice(i, i + 5);
+                if (seq.every(r => presentRanks.includes(r))) {
+                    sequences.push(seq);
+                }
+            }
+            // A-2-3-4-5
+            if (['A', '2', '3', '4', '5'].every(r => presentRanks.includes(r))) {
+                sequences.push(['3', '4', '5', 'A', '2']);
+            }
+            // 2-3-4-5-6
+            if (['2', '3', '4', '5', '6'].every(r => presentRanks.includes(r))) {
+                sequences.push(['3', '4', '5', '6', '2']);
+            }
+
+            sequences.forEach(seq => {
+                 const groups = seq.map(r => rankGroups[r]);
+                 const combos = cartesianProduct(groups);
+                 combos.forEach(combo => addIfValid(combo, HAND_TYPES.STRAIGHT));
+            });
+            break;
+        }
+        case HAND_TYPES.STRAIGHT_FLUSH: {
+             const suitGroups = groupCardsBySuit(handWithValues);
+             Object.values(suitGroups).forEach(group => {
+                 if (group.length >= 5) {
+                     const subHand = findEligibleHands(group, null, HAND_TYPES.STRAIGHT);
+                     subHand.forEach(h => {
+                         addIfValid(h.cards, HAND_TYPES.STRAIGHT_FLUSH);
+                     });
+                 }
+             });
+             break;
         }
     }
 
-    // Sort by value (lowest first, so cycling goes from weakest to strongest)
     eligibleHands.sort((a, b) => a.value - b.value);
-
     return eligibleHands;
 };
 
@@ -244,13 +291,11 @@ export const findAvailableHandTypes = (playerHand, lastPlayedHand) => {
     const handWithValues = ensureCardValues(playerHand);
     const availableTypes = [];
 
-    // Determine what card count we need (if there's a hand to beat)
     let requiredCount = null;
     if (lastPlayedHand && lastPlayedHand.cards) {
         requiredCount = lastPlayedHand.cards.length;
     }
 
-    // Check each hand type
     const handTypesToCheck = [
         { type: HAND_TYPES.SINGLE, count: 1 },
         { type: HAND_TYPES.PAIR, count: 2 },
@@ -263,7 +308,6 @@ export const findAvailableHandTypes = (playerHand, lastPlayedHand) => {
     ];
 
     for (const { type, count } of handTypesToCheck) {
-        // Skip if this type doesn't match the required card count
         if (requiredCount !== null && count !== requiredCount) continue;
 
         const eligibleHands = findEligibleHands(handWithValues, lastPlayedHand, type);
