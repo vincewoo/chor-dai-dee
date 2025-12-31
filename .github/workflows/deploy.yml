@@ -114,14 +114,43 @@ jobs:
 
             # Wait for Tailscale to authenticate
             echo "Waiting for Tailscale to authenticate..."
-            sleep 10
+            MAX_ATTEMPTS=30
+            ATTEMPT=0
+            while [ \$ATTEMPT -lt \$MAX_ATTEMPTS ]; do
+              ATTEMPT=\$((ATTEMPT + 1))
+              echo "Checking Tailscale status (attempt \$ATTEMPT/\$MAX_ATTEMPTS)..."
+
+              # Check if Tailscale is authenticated and ready
+              if sudo docker-compose exec -T tailscale tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
+                echo "✅ Tailscale is authenticated and running!"
+                break
+              fi
+
+              if [ \$ATTEMPT -eq \$MAX_ATTEMPTS ]; then
+                echo "❌ Tailscale failed to authenticate after \$MAX_ATTEMPTS attempts"
+                echo "Checking Tailscale logs for debugging:"
+                sudo docker-compose logs tailscale --tail=50
+                exit 1
+              fi
+
+              echo "Tailscale not ready yet, waiting 5 seconds..."
+              sleep 5
+            done
+
+            # Additional wait to ensure Tailscale is fully initialized
+            echo "Waiting for Tailscale to fully initialize..."
+            sleep 5
 
             # Enable Tailscale Funnel for public HTTPS access
             echo "Setting up Tailscale Funnel on port 443..."
             # Funnel will handle HTTPS termination and proxy to nginx's HTTP on port 80
 
             echo "Enabling Tailscale Funnel for public HTTPS access..."
-            sudo docker-compose exec -T tailscale tailscale funnel --bg --https=443 localhost:80
+            # First, configure serve
+            sudo docker-compose exec -T tailscale tailscale serve --bg --https=443 http://localhost:80
+
+            # Then enable funnel
+            sudo docker-compose exec -T tailscale tailscale funnel --bg 443
 
             echo "Verifying funnel status..."
             sudo docker-compose exec -T tailscale tailscale funnel status
