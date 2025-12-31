@@ -43,9 +43,27 @@ export const VoiceProvider = ({ socket, children }) => {
   const initAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Add click handler for iOS to resume AudioContext
+      // This is needed because iOS requires user interaction to start audio
+      const resumeOnInteraction = () => {
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().then(() => {
+            console.log('[VoiceContext] AudioContext resumed after user interaction');
+          });
+        }
+      };
+
+      // Add multiple event listeners to ensure we catch user interaction
+      document.addEventListener('touchstart', resumeOnInteraction, { once: true });
+      document.addEventListener('click', resumeOnInteraction, { once: true });
     }
+
+    // Always try to resume if suspended
     if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
+      audioContextRef.current.resume().catch(() => {
+        // Silently fail, will be resumed on user interaction
+      });
     }
     return audioContextRef.current;
   }, []);
@@ -54,23 +72,40 @@ export const VoiceProvider = ({ socket, children }) => {
   const monitorAudioLevel = useCallback((userId, analyzer) => {
     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
     let animationId = null;
+    let errorLogged = false; // Only log error once per monitor session
 
     const checkLevel = () => {
       if (!analyzersRef.current[userId]) return;
 
-      analyzer.getByteFrequencyData(dataArray);
-
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i];
+      // Check if AudioContext is suspended and try to resume
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
       }
-      const rms = Math.sqrt(sum / dataArray.length);
-      const normalizedLevel = Math.min(rms / 128, 1);
 
-      setAudioLevels(prev => ({
-        ...prev,
-        [userId]: normalizedLevel
-      }));
+      try {
+        analyzer.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        const normalizedLevel = Math.min(rms / 128, 1);
+
+        setAudioLevels(prev => ({
+          ...prev,
+          [userId]: normalizedLevel
+        }));
+
+        // Reset error flag on successful read
+        errorLogged = false;
+      } catch (err) {
+        // Only log once to avoid spamming (this runs 60fps)
+        if (!errorLogged) {
+          console.debug('[VoiceContext] Audio level monitoring paused (context suspended)');
+          errorLogged = true;
+        }
+      }
 
       animationId = requestAnimationFrame(checkLevel);
     };
@@ -179,7 +214,10 @@ export const VoiceProvider = ({ socket, children }) => {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          // iOS Safari specific constraints that might help
+          sampleRate: 44100,
+          channelCount: 1
         }
       });
 
@@ -188,18 +226,29 @@ export const VoiceProvider = ({ socket, children }) => {
 
       // Initialize audio context and monitor local audio
       const audioCtx = initAudioContext();
-      if (audioCtx.state === 'running') {
-        try {
-          const source = audioCtx.createMediaStreamSource(stream);
-          const analyzer = audioCtx.createAnalyser();
-          analyzer.fftSize = 256;
-          analyzer.smoothingTimeConstant = 0.8;
-          source.connect(analyzer);
-          analyzersRef.current[username] = analyzer;
-          monitorAudioLevel(username, analyzer);
-        } catch (err) {
-          console.error('[VoiceContext] Failed to setup audio analyzer:', err);
+
+      // Setup audio analyzer regardless of context state
+      // This is important for iOS where context starts suspended
+      try {
+        // For iOS Safari, we need to resume the context on user interaction
+        if (audioCtx.state === 'suspended') {
+          console.log('[VoiceContext] AudioContext suspended, attempting to resume...');
+          audioCtx.resume().then(() => {
+            console.log('[VoiceContext] AudioContext resumed successfully');
+          }).catch(err => {
+            console.warn('[VoiceContext] Failed to resume AudioContext:', err);
+          });
         }
+
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyzer = audioCtx.createAnalyser();
+        analyzer.fftSize = 256;
+        analyzer.smoothingTimeConstant = 0.8;
+        source.connect(analyzer);
+        analyzersRef.current[username] = analyzer;
+        monitorAudioLevel(username, analyzer);
+      } catch (err) {
+        console.error('[VoiceContext] Failed to setup audio analyzer:', err);
       }
 
       // Join the voice channel
