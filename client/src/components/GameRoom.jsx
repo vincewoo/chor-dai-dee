@@ -14,6 +14,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { GAME_MODES } from '../constants/gameModes';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import Modal from './Modal';
+import VoiceChat from './VoiceChat';
+import VoiceIndicator from './VoiceIndicator';
 
 // Card sorting utilities
 const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
@@ -219,7 +221,7 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 };
 
 // Top Player Area - cards horizontal on left, avatar on right
-const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
+const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -248,14 +250,20 @@ const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
                 </div>
                 {/* Avatar */}
                 <div className="flex flex-col items-center shrink-0 relative">
-                    <div
-                        className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
-                        ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
-                        onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
-                        title={isClickable ? 'Click to kick player' : ''}
-                    >
-                        {player.name.substring(0, 2).toUpperCase()}
+                    <div className="relative">
+                        <div
+                            className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
+                            ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
+                            ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
+                            onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
+                            title={isClickable ? 'Click to kick player' : ''}
+                        >
+                            {player.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <VoiceIndicator
+                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
+                            level={voiceAudioLevels[player.name] || 0}
+                        />
                     </div>
                     {isDisconnected && (
                         <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
@@ -275,7 +283,7 @@ const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
 };
 
 // Left Player Area - cards vertical (rotated 90°), avatar at top
-const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
+const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -286,14 +294,20 @@ const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
             <div className={`absolute left-[2px] md:left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
                 <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <div
-                        className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
-                        ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
-                        onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
-                        title={isClickable ? 'Click to kick player' : ''}
-                    >
-                        {player.name.substring(0, 2).toUpperCase()}
+                    <div className="relative">
+                        <div
+                            className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
+                            ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
+                            ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
+                            onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
+                            title={isClickable ? 'Click to kick player' : ''}
+                        >
+                            {player.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <VoiceIndicator
+                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
+                            level={voiceAudioLevels[player.name] || 0}
+                        />
                     </div>
                     {isDisconnected && (
                         <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
@@ -330,7 +344,7 @@ const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
 };
 
 // Right Player Area - cards vertical (rotated 90°), avatar at top
-const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
+const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -341,14 +355,20 @@ const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
             <div className={`absolute right-[2px] md:right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
                 <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <div
-                        className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                        ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
-                        ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
-                        onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
-                        title={isClickable ? 'Click to kick player' : ''}
-                    >
-                        {player.name.substring(0, 2).toUpperCase()}
+                    <div className="relative">
+                        <div
+                            className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
+                            ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
+                            ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
+                            onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
+                            title={isClickable ? 'Click to kick player' : ''}
+                        >
+                            {player.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <VoiceIndicator
+                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
+                            level={voiceAudioLevels[player.name] || 0}
+                        />
                     </div>
                     {isDisconnected && (
                         <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
@@ -480,6 +500,14 @@ const GameRoom = ({ user, socket }) => {
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
+    const [voiceAudioLevels, setVoiceAudioLevels] = useState({}); // Track audio levels for voice indicators
+
+    // Debug callback for voice levels
+    const handleVoiceAudioLevels = useCallback((levels) => {
+        // Removed verbose logging for cleaner console
+        setVoiceAudioLevels(levels);
+        // Check if players match - removed verbose logging
+    }, [gameState]);
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -1138,6 +1166,14 @@ const GameRoom = ({ user, socket }) => {
                 </div>
             )}
 
+            {/* Voice Chat */}
+            <VoiceChat
+                socket={socket}
+                roomId={roomId}
+                username={user?.username}
+                players={gameState?.players || []}
+                onAudioLevelsChange={handleVoiceAudioLevels}
+            />
             {/* Top Bar */}
             <div className="absolute top-[1vh] left-[1vw] text-white z-10">
                 <h1 className="text-xl md:text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
@@ -1463,6 +1499,7 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(2)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(2))}
+                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* Left Player (Offset 3) */}
@@ -1471,6 +1508,7 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(3)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(3))}
+                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* Right Player (Offset 1) */}
@@ -1479,6 +1517,7 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(1)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(1))}
+                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}
@@ -1581,6 +1620,31 @@ const GameRoom = ({ user, socket }) => {
                         </button>
                     </div>
 
+                    {/* Avatar - Mobile only, in flex layout */}
+                    <div className="md:hidden flex flex-col items-center shrink-0 relative">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-4 shadow-lg
+                            ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
+                                ? 'border-green-400 bg-green-400 text-white animate-pulse'
+                                : isMyTurn
+                                    ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse'
+                                    : 'border-yellow-600 bg-yellow-500 text-black'}`}>
+                            {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
+                            {/* Voice indicator for mobile */}
+                            {voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05 && (
+                                <VoiceIndicator
+                                    isActive={true}
+                                    level={voiceAudioLevels[user?.username]}
+                                />
+                            )}
+                        </div>
+                        <div className="text-white bg-black/50 px-2 py-0.5 rounded text-xs font-semibold shadow mt-1 whitespace-nowrap">
+                            {user?.username || 'You'}
+                            {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
+                                <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
+                            )}
+                        </div>
+                        <div className="text-yellow-300 text-xs">{myHand.length} Cards</div>
+                    </div>
                 </div>
 
                 {/* My Hand and Avatar Row - Desktop layout */}
@@ -1630,9 +1694,19 @@ const GameRoom = ({ user, socket }) => {
 
                     {/* Avatar - Right side (Desktop only) */}
                     <div className="hidden md:flex flex-col items-center mb-[0.5vmax]">
-                        <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
-                            ${isMyTurn ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse' : 'border-yellow-600 bg-yellow-500 text-black'}`}>
-                            {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
+                        <div className="relative">
+                            <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
+                                ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
+                                    ? 'border-green-400 bg-green-400 text-white animate-pulse'
+                                    : isMyTurn
+                                        ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse'
+                                        : 'border-yellow-600 bg-yellow-500 text-black'}`}>
+                                {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
+                            </div>
+                            <VoiceIndicator
+                                isActive={voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05}
+                                level={voiceAudioLevels[user?.username] || 0}
+                            />
                         </div>
                         <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
                             {user?.username || 'You'}

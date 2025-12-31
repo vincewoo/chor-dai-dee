@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -8,7 +9,19 @@ export default defineConfig({
     host: '0.0.0.0', // Listen on all network interfaces
     port: 5173
   },
+  define: {
+    global: 'globalThis',
+  },
   plugins: [
+    nodePolyfills({
+      // Include specific polyfills for SimplePeer
+      include: ['stream', 'buffer', 'process', 'util'],
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true
+      }
+    }),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
