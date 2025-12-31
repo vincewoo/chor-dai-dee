@@ -44,6 +44,7 @@ const VoiceControlModal = ({
               <button
                 onClick={onClose}
                 className="text-gray-400 hover:text-white text-xl leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-gray-700"
+                aria-label="Close voice control"
               >
                 ×
               </button>
