@@ -1105,7 +1105,8 @@ const GameRoom = ({ user, socket }) => {
 
             {/* Waiting State */}
             {gameState.gameState === 'waiting' && (
-                <div className="absolute inset-0 z-40 bg-green-800 flex flex-col items-center justify-center text-white px-4">
+                <div className="absolute inset-0 z-40 bg-green-800 overflow-y-auto">
+                    <div className="min-h-full flex flex-col items-center justify-center text-white px-4 py-8">
                     <div className="text-sm md:text-[1vmax] text-green-300 mb-2 md:mb-[0.5vmax]">Room Code</div>
                     <h1 className="text-5xl md:text-[3vmax] font-bold mb-6 md:mb-[2vmax] tracking-widest">{roomId}</h1>
                     <h2 className="text-xl md:text-[1.5vmax] mb-6 md:mb-[1.5vmax]">Waiting for Players...</h2>
@@ -1257,9 +1258,10 @@ const GameRoom = ({ user, socket }) => {
                             </div>
                         );
                     })()}
-                    <button onClick={handleLeaveClick} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax]">
+                    <button onClick={handleLeaveClick} className="text-green-300 hover:text-white underline text-base md:text-[0.9vmax] mb-4">
                         Leave Room
                     </button>
+                    </div>
                 </div>
             )}
 
