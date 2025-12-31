@@ -400,6 +400,49 @@ class Room {
         // Add to playersByUsername for reconnection tracking
         this.playersByUsername[newPlayer.name] = humanPlayer;
 
+        // Update cached round/game results to reflect the new player name
+        // This fixes the scoreboard showing stale bot names after replacement
+        if (this.lastRoundResults && this.lastRoundResults.scores) {
+            this.lastRoundResults.scores = this.lastRoundResults.scores.map(s => {
+                if (s.id === botId) {
+                    return { ...s, id: newPlayer.id, name: newPlayer.name, isBot: false };
+                }
+                return s;
+            });
+            // Update round winner if it was the replaced bot
+            if (this.lastRoundResults.roundWinner && this.lastRoundResults.roundWinner.id === botId) {
+                this.lastRoundResults.roundWinner = {
+                    ...this.lastRoundResults.roundWinner,
+                    id: newPlayer.id,
+                    name: newPlayer.name,
+                    isBot: false
+                };
+            }
+        }
+
+        if (this.lastGameResults && this.lastGameResults.scores) {
+            this.lastGameResults.scores = this.lastGameResults.scores.map(s => {
+                if (s.id === botId) {
+                    return { ...s, id: newPlayer.id, name: newPlayer.name, isBot: false };
+                }
+                return s;
+            });
+            // Update game winner if it was the replaced bot
+            if (this.lastGameResults.winner && this.lastGameResults.winner.id === botId) {
+                this.lastGameResults.winner = {
+                    ...this.lastGameResults.winner,
+                    id: newPlayer.id,
+                    name: newPlayer.name,
+                    isBot: false
+                };
+            }
+            // Update finalScores mapping (keyed by player ID)
+            if (this.lastGameResults.finalScores && this.lastGameResults.finalScores[botId] !== undefined) {
+                this.lastGameResults.finalScores[newPlayer.id] = this.lastGameResults.finalScores[botId];
+                delete this.lastGameResults.finalScores[botId];
+            }
+        }
+
         // Set host if there's none
         if (!this.hostUsername) {
             this.hostUsername = newPlayer.name;

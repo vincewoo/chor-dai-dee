@@ -4,13 +4,13 @@ import Card from './Card';
 import CardCountIndicator from './CardCountIndicator';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
+import { sortByRank, sortBySuit } from '../utils/cardUtils';
 import HandHelper from './HandHelper';
 import ScoreDialog from './ScoreDialog';
 import { useSuitColors } from '../contexts/SuitColorContext';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { GAME_MODES } from '../constants/gameModes';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import Modal from './Modal';
@@ -18,392 +18,10 @@ import VoiceChat from './VoiceChat';
 import VoiceIndicator from './VoiceIndicator';
 import VoiceControlBubble from './VoiceControlBubble';
 import { useVoice } from '../contexts/VoiceContext';
-
-// Card sorting utilities
-const SUITS_ORDER = ['D', 'C', 'H', 'S']; // Diamonds < Clubs < Hearts < Spades
-const RANKS_ORDER = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
-
-const getCardValue = (card) => {
-    const rankIndex = RANKS_ORDER.indexOf(card.rank);
-    const suitIndex = SUITS_ORDER.indexOf(card.suit);
-    return rankIndex * 4 + suitIndex;
-};
-
-const sortByRank = (cards) => {
-    return [...cards].sort((a, b) => getCardValue(a) - getCardValue(b));
-};
-
-const sortBySuit = (cards) => {
-    return [...cards].sort((a, b) => {
-        const suitDiff = SUITS_ORDER.indexOf(a.suit) - SUITS_ORDER.indexOf(b.suit);
-        if (suitDiff !== 0) return suitDiff;
-        return RANKS_ORDER.indexOf(a.rank) - RANKS_ORDER.indexOf(b.rank);
-    });
-};
-
-// Helper to create a stable key for a played hand (only changes when cards change)
-const getPlayedHandKey = (lastPlayed) => {
-    if (!lastPlayed) return null;
-    if (lastPlayed.type === 'pass') return 'pass';
-    return lastPlayed.cards?.map(c => `${c.rank}-${c.suit}`).join(',') || null;
-};
-
-// Sortable card wrapper component for drag-and-drop
-const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamicWidth, dynamicHeight }) => {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging
-    } = useSortable({
-        id: `${card.rank}-${card.suit}`,
-        transition: {
-            duration: 150,
-            easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
-        },
-    });
-
-    const defaultTransition = 'margin-left 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
-    const styleTransition = isDragging
-        ? undefined
-        : (transition ? `${transition}, ${defaultTransition}` : defaultTransition);
-
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition: styleTransition,
-        zIndex: isDragging ? 50 : 'auto',
-    };
-
-    // Apply margin logic:
-    // 1. First card: No left margin (save space)
-    // 2. Other cards: Use dynamic overlap (mobile) or fixed overlap (desktop)
-
-    if (index === 0) {
-        style.marginLeft = '0';
-    } else {
-        // Subsequent cards: use overlap
-        if (dynamicMargin !== undefined) {
-            style.marginLeft = typeof dynamicMargin === 'number' ? `${dynamicMargin}px` : dynamicMargin;
-        } else {
-            style.marginLeft = '-45px';
-        }
-    }
-
-    return (
-        <div
-            ref={setNodeRef}
-            style={{ ...style, touchAction: 'none' }}
-            data-card-id={`${card.rank}-${card.suit}`}
-            className={`hover:ml-0 md:hover:-ml-[1.5vmax] ${index !== 0 ? 'md:-ml-[1.5vmax]' : ''} ${isDragging ? 'opacity-50' : ''}`}
-            {...attributes}
-            {...listeners}
-        >
-            <Card
-                rank={card.rank}
-                suit={card.suit}
-                selected={isSelected}
-                onClick={onClick}
-                index={index}
-                size="xlarge"
-                dynamicWidth={dynamicWidth}
-                dynamicHeight={dynamicHeight}
-            />
-        </div>
-    );
-};
-
-// Played cards display component - extracted to prevent re-renders
-const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, trickWinPending = false }) => {
-    // Mobile: position near avatars; Desktop: original positions
-    // Bottom position adjusted higher to be visible above controls
-    // Add vertical offset for side players
-    // z-index is calculated dynamically based on timestamp (later plays = higher z-index)
-    const basePositions = {
-        top: "absolute top-[90px] md:top-[18vh] left-1/2 -translate-x-1/2",
-        left: "absolute left-[40px] md:left-[12vw] top-[calc(50%-185px)] md:top-[calc(50vh+45px)]",
-        right: "absolute right-[20px] md:right-[12vw] top-[calc(50%-175px)] md:top-[calc(50vh+35px)]",
-        bottom: "absolute bottom-[35vh] md:bottom-[32vh] left-1/2 -translate-x-1/2"
-    };
-
-    const rotationDeg = position === 'left' ? 90 : position === 'right' ? -90 : 0;
-
-    // Use large size cards on mobile for side players (double the normal size)
-    const isSidePlayer = position === 'top' || position === 'left' || position === 'right';
-    const cardSize = 'large'; // Use large for all on mobile
-
-    // Determine what to display
-    // Show turn indicator whenever it's their turn, UNLESS a trick win is pending (we want to show the winning cards)
-    // Also prioritize turn indicator over played cards if it is their turn (e.g. if they played earlier in the trick)
-    const showTurnIndicator = isCurrentTurn && !trickWinPending;
-    const showPlayedCards = !!lastPlayed;
-
-    // Calculate z-index based on play order: later plays appear on top
-    // Use playOrder if available, otherwise fall back to position-based z-index
-    const getZIndex = () => {
-        if (lastPlayed?.playOrder !== undefined) {
-            // Use play order directly (simple incrementing counter)
-            return 100 + lastPlayed.playOrder;
-        }
-        // Fallback to position-based z-index
-        return position === 'bottom' ? 40 : position === 'left' || position === 'right' ? 30 : 20;
-    };
-
-    // Return null if nothing to show
-    if (!showTurnIndicator && !showPlayedCards) {
-        return null;
-    }
-
-    return (
-        <AnimatePresence>
-            {showTurnIndicator ? (
-                // Turn indicator display (prioritized over played cards unless trick win pending)
-                <motion.div
-                    key={`turn-${position}-${playerName}`}
-                    className={basePositions[position]}
-                    style={{ zIndex: 150 }}
-                    initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.5, opacity: 0 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                >
-                    <div className={`px-4 py-2 md:px-[1.5vmax] md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] ${isMe
-                        ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-black animate-pulse shadow-lg shadow-orange-400/60 border-2 border-amber-300'
-                        : 'bg-black/60 text-white shadow-lg'
-                        }`}>
-                        {isMe ? "Your Turn!" : `${playerName}'s Turn`}
-                    </div>
-                </motion.div>
-            ) : showPlayedCards ? (
-                // Played cards display (existing logic with enhancements)
-                // Apply z-index directly to motion.div for proper stacking
-                <motion.div
-                    key={`played-${position}-${getPlayedHandKey(lastPlayed)}`}
-                    className={basePositions[position]}
-                    style={{
-                        zIndex: getZIndex()
-                    }}
-                    initial={{ opacity: 0 }}
-                    animate={{
-                        opacity: 1
-                    }}
-                    exit={{ opacity: 0 }}
-                    transition={{
-                        duration: 0.2
-                    }}
-                >
-                    <div
-                        className="flex -ml-2 md:-ml-[1vmax]"
-                        style={{
-                            transform: `rotate(${isSidePlayer ? 0 : rotationDeg}deg)`,
-                            gap: '-8px md:-1vmax'
-                        }}
-                    >
-                        {lastPlayed.type === 'pass' ? (
-                            <div className={`text-red-400 font-bold bg-black/50 rounded-lg ${isSidePlayer
-                                ? 'text-base md:text-[2vmax] px-3 py-1.5 md:px-[1.5vmax] md:py-[0.75vmax]'
-                                : 'text-2xl md:text-[2vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.75vmax]'
-                                }`}>
-                                PASS
-                            </div>
-                        ) : (
-                            lastPlayed.cards?.map((card) => (
-                                <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
-                                    <Card rank={card.rank} suit={card.suit} size={cardSize} />
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </motion.div>
-            ) : null}
-        </AnimatePresence>
-    );
-};
-
-// Top Player Area - cards horizontal on left, avatar on right
-const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
-    if (!player) return null;
-
-    const isDisconnected = player.isDisconnected;
-
-    return (
-        <>
-            {/* Player info and cards */}
-            <div className={`absolute top-[8px] md:top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-4 md:gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
-                {/* Cards - horizontal (hidden on mobile) */}
-                <div className="hidden md:flex -ml-4 md:-ml-[2vmax]">
-                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="w-[18px] h-[26px] md:w-[3.3vmax] md:h-[4.5vmax] border-2 border-white rounded-xl shadow-sm -ml-3 md:-ml-[1.5vmax] relative overflow-hidden"
-                            style={{
-                                background: `
-                                    repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
-                                    repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
-                                    linear-gradient(135deg, #c41e3a 0%, #dc143c 50%, #c41e3a 100%)
-                                `
-                            }}
-                        >
-                            <div className="absolute inset-[8%] border border-white rounded-lg" />
-                        </div>
-                    ))}
-                </div>
-                {/* Avatar */}
-                <div className="flex flex-col items-center shrink-0 relative">
-                    <div className="relative">
-                        <div
-                            className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                            ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
-                            ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
-                            onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
-                            title={isClickable ? 'Click to kick player' : ''}
-                        >
-                            {player.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <VoiceIndicator
-                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
-                            level={voiceAudioLevels[player.name] || 0}
-                        />
-                    </div>
-                    {isDisconnected && (
-                        <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
-                            DC
-                        </div>
-                    )}
-                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
-                        {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
-                    </div>
-                    <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
-                </div>
-                {/* Card count indicator - right side (mobile only) */}
-                <CardCountIndicator cardCount={player.cardCount} className="md:hidden" />
-            </div>
-        </>
-    );
-};
-
-// Left Player Area - cards vertical (rotated 90°), avatar at top
-const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
-    if (!player) return null;
-
-    const isDisconnected = player.isDisconnected;
-
-    return (
-        <>
-            {/* Player info and cards */}
-            <div className={`absolute left-[2px] md:left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
-                {/* Avatar */}
-                <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <div className="relative">
-                        <div
-                            className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                            ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
-                            ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
-                            onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
-                            title={isClickable ? 'Click to kick player' : ''}
-                        >
-                            {player.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <VoiceIndicator
-                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
-                            level={voiceAudioLevels[player.name] || 0}
-                        />
-                    </div>
-                    {isDisconnected && (
-                        <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
-                            DC
-                        </div>
-                    )}
-                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
-                        {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
-                    </div>
-                    <CardCountIndicator cardCount={player.cardCount} className="md:hidden mt-1" />
-                    <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
-                </div>
-                {/* Cards - horizontal stack (hidden on mobile) */}
-                <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
-                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="w-[26px] h-[18px] md:w-[4.5vmax] md:h-[3.3vmax] border-2 border-white rounded-xl shadow-sm -mt-2.5 md:-mt-[1.2vmax] relative overflow-hidden"
-                            style={{
-                                background: `
-                                    repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
-                                    repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
-                                    linear-gradient(135deg, #c41e3a 0%, #dc143c 50%, #c41e3a 100%)
-                                `
-                            }}
-                        >
-                            <div className="absolute inset-[8%] border border-white rounded-lg" />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </>
-    );
-};
-
-// Right Player Area - cards vertical (rotated 90°), avatar at top
-const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
-    if (!player) return null;
-
-    const isDisconnected = player.isDisconnected;
-
-    return (
-        <>
-            {/* Player info and cards */}
-            <div className={`absolute right-[2px] md:right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
-                {/* Avatar */}
-                <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <div className="relative">
-                        <div
-                            className={`w-[3.5vmax] h-[3.5vmax] rounded-full flex items-center justify-center text-[1vmax] font-bold border-4 shadow-lg
-                            ${isDisconnected ? 'border-red-500 bg-gray-400 text-gray-600' : isTurn ? 'border-yellow-400 bg-yellow-100 text-black animate-pulse' : 'border-gray-500 bg-gray-200 text-gray-700'}
-                            ${isClickable ? 'cursor-pointer hover:ring-4 hover:ring-red-400' : ''}`}
-                            onClick={() => isClickable && onPlayerClick && onPlayerClick(player)}
-                            title={isClickable ? 'Click to kick player' : ''}
-                        >
-                            {player.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <VoiceIndicator
-                            isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
-                            level={voiceAudioLevels[player.name] || 0}
-                        />
-                    </div>
-                    {isDisconnected && (
-                        <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
-                            DC
-                        </div>
-                    )}
-                    <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
-                        {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
-                    </div>
-                    <CardCountIndicator cardCount={player.cardCount} className="md:hidden mt-1" />
-                    <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
-                </div>
-                {/* Cards - horizontal stack (hidden on mobile) */}
-                <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
-                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="w-[26px] h-[18px] md:w-[4.5vmax] md:h-[3.3vmax] border-2 border-white rounded-xl shadow-sm -mt-2.5 md:-mt-[1.2vmax] relative overflow-hidden"
-                            style={{
-                                background: `
-                                    repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
-                                    repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 8px),
-                                    linear-gradient(135deg, #c41e3a 0%, #dc143c 50%, #c41e3a 100%)
-                                `
-                            }}
-                        >
-                            <div className="absolute inset-[8%] border border-white rounded-lg" />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </>
-    );
-};
+import { SortableCard, PlayedCards } from './cards';
+import { TopPlayerArea, LeftPlayerArea, RightPlayerArea } from './PlayerArea';
+import { SettingsModal, LeaveConfirmModal, KickConfirmModal } from './modals';
+import { RoundOverScreen, MobileScoreboard } from './overlays';
 
 const GameRoom = ({ user, socket }) => {
     const { roomId } = useParams();
@@ -1261,48 +879,13 @@ const GameRoom = ({ user, socket }) => {
             )}
 
             {/* Mobile Scoreboard Overlay */}
-            <AnimatePresence>
-                {showMobileScoreboard && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="md:hidden fixed inset-0 bg-black/70 flex items-center justify-center"
-                        style={{ zIndex: 200 }}
-                        onClick={() => setShowMobileScoreboard(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-gray-800 rounded-lg p-4 min-w-[200px]"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="font-bold mb-3 text-yellow-400 text-lg text-center">Scores</div>
-                            {gameState.players
-                                .slice()
-                                .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
-                                .map(p => (
-                                    <div key={p.id} className="flex justify-between gap-6 text-white py-1">
-                                        <span className={p.id === myPlayerId ? 'text-yellow-300 font-medium' : ''}>{p.name}</span>
-                                        <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
-                                            {p.cumulativeScore}
-                                        </span>
-                                    </div>
-                                ))}
-                            <div className="text-xs text-gray-400 mt-3 border-t border-white/20 pt-2 text-center">
-                                First to {gameState.pointThreshold || 100} loses
-                            </div>
-                            <button
-                                onClick={() => setShowMobileScoreboard(false)}
-                                className="mt-3 w-full py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
-                            >
-                                Close
-                            </button>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <MobileScoreboard
+                show={showMobileScoreboard}
+                players={gameState.players}
+                myPlayerId={myPlayerId}
+                pointThreshold={gameState.pointThreshold}
+                onClose={() => setShowMobileScoreboard(false)}
+            />
 
             {/* Scoreboard - hidden on mobile */}
             {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
@@ -1355,43 +938,11 @@ const GameRoom = ({ user, socket }) => {
             </AnimatePresence>
 
             {/* Round Over Modal */}
-            {roundResult && (
-                <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-8">
-                    <h2 className="text-5xl font-bold text-yellow-400 mb-2">Round {roundResult.roundNumber} Complete!</h2>
-                    <div className="text-xl mb-4 text-green-300">Round Winner: {roundResult.roundWinner.name}</div>
-
-                    <div className="bg-white/10 rounded-lg p-6 mb-6 w-full max-w-md">
-                        <h3 className="text-xl font-bold mb-4 border-b pb-2">Round Scores</h3>
-                        <div className="grid grid-cols-4 gap-2 text-sm font-semibold mb-2 text-gray-400">
-                            <span>Player</span>
-                            <span className="text-center">Cards</span>
-                            <span className="text-center">Round</span>
-                            <span className="text-center">Total</span>
-                        </div>
-                        {roundResult.scores && roundResult.scores.map(s => (
-                            <div key={s.name} className="grid grid-cols-4 gap-2 mb-2 items-center">
-                                <span className={s.isRoundWinner ? 'text-green-400 font-bold' : ''}>
-                                    {s.name} {s.isBot ? '(Bot)' : ''}
-                                </span>
-                                <span className="text-center text-gray-400">{s.cardsLeft}</span>
-                                <span className={`text-center ${s.roundPoints === 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    +{s.roundPoints}
-                                </span>
-                                <span className={`text-center font-bold ${s.cumulativeScore >= 80 ? 'text-red-500' : s.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-white'}`}>
-                                    {s.cumulativeScore}
-                                </span>
-                            </div>
-                        ))}
-                        <div className="mt-4 pt-2 border-t border-white/20 text-sm text-gray-400">
-                            First to {gameState.pointThreshold || 100} points loses. Lowest score wins!
-                        </div>
-                    </div>
-
-                    <button onClick={nextRound} className="bg-green-600 px-8 py-3 rounded-lg font-bold hover:bg-green-700 transition transform hover:scale-105 text-xl">
-                        Next Round
-                    </button>
-                </div>
-            )}
+            <RoundOverScreen
+                roundResult={roundResult}
+                pointThreshold={gameState.pointThreshold}
+                onNextRound={nextRound}
+            />
 
             {/* Game Over Modal */}
             {gameOver && (
@@ -1677,8 +1228,8 @@ const GameRoom = ({ user, socket }) => {
                                 <button
                                     onClick={() => voiceContext?.joinVoiceRoom(roomId, user?.username)}
                                     className={`px-6 py-3 rounded-lg font-bold transition flex items-center gap-2 ${voiceUserCount > 0
-                                            ? 'bg-green-600 text-white hover:bg-green-700 animate-pulse'
-                                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                                        ? 'bg-green-600 text-white hover:bg-green-700 animate-pulse'
+                                        : 'bg-blue-600 text-white hover:bg-blue-700'
                                         }`}
                                     style={voiceUserCount > 0 ? { animationDuration: '2s' } : undefined}
                                 >
@@ -1939,201 +1490,31 @@ const GameRoom = ({ user, socket }) => {
             </div>
 
             {/* Settings Modal */}
-            <AnimatePresence>
-                {showSettings && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-[200] bg-black/70 flex items-center justify-center"
-                        onClick={() => setShowSettings(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex justify-between items-center mb-6 md:mb-[1.5vmax]">
-                                <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white">Settings</h2>
-                                <button
-                                    onClick={() => setShowSettings(false)}
-                                    className="text-gray-400 hover:text-white text-3xl md:text-[2vmax] font-bold leading-none"
-                                >
-                                    ×
-                                </button>
-                            </div>
-
-                            <div className="space-y-4 md:space-y-[1vmax]">
-                                {/* Auto-Pass Setting */}
-                                <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
-                                    <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
-                                        <label className="text-white font-semibold text-lg md:text-[1.2vmax]">
-                                            Auto-Pass
-                                        </label>
-                                        <button
-                                            onClick={toggleAutoPass}
-                                            className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]
-                                                ${autoPass ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
-                                        >
-                                            {autoPass ? 'ON' : 'OFF'}
-                                        </button>
-                                    </div>
-                                    <p className="text-gray-300 text-sm md:text-[0.85vmax]">
-                                        Automatically pass when you have no cards that can beat the played hand
-                                    </p>
-                                </div>
-
-                                {/* 4-Color Setting */}
-                                <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
-                                    <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
-                                        <label className="text-white font-semibold text-lg md:text-[1.2vmax]">
-                                            4-Color Suits
-                                        </label>
-                                        <button
-                                            onClick={toggleFourColorMode}
-                                            className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]
-                                                ${fourColorMode ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'}`}
-                                        >
-                                            {fourColorMode ? 'ON' : 'OFF'}
-                                        </button>
-                                    </div>
-                                    <p className="text-gray-300 text-sm md:text-[0.85vmax]">
-                                        Use 4-color suits for better visibility (blue diamonds, green clubs)
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 md:mt-[1.5vmax] flex justify-end">
-                                <button
-                                    onClick={() => setShowSettings(false)}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-6 md:px-[2vmax] py-2 md:py-[0.6vmax] rounded-lg font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]"
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <SettingsModal
+                show={showSettings}
+                onClose={() => setShowSettings(false)}
+                autoPass={autoPass}
+                toggleAutoPass={toggleAutoPass}
+                fourColorMode={fourColorMode}
+                toggleFourColorMode={toggleFourColorMode}
+            />
 
             {/* Leave Confirmation Modal */}
-            <AnimatePresence>
-                {showLeaveConfirm && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-[200] bg-black/80 flex items-center justify-center"
-                        onClick={cancelLeave}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white mb-4">Leave Room?</h2>
-
-                            <div className="text-gray-300 mb-6 space-y-2">
-                                {gameState?.hostUsername === user?.username ? (
-                                    <>
-                                        <p className="font-semibold text-yellow-400">You are the room host!</p>
-                                        <p>If you leave:</p>
-                                        <ul className="list-disc ml-5 space-y-1">
-                                            <li>You will be replaced with a bot</li>
-                                            <li>Host will transfer to another player</li>
-                                            <li>You will NOT be able to rejoin this game</li>
-                                        </ul>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p>If you leave:</p>
-                                        <ul className="list-disc ml-5 space-y-1">
-                                            <li>You will be replaced with a bot</li>
-                                            <li>You will NOT be able to rejoin this game</li>
-                                        </ul>
-                                    </>
-                                )}
-                                <p className="text-sm text-gray-400 mt-3">
-                                    Note: Closing the browser or disconnecting accidentally will let you rejoin.
-                                </p>
-                            </div>
-
-                            <div className="flex gap-3 justify-end">
-                                <button
-                                    onClick={cancelLeave}
-                                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition"
-                                >
-                                    Stay
-                                </button>
-                                <button
-                                    onClick={confirmLeave}
-                                    className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
-                                >
-                                    Leave Room
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <LeaveConfirmModal
+                show={showLeaveConfirm}
+                isHost={gameState?.hostUsername === user?.username}
+                onConfirm={confirmLeave}
+                onCancel={cancelLeave}
+            />
 
             {/* Kick Player Confirmation Modal */}
-            <AnimatePresence>
-                {showKickConfirm && playerToKick && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-[200] bg-black/80 flex items-center justify-center"
-                        onClick={cancelKick}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white mb-4">Kick Player?</h2>
-
-                            <div className="text-gray-300 mb-6 space-y-2">
-                                <p>
-                                    Are you sure you want to kick <span className="font-bold text-yellow-400">{playerToKick.name}</span>?
-                                </p>
-                                <ul className="list-disc ml-5 space-y-1 mt-3">
-                                    {gameState?.gameState === 'playing' || gameState?.gameState === 'round_over' ? (
-                                        <>
-                                            <li>They will be replaced with a bot</li>
-                                            <li>They will NOT be able to rejoin this game</li>
-                                        </>
-                                    ) : (
-                                        <li>They will be removed from the room</li>
-                                    )}
-                                </ul>
-                            </div>
-
-                            <div className="flex gap-3 justify-end">
-                                <button
-                                    onClick={cancelKick}
-                                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={confirmKick}
-                                    className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
-                                >
-                                    Kick Player
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <KickConfirmModal
+                show={showKickConfirm}
+                playerToKick={playerToKick}
+                isGameInProgress={gameState?.gameState === 'playing' || gameState?.gameState === 'round_over'}
+                onConfirm={confirmKick}
+                onCancel={cancelKick}
+            />
         </div>
     );
 };
