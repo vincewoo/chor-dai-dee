@@ -26,9 +26,11 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
 
     // Determine what to display
     // Show turn indicator whenever it's their turn, UNLESS a trick win is pending (we want to show the winning cards)
-    // Also prioritize turn indicator over played cards if it is their turn (e.g. if they played earlier in the trick)
+    // Don't show stale "PASS" when it's currently their turn
     const showTurnIndicator = isCurrentTurn && !trickWinPending;
-    const showPlayedCards = !!lastPlayed;
+    // Don't show played cards if it's their turn and the last thing they played was "PASS"
+    // (this happens when they get control after everyone else passes)
+    const showPlayedCards = !!lastPlayed && !(isCurrentTurn && lastPlayed?.type === 'pass' && !trickWinPending);
 
     // Calculate z-index based on play order: later plays appear on top
     // Use playOrder if available, otherwise fall back to position-based z-index
