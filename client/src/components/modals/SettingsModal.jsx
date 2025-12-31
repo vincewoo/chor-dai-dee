@@ -34,6 +34,7 @@ const SettingsModal = ({
                         <button
                             onClick={onClose}
                             className="text-gray-400 hover:text-white text-3xl md:text-[2vmax] font-bold leading-none"
+                            aria-label="Close settings"
                         >
                             ×
                         </button>
