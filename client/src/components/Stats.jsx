@@ -8,7 +8,7 @@ const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' :
 const Stats = ({ user }) => {
     const { username: urlUsername } = useParams();
     const [searchParams] = useSearchParams();
-    const initialMode = searchParams.get('mode') || 'standard';
+    const initialMode = searchParams.get('mode') || 'short';
     const [mode, setMode] = useState(initialMode);
     const [stats, setStats] = useState(null);
     const [headToHead, setHeadToHead] = useState([]);
@@ -25,7 +25,7 @@ const Stats = ({ user }) => {
 
     // Update mode when URL parameter changes
     useEffect(() => {
-        const modeFromUrl = searchParams.get('mode') || 'standard';
+        const modeFromUrl = searchParams.get('mode') || 'short';
         setMode(modeFromUrl);
     }, [searchParams]);
 
@@ -133,21 +133,19 @@ const Stats = ({ user }) => {
                 <div className="flex gap-4 mb-6 items-center">
                     <button
                         onClick={() => setMode('standard')}
-                        className={`px-6 py-2 rounded font-bold transition ${
-                            mode === 'standard'
+                        className={`px-6 py-2 rounded font-bold transition ${mode === 'standard'
                                 ? 'bg-yellow-500 text-white scale-105'
                                 : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                        }`}
+                            }`}
                     >
                         Standard (100pts)
                     </button>
                     <button
                         onClick={() => setMode('short')}
-                        className={`px-6 py-2 rounded font-bold transition ${
-                            mode === 'short'
+                        className={`px-6 py-2 rounded font-bold transition ${mode === 'short'
                                 ? 'bg-yellow-500 text-white scale-105'
                                 : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                        }`}
+                            }`}
                     >
                         Short (50pts)
                     </button>
@@ -598,8 +596,8 @@ const VarianceCard = ({ stats }) => {
     const streakDisplay = currentStreak > 0
         ? `+${currentStreak} Win${currentStreak !== 1 ? 's' : ''}`
         : currentStreak < 0
-        ? `${currentStreak} Loss${currentStreak !== -1 ? 'es' : ''}`
-        : 'No Streak';
+            ? `${currentStreak} Loss${currentStreak !== -1 ? 'es' : ''}`
+            : 'No Streak';
 
     const streakColor = currentStreak > 0 ? 'text-green-600' : currentStreak < 0 ? 'text-red-600' : 'text-gray-700';
 

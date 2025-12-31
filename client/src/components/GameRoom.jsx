@@ -94,7 +94,7 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamic
     return (
         <div
             ref={setNodeRef}
-            style={{...style, touchAction: 'none'}}
+            style={{ ...style, touchAction: 'none' }}
             data-card-id={`${card.rank}-${card.suit}`}
             className={`hover:ml-0 md:hover:-ml-[1.5vmax] ${index !== 0 ? 'md:-ml-[1.5vmax]' : ''} ${isDragging ? 'opacity-50' : ''}`}
             {...attributes}
@@ -168,11 +168,10 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                     exit={{ scale: 0.5, opacity: 0 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15 }}
                 >
-                    <div className={`px-4 py-2 md:px-[1.5vmax] md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] ${
-                        isMe
-                            ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-black animate-pulse shadow-lg shadow-orange-400/60 border-2 border-amber-300'
-                            : 'bg-black/60 text-white shadow-lg'
-                    }`}>
+                    <div className={`px-4 py-2 md:px-[1.5vmax] md:py-[0.5vmax] rounded-full font-bold text-lg md:text-[1.2vmax] ${isMe
+                        ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-black animate-pulse shadow-lg shadow-orange-400/60 border-2 border-amber-300'
+                        : 'bg-black/60 text-white shadow-lg'
+                        }`}>
                         {isMe ? "Your Turn!" : `${playerName}'s Turn`}
                     </div>
                 </motion.div>
@@ -201,21 +200,20 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                             gap: '-8px md:-1vmax'
                         }}
                     >
-                    {lastPlayed.type === 'pass' ? (
-                        <div className={`text-red-400 font-bold bg-black/50 rounded-lg ${
-                            isSidePlayer
+                        {lastPlayed.type === 'pass' ? (
+                            <div className={`text-red-400 font-bold bg-black/50 rounded-lg ${isSidePlayer
                                 ? 'text-base md:text-[2vmax] px-3 py-1.5 md:px-[1.5vmax] md:py-[0.75vmax]'
                                 : 'text-2xl md:text-[2vmax] px-4 md:px-[1.5vmax] py-2 md:py-[0.75vmax]'
-                        }`}>
-                            PASS
-                        </div>
-                    ) : (
-                        lastPlayed.cards?.map((card) => (
-                            <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
-                                <Card rank={card.rank} suit={card.suit} size={cardSize} />
+                                }`}>
+                                PASS
                             </div>
-                        ))
-                    )}
+                        ) : (
+                            lastPlayed.cards?.map((card) => (
+                                <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
+                                    <Card rank={card.rank} suit={card.suit} size={cardSize} />
+                                </div>
+                            ))
+                        )}
                     </div>
                 </motion.div>
             ) : null}
@@ -513,6 +511,9 @@ const GameRoom = ({ user, socket }) => {
     // Voice context for persistent voice across navigation
     const voiceContext = useVoice();
 
+    // Track voice user count for non-connected users to see who's in voice
+    const [voiceUserCount, setVoiceUserCount] = useState(0);
+
     // Debug callback for voice levels
     const handleVoiceAudioLevels = useCallback((levels) => {
         // Removed verbose logging for cleaner console
@@ -779,6 +780,11 @@ const GameRoom = ({ user, socket }) => {
             setTimeout(() => setNotification(null), 3000);
         });
 
+        // Voice user count for non-connected users to see who's in voice
+        socket.on('voice:user-count', ({ count }) => {
+            setVoiceUserCount(count);
+        });
+
         return () => {
             clearTimeout(roomLoadTimeout); // Clean up timeout on unmount
             socket.off('room_update');
@@ -802,6 +808,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('game_cancelled');
             socket.off('host_changed');
             socket.off('player_left');
+            socket.off('voice:user-count');
         };
     }, [socket, navigate]);
 
@@ -1276,13 +1283,13 @@ const GameRoom = ({ user, socket }) => {
                                 .slice()
                                 .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
                                 .map(p => (
-                                <div key={p.id} className="flex justify-between gap-6 text-white py-1">
-                                    <span className={p.id === myPlayerId ? 'text-yellow-300 font-medium' : ''}>{p.name}</span>
-                                    <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
-                                        {p.cumulativeScore}
-                                    </span>
-                                </div>
-                            ))}
+                                    <div key={p.id} className="flex justify-between gap-6 text-white py-1">
+                                        <span className={p.id === myPlayerId ? 'text-yellow-300 font-medium' : ''}>{p.name}</span>
+                                        <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
+                                            {p.cumulativeScore}
+                                        </span>
+                                    </div>
+                                ))}
                             <div className="text-xs text-gray-400 mt-3 border-t border-white/20 pt-2 text-center">
                                 First to {gameState.pointThreshold || 100} loses
                             </div>
@@ -1305,13 +1312,13 @@ const GameRoom = ({ user, socket }) => {
                         .slice()
                         .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
                         .map(p => (
-                        <div key={p.id} className="flex justify-between gap-4 md:gap-[1vmax]">
-                            <span className={p.id === myPlayerId ? 'text-yellow-300' : ''}>{p.name}</span>
-                            <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
-                                {p.cumulativeScore}
-                            </span>
-                        </div>
-                    ))}
+                            <div key={p.id} className="flex justify-between gap-4 md:gap-[1vmax]">
+                                <span className={p.id === myPlayerId ? 'text-yellow-300' : ''}>{p.name}</span>
+                                <span className={p.cumulativeScore >= 80 ? 'text-red-400' : p.cumulativeScore >= 50 ? 'text-yellow-400' : 'text-green-400'}>
+                                    {p.cumulativeScore}
+                                </span>
+                            </div>
+                        ))}
                     <div className="text-xs md:text-[0.7vmax] text-gray-400 mt-2 md:mt-[0.5vmax] border-t border-white/20 pt-1 md:pt-[0.25vmax]">
                         First to {gameState.pointThreshold || 100} loses
                     </div>
@@ -1339,9 +1346,8 @@ const GameRoom = ({ user, socket }) => {
                         initial={{ opacity: 0, y: -50 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-[250] font-bold text-base md:text-[1vmax] ${
-                            notification.type === 'warning' ? 'bg-yellow-600 text-white' : 'bg-green-600 text-white'
-                        }`}
+                        className={`absolute top-[8vh] left-1/2 -translate-x-1/2 px-4 md:px-[1.5vmax] py-2 md:py-[0.5vmax] rounded shadow-xl z-[250] font-bold text-base md:text-[1vmax] ${notification.type === 'warning' ? 'bg-yellow-600 text-white' : 'bg-green-600 text-white'
+                            }`}
                     >
                         {notification.message}
                     </motion.div>
@@ -1407,16 +1413,16 @@ const GameRoom = ({ user, socket }) => {
                         {gameOver.scores && gameOver.scores
                             .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
                             .map((s, idx) => (
-                            <div key={s.name} className={`flex justify-between mb-2 ${idx === 0 ? 'text-green-400 font-bold text-lg' : ''}`}>
-                                <span>
-                                    {idx === 0 && '🏆 '}
-                                    {s.name} {s.isBot ? '(Bot)' : ''}
-                                </span>
-                                <span className={s.cumulativeScore >= 100 ? 'text-red-500' : ''}>
-                                    {s.cumulativeScore} pts
-                                </span>
-                            </div>
-                        ))}
+                                <div key={s.name} className={`flex justify-between mb-2 ${idx === 0 ? 'text-green-400 font-bold text-lg' : ''}`}>
+                                    <span>
+                                        {idx === 0 && '🏆 '}
+                                        {s.name} {s.isBot ? '(Bot)' : ''}
+                                    </span>
+                                    <span className={s.cumulativeScore >= 100 ? 'text-red-500' : ''}>
+                                        {s.cumulativeScore} pts
+                                    </span>
+                                </div>
+                            ))}
                     </div>
 
                     {/* Post-game buttons - different for host vs non-host */}
@@ -1462,11 +1468,10 @@ const GameRoom = ({ user, socket }) => {
                                         <button
                                             onClick={() => socket.emit('host_rematch', { roomId })}
                                             disabled={readyStatus && !readyStatus.allReady}
-                                            className={`px-6 py-3 rounded-lg font-bold transition transform hover:scale-105 ${
-                                                readyStatus && !readyStatus.allReady
-                                                    ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                                                    : 'bg-green-600 hover:bg-green-700'
-                                            }`}
+                                            className={`px-6 py-3 rounded-lg font-bold transition transform hover:scale-105 ${readyStatus && !readyStatus.allReady
+                                                ? 'bg-gray-600 cursor-not-allowed opacity-50'
+                                                : 'bg-green-600 hover:bg-green-700'
+                                                }`}
                                             title={readyStatus && !readyStatus.allReady ? 'Waiting for all players to be ready' : 'Start a new game immediately'}
                                         >
                                             Rematch
@@ -1519,11 +1524,10 @@ const GameRoom = ({ user, socket }) => {
                                                 }
                                             }}
                                             disabled={isReady}
-                                            className={`px-6 py-3 rounded-lg font-bold transition transform hover:scale-105 ${
-                                                isReady
-                                                    ? 'bg-green-700 cursor-default'
-                                                    : 'bg-green-600 hover:bg-green-700'
-                                            }`}
+                                            className={`px-6 py-3 rounded-lg font-bold transition transform hover:scale-105 ${isReady
+                                                ? 'bg-green-700 cursor-default'
+                                                : 'bg-green-600 hover:bg-green-700'
+                                                }`}
                                         >
                                             {isReady ? '✓ Ready' : 'Ready'}
                                         </button>
@@ -1578,13 +1582,12 @@ const GameRoom = ({ user, socket }) => {
                                         key={mode.id}
                                         onClick={() => isHost && socket.emit('set_game_mode', { gameMode: mode.id })}
                                         disabled={!isHost}
-                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
-                                            isSelected
-                                                ? 'bg-yellow-500 text-black shadow-lg'
-                                                : isHost
-                                                    ? 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
-                                                    : 'bg-white/10 text-white/50 cursor-not-allowed'
-                                        }`}
+                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${isSelected
+                                            ? 'bg-yellow-500 text-black shadow-lg'
+                                            : isHost
+                                                ? 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
+                                                : 'bg-white/10 text-white/50 cursor-not-allowed'
+                                            }`}
                                     >
                                         <div className="font-bold whitespace-nowrap">{mode.name}</div>
                                         <div className="text-sm md:text-[0.7vmax] opacity-80 whitespace-nowrap">{mode.description} • {mode.pointThreshold} pts</div>
@@ -1614,11 +1617,10 @@ const GameRoom = ({ user, socket }) => {
                                         onClick={() => {
                                             socket.emit('set_privacy', { isPrivate: false });
                                         }}
-                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
-                                            !gameState.isPrivate
-                                                ? 'bg-green-500 text-white shadow-lg'
-                                                : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
-                                        }`}
+                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${!gameState.isPrivate
+                                            ? 'bg-green-500 text-white shadow-lg'
+                                            : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
+                                            }`}
                                     >
                                         <div className="font-bold">Public Room</div>
                                         <div className="text-sm md:text-[0.7vmax] opacity-80">Anyone can join</div>
@@ -1627,11 +1629,10 @@ const GameRoom = ({ user, socket }) => {
                                         onClick={() => {
                                             socket.emit('set_privacy', { isPrivate: true });
                                         }}
-                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${
-                                            gameState.isPrivate
-                                                ? 'bg-orange-500 text-white shadow-lg'
-                                                : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
-                                        }`}
+                                        className={`px-6 py-4 md:px-[1.5vmax] md:py-[1vmax] rounded-lg font-bold text-base md:text-[0.9vmax] transition md:min-w-[14vmax] ${gameState.isPrivate
+                                            ? 'bg-orange-500 text-white shadow-lg'
+                                            : 'bg-white/20 text-white hover:bg-white/30 cursor-pointer'
+                                            }`}
                                     >
                                         <div className="font-bold">Private Room</div>
                                         <div className="text-sm md:text-[0.7vmax] opacity-80">Only by room code</div>
@@ -1640,6 +1641,57 @@ const GameRoom = ({ user, socket }) => {
                             </div>
                         );
                     })()}
+
+                    {/* Voice Chat Controls in Waiting Room */}
+                    <div className="mb-6 md:mb-[2vmax] w-full max-w-2xl">
+                        <div className="text-sm md:text-[1vmax] text-green-300 mb-3 md:mb-[0.75vmax] text-center">Voice Chat</div>
+                        <div className="flex flex-col items-center gap-3">
+                            {voiceContext?.voiceEnabled ? (
+                                <div className="flex items-center gap-3 flex-wrap justify-center">
+                                    <button
+                                        onClick={() => voiceContext.toggleVoice()}
+                                        className="px-4 py-2 rounded-lg font-bold bg-green-600 text-white hover:bg-green-700 transition flex items-center gap-2"
+                                    >
+                                        🎤 Voice On
+                                    </button>
+                                    <button
+                                        onClick={() => voiceContext.toggleMute()}
+                                        className={`px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${voiceContext.isMuted
+                                            ? 'bg-red-600 text-white hover:bg-red-700'
+                                            : 'bg-gray-600 text-white hover:bg-gray-700'
+                                            }`}
+                                    >
+                                        {voiceContext.isMuted ? '🔇 Muted' : '🔊 Mute'}
+                                    </button>
+                                    <button
+                                        onClick={() => voiceContext.toggleDeafen()}
+                                        className={`px-4 py-2 rounded-lg font-bold transition flex items-center gap-2 ${voiceContext.isDeafened
+                                            ? 'bg-red-600 text-white hover:bg-red-700'
+                                            : 'bg-gray-600 text-white hover:bg-gray-700'
+                                            }`}
+                                    >
+                                        {voiceContext.isDeafened ? '🔕 Deafened' : '🔔 Deafen'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => voiceContext?.joinVoiceRoom(roomId, user?.username)}
+                                    className={`px-6 py-3 rounded-lg font-bold transition flex items-center gap-2 ${voiceUserCount > 0
+                                            ? 'bg-green-600 text-white hover:bg-green-700 animate-pulse'
+                                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                                        }`}
+                                    style={voiceUserCount > 0 ? { animationDuration: '2s' } : undefined}
+                                >
+                                    🎤 {voiceUserCount > 0 ? `Join Voice (${voiceUserCount} in chat)` : 'Enable Voice Chat'}
+                                </button>
+                            )}
+                            {voiceContext?.voiceEnabled && voiceContext?.isVoiceConnected && (
+                                <div className="text-xs text-green-400">
+                                    ✓ Connected to voice room
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
                     {(() => {
                         const hostPlayer = gameState.players.find(p => p.name === gameState.hostUsername);
@@ -1831,32 +1883,32 @@ const GameRoom = ({ user, socket }) => {
                                 <div
                                     ref={handContainerRef}
                                     className="flex justify-center transition-all duration-300 md:hover:gap-[0.5vmax] w-full"
-                                onTouchStart={handleTouchStart}
-                                onTouchMove={handleTouchMove}
-                                onTouchEnd={handleTouchEnd}
-                                style={{
-                                    touchAction: 'pan-y',
-                                    minHeight: cardDimensions.cardHeight ? `${cardDimensions.cardHeight}px` : undefined,
-                                }}
-                            >
-                                {sortedHand.map((card, index) => {
-                                    const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
-                                    return (
-                                        <SortableCard
-                                            key={`${card.rank}-${card.suit}`}
-                                            card={card}
-                                            isSelected={isSelected}
-                                            onClick={() => toggleCard(card)}
-                                            index={index}
-                                            dynamicMargin={cardDimensions.margin}
-                                            dynamicWidth={cardDimensions.useVmax ? null : cardDimensions.cardWidth}
-                                            dynamicHeight={cardDimensions.useVmax ? null : cardDimensions.cardHeight}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        </SortableContext>
-                    </DndContext>
+                                    onTouchStart={handleTouchStart}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    style={{
+                                        touchAction: 'pan-y',
+                                        minHeight: cardDimensions.cardHeight ? `${cardDimensions.cardHeight}px` : undefined,
+                                    }}
+                                >
+                                    {sortedHand.map((card, index) => {
+                                        const isSelected = selectedCards.some(c => c.rank === card.rank && c.suit === card.suit);
+                                        return (
+                                            <SortableCard
+                                                key={`${card.rank}-${card.suit}`}
+                                                card={card}
+                                                isSelected={isSelected}
+                                                onClick={() => toggleCard(card)}
+                                                index={index}
+                                                dynamicMargin={cardDimensions.margin}
+                                                dynamicWidth={cardDimensions.useVmax ? null : cardDimensions.cardWidth}
+                                                dynamicHeight={cardDimensions.useVmax ? null : cardDimensions.cardHeight}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            </SortableContext>
+                        </DndContext>
                     </div>
 
                     {/* Avatar - Right side (Desktop only) */}

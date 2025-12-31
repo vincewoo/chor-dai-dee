@@ -6,7 +6,7 @@ import ArchetypeDialog from './ArchetypeDialog';
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 const Leaderboard = ({ user }) => {
-    const [mode, setMode] = useState('standard');
+    const [mode, setMode] = useState('short');
     const [sortBy, setSortBy] = useState('rating');
     const [minGames, setMinGames] = useState(0);
     const [leaderboardData, setLeaderboardData] = useState([]);
@@ -124,21 +124,19 @@ const Leaderboard = ({ user }) => {
                         <div className="flex gap-4 items-center">
                             <button
                                 onClick={() => setMode('standard')}
-                                className={`px-6 py-2 rounded font-bold transition ${
-                                    mode === 'standard'
+                                className={`px-6 py-2 rounded font-bold transition ${mode === 'standard'
                                         ? 'bg-yellow-500 text-white scale-105'
                                         : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                                }`}
+                                    }`}
                             >
                                 Standard (100pts)
                             </button>
                             <button
                                 onClick={() => setMode('short')}
-                                className={`px-6 py-2 rounded font-bold transition ${
-                                    mode === 'short'
+                                className={`px-6 py-2 rounded font-bold transition ${mode === 'short'
                                         ? 'bg-yellow-500 text-white scale-105'
                                         : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                                }`}
+                                    }`}
                             >
                                 Short (50pts)
                             </button>
@@ -158,11 +156,10 @@ const Leaderboard = ({ user }) => {
                                 <button
                                     key={key}
                                     onClick={() => setSortBy(key)}
-                                    className={`px-4 py-2 rounded text-sm font-semibold transition ${
-                                        sortBy === key
+                                    className={`px-4 py-2 rounded text-sm font-semibold transition ${sortBy === key
                                             ? 'bg-blue-500 text-white'
                                             : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                                    }`}
+                                        }`}
                                 >
                                     {getSortLabel(key)}
                                 </button>
@@ -180,11 +177,10 @@ const Leaderboard = ({ user }) => {
                                 <button
                                     key={value}
                                     onClick={() => setMinGames(value)}
-                                    className={`px-3 py-1 rounded text-sm transition ${
-                                        minGames === value
+                                    className={`px-3 py-1 rounded text-sm transition ${minGames === value
                                             ? 'bg-green-600 text-white'
                                             : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                                    }`}
+                                        }`}
                                 >
                                     {value}+
                                 </button>
@@ -241,9 +237,8 @@ const Leaderboard = ({ user }) => {
                                             return (
                                                 <tr
                                                     key={player.username}
-                                                    className={`transition hover:bg-green-700 ${
-                                                        isCurrentUser ? 'bg-green-700/50 border-l-4 border-yellow-400' : ''
-                                                    }`}
+                                                    className={`transition hover:bg-green-700 ${isCurrentUser ? 'bg-green-700/50 border-l-4 border-yellow-400' : ''
+                                                        }`}
                                                 >
                                                     <td className="px-4 py-3 text-left font-bold text-lg">
                                                         {getRankEmoji(rank)}
@@ -252,9 +247,8 @@ const Leaderboard = ({ user }) => {
                                                         <div className="flex items-center gap-2">
                                                             <button
                                                                 onClick={() => navigate(`/stats/${player.username}?mode=${mode}`)}
-                                                                className={`font-semibold hover:underline cursor-pointer transition ${
-                                                                    isCurrentUser ? 'text-yellow-300 hover:text-yellow-200' : 'text-white hover:text-blue-300'
-                                                                }`}
+                                                                className={`font-semibold hover:underline cursor-pointer transition ${isCurrentUser ? 'text-yellow-300 hover:text-yellow-200' : 'text-white hover:text-blue-300'
+                                                                    }`}
                                                             >
                                                                 {player.username}
                                                             </button>

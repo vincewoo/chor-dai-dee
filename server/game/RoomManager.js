@@ -7,7 +7,7 @@ const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
 
 class Room {
-    constructor(roomId, gameMode = 'standard') {
+    constructor(roomId, gameMode = 'short') {
         this.id = roomId;
         this.players = []; // Array of { id, name, socket, hand, isBot, isDisconnected }
         this.hostUsername = null; // The username of the room host (first player to join)
@@ -433,7 +433,7 @@ class Room {
         // If game is playing, this is tricky. For MVP, maybe end game or replace with bot?
         // Simpler: Reset room if someone leaves during waiting.
         if (this.gameState === 'waiting') {
-             // Fine
+            // Fine
         } else {
             // Player left mid-game.
             // Mark as disconnected or auto-play?
@@ -649,16 +649,16 @@ class Room {
         const isFirstTurnOfGame = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
         if (isFirstTurnOfGame) {
-             const has3D = handToPlay.some(c => c.rank === '3' && c.suit === 'D');
-             if (!has3D) return { error: 'Must play 3 of Diamonds on first turn' };
+            const has3D = handToPlay.some(c => c.rank === '3' && c.suit === 'D');
+            if (!has3D) return { error: 'Must play 3 of Diamonds on first turn' };
         }
 
         // Compare with last played hand
         if (this.lastPlayedHand) {
-             // If we are not in a "free play" state (everyone passed)
-             if (!Big2Rules.canBeat(validatedHand, this.lastPlayedHand)) {
-                 return { error: 'Hand does not beat the current table' };
-             }
+            // If we are not in a "free play" state (everyone passed)
+            if (!Big2Rules.canBeat(validatedHand, this.lastPlayedHand)) {
+                return { error: 'Hand does not beat the current table' };
+            }
         }
 
         // Move is valid
@@ -670,9 +670,9 @@ class Room {
 
         // Check if this is a single Big 2 (2 of Spades) - auto-pass all other players
         const isSingleBig2 = validatedHand.type === 'SINGLE' &&
-                             validatedHand.cards.length === 1 &&
-                             validatedHand.cards[0].rank === '2' &&
-                             validatedHand.cards[0].suit === 'S';
+            validatedHand.cards.length === 1 &&
+            validatedHand.cards[0].rank === '2' &&
+            validatedHand.cards[0].suit === 'S';
 
         if (isSingleBig2) {
             // Auto-pass all other players since Big 2 (2 of Spades) cannot be beaten as a single
