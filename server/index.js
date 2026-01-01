@@ -2001,6 +2001,21 @@ app.get('/api/leaderboard/:username/rank', async (req, res) => {
     }
 });
 
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+    console.log('Serving static files from public directory');
+    app.use(express.static(path.join(__dirname, 'public')));
+
+    // Handle SPA routing - serve index.html for any unknown routes
+    app.get(/(.*)/, (req, res) => {
+        // Don't intercept API routes (though they should have matched above)
+        if (req.path.startsWith('/api/')) {
+            return res.status(404).json({ error: 'Endpoint not found' });
+        }
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+}
+
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0'; // Listen on all interfaces for Docker
 server.listen(PORT, HOST, () => {

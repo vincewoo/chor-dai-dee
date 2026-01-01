@@ -1,5 +1,27 @@
-# Production stage - uses pre-built client from client/dist
-# Use Debian-based image (bookworm) instead of Alpine to ensure glibc compatibility for TensorFlow
+# Build stage for Client
+# Set the base image for the build stage.
+# Node 20 is used to match the runtime environment.
+FROM node:20-bookworm as client-builder
+
+# Set working directory for client build
+WORKDIR /app/client
+
+# Copy client package files
+COPY client/package*.json ./
+
+# Install client dependencies
+RUN npm ci
+
+# Copy client source code
+COPY client/ ./
+
+# Build the client application
+# This will output static files to /app/client/dist
+RUN npm run build
+
+
+# Production stage
+# Use Debian-based image (bookworm) instead of Alpine to ensure glibc compatibility for TensorFlow and other native modules
 FROM node:20-bookworm
 
 WORKDIR /app
@@ -16,21 +38,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies
+# Install python dependencies for AI features
+# Using --break-system-packages because we are in a container/venv-like env
 RUN python3 -m pip install --break-system-packages tensorflow==2.16.1 numpy joblib
 
 # Copy server package files and install dependencies
+# We copy package.json first to leverage Docker cache
 COPY server/package.json ./
 COPY server/package-lock.json* ./
 RUN npm install --omit=dev
 
-# Copy server source
+# Copy server source code
 COPY server/ ./
 
-# Copy pre-built client files to be served by express
-COPY client/dist/ ./public/
+# Copy built client files from the builder stage
+# Example: /app/client/dist -> /app/public
+COPY --from=client-builder /app/client/dist ./public
 
 # Create directory for SQLite database
+# The app should be configured to write to /data/database.sqlite if mounting a volume there
 RUN mkdir -p /data
 
 # Set environment variables
