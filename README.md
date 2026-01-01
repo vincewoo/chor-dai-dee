@@ -10,7 +10,8 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
   - "Poker First" strategy to preserve strong 5-card hands
   - Card counting and strategic passing
   - Toggle between simple and advanced bot difficulty
-- **Game modes**: Choose between Short Game (50 points) or Standard Game (100 points)
+- **Voice Chat**: Real-time voice communication with other players (toggleable)
+- **Game modes**: Choose between Short Game (50 points, default) or Standard Game (100 points)
 - **Reconnection support**: Seamlessly rejoin in-progress games if disconnected
 
 ### Statistics & Analytics
@@ -29,7 +30,7 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
 - **Auto-Pass**: Automatically pass when no valid moves are available
 - **Mobile optimized**: Responsive design with dynamic card spacing and swipe support
 - **Smooth animations**: Card animations and transitions using Framer Motion
-- **Settings panel**: In-game gear icon to adjust preferences
+- **Settings panel**: In-game gear icon to adjust preferences (voice, deck colors, etc.)
 
 ### Developer Features
 - **Bot Debug Panel**: Real-time analysis of bot decision-making
@@ -56,7 +57,26 @@ cd client/
 npm install
 npm run dev
 ```
+
+### Running the Client
+```bash
+cd client/
+npm install
+npm run dev
+```
 Client runs on http://localhost:5173
+
+### Deployment (Fly.io)
+The application is configured for deployment on Fly.io using Docker.
+
+1. **Install flyctl**: [https://fly.io/docs/hands-on/install-flyctl/](https://fly.io/docs/hands-on/install-flyctl/)
+2. **Deploy**:
+   ```bash
+   fly deploy
+   ```
+   This will build the Docker image and deploy it to your Fly.io app.
+3. **Continuous Deployment**: A GitHub Action (`.github/workflows/fly-deploy.yml`) is set up to automatically deploy changes pushed to the `main` branch.
+
 
 ### Running Multiple Instances
 The codebase supports running multiple development instances simultaneously (e.g., for testing multiplayer locally):
@@ -176,6 +196,7 @@ Access settings via the gear icon in-game:
 - **Framer Motion 12.23** - Animation library
 - **@dnd-kit** - Drag and drop functionality
 - **Socket.io Client** - Real-time communication
+- **Simple Peer** - WebRTC implementation for Voice Chat
 
 ### Backend
 - **Express 5.2** - Web server

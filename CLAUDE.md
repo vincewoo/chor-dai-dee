@@ -25,6 +25,14 @@ node index.js        # Start server on port 3000
 
 Note: No test framework is currently configured.
 
+### Deployment (Fly.io)
+```bash
+fly deploy           # Deploy to Fly.io (requires flyctl)
+fly open             # Open the deployed app
+fly logs             # View production logs
+```
+CI/CD is configured via GitHub Actions (`.github/workflows/fly-deploy.yml`) to auto-deploy on push to `main`.
+
 ## Running Multiple Instances
 
 The codebase supports running multiple development instances simultaneously (e.g., for testing multiplayer locally or running different versions side-by-side).
@@ -112,6 +120,7 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
   - `GameRoom.jsx` - Main game interface with settings panel
   - `Card.jsx` - Card rendering with 2-color and 4-color mode support
   - `CardCountIndicator.jsx` - Visual card back showing opponent card counts
+  - `VoiceChat.jsx` - WebRTC voice chat component (uses simple-peer)
 
 - **UI Helper Components:**
   - `HandHelper.jsx` - Quick selection tool for finding valid hands
@@ -130,6 +139,7 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 
 #### Contexts (`contexts/`)
 - `SuitColorContext.jsx` - Manages 2-color vs 4-color deck modes
+- `VoiceChatContext.jsx` - Manages WebRTC connections and voice state
 - `UserPreferencesContext.jsx` - User preferences with server sync
   - Four-color deck mode toggle
   - Auto-pass toggle
@@ -307,12 +317,16 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 
 ### Technology Stack
 - **Frontend:** React 19.2, React Router 7.10, Vite 7.2, Tailwind CSS 4.1, Framer Motion 12.23
+- **Voice/WebRTC:** simple-peer 9.11
 - **Backend:** Express 5.2, Socket.io 4.8, SQLite3 5.1
 - **Libraries:** @dnd-kit (drag & drop), openskill (ratings), bcrypt 6.0 (auth)
 - Client uses ES modules; server uses CommonJS
 
 ### Deployment & Environment
-- Environment-based CORS configuration
+- **Platform:** Fly.io (Dockerized)
+- **CI/CD:** GitHub Actions
+- **Environment:** Environment-based CORS configuration
+- **Database:** `/data/database.sqlite` (Fly.io Volume), `./database.sqlite` (Local)
 - Dynamic API URL detection (production vs development)
 - Database path: `/data/database.sqlite` in production (Docker volume), `./database.sqlite` in dev
 - Hardcoded dev URLs: client expects server at `localhost:3000`, server accepts `localhost:5173`

@@ -47,51 +47,46 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                 <div className="flex border-b border-gray-200 bg-gray-50">
                     <button
                         onClick={() => setActiveTab('overview')}
-                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
-                            activeTab === 'overview'
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'overview'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         Overview
                     </button>
                     <button
                         onClick={() => setActiveTab('rankings')}
-                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
-                            activeTab === 'rankings'
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'rankings'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         Rankings
                     </button>
                     <button
                         onClick={() => setActiveTab('rules')}
-                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
-                            activeTab === 'rules'
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'rules'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         Rules
                     </button>
                     <button
                         onClick={() => setActiveTab('scoring')}
-                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
-                            activeTab === 'scoring'
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'scoring'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         Scoring
                     </button>
                     <button
                         onClick={() => setActiveTab('features')}
-                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${
-                            activeTab === 'features'
+                        className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'features'
                                 ? 'bg-white text-green-700 border-b-2 border-green-700'
                                 : 'text-gray-600 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         Features
                     </button>
@@ -486,6 +481,22 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                         <li>Play with any combination of human players and bots</li>
                                     </ul>
                                     <p className="text-xs text-gray-600 mt-2">💡 Create a room in the lobby and share the code with friends</p>
+                                </div>
+
+                                <div className="border-l-4 border-rose-500 bg-rose-50 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-gray-800 mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🎙️</span>
+                                        Voice Chat
+                                    </h4>
+                                    <p className="text-gray-700 mb-2">
+                                        Talk to other players in real-time with built-in voice chat.
+                                    </p>
+                                    <ul className="list-disc list-inside text-gray-700 text-sm ml-4">
+                                        <li>Crystal clear WebRTC audio</li>
+                                        <li>Toggle microphone on/off anytime</li>
+                                        <li>See who is currently speaking</li>
+                                    </ul>
+                                    <p className="text-xs text-gray-600 mt-2">💡 Enable/Disable via settings gear icon</p>
                                 </div>
 
                                 <div className="border-l-4 border-cyan-500 bg-cyan-50 p-4 rounded-r-lg mb-3">
