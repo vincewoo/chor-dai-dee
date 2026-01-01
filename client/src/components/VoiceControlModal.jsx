@@ -159,24 +159,30 @@ const VoiceControlModal = ({
                     <div className="space-y-2 max-h-32 overflow-y-auto">
                       {players
                         .filter(p => p.name !== username && peers.includes(p.name))
-                        .map(player => (
-                          <div key={player.id} className="flex items-center gap-2">
-                            <span className="text-gray-300 w-16 text-xs truncate">
-                              {player.name}
-                            </span>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={playerVolumes[player.name] || 100}
-                              onChange={(e) => onVolumeChange(player.name, parseInt(e.target.value))}
-                              className="flex-1 accent-green-500 h-1"
-                            />
-                            <span className="text-gray-400 text-xs w-8 text-right">
-                              {playerVolumes[player.name] || 100}%
-                            </span>
-                          </div>
-                        ))}
+                        .map(player => {
+                          // playerVolumes stores values as 0-1 decimals, convert to 0-100 for display
+                          const volumePercent = Math.round((playerVolumes[player.name] ?? 1) * 100);
+                          return (
+                            <div key={player.id} className="flex items-center gap-2">
+                              <span className="text-gray-300 w-16 text-xs truncate">
+                                {player.name}
+                              </span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={volumePercent}
+                                onChange={(e) => onVolumeChange(player.name, parseInt(e.target.value))}
+                                onInput={(e) => onVolumeChange(player.name, parseInt(e.target.value))}
+                                className="flex-1 accent-green-500 h-1"
+                                style={{ touchAction: 'manipulation' }}
+                              />
+                              <span className="text-gray-400 text-xs w-8 text-right">
+                                {volumePercent}%
+                              </span>
+                            </div>
+                          );
+                        })}
                     </div>
                   </div>
                 )}

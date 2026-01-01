@@ -101,40 +101,45 @@ class Room {
         existingPlayer.isDisconnected = false;
 
         // Always update references that use the old socket ID
-        if (this.cumulativeScores[oldId] !== undefined) {
-            this.cumulativeScores[newSocketId] = this.cumulativeScores[oldId];
-            delete this.cumulativeScores[oldId];
+        // Only migrate if the ID actually changed (avoid deleting score when oldId === newSocketId)
+        if (oldId !== newSocketId) {
+            this.cumulativeScores[newSocketId] = this.cumulativeScores[oldId] || 0;
+            if (this.cumulativeScores[oldId] !== undefined) {
+                delete this.cumulativeScores[oldId];
+            }
         }
 
-        if (this.playerLastPlayed[oldId]) {
-            this.playerLastPlayed[newSocketId] = this.playerLastPlayed[oldId];
-            this.playerLastPlayed[newSocketId].playerId = newSocketId;
-            delete this.playerLastPlayed[oldId];
-        }
+        if (oldId !== newSocketId) {
+            if (this.playerLastPlayed[oldId]) {
+                this.playerLastPlayed[newSocketId] = this.playerLastPlayed[oldId];
+                this.playerLastPlayed[newSocketId].playerId = newSocketId;
+                delete this.playerLastPlayed[oldId];
+            }
 
-        if (this.passedPlayers.has(oldId)) {
-            this.passedPlayers.delete(oldId);
-            this.passedPlayers.add(newSocketId);
-        }
+            if (this.passedPlayers.has(oldId)) {
+                this.passedPlayers.delete(oldId);
+                this.passedPlayers.add(newSocketId);
+            }
 
-        if (this.lastPlayedHand && this.lastPlayedHand.playerId === oldId) {
-            this.lastPlayedHand.playerId = newSocketId;
-        }
+            if (this.lastPlayedHand && this.lastPlayedHand.playerId === oldId) {
+                this.lastPlayedHand.playerId = newSocketId;
+            }
 
-        if (this.lastRoundWinnerId === oldId) {
-            this.lastRoundWinnerId = newSocketId;
-        }
+            if (this.lastRoundWinnerId === oldId) {
+                this.lastRoundWinnerId = newSocketId;
+            }
 
-        // Update tier3 decision tracking
-        if (this.tier3DecisionTracking && this.tier3DecisionTracking[oldId]) {
-            this.tier3DecisionTracking[newSocketId] = this.tier3DecisionTracking[oldId];
-            delete this.tier3DecisionTracking[oldId];
-        }
+            // Update tier3 decision tracking
+            if (this.tier3DecisionTracking && this.tier3DecisionTracking[oldId]) {
+                this.tier3DecisionTracking[newSocketId] = this.tier3DecisionTracking[oldId];
+                delete this.tier3DecisionTracking[oldId];
+            }
 
-        // Update round play stats
-        if (this.roundPlayStats && this.roundPlayStats[oldId]) {
-            this.roundPlayStats[newSocketId] = this.roundPlayStats[oldId];
-            delete this.roundPlayStats[oldId];
+            // Update round play stats
+            if (this.roundPlayStats && this.roundPlayStats[oldId]) {
+                this.roundPlayStats[newSocketId] = this.roundPlayStats[oldId];
+                delete this.roundPlayStats[oldId];
+            }
         }
 
         // Update playersByUsername reference
@@ -246,8 +251,9 @@ class Room {
         this.players[playerIndex] = botPlayer;
 
         // Update all references from old player ID to bot ID
+        // Always initialize score for the new bot ID (default to 0 if old score doesn't exist)
+        this.cumulativeScores[botId] = this.cumulativeScores[socketId] || 0;
         if (this.cumulativeScores[socketId] !== undefined) {
-            this.cumulativeScores[botId] = this.cumulativeScores[socketId];
             delete this.cumulativeScores[socketId];
         }
 
@@ -361,8 +367,9 @@ class Room {
         this.players[botIndex] = humanPlayer;
 
         // Update all references from bot ID to human player ID
+        // Always initialize score for the new player ID (default to 0 if bot score doesn't exist)
+        this.cumulativeScores[newPlayer.id] = this.cumulativeScores[botId] || 0;
         if (this.cumulativeScores[botId] !== undefined) {
-            this.cumulativeScores[newPlayer.id] = this.cumulativeScores[botId];
             delete this.cumulativeScores[botId];
         }
 
