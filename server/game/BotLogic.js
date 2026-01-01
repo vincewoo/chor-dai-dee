@@ -449,8 +449,69 @@ const BotLogic = {
     },
 
     /**
+     * Determine the current game phase based on hand size
+     * @param {number} handSize - Number of cards in hand
+     * @returns {string} 'early', 'mid', or 'late'
+     */
+    getGamePhase: (handSize) => {
+        if (handSize > 9) return 'early';
+        if (handSize > 5) return 'mid';
+        return 'late';
+    },
+
+    /**
+     * Evaluate if we have strong follow-up plays after taking the lead
+     * @param {Object} handOrganization - Organized hand structure
+     * @param {Array} hand - Current cards in hand
+     * @returns {boolean} true if we have strong follow-up
+     */
+    hasStrongFollowUp: (handOrganization, hand) => {
+        // Strong follow-up indicators:
+        // 1. We have 5-card hands ready to play
+        if (handOrganization.fiveCardHands.length > 0) return true;
+
+        // 2. We have multiple pairs (can control the game)
+        if (handOrganization.pairs.length >= 2) return true;
+
+        // 3. We have multiple control cards (2s or As)
+        if (handOrganization.control.length >= 2) return true;
+
+        // 4. We're close to winning (few cards left)
+        if (hand.length <= 3) return true;
+
+        return false;
+    },
+
+    /**
+     * Check if we can win in one trick (play all remaining cards)
+     * @param {Array} hand - Current cards in hand
+     * @param {Object|null} lastPlayedHand - The hand to beat
+     * @returns {Object} { canWin: boolean, move: Object|null }
+     */
+    canWinInOneTrick: (hand, lastPlayedHand) => {
+        // If we have free play, check if all cards form a valid combination
+        if (!lastPlayedHand) {
+            const allCardsMove = Big2Rules.validateHand(hand);
+            if (allCardsMove) {
+                return { canWin: true, move: allCardsMove };
+            }
+        }
+
+        // Check if we can beat the current hand with all our cards
+        if (lastPlayedHand && hand.length === lastPlayedHand.cards.length) {
+            const allCardsMove = Big2Rules.validateHand(hand);
+            if (allCardsMove && Big2Rules.canBeat(allCardsMove, lastPlayedHand)) {
+                return { canWin: true, move: allCardsMove };
+            }
+        }
+
+        return { canWin: false, move: null };
+    },
+
+    /**
      * Determine if we should pass even though we can play
      * Implements "Don't Waste the 2s" and "Price" rules
+     * Enhanced with Strategic Yielding logic
      */
     shouldStrategicPass: (candidates, hand, lastPlayedHand, ctx, captureReasoning = false) => {
         const { playerCardCounts, passCount, lastPlayedByRelative } = ctx;
@@ -531,6 +592,34 @@ const BotLogic = {
         // Defensive: "Freeze the Winner" logic in passing?
         // No, passing is passive. Freezing is active (playing high).
 
+        // --- PRIORITY 2: Strategic Yielding ---
+        // "Don't win every trick, win the right ones"
+        // Yield control if opponent played high card and we have weak follow-up
+
+        const bestResponse = candidates.reduce((best, curr) =>
+            curr.value < best.value ? curr : best
+        );
+
+        // Check if opponent played a high card
+        const opponentPlayedHigh =
+            lastPlayedHand.cards[0].rank === '2' ||
+            lastPlayedHand.cards[0].rank === 'A' ||
+            FIVE_CARD_PRIORITY[lastPlayedHand.type];
+
+        // Check if we'd respond with mid-tier card (7-Q)
+        const weHaveMidTier =
+            bestResponse.type === HAND_TYPES.SINGLE &&
+            ['7','8','9','10','J','Q'].includes(bestResponse.cards[0].rank);
+
+        // Evaluate follow-up strength
+        const hasWeakFollowUp = !BotLogic.hasStrongFollowUp(ctx.handOrganization, hand);
+
+        // Strategic yield: Let opponent burn their high card
+        if (opponentPlayedHigh && weHaveMidTier && hasWeakFollowUp && hand.length > 5) {
+            if (factors) factors.push('Strategic Yield: Let opponent burn high card');
+            return result(true, "Yielding control - opponent played high, we have weak follow-up");
+        }
+
         return result(false);
     },
 
@@ -560,6 +649,7 @@ const BotLogic = {
     /**
      * Select the best move using strategic considerations
      * Implements "Play Low, or Play Long" and "Freeze the Winner"
+     * Enhanced with Game Phase Strategy, Anti-Hoarding, Lead Strength, and One-Trick Win Detection
      */
     selectBestMove: (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}, captureReasoning = false) => {
         const { playerCardCounts, handOrganization } = ctx;
@@ -570,6 +660,21 @@ const BotLogic = {
 
         // Define common variables for heuristics
         const minOpponentCards = Math.min(...playerCardCounts);
+
+        // --- PRIORITY 1: Determine Game Phase ---
+        const gamePhase = BotLogic.getGamePhase(hand.length);
+
+        // --- PRIORITY 5: Check for One-Trick Win ---
+        const winCheck = BotLogic.canWinInOneTrick(hand, lastPlayedHand);
+        if (winCheck.canWin && captureReasoning) {
+            return {
+                move: winCheck.move,
+                scoredMoves: [{ move: winCheck.move, score: 999999, factors: [{ factor: 'ONE-TRICK WIN!', points: 999999 }] }],
+                primaryReason: 'Can win the entire game this turn!'
+            };
+        } else if (winCheck.canWin) {
+            return winCheck.move;
+        }
 
         // OPTIMIZATION: Pre-filter candidates if too many
         // Scoring is expensive, so limit to top candidates by value
@@ -640,8 +745,64 @@ const BotLogic = {
             // Max value is around 60 (Straight Flush A-2-3-4-5).
             score += (100 - move.value);
 
+            // --- PRIORITY 1: Game Phase Strategy ---
+            if (gamePhase === 'early') {
+                // Early game: Shed trash, avoid using control cards
+                if (move.type === HAND_TYPES.SINGLE && ['3','4','5','6'].includes(move.cards[0].rank)) {
+                    score += 100;
+                    if (factors) factors.push({ factor: 'Early Game: Dump Trash', points: 100 });
+                }
+
+                // Avoid fights - don't use control cards unless winning
+                if (['A', '2'].includes(move.cards[0].rank) && !isWin) {
+                    score -= 150;
+                    if (factors) factors.push({ factor: 'Early Game: Save Control Cards', points: -150 });
+                }
+            }
+
+            if (gamePhase === 'mid') {
+                // Mid-game: Assert control if we have dominance
+                if (BotLogic.hasStrongFollowUp(handOrganization, hand)) {
+                    if (!lastPlayedHand) {
+                        score += 80;
+                        if (factors) factors.push({ factor: 'Mid-Game: Assert Control', points: 80 });
+                    }
+                }
+
+                // --- PRIORITY 3: Anti-Hoarding Logic ---
+                // Shed high singles to avoid hoarding
+                if (move.type === HAND_TYPES.SINGLE && ['K', 'A'].includes(move.cards[0].rank)) {
+                    score += 60;
+                    if (factors) factors.push({ factor: 'Mid-Game: Shed High Singles (Anti-Hoard)', points: 60 });
+                }
+
+                // Reduce protection of high pairs in mid-game
+                if (move.type === HAND_TYPES.PAIR && ['K', 'A'].includes(move.cards[0].rank)) {
+                    score += 40;
+                    if (factors) factors.push({ factor: 'Mid-Game: Play High Pairs (Anti-Hoard)', points: 40 });
+                }
+            }
+
+            if (gamePhase === 'late') {
+                // Late game: Maximum aggression - prevent opponents from going out
+                // Calculate if we can empty hand in sequence
+                if (hand.length <= 5) {
+                    // Bonus for any move that reduces hand size
+                    score += 100;
+                    if (factors) factors.push({ factor: 'Late Game: Aggressive Shedding', points: 100 });
+                }
+            }
+
             // --- Leading Strategy (Free Play) ---
             if (!lastPlayedHand) {
+                // --- PRIORITY 4: Lead Strength Evaluation ---
+                // Only take lead if we have strong follow-up (except in late game)
+                if (gamePhase !== 'late' && !BotLogic.hasStrongFollowUp(handOrganization, hand)) {
+                    // We have weak follow-up, penalize taking lead
+                    score -= 120;
+                    if (factors) factors.push({ factor: 'Weak Follow-Up: Avoid Leading', points: -120 });
+                }
+
                 // Priority A: 5-Card Hands
                 if (FIVE_CARD_PRIORITY[move.type]) {
                     score += 200; // Big bonus
@@ -747,6 +908,7 @@ const BotLogic = {
 
             // Rule 3: Top-Heavy Pair Protection
             // Don't break pairs of A, K, Q to beat a single card
+            // BUT: Anti-hoarding overrides this in mid-game
             if (move.type === HAND_TYPES.SINGLE && !isWin) {
                 const rank = move.cards[0].rank;
                 if (['A', 'K', 'Q'].includes(rank)) {
@@ -756,9 +918,13 @@ const BotLogic = {
                     );
 
                     if (isFromPair) {
-                        // Penalty for breaking high pair
-                        score -= 100;
-                        if (factors) factors.push({ factor: 'Break High Pair Protection', points: -100 });
+                        // In mid-game, reduce penalty (anti-hoarding)
+                        const penalty = gamePhase === 'mid' ? -50 : -100;
+                        score += penalty;
+                        if (factors) factors.push({
+                            factor: gamePhase === 'mid' ? 'Break High Pair (Reduced - Mid Game)' : 'Break High Pair Protection',
+                            points: penalty
+                        });
                     }
                 }
             }
