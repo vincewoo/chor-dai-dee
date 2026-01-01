@@ -34,6 +34,7 @@ __pycache__/
 Thumbs.db
 
 # IDE
+.claude/
 .idea/
 .vscode/*
 !.vscode/extensions.json
