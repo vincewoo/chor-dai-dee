@@ -668,11 +668,15 @@ class Room {
         if (playerIndex !== this.currentTurnIndex) return { error: 'Not your turn' };
 
         // If a trick win is pending (waiting for display timeout), clear it now.
-        // This prevents a race condition where the timeout could fire after this play
-        // and incorrectly clear lastPlayedHand.
+        // This is a free play situation - the player who won the trick can play anything.
+        // We need to clear the table state (lastPlayedHand) before validating the new play.
         if (this.trickWinPending) {
-            // Don't call clearTrickState() because we're about to play - just reset the flag
-            // so the pending timeout will be a no-op (clearTrickState checks this flag)
+            console.log(`[DEBUG playHand] Clearing trick state for free play. Player ${playerId} won the trick.`);
+            this.lastPlayedHand = null;
+            this.playerLastPlayed = {}; // Clear all displayed hands
+            this.passedPlayers = new Set(); // Clear passed players
+            this.passes = 0;
+            this.playOrder = 0; // Reset play order for new trick
             this.trickWinPending = false;
             this.trickWinner = null;
         }
