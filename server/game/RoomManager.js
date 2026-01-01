@@ -667,6 +667,16 @@ class Room {
         const playerIndex = this.players.findIndex(p => p.id === playerId);
         if (playerIndex !== this.currentTurnIndex) return { error: 'Not your turn' };
 
+        // If a trick win is pending (waiting for display timeout), clear it now.
+        // This prevents a race condition where the timeout could fire after this play
+        // and incorrectly clear lastPlayedHand.
+        if (this.trickWinPending) {
+            // Don't call clearTrickState() because we're about to play - just reset the flag
+            // so the pending timeout will be a no-op (clearTrickState checks this flag)
+            this.trickWinPending = false;
+            this.trickWinner = null;
+        }
+
         const player = this.players[playerIndex];
 
         // Update activity timestamp
@@ -704,6 +714,7 @@ class Room {
         }
 
         // Compare with last played hand
+        console.log(`[DEBUG playHand] Player ${player.name} attempting ${validatedHand.type}. lastPlayedHand=${this.lastPlayedHand ? `${this.lastPlayedHand.type}(value=${this.lastPlayedHand.value})` : 'null'}, trickWinPending=${this.trickWinPending}`);
         if (this.lastPlayedHand) {
             // If we are not in a "free play" state (everyone passed)
             if (!Big2Rules.canBeat(validatedHand, this.lastPlayedHand)) {
@@ -931,6 +942,7 @@ class Room {
 
     // Clear trick state after a delay - called by server after showing the trick win
     clearTrickState() {
+        console.log(`[DEBUG clearTrickState] Called. trickWinPending=${this.trickWinPending}, lastPlayedHand=${this.lastPlayedHand ? `${this.lastPlayedHand.type}(value=${this.lastPlayedHand.value})` : 'null'}`);
         if (!this.trickWinPending) return false;
 
         this.lastPlayedHand = null;
