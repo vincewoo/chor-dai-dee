@@ -242,19 +242,19 @@ io.on('connection', (socket) => {
         }
 
         // Check if player already exists in the target room (not disconnected, but socket changed)
-        const targetRoom = roomManager.getRoom(roomId);
+        const targetRoom = roomManager.getRoom(targetRoomId);
         if (targetRoom && targetRoom.playersByUsername && targetRoom.playersByUsername[username]) {
             const existingPlayer = targetRoom.playersByUsername[username];
             // Player is already in the room but socket ID changed (e.g., page refresh)
-            console.log(`Player ${username} already in room ${roomId}, updating socket from ${existingPlayer.id} to ${socket.id}`);
+            console.log(`Player ${username} already in room ${targetRoomId}, updating socket from ${existingPlayer.id} to ${socket.id}`);
 
             const player = targetRoom.reconnectPlayer(username, socket.id, socket);
             if (player) {
                 player.rating = displayRating;
-                socket.join(roomId);
+                socket.join(targetRoomId);
 
-                socket.emit('joined_room', { roomId, playerId: socket.id });
-                io.to(roomId).emit('room_update', targetRoom.getGameState());
+                socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
+                io.to(targetRoomId).emit('room_update', targetRoom.getGameState());
 
                 // Send hand if game is in progress
                 if (targetRoom.gameState === 'playing' || targetRoom.gameState === 'round_over') {
@@ -280,7 +280,7 @@ io.on('connection', (socket) => {
 
                 // Check if current player is a bot and trigger bot turn processing
                 if (targetRoom.gameState === 'playing') {
-                    processBotTurns(targetRoom, roomId);
+                    processBotTurns(targetRoom, targetRoomId);
                 }
 
                 return;
