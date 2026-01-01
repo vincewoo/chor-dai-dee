@@ -243,8 +243,9 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
             const standardRanks = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
             const sequences = [];
 
-            // Standard sequences
-            for (let i = 0; i <= 8; i++) {
+            // Standard sequences (3-4-5-6-7 through 10-J-Q-K-A)
+            // Loop only to i=7 to avoid invalid J-Q-K-A-2
+            for (let i = 0; i <= 7; i++) {
                 const seq = standardRanks.slice(i, i + 5);
                 if (seq.every(r => presentRanks.includes(r))) {
                     sequences.push(seq);
