@@ -1372,17 +1372,19 @@ const GameRoom = ({ user, socket }) => {
                     <div className="flex items-center gap-2 flex-wrap justify-center md:gap-[1vmax]">
                         <button
                             onClick={playCards}
-                            disabled={!isMyTurn || selectedCards.length === 0}
+                            disabled={!isMyTurn || selectedCards.length === 0 || gameState.trickWinPending}
                             className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition-all transform text-base md:text-[1vmax]
-                                ${isMyTurn && selectedCards.length > 0 ? 'bg-yellow-500 text-black hover:scale-105 active:scale-95' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                                ${isMyTurn && selectedCards.length > 0 && !gameState.trickWinPending ? 'bg-yellow-500 text-black hover:scale-105 active:scale-95' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                            title={gameState.trickWinPending ? 'Waiting for trick to clear...' : ''}
                         >
                             Play
                         </button>
                         <button
                             onClick={passTurn}
-                            disabled={!isMyTurn || !gameState.lastPlayedHand}
+                            disabled={!isMyTurn || !gameState.lastPlayedHand || gameState.trickWinPending}
                             className={`px-4 md:px-[1.5vmax] py-2.5 md:py-[0.5vmax] rounded-full font-bold shadow-lg transition-all transform text-base md:text-[1vmax]
-                                ${isMyTurn && gameState.lastPlayedHand ? 'bg-yellow-600 text-white hover:scale-105 active:scale-95' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                                ${isMyTurn && gameState.lastPlayedHand && !gameState.trickWinPending ? 'bg-yellow-600 text-white hover:scale-105 active:scale-95' : 'bg-gray-500 text-gray-300 cursor-not-allowed'}`}
+                            title={gameState.trickWinPending ? 'Waiting for trick to clear...' : ''}
                         >
                             Pass
                         </button>

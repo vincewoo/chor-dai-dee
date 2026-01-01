@@ -991,10 +991,16 @@ io.on('connection', (socket) => {
                 if (result.roundWinDelay) {
                     // Emit the game state first to show the winning card
                     io.to(roomId).emit('game_update', room.getGameState());
-                    setTimeout(() => {
+                    const timeoutId = setTimeout(() => {
+                        // Validate state before proceeding
+                        if (room.gameState !== 'round_over') {
+                            console.log(`[Timeout] Skipping round over - game state changed`);
+                            return;
+                        }
                         room.clearRoundEndCards();
                         handleRoundOver(room, roomId, result.roundWinner);
                     }, 1500); // 1.5 second delay to see the winning card
+                    room.registerTimeout('roundWin', timeoutId);
                 } else {
                     handleRoundOver(room, roomId, result.roundWinner);
                 }
@@ -1006,12 +1012,21 @@ io.on('connection', (socket) => {
                 }
                 // If a trick was won, delay before clearing and continuing
                 if (result.trickWinDelay) {
-                    setTimeout(() => {
-                        room.clearTrickState();
-                        io.to(roomId).emit('game_update', room.getGameState());
-                        // Continue checking if next player is bot
-                        processBotTurns(room, roomId);
+                    // Capture the current generation for validation
+                    const generation = room.trickWinGeneration;
+                    const timeoutId = setTimeout(() => {
+                        // Validate state before clearing
+                        if (room.gameState !== 'playing') {
+                            console.log(`[Timeout] Skipping trick clear - game no longer playing`);
+                            return;
+                        }
+                        if (room.clearTrickState(generation)) {
+                            io.to(roomId).emit('game_update', room.getGameState());
+                            // Continue checking if next player is bot
+                            processBotTurns(room, roomId);
+                        }
                     }, 1500); // 1.5 second delay to see the trick result
+                    room.registerTimeout('trickWin', timeoutId);
                 } else {
                     // Continue checking if next player is bot
                     processBotTurns(room, roomId);
@@ -1204,22 +1219,36 @@ io.on('connection', (socket) => {
                 if (result.roundOver) {
                     // Add delay to show final winning card before round ends
                     if (result.roundWinDelay) {
-                        setTimeout(() => {
+                        const timeoutId = setTimeout(() => {
+                            // Validate state before proceeding
+                            if (room.gameState !== 'round_over') {
+                                console.log(`[Timeout] Skipping round over - game state changed`);
+                                return;
+                            }
                             room.clearRoundEndCards();
                             handleRoundOver(room, roomId, result.roundWinner);
                         }, 1500); // 1.5 second delay to see the winning card
+                        room.registerTimeout('roundWin', timeoutId);
                     } else {
                         handleRoundOver(room, roomId, result.roundWinner);
                     }
                 } else if (result.trickWinDelay) {
                     // Big 2 was played or trick was won - delay before clearing state
                     // This gives players time to see the winning hand and passes
-                    setTimeout(() => {
-                        room.clearTrickState();
-                        io.to(roomId).emit('game_update', room.getGameState());
-                        // Check if next player is bot
-                        processBotTurns(room, roomId);
+                    const generation = room.trickWinGeneration;
+                    const timeoutId = setTimeout(() => {
+                        // Validate state before clearing
+                        if (room.gameState !== 'playing') {
+                            console.log(`[Timeout] Skipping trick clear - game no longer playing`);
+                            return;
+                        }
+                        if (room.clearTrickState(generation)) {
+                            io.to(roomId).emit('game_update', room.getGameState());
+                            // Check if next player is bot
+                            processBotTurns(room, roomId);
+                        }
                     }, 1500); // 1.5 second delay to see the trick result
+                    room.registerTimeout('trickWin', timeoutId);
                 } else {
                     // Check if next player is bot
                     processBotTurns(room, roomId);
@@ -1246,12 +1275,20 @@ io.on('connection', (socket) => {
                 if (result.trickWinDelay) {
                     // Trick was won by passing - delay before clearing state
                     // This gives players time to see all the passes before the trick clears
-                    setTimeout(() => {
-                        room.clearTrickState();
-                        io.to(roomId).emit('game_update', room.getGameState());
-                        // Check if next player is bot
-                        processBotTurns(room, roomId);
+                    const generation = room.trickWinGeneration;
+                    const timeoutId = setTimeout(() => {
+                        // Validate state before clearing
+                        if (room.gameState !== 'playing') {
+                            console.log(`[Timeout] Skipping trick clear - game no longer playing`);
+                            return;
+                        }
+                        if (room.clearTrickState(generation)) {
+                            io.to(roomId).emit('game_update', room.getGameState());
+                            // Check if next player is bot
+                            processBotTurns(room, roomId);
+                        }
                     }, 1500); // 1.5 second delay to see the trick result
+                    room.registerTimeout('trickWin', timeoutId);
                 } else {
                     // Check if next player is bot
                     processBotTurns(room, roomId);

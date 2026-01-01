@@ -44,6 +44,10 @@ class Room {
 
         // Post-game state for rematch/lobby flow
         this.postGameReadyPlayers = new Set(); // Players who clicked "Ready" after game ends
+
+        // Timeout management to prevent race conditions
+        this.pendingTimeouts = new Map(); // Map of timeout type -> timeout ID
+        this.trickWinGeneration = 0; // Generation counter for trick win timeouts
     }
 
     addPlayer(player) {
@@ -667,11 +671,21 @@ class Room {
         const playerIndex = this.players.findIndex(p => p.id === playerId);
         if (playerIndex !== this.currentTurnIndex) return { error: 'Not your turn' };
 
-        // If a trick win is pending (waiting for display timeout), clear it now.
-        // This is a free play situation - the player who won the trick can play anything.
-        // We need to clear the table state (lastPlayedHand) before validating the new play.
+        // Block actions during trick win delays for players who didn't win the trick
         if (this.trickWinPending) {
-            console.log(`[DEBUG playHand] Clearing trick state for free play. Player ${playerId} won the trick.`);
+            // Only the trick winner can play during the delay (free play)
+            if (this.trickWinner !== playerId) {
+                console.log(`[DEBUG playHand] Blocking play from ${playerId} during trick win delay. Winner is ${this.trickWinner}`);
+                return { error: 'Wait for current trick to clear' };
+            }
+
+            // Trick winner is playing - clear the trick state immediately
+            console.log(`[DEBUG playHand] Trick winner ${playerId} playing during delay. Clearing trick state immediately.`);
+
+            // Cancel the pending timeout
+            this.clearTimeout('trickWin');
+
+            // Clear the trick state
             this.lastPlayedHand = null;
             this.playerLastPlayed = {}; // Clear all displayed hands
             this.passedPlayers = new Set(); // Clear passed players
@@ -679,6 +693,7 @@ class Room {
             this.playOrder = 0; // Reset play order for new trick
             this.trickWinPending = false;
             this.trickWinner = null;
+            this.trickWinGeneration++; // Increment generation to invalidate pending timeout
         }
 
         const player = this.players[playerIndex];
@@ -843,6 +858,13 @@ class Room {
 
     passTurn(playerId) {
         if (this.gameState !== 'playing') return { error: 'Game not active' };
+
+        // Block all passes during trick win delays
+        if (this.trickWinPending) {
+            console.log(`[DEBUG passTurn] Blocking pass from ${playerId} during trick win delay`);
+            return { error: 'Wait for current trick to clear' };
+        }
+
         const playerIndex = this.players.findIndex(p => p.id === playerId);
         if (playerIndex !== this.currentTurnIndex) return { error: 'Not your turn' };
 
@@ -944,9 +966,40 @@ class Room {
         );
     }
 
+    // Register a timeout and track it to prevent race conditions
+    registerTimeout(type, timeoutId) {
+        // Clear any existing timeout of the same type
+        this.clearTimeout(type);
+        this.pendingTimeouts.set(type, timeoutId);
+    }
+
+    // Clear a specific timeout
+    clearTimeout(type) {
+        const timeoutId = this.pendingTimeouts.get(type);
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            this.pendingTimeouts.delete(type);
+        }
+    }
+
+    // Clear all pending timeouts
+    clearAllTimeouts() {
+        for (const [type, timeoutId] of this.pendingTimeouts) {
+            clearTimeout(timeoutId);
+        }
+        this.pendingTimeouts.clear();
+    }
+
     // Clear trick state after a delay - called by server after showing the trick win
-    clearTrickState() {
-        console.log(`[DEBUG clearTrickState] Called. trickWinPending=${this.trickWinPending}, lastPlayedHand=${this.lastPlayedHand ? `${this.lastPlayedHand.type}(value=${this.lastPlayedHand.value})` : 'null'}`);
+    clearTrickState(generation = null) {
+        console.log(`[DEBUG clearTrickState] Called with generation=${generation}, current=${this.trickWinGeneration}. trickWinPending=${this.trickWinPending}, lastPlayedHand=${this.lastPlayedHand ? `${this.lastPlayedHand.type}(value=${this.lastPlayedHand.value})` : 'null'}`);
+
+        // If generation is provided, validate it matches current generation
+        if (generation !== null && generation !== this.trickWinGeneration) {
+            console.log(`[DEBUG clearTrickState] Skipping stale clear (generation ${generation} !== ${this.trickWinGeneration})`);
+            return false;
+        }
+
         if (!this.trickWinPending) return false;
 
         this.lastPlayedHand = null;
@@ -956,6 +1009,10 @@ class Room {
         this.playOrder = 0; // Reset play order for new trick
         this.trickWinPending = false;
         this.trickWinner = null;
+        this.trickWinGeneration++; // Increment generation after clearing
+
+        // Clear the timeout from our tracking
+        this.clearTimeout('trickWin');
 
         return true;
     }
