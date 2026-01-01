@@ -707,6 +707,7 @@ class Room {
         if (this.lastPlayedHand) {
             // If we are not in a "free play" state (everyone passed)
             if (!Big2Rules.canBeat(validatedHand, this.lastPlayedHand)) {
+                console.log(`Hand comparison failed: Attempted ${validatedHand.type}(value=${validatedHand.value}, cards=[${validatedHand.cards?.map(c => `${c.rank}${c.suit}(${c.value})`).join(', ')}]) vs lastPlayedHand ${this.lastPlayedHand.type}(value=${this.lastPlayedHand.value}, cards=[${this.lastPlayedHand.cards?.map(c => `${c.rank}${c.suit}(${c.value})`).join(', ')}])`);
                 return { error: 'Hand does not beat the current table' };
             }
         }
@@ -714,6 +715,7 @@ class Room {
         // Move is valid
         player.hand = newPlayerHand; // Update hand
         this.lastPlayedHand = { ...validatedHand, playerId };
+        console.log(`Play accepted: ${player.name} played ${validatedHand.type}(value=${validatedHand.value}, cards=[${validatedHand.cards?.map(c => `${c.rank}${c.suit}(${c.value})`).join(', ')}])`);
         // Record this player's played hand (visible until round ends)
         this.playOrder++; // Increment play order for z-index stacking
         this.playerLastPlayed[playerId] = { type: 'play', ...validatedHand, playerId, timestamp: Date.now(), playOrder: this.playOrder };
