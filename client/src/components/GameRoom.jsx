@@ -513,13 +513,14 @@ const GameRoom = ({ user, socket }) => {
             const canBeat = canBeatWithAnyHand(myHand, gameState.lastPlayedHand);
 
             if (!canBeat) {
-                // Delay to give visual feedback before auto-passing
-                // Longer delay allows players to see the game state before passing
+                // Randomized delay to hide timing information from other players
+                // This prevents opponents from distinguishing auto-pass from manual pass
                 autoPassTriggered.current = true;
+                const randomDelay = 1000 + Math.random() * 2000; // Random delay between 1-3 seconds
                 const timer = setTimeout(() => {
                     socket.emit('pass_turn', { roomId });
                     autoPassTriggered.current = false;
-                }, 1000); // 1 second delay for better visibility
+                }, randomDelay);
                 return () => clearTimeout(timer);
             }
         }
