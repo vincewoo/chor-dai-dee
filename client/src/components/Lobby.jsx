@@ -352,7 +352,7 @@ const Lobby = ({ user, socket, setUser }) => {
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }`}
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
@@ -376,8 +376,9 @@ const Lobby = ({ user, socket, setUser }) => {
                                         voiceContext.isMuted ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700'
                                     }`}
                                     title={voiceContext.isMuted ? 'Unmute' : 'Mute'}
+                                    aria-label={voiceContext.isMuted ? 'Unmute' : 'Mute'}
                                 >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         {voiceContext.isMuted ? (
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                 d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2 2m0-2l-2 2" />
@@ -393,8 +394,9 @@ const Lobby = ({ user, socket, setUser }) => {
                                         voiceContext.isDeafened ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700'
                                     }`}
                                     title={voiceContext.isDeafened ? 'Undeafen' : 'Deafen'}
+                                    aria-label={voiceContext.isDeafened ? 'Undeafen' : 'Deafen'}
                                 >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         {voiceContext.isDeafened ? (
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                 d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
@@ -537,9 +539,9 @@ const Lobby = ({ user, socket, setUser }) => {
 
                             <div className="max-h-48 overflow-y-auto space-y-2">
                                 {joinableRooms.map(room => (
-                                    <div
+                                    <button
                                         key={room.roomId}
-                                        className="border border-gray-300 rounded p-3 hover:bg-gray-50 cursor-pointer transition"
+                                        className="w-full text-left border border-gray-300 rounded p-3 hover:bg-gray-50 cursor-pointer transition"
                                         onClick={() => joinInProgressRoom(room.roomId)}
                                     >
                                         <div className="flex justify-between items-start mb-1">
@@ -554,7 +556,7 @@ const Lobby = ({ user, socket, setUser }) => {
                                         <div className="text-xs text-gray-500 mt-1">
                                             {room.players.filter(p => !p.isBot).map(p => p.name).join(', ')}
                                         </div>
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         </>
@@ -585,9 +587,9 @@ const Lobby = ({ user, socket, setUser }) => {
                                 const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;
 
                                 return (
-                                    <div
+                                    <button
                                         key={game.game_id}
-                                        className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition cursor-pointer"
+                                        className="w-full text-left bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition cursor-pointer"
                                         onClick={() => handleGameClick(game)}
                                     >
                                         <div className="flex items-start justify-between mb-1">
@@ -624,7 +626,7 @@ const Lobby = ({ user, socket, setUser }) => {
                                                 ))}
                                             </div>
                                         </div>
-                                    </div>
+                                    </button>
                                 );
                             })}
                         </div>
