@@ -36,6 +36,16 @@ const BotLogic = {
             decision: null
         } : null;
 
+        // === EARLY EXIT OPTIMIZATIONS ===
+
+        // Quick win: Only 1 card left on free play
+        if (!lastPlayedHand && hand.length === 1 && !isFirstTurn) {
+            if (reasoning) {
+                reasoning.decision = { action: 'play', cards: hand.map(c => `${c.rank}${c.suit}`).join(' '), reason: 'Last card - instant win' };
+            }
+            return captureReasoning ? { cards: hand, reasoning } : hand;
+        }
+
         // Normalize gameContext with defaults
         const ctx = {
             playerCardCounts: gameContext.playerCardCounts || [13, 13, 13],
@@ -48,8 +58,15 @@ const BotLogic = {
         // Analyze what cards are still in play (card counting)
         ctx.cardAnalysis = BotLogic.analyzePlayedCards(hand, ctx.playedCards);
 
-        // Organize hand according to "Poker First" heuristic
-        ctx.handOrganization = BotLogic.organizeHand(hand);
+        // Organize hand according to "Poker First" heuristic (with caching)
+        const handKey = hand.map(c => `${c.rank}${c.suit}`).sort().join(',');
+        if (!gameContext._handOrgCache || gameContext._handOrgCache.key !== handKey) {
+            gameContext._handOrgCache = {
+                key: handKey,
+                organization: BotLogic.organizeHand(hand)
+            };
+        }
+        ctx.handOrganization = gameContext._handOrgCache.organization;
 
         if (reasoning) {
             reasoning.situation = {
@@ -100,6 +117,11 @@ const BotLogic = {
                 };
             }
             return captureReasoning ? { cards: null, reasoning } : null;
+        }
+
+        // Early exit: Only 1 valid move available
+        if (candidates.length === 1 && !captureReasoning) {
+            return candidates[0].cards;
         }
 
         // Consider strategic passing
@@ -549,8 +571,31 @@ const BotLogic = {
         // Define common variables for heuristics
         const minOpponentCards = Math.min(...playerCardCounts);
 
+        // OPTIMIZATION: Pre-filter candidates if too many
+        // Scoring is expensive, so limit to top candidates by value
+        let candidatesToScore = candidates;
+        if (candidates.length > 30) {
+            // Sort by value (lower = better for shedding)
+            const sorted = [...candidates].sort((a, b) => a.value - b.value);
+
+            // Take top 15 lowest + top 15 highest (to cover both shed and force-pass strategies)
+            candidatesToScore = [
+                ...sorted.slice(0, 15),  // 15 lowest
+                ...sorted.slice(-15)     // 15 highest
+            ];
+
+            // Remove duplicates (in case of small candidate sets)
+            const seen = new Set();
+            candidatesToScore = candidatesToScore.filter(m => {
+                const key = m.cards.map(c => `${c.rank}${c.suit}`).join(',');
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
         // Priority Scoring
-        const scoredMoves = candidates.map(move => {
+        const scoredMoves = candidatesToScore.map(move => {
             let score = 0;
             const factors = captureReasoning ? [] : null;
             const isWin = move.cards.length === hand.length;
@@ -850,10 +895,19 @@ const BotLogic = {
         for (const rank in byRank) {
             const cards = byRank[rank];
             if (cards.length >= 2) {
-                for (let i = 0; i < cards.length; i++) {
-                    for (let j = i + 1; j < cards.length; j++) {
-                        moves.push(Big2Rules.validateHand([cards[i], cards[j]]));
+                // OPTIMIZATION: Limit pair generation
+                // For 2 cards: 1 combo, for 3: 3 combos, for 4: 6 combos
+                // Only generate all if <= 3 cards, otherwise pick strategic ones
+                if (cards.length <= 3) {
+                    for (let i = 0; i < cards.length; i++) {
+                        for (let j = i + 1; j < cards.length; j++) {
+                            moves.push(Big2Rules.validateHand([cards[i], cards[j]]));
+                        }
                     }
+                } else {
+                    // 4 cards: pick lowest and highest pairs
+                    moves.push(Big2Rules.validateHand([cards[0], cards[1]])); // Lowest
+                    moves.push(Big2Rules.validateHand([cards[2], cards[3]])); // Highest
                 }
             }
         }
@@ -862,8 +916,15 @@ const BotLogic = {
         for (const rank in byRank) {
             const cards = byRank[rank];
             if (cards.length >= 3) {
-                const tripleCombos = BotLogic.getCombinations(cards, 3);
-                for (const combo of tripleCombos) moves.push(Big2Rules.validateHand(combo));
+                // OPTIMIZATION: For 3 cards = 1 combo, for 4 cards = 4 combos
+                // Just use the direct triple or pick strategic ones
+                if (cards.length === 3) {
+                    moves.push(Big2Rules.validateHand(cards));
+                } else {
+                    // 4 cards: pick lowest triple and highest triple
+                    moves.push(Big2Rules.validateHand([cards[0], cards[1], cards[2]])); // Lowest
+                    moves.push(Big2Rules.validateHand([cards[1], cards[2], cards[3]])); // Highest
+                }
             }
         }
 
@@ -874,11 +935,39 @@ const BotLogic = {
 
             for (const suit in bySuit) {
                 if (bySuit[suit].length >= 5) {
-                    const flushes = BotLogic.getCombinations(bySuit[suit], 5);
-                    flushes.forEach(f => {
-                        const v = Big2Rules.validateHand(f);
-                        if(v && v.type === HAND_TYPES.FLUSH) moves.push(v);
-                    });
+                    // OPTIMIZATION: Limit flush combinations
+                    // Instead of all C(n,5) combinations, pick strategic ones
+                    const suitCards = bySuit[suit].sort((a, b) => a.value - b.value);
+
+                    if (suitCards.length <= 6) {
+                        // For 5-6 cards, generate all (manageable: 1-6 combos)
+                        const flushes = BotLogic.getCombinations(suitCards, 5);
+                        flushes.forEach(f => {
+                            const v = Big2Rules.validateHand(f);
+                            if(v && v.type === HAND_TYPES.FLUSH) moves.push(v);
+                        });
+                    } else {
+                        // For 7+ cards, pick strategic representatives:
+                        // 1. Lowest 5 (shed trash)
+                        // 2. Highest 5 (strongest flush)
+                        // 3. Middle representative (if hand is large)
+                        const lowest5 = suitCards.slice(0, 5);
+                        const highest5 = suitCards.slice(-5);
+
+                        const v1 = Big2Rules.validateHand(lowest5);
+                        if (v1 && v1.type === HAND_TYPES.FLUSH) moves.push(v1);
+
+                        const v2 = Big2Rules.validateHand(highest5);
+                        if (v2 && v2.type === HAND_TYPES.FLUSH) moves.push(v2);
+
+                        // Add one middle option if we have 9+ cards
+                        if (suitCards.length >= 9) {
+                            const mid = Math.floor(suitCards.length / 2);
+                            const middle5 = suitCards.slice(mid - 2, mid + 3);
+                            const v3 = Big2Rules.validateHand(middle5);
+                            if (v3 && v3.type === HAND_TYPES.FLUSH) moves.push(v3);
+                        }
+                    }
                 }
             }
 
@@ -914,15 +1003,32 @@ const BotLogic = {
     getStraightCombinations: (ranks, byRank) => {
         const combinations = [];
         const cardOptions = ranks.map(r => byRank[r] || []);
-        const generate = (idx, current) => {
-            if (idx === ranks.length) { combinations.push([...current]); return; }
-            for (const card of cardOptions[idx]) {
-                current.push(card);
-                generate(idx + 1, current);
-                current.pop();
-            }
-        };
-        generate(0, []);
+
+        // OPTIMIZATION: Instead of generating ALL combinations (exponential),
+        // generate only strategic representatives:
+        // 1. Lowest value (shed trash cards)
+        // 2. Highest value (strongest straight)
+        // This reduces from O(k^5) to O(1) combinations per straight pattern
+
+        // Build lowest combination (prefer lowest suits)
+        const lowest = cardOptions.map(options =>
+            options.reduce((best, curr) => curr.value < best.value ? curr : best)
+        );
+        combinations.push(lowest);
+
+        // Build highest combination (prefer highest suits)
+        const highest = cardOptions.map(options =>
+            options.reduce((best, curr) => curr.value > best.value ? curr : best)
+        );
+
+        // Only add if different from lowest
+        const isSame = lowest.every((card, idx) =>
+            card.rank === highest[idx].rank && card.suit === highest[idx].suit
+        );
+        if (!isSame) {
+            combinations.push(highest);
+        }
+
         return combinations;
     },
 
@@ -931,13 +1037,36 @@ const BotLogic = {
         const triples = Object.keys(byRank).filter(r => byRank[r].length >= 3);
         const pairs = Object.keys(byRank).filter(r => byRank[r].length >= 2);
 
+        // OPTIMIZATION: Instead of generating ALL combinations, pick strategic ones:
+        // - Lowest value triple + pair (shed low cards)
+        // - Highest value triple + pair (strongest full house)
+        // This reduces from O(T×C(3,3)×P×C(2,2)) to O(T×P)
+
         triples.forEach(tRank => {
-            BotLogic.getCombinations(byRank[tRank], 3).forEach(triple => {
+            const tripleCards = byRank[tRank];
+
+            // Pick lowest 3 cards for triple (if exactly 3) or generate both options (if 4)
+            const tripleCombos = tripleCards.length === 3
+                ? [tripleCards]
+                : [tripleCards.slice(0, 3), [tripleCards[0], tripleCards[1], tripleCards[3]]];
+
+            tripleCombos.forEach(triple => {
                 pairs.forEach(pRank => {
                     if (pRank !== tRank) {
-                         BotLogic.getCombinations(byRank[pRank], 2).forEach(pair => {
-                             fullHouses.push([...triple, ...pair]);
-                         });
+                        const pairCards = byRank[pRank];
+
+                        // Pick lowest 2 cards for pair
+                        const pair = pairCards.slice(0, 2);
+                        fullHouses.push([...triple, ...pair]);
+
+                        // If more than 2 cards available, also add highest pair
+                        if (pairCards.length > 2) {
+                            const highPair = pairCards.slice(-2);
+                            const isSame = pair[0].suit === highPair[0].suit && pair[1].suit === highPair[1].suit;
+                            if (!isSame) {
+                                fullHouses.push([...triple, ...highPair]);
+                            }
+                        }
                     }
                 });
             });
