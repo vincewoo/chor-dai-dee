@@ -125,6 +125,7 @@ const GameRoom = ({ user, socket }) => {
     // Post-game state for rematch/lobby flow
     const [readyStatus, setReadyStatus] = useState(null); // { ready: [], notReady: [], host: 'username', allReady: bool }
     const [isReady, setIsReady] = useState(false); // Whether current player clicked Ready
+    const [isSubmitting, setIsSubmitting] = useState(false); // Prevent double-submission of plays/passes
 
     // Voice context for persistent voice across navigation
     const voiceContext = useVoice();
@@ -306,6 +307,7 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('game_update', (state) => {
             setGameState(state);
+            setIsSubmitting(false); // Reset submission state on any game update
             clearTimeout(roomLoadTimeout); // Room exists, clear timeout
         });
 
@@ -324,6 +326,7 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('error', (err) => {
             setError(err);
+            setIsSubmitting(false); // Reset submission state on error
             setTimeout(() => setError(''), 3000);
             // If error is "Room not found", redirect to lobby
             if (err && err.toLowerCase().includes('room not found')) {
@@ -729,19 +732,23 @@ const GameRoom = ({ user, socket }) => {
     };
 
     const playCards = () => {
-        if (selectedCards.length === 0) return;
+        if (selectedCards.length === 0 || isSubmitting) return;
+        setIsSubmitting(true);
 
         // Optimistic update: immediately remove cards from hand for better responsiveness
         const newHand = myHand.filter(card =>
             !selectedCards.some(sc => sc.rank === card.rank && sc.suit === card.suit)
         );
         setMyHand(newHand);
+        const cardsToPlay = [...selectedCards];
         setSelectedCards([]);
 
-        socket.emit('play_card', { roomId, cards: selectedCards });
+        socket.emit('play_card', { roomId, cards: cardsToPlay });
     };
 
     const passTurn = () => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         socket.emit('pass_turn', { roomId });
     };
 

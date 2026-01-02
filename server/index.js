@@ -1259,7 +1259,8 @@ io.on('connection', (socket) => {
 
     socket.on('next_round', ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
-        if (room && room.gameState === 'round_over') {
+        if (room && room.gameState === 'round_over' && !room.roundTransitionInProgress) {
+            room.roundTransitionInProgress = true;
             handleNextRound(room, roomId);
         }
     });

@@ -49,6 +49,7 @@ class Room {
         this.pendingTimeouts = new Map(); // Map of timeout type -> timeout ID
         this.trickWinGeneration = 0; // Generation counter for trick win timeouts
         this.isBotThinking = false; // Flag to prevent multiple bot turn calculations
+        this.roundTransitionInProgress = false; // Flag to prevent multiple next_round calls
     }
 
     addPlayer(player) {
@@ -347,6 +348,10 @@ class Room {
 
     // Replace a bot with a human player
     replaceBot(newPlayer) {
+        // Clear any pending bot move timeout to prevent race conditions
+        this.clearTimeout('botMove');
+        this.isBotThinking = false;
+
         // Find the first bot in the players array
         const botIndex = this.players.findIndex(p => p.isBot);
         if (botIndex === -1) return { error: 'No bots available to replace' };
@@ -550,8 +555,9 @@ class Room {
         // Update activity timestamp
         this.updateActivity();
 
-        // Reset bot thinking flag for new round
+        // Reset bot thinking flag and round transition flag for new round
         this.isBotThinking = false;
+        this.roundTransitionInProgress = false;
 
         this.deck.reset();
         this.deck.shuffle();
