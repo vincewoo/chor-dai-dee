@@ -48,6 +48,7 @@ class Room {
         // Timeout management to prevent race conditions
         this.pendingTimeouts = new Map(); // Map of timeout type -> timeout ID
         this.trickWinGeneration = 0; // Generation counter for trick win timeouts
+        this.isBotThinking = false; // Flag to prevent multiple bot turn calculations
     }
 
     addPlayer(player) {
@@ -549,6 +550,9 @@ class Room {
         // Update activity timestamp
         this.updateActivity();
 
+        // Reset bot thinking flag for new round
+        this.isBotThinking = false;
+
         this.deck.reset();
         this.deck.shuffle();
 
@@ -1025,8 +1029,14 @@ class Room {
 
     // New method to check if current player is bot and play
     checkBotTurn(callback) {
+        // Prevent multiple simultaneous bot turn calculations
+        if (this.isBotThinking) return;
+
         const currentPlayer = this.players[this.currentTurnIndex];
         if (currentPlayer && currentPlayer.isBot && this.gameState === 'playing') {
+            // Set flag to indicate bot is calculating/playing
+            this.isBotThinking = true;
+
             // Determine if first turn of the entire game (round 1 only)
             const everyoneFull = this.players.every(p => p.hand.length === 13);
             const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
@@ -1077,7 +1087,17 @@ class Room {
                     };
                 }
 
-                setTimeout(() => {
+                // Use registerTimeout to ensure we can cancel if needed and don't double-queue
+                const timeoutId = setTimeout(() => {
+                    // Reset thinking flag so next turn can proceed
+                    this.isBotThinking = false;
+
+                    // Double-check it's still this bot's turn and game is playing
+                    // (State might have changed during delay)
+                    if (this.players[this.currentTurnIndex]?.id !== currentPlayer.id || this.gameState !== 'playing') {
+                        return;
+                    }
+
                     if (move) {
                         // Play
                         const res = this.playHand(currentPlayer.id, move);
@@ -1096,14 +1116,18 @@ class Room {
                     } else {
                         // Pass
                         const res = this.passTurn(currentPlayer.id);
-                        callback({
-                            type: 'pass',
-                            playerId: currentPlayer.id,
-                            reasoning: this.lastBotReasoning,
-                            trickWinDelay: res.trickWinDelay || false
-                        });
+                        if (res.success) {
+                            callback({
+                                type: 'pass',
+                                playerId: currentPlayer.id,
+                                reasoning: this.lastBotReasoning,
+                                trickWinDelay: res.trickWinDelay || false
+                            });
+                        }
                     }
                 }, 250); // 250ms delay for realism (reduced from 500ms for better responsiveness)
+
+                this.registerTimeout('botMove', timeoutId);
             };
 
             // Choose bot logic based on settings
@@ -1118,26 +1142,37 @@ class Room {
                     handleBotMove(move, { model: 'PPO-Big2', note: 'Advanced Bot Decision' });
                 }).catch(err => {
                     console.error('Error getting advanced bot move:', err);
+                    // Reset flag on error
+                    this.isBotThinking = false;
+
                     // Fallback to basic bot
                     const result = BotLogic.getBotMove(currentPlayer.hand, this.lastPlayedHand, isFirstTurn, gameContext, this.debugMode);
                     const move = this.debugMode ? result.cards : result;
                     const reasoning = this.debugMode ? result.reasoning : null;
+
+                    // Re-set flag because we are proceeding to handleBotMove
+                    this.isBotThinking = true;
                     handleBotMove(move, reasoning);
                 });
             } else {
-                // Legacy Bot
-                const result = BotLogic.getBotMove(
-                    currentPlayer.hand,
-                    this.lastPlayedHand,
-                    isFirstTurn,
-                    gameContext,
-                    this.debugMode // Pass debug mode flag
-                );
+                try {
+                    // Legacy Bot
+                    const result = BotLogic.getBotMove(
+                        currentPlayer.hand,
+                        this.lastPlayedHand,
+                        isFirstTurn,
+                        gameContext,
+                        this.debugMode // Pass debug mode flag
+                    );
 
-                // Extract move and reasoning based on debug mode
-                const move = this.debugMode ? result.cards : result;
-                const reasoning = this.debugMode ? result.reasoning : null;
-                handleBotMove(move, reasoning);
+                    // Extract move and reasoning based on debug mode
+                    const move = this.debugMode ? result.cards : result;
+                    const reasoning = this.debugMode ? result.reasoning : null;
+                    handleBotMove(move, reasoning);
+                } catch (e) {
+                    console.error('Error in legacy bot move:', e);
+                    this.isBotThinking = false;
+                }
             }
         }
     }
@@ -1241,6 +1276,9 @@ class Room {
         this.lastGameResults = null;
         this.lastRoundResults = null;
         this.postGameReadyPlayers.clear();
+
+        this.clearAllTimeouts();
+        this.isBotThinking = false;
 
         // Clear player hands
         this.players.forEach(p => {
