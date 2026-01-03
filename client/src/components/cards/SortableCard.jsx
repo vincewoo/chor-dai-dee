@@ -1,12 +1,13 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Card from '../Card';
+import { memo } from 'react';
 
 /**
  * Sortable card wrapper component for drag-and-drop functionality
  * Uses @dnd-kit for drag-and-drop handling
  */
-const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamicWidth, dynamicHeight }) => {
+const SortableCard = ({ card, isSelected, onToggle, index, dynamicMargin, dynamicWidth, dynamicHeight }) => {
     const {
         attributes,
         listeners,
@@ -61,7 +62,7 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamic
                 rank={card.rank}
                 suit={card.suit}
                 selected={isSelected}
-                onClick={onClick}
+                onClick={() => onToggle(card)}
                 index={index}
                 size="xlarge"
                 dynamicWidth={dynamicWidth}
@@ -71,4 +72,4 @@ const SortableCard = ({ card, isSelected, onClick, index, dynamicMargin, dynamic
     );
 };
 
-export default SortableCard;
+export default memo(SortableCard);
