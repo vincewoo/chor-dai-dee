@@ -1471,7 +1471,7 @@ const GameRoom = ({ user, socket }) => {
                                                 key={`${card.rank}-${card.suit}`}
                                                 card={card}
                                                 isSelected={isSelected}
-                                                onClick={() => toggleCard(card)}
+                                                onToggle={toggleCard}
                                                 index={index}
                                                 dynamicMargin={cardDimensions.margin}
                                                 dynamicWidth={cardDimensions.useVmax ? null : cardDimensions.cardWidth}
