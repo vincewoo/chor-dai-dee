@@ -1,5 +1,6 @@
 // Client-side utility to check if any hand can beat the current hand
 // This is a simplified version of the server's Big2Rules for auto-pass detection
+import { findEligibleHands, HAND_TYPES as FINDER_HAND_TYPES } from './handFinder.js';
 
 const SUITS = ['D', 'C', 'H', 'S'];
 const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
@@ -168,49 +169,36 @@ const canBeat = (newHand, oldHand) => {
     return false;
 };
 
-// Generate all combinations of size k from array
-const combinations = (arr, k) => {
-    if (k === 0) return [[]];
-    if (arr.length < k) return [];
-
-    const result = [];
-    const combine = (start, combo) => {
-        if (combo.length === k) {
-            result.push([...combo]);
-            return;
-        }
-        for (let i = start; i < arr.length; i++) {
-            combo.push(arr[i]);
-            combine(i + 1, combo);
-            combo.pop();
-        }
-    };
-    combine(0, []);
-    return result;
-};
-
 // Check if any valid hand from playerHand can beat lastPlayedHand
+// Optimized to use constructive search instead of brute-force combinations
 export const canBeatWithAnyHand = (playerHand, lastPlayedHand) => {
     if (!lastPlayedHand || !playerHand || playerHand.length === 0) return true;
 
-    const handWithValues = ensureCardValues(playerHand);
     const cardCount = lastPlayedHand.cards.length;
 
-    // Generate all combinations of the same size
-    const allCombos = combinations(handWithValues, cardCount);
+    // Types to check depends on card count
+    let typesToCheck = [];
 
-    // Validate the last played hand to get its type and value
-    const lastHandValidated = {
-        type: lastPlayedHand.type,
-        value: lastPlayedHand.value
-    };
+    if (cardCount === 1) typesToCheck = [FINDER_HAND_TYPES.SINGLE];
+    else if (cardCount === 2) typesToCheck = [FINDER_HAND_TYPES.PAIR];
+    else if (cardCount === 3) typesToCheck = [FINDER_HAND_TYPES.TRIPLE];
+    else if (cardCount === 5) {
+        // For 5 cards, check all 5-card types.
+        // findEligibleHands handles the logic of checking if the found hand actually beats lastPlayedHand
+        // (including type superiority e.g. Flush > Straight)
+        typesToCheck = [
+            FINDER_HAND_TYPES.STRAIGHT,
+            FINDER_HAND_TYPES.FLUSH,
+            FINDER_HAND_TYPES.FULL_HOUSE,
+            FINDER_HAND_TYPES.QUADS,
+            FINDER_HAND_TYPES.STRAIGHT_FLUSH
+        ];
+    }
 
-    // Check if any combination can beat the last hand
-    for (const combo of allCombos) {
-        const validated = validateHand(combo);
-        if (validated && canBeat(validated, lastHandValidated)) {
-            return true;
-        }
+    for (const type of typesToCheck) {
+        // findEligibleHands checks for hands of 'type' that can beat 'lastPlayedHand'
+        const eligible = findEligibleHands(playerHand, lastPlayedHand, type);
+        if (eligible.length > 0) return true;
     }
 
     return false;
