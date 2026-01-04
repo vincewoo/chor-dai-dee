@@ -143,7 +143,7 @@ const ActivityFeed = ({ serverUrl }) => {
                                     <span>{getPlacementEmoji(p.placement)}</span>
                                     <span className={p.isBot ? 'text-gray-500 italic' : 'text-gray-300'}>
                                         {p.username}
-                                        {p.isBot && ' (Bot)'}
+                                        {p.isBot ? ' (Bot)' : ''}
                                     </span>
                                 </div>
                                 <span className="text-gray-400">{p.score} pts</span>
