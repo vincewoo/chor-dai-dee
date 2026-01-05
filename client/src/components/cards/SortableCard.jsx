@@ -7,7 +7,7 @@ import { memo } from 'react';
  * Sortable card wrapper component for drag-and-drop functionality
  * Uses @dnd-kit for drag-and-drop handling
  */
-const SortableCard = ({ card, isSelected, onToggle, index, dynamicMargin, dynamicWidth, dynamicHeight }) => {
+const SortableCard = ({ card, isSelected, onToggle, index, dynamicMargin, dynamicWidth, dynamicHeight, isDesktop }) => {
     const {
         attributes,
         listeners,
@@ -67,6 +67,7 @@ const SortableCard = ({ card, isSelected, onToggle, index, dynamicMargin, dynami
                 size="xlarge"
                 dynamicWidth={dynamicWidth}
                 dynamicHeight={dynamicHeight}
+                isDesktop={isDesktop}
             />
         </div>
     );

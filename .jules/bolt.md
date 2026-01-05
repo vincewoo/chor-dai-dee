@@ -1,0 +1,3 @@
+## 2025-02-14 - Responsive Card Rendering Optimization
+**Learning:** React components that render both mobile and desktop layouts (hiding one with CSS) significantly increase DOM node count, especially when the component is repeated many times (like cards in a hand). Conditionally rendering based on viewport size (via JS) reduces this overhead.
+**Action:** When optimizing components with distinct responsive layouts, prefer conditional JS rendering over CSS display toggling if the component is heavy or frequent. Ensure `React.memo` comparison functions are updated to include the responsive state prop (e.g., `isDesktop`).
