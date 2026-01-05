@@ -1476,6 +1476,7 @@ const GameRoom = ({ user, socket }) => {
                                                 dynamicMargin={cardDimensions.margin}
                                                 dynamicWidth={cardDimensions.useVmax ? null : cardDimensions.cardWidth}
                                                 dynamicHeight={cardDimensions.useVmax ? null : cardDimensions.cardHeight}
+                                                isDesktop={isDesktop}
                                             />
                                         );
                                     })}

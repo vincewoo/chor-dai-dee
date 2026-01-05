@@ -10,7 +10,8 @@ export const areCardPropsEqual = (prevProps, nextProps) => {
         prevProps.index === nextProps.index &&
         prevProps.forceTraditionalColors === nextProps.forceTraditionalColors &&
         prevProps.dynamicWidth === nextProps.dynamicWidth &&
-        prevProps.dynamicHeight === nextProps.dynamicHeight
+        prevProps.dynamicHeight === nextProps.dynamicHeight &&
+        prevProps.isDesktop === nextProps.isDesktop
         // We intentionally ignore onClick to allow memoization even if the handler identity changes
         // This is safe because the action (toggle selection) depends only on the card's identity
     );
