@@ -103,14 +103,18 @@ const cartesianProduct = (arrays) => {
 };
 
 // Find all valid hands of a specific type that can beat the current hand
-export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
+// Added limit parameter to optimize "check existence" calls
+export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = Infinity) => {
     if (!playerHand || playerHand.length === 0) return [];
 
     const handWithValues = ensureCardValues(playerHand);
     const eligibleHands = [];
 
     // Helper to add hand if valid and beats lastPlayedHand
+    // Returns true if added, false otherwise
     const addIfValid = (cards, type) => {
+        if (eligibleHands.length >= limit) return false;
+
         const sorted = sortCards(cards);
         let value;
 
@@ -149,35 +153,48 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
         if (lastPlayedHand) {
             if (canBeat(handObj, lastPlayedHand)) {
                 eligibleHands.push(handObj);
+                return true;
             }
         } else {
             eligibleHands.push(handObj);
+            return true;
         }
+        return false;
     };
 
     switch (handType) {
         case HAND_TYPES.SINGLE: {
-            handWithValues.forEach(card => addIfValid([card], HAND_TYPES.SINGLE));
+            for (const card of handWithValues) {
+                if (addIfValid([card], HAND_TYPES.SINGLE) && eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.PAIR: {
             const rankGroups = groupCardsByRank(handWithValues);
-            Object.values(rankGroups).forEach(group => {
+            const groups = Object.values(rankGroups);
+            for (const group of groups) {
                 if (group.length >= 2) {
                     const combos = combinations(group, 2);
-                    combos.forEach(combo => addIfValid(combo, HAND_TYPES.PAIR));
+                    for (const combo of combos) {
+                        if (addIfValid(combo, HAND_TYPES.PAIR) && eligibleHands.length >= limit) break;
+                    }
                 }
-            });
+                if (eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.TRIPLE: {
             const rankGroups = groupCardsByRank(handWithValues);
-            Object.values(rankGroups).forEach(group => {
+            const groups = Object.values(rankGroups);
+            for (const group of groups) {
                 if (group.length >= 3) {
                     const combos = combinations(group, 3);
-                    combos.forEach(combo => addIfValid(combo, HAND_TYPES.TRIPLE));
+                    for (const combo of combos) {
+                        if (addIfValid(combo, HAND_TYPES.TRIPLE) && eligibleHands.length >= limit) break;
+                    }
                 }
-            });
+                if (eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.QUADS: {
@@ -193,16 +210,17 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
                 }
             });
 
-            quads.forEach(quad => {
+            for (const quad of quads) {
                 const kickers = [...others];
-                quads.forEach(otherQuad => {
+                for (const otherQuad of quads) {
                     if (otherQuad !== quad) kickers.push(...otherQuad);
-                });
+                }
 
-                kickers.forEach(kicker => {
-                    addIfValid([...quad, kicker], HAND_TYPES.QUADS);
-                });
-            });
+                for (const kicker of kickers) {
+                    if (addIfValid([...quad, kicker], HAND_TYPES.QUADS) && eligibleHands.length >= limit) break;
+                }
+                if (eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.FULL_HOUSE: {
@@ -233,22 +251,28 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
                 return aRankIndex - bRankIndex;
             });
 
-            triples.forEach(triple => {
-                pairs.forEach(pair => {
+            for (const triple of triples) {
+                for (const pair of pairs) {
                     if (triple.rank !== pair.rank) {
-                        addIfValid([...triple.cards, ...pair.cards], HAND_TYPES.FULL_HOUSE);
+                        if (addIfValid([...triple.cards, ...pair.cards], HAND_TYPES.FULL_HOUSE) && eligibleHands.length >= limit) break;
                     }
-                });
-            });
+                }
+                if (eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.FLUSH: {
             const suitGroups = groupCardsBySuit(handWithValues);
-            Object.values(suitGroups).forEach(group => {
+            const groups = Object.values(suitGroups);
+            for (const group of groups) {
                 if (group.length >= 5) {
-                    combinations(group, 5).forEach(combo => addIfValid(combo, HAND_TYPES.FLUSH));
+                    const combos = combinations(group, 5);
+                    for (const combo of combos) {
+                        if (addIfValid(combo, HAND_TYPES.FLUSH) && eligibleHands.length >= limit) break;
+                    }
                 }
-            });
+                if (eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.STRAIGHT: {
@@ -274,23 +298,29 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
                 sequences.push(['3', '4', '5', '6', '2']);
             }
 
-            sequences.forEach(seq => {
+            for (const seq of sequences) {
                  const groups = seq.map(r => rankGroups[r]);
                  const combos = cartesianProduct(groups);
-                 combos.forEach(combo => addIfValid(combo, HAND_TYPES.STRAIGHT));
-            });
+                 for (const combo of combos) {
+                     if (addIfValid(combo, HAND_TYPES.STRAIGHT) && eligibleHands.length >= limit) break;
+                 }
+                 if (eligibleHands.length >= limit) break;
+            }
             break;
         }
         case HAND_TYPES.STRAIGHT_FLUSH: {
              const suitGroups = groupCardsBySuit(handWithValues);
-             Object.values(suitGroups).forEach(group => {
+             const groups = Object.values(suitGroups);
+             for (const group of groups) {
                  if (group.length >= 5) {
+                     // Do not limit inner search: max straights in a suit is small (~10), and limiting could miss winning hands
                      const subHand = findEligibleHands(group, null, HAND_TYPES.STRAIGHT);
-                     subHand.forEach(h => {
-                         addIfValid(h.cards, HAND_TYPES.STRAIGHT_FLUSH);
-                     });
+                     for (const h of subHand) {
+                         if (addIfValid(h.cards, HAND_TYPES.STRAIGHT_FLUSH) && eligibleHands.length >= limit) break;
+                     }
                  }
-             });
+                 if (eligibleHands.length >= limit) break;
+             }
              break;
         }
     }
@@ -325,11 +355,17 @@ export const findAvailableHandTypes = (playerHand, lastPlayedHand) => {
     for (const { type, count } of handTypesToCheck) {
         if (requiredCount !== null && count !== requiredCount) continue;
 
-        const eligibleHands = findEligibleHands(handWithValues, lastPlayedHand, type);
-        if (eligibleHands.length > 0) {
+        // Optimization: Limit to 100 hands.
+        // This prevents generating thousands of combinations (e.g. Flush) just to show a button.
+        // 100 is enough for the user to cycle through (UX-wise).
+        const limit = 100;
+        const hands = findEligibleHands(handWithValues, lastPlayedHand, type, limit);
+
+        if (hands.length > 0) {
             availableTypes.push({
                 type,
-                count: eligibleHands.length,
+                // Return number so UI logic (count > 1) works correctly.
+                count: hands.length,
                 displayName: type.replace(/_/g, ' ')
             });
         }
