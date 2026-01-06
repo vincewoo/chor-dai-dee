@@ -213,10 +213,24 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType) => {
             Object.values(rankGroups).forEach(group => {
                 if (group.length >= 3) {
                     combinations(group, 3).forEach(c => triples.push({ cards: c, rank: group[0].rank }));
-                    combinations(group, 2).forEach(c => pairs.push({ cards: c, rank: group[0].rank }));
+                    // Pairs from triples are added but will be deprioritized
+                    combinations(group, 2).forEach(c => pairs.push({ cards: c, rank: group[0].rank, fromTriple: true }));
                 } else if (group.length === 2) {
-                    pairs.push({ cards: group, rank: group[0].rank });
+                    pairs.push({ cards: group, rank: group[0].rank, fromTriple: false });
                 }
+            });
+
+            // Sort pairs: non-triple pairs first (sorted by rank), then triple-derived pairs (sorted by rank)
+            // Within each group, sort by lowest rank value first
+            pairs.sort((a, b) => {
+                // First priority: prefer pairs NOT from triples
+                if (a.fromTriple !== b.fromTriple) {
+                    return a.fromTriple ? 1 : -1;
+                }
+                // Second priority: prefer lower rank pairs
+                const aRankIndex = RANKS.indexOf(a.rank);
+                const bRankIndex = RANKS.indexOf(b.rank);
+                return aRankIndex - bRankIndex;
             });
 
             triples.forEach(triple => {
