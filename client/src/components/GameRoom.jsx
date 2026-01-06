@@ -516,14 +516,24 @@ const GameRoom = ({ user, socket }) => {
             const canBeat = canBeatWithAnyHand(myHand, gameState.lastPlayedHand);
 
             if (!canBeat) {
-                // Randomized delay to hide timing information from other players
-                // This prevents opponents from distinguishing auto-pass from manual pass
                 autoPassTriggered.current = true;
-                const randomDelay = 1000 + Math.random() * 2000; // Random delay between 1-3 seconds
+
+                // Check if there are other human players
+                const otherHumanPlayers = gameState.players?.filter(
+                    p => !p.isBot && p.id !== myPlayerId
+                ) || [];
+
+                // Use randomized delay only when playing against humans
+                // This prevents opponents from distinguishing auto-pass from manual pass
+                // With only bots, use a short delay for better UX
+                const delay = otherHumanPlayers.length > 0
+                    ? 1000 + Math.random() * 2000  // 1-3 seconds for human opponents
+                    : 300;                          // 300ms for bot-only games
+
                 const timer = setTimeout(() => {
                     socket.emit('pass_turn', { roomId });
                     autoPassTriggered.current = false;
-                }, randomDelay);
+                }, delay);
                 return () => clearTimeout(timer);
             }
         }
