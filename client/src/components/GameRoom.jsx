@@ -119,7 +119,6 @@ const GameRoom = ({ user, socket }) => {
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
-    const [voiceAudioLevels, setVoiceAudioLevels] = useState({}); // Track audio levels for voice indicators
     const [voiceState, setVoiceState] = useState(null); // Voice state from VoiceChat component
 
     // Post-game state for rematch/lobby flow
@@ -129,16 +128,11 @@ const GameRoom = ({ user, socket }) => {
 
     // Voice context for persistent voice across navigation
     const voiceContext = useVoice();
+    // Use audio levels directly from context to avoid double renders
+    const { audioLevels: voiceAudioLevels } = voiceContext;
 
     // Track voice user count for non-connected users to see who's in voice
     const [voiceUserCount, setVoiceUserCount] = useState(0);
-
-    // Debug callback for voice levels
-    const handleVoiceAudioLevels = useCallback((levels) => {
-        // Removed verbose logging for cleaner console
-        setVoiceAudioLevels(levels);
-        // Check if players match - removed verbose logging
-    }, [gameState]);
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
@@ -867,7 +861,6 @@ const GameRoom = ({ user, socket }) => {
                 roomId={roomId}
                 username={user?.username}
                 players={gameState?.players || []}
-                onAudioLevelsChange={handleVoiceAudioLevels}
                 onVoiceStateChange={setVoiceState}
             />
             {/* Top Bar */}

@@ -73,13 +73,24 @@ export const VoiceProvider = ({ socket, children }) => {
     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
     let animationId = null;
     let errorLogged = false; // Only log error once per monitor session
+    let lastUpdateTime = 0;
+    const THROTTLE_INTERVAL = 100; // Limit updates to ~10fps to reduce re-renders
 
-    const checkLevel = () => {
+    const checkLevel = (timestamp) => {
       if (!analyzersRef.current[userId]) return;
+
+      animationId = requestAnimationFrame(checkLevel);
 
       // Check if AudioContext is suspended and try to resume
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume();
+      }
+
+      // Throttle updates using timestamp from requestAnimationFrame
+      // timestamp is undefined on first call, so we fallback to performance.now()
+      const now = timestamp || performance.now();
+      if (now - lastUpdateTime < THROTTLE_INTERVAL) {
+        return;
       }
 
       try {
@@ -97,17 +108,16 @@ export const VoiceProvider = ({ socket, children }) => {
           [userId]: normalizedLevel
         }));
 
+        lastUpdateTime = now;
         // Reset error flag on successful read
         errorLogged = false;
       } catch (err) {
-        // Only log once to avoid spamming (this runs 60fps)
+        // Only log once to avoid spamming
         if (!errorLogged) {
           console.debug('[VoiceContext] Audio level monitoring paused (context suspended)');
           errorLogged = true;
         }
       }
-
-      animationId = requestAnimationFrame(checkLevel);
     };
 
     checkLevel();
