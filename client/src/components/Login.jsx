@@ -64,7 +64,7 @@ const Login = ({ setUser }) => {
                 {/* Guest Login Button */}
                 <button
                     onClick={handleGuestLogin}
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-bold mb-4 flex items-center justify-center gap-2"
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-bold mb-4 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 >
                     <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
@@ -116,7 +116,7 @@ const Login = ({ setUser }) => {
                             />
                             <button
                                 type="button"
-                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 rounded-full p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                                 onClick={() => setShowPassword(!showPassword)}
                                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                             >
@@ -138,7 +138,7 @@ const Login = ({ setUser }) => {
                         disabled={isLoading}
                         aria-busy={isLoading}
                         aria-disabled={isLoading}
-                        className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold flex justify-center items-center ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                        className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold flex justify-center items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
                     >
                         {isLoading ? (
                             <>
@@ -154,7 +154,10 @@ const Login = ({ setUser }) => {
                     </button>
                 </form>
                 <div className="mt-4 text-center text-sm">
-                    <button onClick={() => setIsRegistering(!isRegistering)} className="text-green-600 hover:underline">
+                    <button
+                        onClick={() => setIsRegistering(!isRegistering)}
+                        className="text-green-600 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 px-2 py-1"
+                    >
                         {isRegistering ? 'Already have an account? Login' : 'Need an account? Register'}
                     </button>
                 </div>
