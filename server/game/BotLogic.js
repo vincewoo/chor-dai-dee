@@ -688,6 +688,337 @@ const BotLogic = {
     },
 
     /**
+     * PHASE 3.2: Multi-step sequence planning (3-5 moves lookahead)
+     * Uses recursive search with pruning to find optimal sequences
+     * @param {Array} hand - Current hand
+     * @param {Object|null} lastPlayedHand - Hand to beat (null if free play)
+     * @param {number} depth - How many moves to look ahead (3-5)
+     * @param {Object} ctx - Game context
+     * @returns {Object} - { sequence: Array<Object>, totalScore: number, winProbability: number }
+     */
+    planMultiMoveSequence: (hand, lastPlayedHand, depth, ctx) => {
+        // Only use for hands with 6-10 cards (too expensive for larger hands, too simple for smaller)
+        if (hand.length > 10 || hand.length <= 5 || depth <= 0) {
+            return null;
+        }
+
+        const cache = new Map();
+
+        const recursivePlan = (currentHand, currentDepth, alpha, beta) => {
+            // Terminal conditions
+            if (currentHand.length === 0) {
+                return { sequence: [], score: 10000, winProbability: 1.0 };
+            }
+
+            if (currentDepth === 0) {
+                // Evaluate terminal position
+                const terminalScore = BotLogic.evaluateTerminalPosition(currentHand, ctx);
+                return { sequence: [], score: terminalScore, winProbability: terminalScore / 1000 };
+            }
+
+            // Check cache
+            const cacheKey = currentHand.map(c => `${c.rank}${c.suit}`).sort().join(',') + `:${currentDepth}`;
+            if (cache.has(cacheKey)) {
+                return cache.get(cacheKey);
+            }
+
+            // Get all valid moves (assuming free play for simplicity in lookahead)
+            const allMoves = BotLogic.getAllValidMoves(currentHand);
+
+            // Prune to top candidates (limit branching factor)
+            const candidateLimit = currentDepth >= 3 ? 8 : 12;
+            const candidates = BotLogic.selectTopCandidates(allMoves, currentHand, candidateLimit);
+
+            let bestPlan = null;
+            let bestScore = -Infinity;
+
+            for (const move of candidates) {
+                // Simulate move
+                const remainingHand = currentHand.filter(card =>
+                    !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+                );
+
+                // Immediate value of this move
+                const immediateValue = BotLogic.evaluateMoveValue(move, currentHand, ctx);
+
+                // Recursive call
+                const futureResult = recursivePlan(remainingHand, currentDepth - 1, alpha, beta);
+
+                // Total score with decay (future moves are less certain)
+                const decayFactor = 0.85;
+                const totalScore = immediateValue + (futureResult.score * decayFactor);
+
+                if (totalScore > bestScore) {
+                    bestScore = totalScore;
+                    bestPlan = {
+                        sequence: [move, ...futureResult.sequence],
+                        score: totalScore,
+                        winProbability: remainingHand.length === 0 ? 1.0 : futureResult.winProbability * 0.9
+                    };
+                }
+
+                // Alpha-beta pruning
+                alpha = Math.max(alpha, totalScore);
+                if (beta <= alpha) {
+                    break; // Beta cutoff
+                }
+            }
+
+            cache.set(cacheKey, bestPlan);
+            return bestPlan || { sequence: [], score: 0, winProbability: 0 };
+        };
+
+        return recursivePlan(hand, Math.min(depth, 4), -Infinity, Infinity);
+    },
+
+    /**
+     * PHASE 3.2: Select top candidates for multi-move planning (pruning)
+     * @param {Array} allMoves - All valid moves
+     * @param {Array} hand - Current hand
+     * @param {number} limit - Max candidates to return
+     * @returns {Array} - Top candidates
+     */
+    selectTopCandidates: (allMoves, hand, limit) => {
+        // Score each move quickly
+        const scored = allMoves.map(move => {
+            let score = 0;
+
+            // Prefer shedding more cards
+            score += move.cards.length * 20;
+
+            // Prefer low value cards
+            score += (100 - move.value);
+
+            // Prefer 5-card hands
+            if (FIVE_CARD_PRIORITY[move.type]) {
+                score += 100;
+            }
+
+            // Prefer moves that empty hand
+            if (move.cards.length === hand.length) {
+                score += 1000;
+            }
+
+            return { move, score };
+        });
+
+        // Sort and return top N
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, limit).map(s => s.move);
+    },
+
+    /**
+     * PHASE 3.2: Evaluate terminal position (leaf node in search tree)
+     * @param {Array} hand - Remaining hand
+     * @param {Object} ctx - Game context
+     * @returns {number} - Score
+     */
+    evaluateTerminalPosition: (hand, ctx) => {
+        if (hand.length === 0) return 10000;
+
+        let score = 0;
+
+        // Fewer cards = better
+        score += (13 - hand.length) * 100;
+
+        // Analyze remaining cards
+        const org = BotLogic.organizeHand(hand);
+
+        // Penalize if cards don't form good combos
+        const validMoves = BotLogic.getAllValidMoves(hand);
+        score += validMoves.length * 10;
+
+        // Bonus if all cards form one combo
+        const allAsCombo = Big2Rules.validateHand(hand);
+        if (allAsCombo) {
+            score += 500;
+        }
+
+        // Bonus for control cards
+        score += org.control.length * 50;
+
+        return score;
+    },
+
+    /**
+     * PHASE 3.2: Evaluate immediate value of a move (for multi-move planning)
+     * @param {Object} move - Move to evaluate
+     * @param {Array} hand - Current hand
+     * @param {Object} ctx - Game context
+     * @returns {number} - Value score
+     */
+    evaluateMoveValue: (move, hand, ctx) => {
+        let value = 0;
+
+        // Shedding value
+        value += move.cards.length * 30;
+
+        // Low card value
+        const avgValue = move.cards.reduce((sum, c) => sum + c.value, 0) / move.cards.length;
+        value += (52 - avgValue);
+
+        // 5-card bonus
+        if (FIVE_CARD_PRIORITY[move.type]) {
+            value += 80;
+        }
+
+        // Win bonus
+        if (move.cards.length === hand.length) {
+            value += 5000;
+        }
+
+        return value;
+    },
+
+    /**
+     * PHASE 3.3: Monte Carlo simulation for move evaluation
+     * Runs random simulations to estimate win probability
+     * @param {Object} move - Move to evaluate
+     * @param {Array} hand - Current hand
+     * @param {Object} ctx - Game context
+     * @param {number} numSimulations - Number of simulations to run (default: 50)
+     * @returns {Object} - { winRate: number, avgPlacement: number, confidence: number }
+     */
+    monteCarloSimulation: (move, hand, ctx, numSimulations = 50) => {
+        const { playerCardCounts, playedCards } = ctx;
+
+        let wins = 0;
+        let totalPlacement = 0;
+
+        for (let i = 0; i < numSimulations; i++) {
+            // Simulate game from this position
+            const result = BotLogic.simulateGame(move, hand, playerCardCounts, playedCards);
+
+            if (result.placement === 1) wins++;
+            totalPlacement += result.placement;
+        }
+
+        return {
+            winRate: wins / numSimulations,
+            avgPlacement: totalPlacement / numSimulations,
+            confidence: Math.min(1.0, numSimulations / 100) // More sims = higher confidence
+        };
+    },
+
+    /**
+     * PHASE 3.3: Simulate a single game from current position
+     * @param {Object} initialMove - Our first move
+     * @param {Array} ourHand - Our current hand
+     * @param {Array} opponentCardCounts - Opponent card counts [next, across, previous]
+     * @param {Array} playedCards - Cards already played
+     * @returns {Object} - { placement: number (1-4), cardsRemaining: number }
+     */
+    simulateGame: (initialMove, ourHand, opponentCardCounts, playedCards) => {
+        // Simulate our hand after initial move
+        let ourSimHand = ourHand.filter(card =>
+            !initialMove.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+        );
+
+        // Distribute unknown cards to opponents
+        const unknownCards = BotLogic.getUnknownCards(ourHand, playedCards);
+        const opponentHands = BotLogic.distributeCardsToOpponents(unknownCards, opponentCardCounts);
+
+        // Simulate game until someone wins
+        let round = 0;
+        const maxRounds = 50; // Prevent infinite loops
+
+        while (round < maxRounds && ourSimHand.length > 0) {
+            // Simulate opponent plays (simplified)
+            for (let i = 0; i < 3; i++) {
+                if (opponentHands[i].length > 0) {
+                    // Opponent plays random valid move or passes
+                    const opponentMoves = BotLogic.getAllValidMoves(opponentHands[i]);
+                    if (opponentMoves.length > 0 && Math.random() < 0.6) {
+                        // Play random move (60% chance)
+                        const randomMove = opponentMoves[Math.floor(Math.random() * opponentMoves.length)];
+                        opponentHands[i] = opponentHands[i].filter(card =>
+                            !randomMove.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+                        );
+
+                        // Check if opponent won
+                        if (opponentHands[i].length === 0) {
+                            // Count how many finished before us
+                            const finishedBefore = opponentHands.filter(h => h.length === 0).length;
+                            return { placement: finishedBefore + 2, cardsRemaining: ourSimHand.length };
+                        }
+                    }
+                }
+            }
+
+            // Our turn - play simplistically
+            const ourMoves = BotLogic.getAllValidMoves(ourSimHand);
+            if (ourMoves.length > 0) {
+                // Play lowest value move
+                const lowMove = ourMoves.reduce((best, curr) =>
+                    curr.value < best.value ? curr : best
+                );
+                ourSimHand = ourSimHand.filter(card =>
+                    !lowMove.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+                );
+
+                if (ourSimHand.length === 0) {
+                    // We won! Count how many finished before us
+                    const finishedBefore = opponentHands.filter(h => h.length === 0).length;
+                    return { placement: finishedBefore + 1, cardsRemaining: 0 };
+                }
+            }
+
+            round++;
+        }
+
+        // Timeout - estimate placement by card count
+        const allHands = [ourSimHand, ...opponentHands];
+        allHands.sort((a, b) => a.length - b.length);
+        const ourIndex = allHands.findIndex(h => h === ourSimHand);
+
+        return { placement: ourIndex + 1, cardsRemaining: ourSimHand.length };
+    },
+
+    /**
+     * PHASE 3.3: Get unknown cards (not in our hand, not played)
+     * @param {Array} ourHand - Our hand
+     * @param {Array} playedCards - Played cards
+     * @returns {Array} - Unknown cards
+     */
+    getUnknownCards: (ourHand, playedCards) => {
+        const allCards = [];
+        for (const rank of RANKS) {
+            for (const suit of SUITS) {
+                const card = { rank, suit, value: RANKS.indexOf(rank) * 4 + SUITS.indexOf(suit) };
+                const inOurHand = ourHand.some(c => c.rank === rank && c.suit === suit);
+                const wasPlayed = playedCards.some(c => c.rank === rank && c.suit === suit);
+                if (!inOurHand && !wasPlayed) {
+                    allCards.push(card);
+                }
+            }
+        }
+        return allCards;
+    },
+
+    /**
+     * PHASE 3.3: Distribute unknown cards to opponents
+     * @param {Array} unknownCards - Cards to distribute
+     * @param {Array} opponentCardCounts - [next, across, previous]
+     * @returns {Array} - [hand1, hand2, hand3]
+     */
+    distributeCardsToOpponents: (unknownCards, opponentCardCounts) => {
+        // Shuffle unknown cards
+        const shuffled = [...unknownCards].sort(() => Math.random() - 0.5);
+
+        const hands = [[], [], []];
+        let cardIndex = 0;
+
+        // Distribute according to card counts
+        for (let i = 0; i < 3; i++) {
+            const count = opponentCardCounts[i];
+            hands[i] = shuffled.slice(cardIndex, cardIndex + count);
+            cardIndex += count;
+        }
+
+        return hands;
+    },
+
+    /**
      * PHASE 2.3: Endgame solver for hands with ≤5 cards
      * Attempts to find guaranteed winning sequence
      * @param {Array} hand - Current hand (must be ≤5 cards)
@@ -995,6 +1326,30 @@ const BotLogic = {
             }
         }
 
+        // PHASE 3.2: Use multi-step planning for mid-game (6-10 cards, free play)
+        if (!lastPlayedHand && hand.length >= 6 && hand.length <= 10 && gamePhase === 'mid') {
+            const multiStepPlan = BotLogic.planMultiMoveSequence(hand, lastPlayedHand, 3, ctx);
+            if (multiStepPlan && multiStepPlan.winProbability > 0.7) {
+                // High win probability sequence found
+                const firstMove = multiStepPlan.sequence[0];
+                if (captureReasoning) {
+                    return {
+                        move: firstMove,
+                        scoredMoves: [{
+                            move: firstMove,
+                            score: 950,
+                            factors: [{
+                                factor: `Multi-Step Plan: ${multiStepPlan.winProbability.toFixed(0)}% win chance`,
+                                points: 950
+                            }]
+                        }],
+                        primaryReason: `3-move sequence with ${(multiStepPlan.winProbability * 100).toFixed(0)}% win probability`
+                    };
+                }
+                return firstMove;
+            }
+        }
+
         // OPTIMIZATION: Pre-filter candidates if too many
         // Scoring is expensive, so limit to top candidates by value
         let candidatesToScore = candidates;
@@ -1114,6 +1469,29 @@ const BotLogic = {
                 if (followUp.followUpMoves < 3 && hand.length > 7) {
                     score -= 80;
                     if (factors) factors.push({ factor: 'Weak Follow-Up Options', points: -80 });
+                }
+            }
+
+            // PHASE 3.1: Add Expected Value component
+            // Calculate EV for critical decisions (late game or close matches)
+            if (gamePhase === 'late' || (gamePhase === 'mid' && hand.length <= 8)) {
+                const ev = BotLogic.calculateExpectedValue(move, hand, lastPlayedHand, ctx);
+                const evBonus = Math.floor(ev / 5); // Scale down to fit with other scoring
+                score += evBonus;
+                if (factors) factors.push({ factor: `Expected Value`, points: evBonus });
+            }
+
+            // PHASE 3.3: Monte Carlo sampling for uncertain positions (optional, expensive)
+            // Only use on free plays in mid-game when decision is unclear
+            if (!lastPlayedHand && gamePhase === 'mid' && hand.length >= 7 && hand.length <= 9) {
+                // Only run MC for top candidates to save time
+                // This would be determined by existing score at this point
+                if (score > 200 || isWin) { // Promising candidate
+                    // Run minimal simulations (20 for speed)
+                    const mcResult = BotLogic.monteCarloSimulation(move, hand, ctx, 20);
+                    const mcBonus = Math.floor(mcResult.winRate * 150);
+                    score += mcBonus;
+                    if (factors) factors.push({ factor: `Monte Carlo (${(mcResult.winRate * 100).toFixed(0)}% win)`, points: mcBonus });
                 }
             }
 
@@ -1585,6 +1963,157 @@ const BotLogic = {
         if (strengthScore >= 40) return 'medium';
         if (strengthScore >= 20) return 'weak';
         return 'very-weak';
+    },
+
+    /**
+     * PHASE 3.1: Calculate Expected Value (EV) of a move
+     * @param {Object} move - The move to evaluate
+     * @param {Array} hand - Current hand
+     * @param {Object|null} lastPlayedHand - Hand to beat
+     * @param {Object} ctx - Game context
+     * @returns {number} - Expected value score
+     */
+    calculateExpectedValue: (move, hand, lastPlayedHand, ctx) => {
+        const { playerCardCounts, cardAnalysis, passInference } = ctx;
+
+        let ev = 0;
+
+        // Component 1: Immediate Card Value (shedding value)
+        // Lower cards = higher value to shed
+        const sheddingValue = move.cards.reduce((sum, card) => {
+            const rankIndex = RANKS.indexOf(card.rank);
+            return sum + (13 - rankIndex) * 5; // 3 = 50pts, 2 = 5pts
+        }, 0);
+        ev += sheddingValue;
+
+        // Component 2: Control Probability × Control Value
+        const controlProb = BotLogic.estimateControlProbability(move, hand, ctx);
+        const controlValue = BotLogic.calculateControlValue(hand, move, ctx);
+        ev += controlProb * controlValue;
+
+        // Component 3: Cost of Using High Cards
+        const cardCost = move.cards.reduce((sum, card) => {
+            let cost = 0;
+            if (card.rank === '2') cost = 100; // Very high cost
+            else if (card.rank === 'A') cost = 50;
+            else if (card.rank === 'K') cost = 30;
+            return sum + cost;
+        }, 0);
+
+        // Discount cost in late game (need to use them eventually)
+        const gamePhase = BotLogic.getGamePhase(hand.length);
+        const costMultiplier = gamePhase === 'late' ? 0.3 : gamePhase === 'mid' ? 0.7 : 1.0;
+        ev -= cardCost * costMultiplier;
+
+        // Component 4: Opponent Response Probability
+        // If opponents likely can't respond, increase EV
+        if (passInference && passInference.opponentsLikelyWeak) {
+            const opponentFailProb = passInference.confidence;
+            ev += opponentFailProb * 80;
+        }
+
+        // Component 5: Win Probability Boost
+        // Moves that lead to likely wins get huge EV boost
+        if (hand.length - move.cards.length <= 3) {
+            const followUp = BotLogic.evaluateFollowUp(move, hand, ctx.handOrganization);
+            if (followUp.canLikelyWin) {
+                ev += 500;
+            }
+        }
+
+        // Component 6: Position Value
+        const positionInfo = BotLogic.evaluatePositionAdvantage(ctx);
+        if (positionInfo.isLastToAct) {
+            // Being last to act increases EV (lower risk)
+            ev += 50;
+        }
+
+        return ev;
+    },
+
+    /**
+     * PHASE 3.1: Estimate probability of regaining control after this move
+     * @param {Object} move - The move being considered
+     * @param {Array} hand - Current hand
+     * @param {Object} ctx - Game context
+     * @returns {number} - Probability (0-1)
+     */
+    estimateControlProbability: (move, hand, ctx) => {
+        const { playerCardCounts, cardAnalysis, passInference } = ctx;
+
+        let probability = 0.5; // Base 50%
+
+        // Factor 1: Move strength
+        // Higher cards = more likely everyone passes
+        if (move.type === HAND_TYPES.SINGLE) {
+            const rankIndex = RANKS.indexOf(move.cards[0].rank);
+            if (rankIndex >= 11) probability += 0.3; // A or 2
+            else if (rankIndex >= 9) probability += 0.15; // K or Q
+            else if (rankIndex <= 4) probability -= 0.2; // Low card
+        } else if (FIVE_CARD_PRIORITY[move.type]) {
+            // 5-card hands are harder to beat
+            const typePriority = FIVE_CARD_PRIORITY[move.type];
+            probability += typePriority * 0.1;
+        }
+
+        // Factor 2: Opponent weakness inference
+        if (passInference && passInference.opponentsLikelyWeak) {
+            probability += passInference.confidence * 0.2;
+        }
+
+        // Factor 3: Card counting
+        // If we have the highest outstanding card, very likely to regain control
+        if (cardAnalysis && cardAnalysis.weHaveHighest) {
+            probability += 0.3;
+        }
+
+        // Factor 4: Opponent card counts
+        // If opponents have many cards, less likely to have strong responses
+        const avgOpponentCards = playerCardCounts.reduce((a, b) => a + b, 0) / 3;
+        if (avgOpponentCards >= 10) {
+            probability += 0.1;
+        }
+
+        return Math.min(1.0, Math.max(0.0, probability));
+    },
+
+    /**
+     * PHASE 3.1: Calculate value of having control
+     * @param {Array} hand - Current hand
+     * @param {Object} move - Move being considered
+     * @param {Object} ctx - Game context
+     * @returns {number} - Value score
+     */
+    calculateControlValue: (hand, move, ctx) => {
+        const { handOrganization } = ctx;
+
+        // Simulate remaining hand
+        const remainingCards = hand.filter(card =>
+            !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+        );
+
+        if (remainingCards.length === 0) {
+            return 1000; // Winning = maximum value
+        }
+
+        let value = 0;
+
+        // Value 1: Can we play strong 5-card hands?
+        const remainingOrg = BotLogic.organizeHand(remainingCards);
+        value += remainingOrg.fiveCardHands.length * 150;
+
+        // Value 2: Can we dump trash?
+        value += remainingOrg.trash.length * 30;
+
+        // Value 3: Close to winning
+        if (remainingCards.length <= 5) {
+            value += 200;
+        }
+
+        // Value 4: Have control cards remaining
+        value += remainingOrg.control.length * 40;
+
+        return value;
     },
 
     /**
