@@ -6,7 +6,6 @@ const VoiceChat = ({
   roomId,
   username,
   players,
-  onAudioLevelsChange,
   onVoiceStateChange
 }) => {
   const [showVolumeControls, setShowVolumeControls] = useState(false);
@@ -29,15 +28,6 @@ const VoiceChat = ({
 
   // Store stable callback refs to avoid infinite loops
   const callbacksRef = useRef({});
-
-  // Pass audio levels to parent component for voice indicators
-  useEffect(() => {
-    if (Object.keys(audioLevels).length > 0 && Object.values(audioLevels).some(level => level > 0.1)) {
-      if (onAudioLevelsChange) {
-        onAudioLevelsChange(audioLevels);
-      }
-    }
-  }, [audioLevels, onAudioLevelsChange]);
 
   // Handle voice toggle
   const handleVoiceToggle = useCallback(async () => {
