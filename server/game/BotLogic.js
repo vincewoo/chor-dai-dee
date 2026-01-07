@@ -58,6 +58,9 @@ const BotLogic = {
         // Analyze what cards are still in play (card counting)
         ctx.cardAnalysis = BotLogic.analyzePlayedCards(hand, ctx.playedCards);
 
+        // PHASE 1.2: Infer opponent weaknesses from passes
+        ctx.passInference = BotLogic.inferFromPasses(lastPlayedHand, ctx.passCount, hand, ctx.playedCards);
+
         // Organize hand according to "Poker First" heuristic (with caching)
         const handKey = hand.map(c => `${c.rank}${c.suit}`).sort().join(',');
         if (!gameContext._handOrgCache || gameContext._handOrgCache.key !== handKey) {
@@ -144,6 +147,8 @@ const BotLogic = {
         }
 
         // Apply strategic selection
+        // PHASE 1.3: Pass all valid moves for flexibility calculation
+        ctx.allValidMoves = validMoves;
         const selectionResult = BotLogic.selectBestMove(candidates, hand, lastPlayedHand, isFirstTurn, ctx, captureReasoning);
         const selectedMove = captureReasoning ? selectionResult.move : selectionResult;
 
@@ -460,6 +465,47 @@ const BotLogic = {
     },
 
     /**
+     * Evaluate position advantage based on turn order and who played last
+     * @param {Object} ctx - Game context
+     * @returns {Object} - { isLastToAct, positionAdvantage, canPlayFreely }
+     */
+    evaluatePositionAdvantage: (ctx) => {
+        const { passedPlayers, lastPlayedByRelative } = ctx;
+
+        // Check if we're last to act (all other players have passed)
+        const isLastToAct = passedPlayers && passedPlayers.length === 3;
+
+        // Calculate position advantage score
+        let positionAdvantage = 0;
+
+        if (isLastToAct) {
+            // Being last is powerful - we know everyone else passed
+            positionAdvantage = 150;
+        } else if (lastPlayedByRelative !== null) {
+            // Calculate how many players act after us
+            // If lastPlayedByRelative = 1 (next player), then next player goes after us
+            // If lastPlayedByRelative = 3 (previous player), they just played, we're first
+
+            if (lastPlayedByRelative === 3) {
+                // Previous player just played, we're first to respond (weak position)
+                positionAdvantage = -30;
+            } else if (lastPlayedByRelative === 1) {
+                // Next player played, we're last or second-to-last (strong position)
+                positionAdvantage = 50;
+            } else {
+                // Across player played, we're in middle position
+                positionAdvantage = 0;
+            }
+        }
+
+        return {
+            isLastToAct,
+            positionAdvantage,
+            canPlayFreely: isLastToAct // Can play more aggressively if last
+        };
+    },
+
+    /**
      * Evaluate if we have strong follow-up plays after taking the lead
      * @param {Object} handOrganization - Organized hand structure
      * @param {Array} hand - Current cards in hand
@@ -480,6 +526,39 @@ const BotLogic = {
         if (hand.length <= 3) return true;
 
         return false;
+    },
+
+    /**
+     * PHASE 1.3: Calculate flexibility score for cards in a move
+     * Cards that appear in more combos are more flexible and should be preserved
+     * @param {Array} moveCards - Cards in the proposed move
+     * @param {Array} hand - Current hand
+     * @param {Array} allMoves - All possible valid moves
+     * @returns {number} - Flexibility score (lower = more rigid, higher = more flexible)
+     */
+    calculateCardFlexibility: (moveCards, hand, allMoves) => {
+        let totalFlexibility = 0;
+
+        // For each card in the move, count how many different combos it appears in
+        moveCards.forEach(moveCard => {
+            let comboCount = 0;
+
+            // Count how many moves include this card
+            allMoves.forEach(move => {
+                const cardInMove = move.cards.some(c =>
+                    c.rank === moveCard.rank && c.suit === moveCard.suit
+                );
+                if (cardInMove) comboCount++;
+            });
+
+            // Add to total flexibility
+            // Cards in many combos = high flexibility (we want to keep these)
+            // Cards in few combos = low flexibility (we can play these)
+            totalFlexibility += comboCount;
+        });
+
+        // Average flexibility per card
+        return totalFlexibility / moveCards.length;
     },
 
     /**
@@ -506,6 +585,217 @@ const BotLogic = {
         }
 
         return { canWin: false, move: null };
+    },
+
+    /**
+     * PHASE 2.2: Evaluate follow-up strength after playing a move
+     * Simulates what cards remain and evaluates their playability
+     * @param {Object} move - The move being considered
+     * @param {Array} hand - Current hand
+     * @param {Object} handOrganization - Current hand organization
+     * @returns {Object} - { followUpScore: number, canLikelyWin: boolean, followUpMoves: number }
+     */
+    evaluateFollowUp: (move, hand, handOrganization) => {
+        // Simulate remaining hand after playing this move
+        const remainingCards = hand.filter(card =>
+            !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+        );
+
+        if (remainingCards.length === 0) {
+            return { followUpScore: 1000, canLikelyWin: true, followUpMoves: 0 };
+        }
+
+        // Get all valid moves from remaining hand
+        const followUpMoves = BotLogic.getAllValidMoves(remainingCards);
+        const followUpOrg = BotLogic.organizeHand(remainingCards);
+
+        let followUpScore = 0;
+
+        // Score based on follow-up strength
+        // 1. Do we have strong 5-card hands remaining?
+        followUpScore += followUpOrg.fiveCardHands.length * 80;
+
+        // 2. Do we have pairs remaining?
+        followUpScore += followUpOrg.pairs.length * 30;
+
+        // 3. Do we have control cards (2s, As) remaining?
+        followUpScore += followUpOrg.control.length * 40;
+
+        // 4. How many valid moves do we have?
+        const moveDensity = followUpMoves.length / Math.max(1, remainingCards.length);
+        followUpScore += moveDensity * 20;
+
+        // 5. Card count factor (fewer = closer to winning)
+        if (remainingCards.length <= 3) {
+            followUpScore += 100;
+        } else if (remainingCards.length <= 6) {
+            followUpScore += 50;
+        }
+
+        // Check if we can likely win from this position
+        const canLikelyWin =
+            remainingCards.length <= 2 ||
+            (remainingCards.length <= 5 && followUpOrg.control.length >= 1) ||
+            followUpOrg.fiveCardHands.length >= 1;
+
+        return {
+            followUpScore,
+            canLikelyWin,
+            followUpMoves: followUpMoves.length
+        };
+    },
+
+    /**
+     * PHASE 2.2: Plan a winning sequence (2-move lookahead)
+     * @param {Array} candidates - Candidate moves
+     * @param {Array} hand - Current hand
+     * @param {Object} handOrganization - Hand organization
+     * @returns {Object} - { move: Object, sequenceScore: number, plan: string }
+     */
+    plan2MoveSequence: (candidates, hand, handOrganization) => {
+        let bestSequence = null;
+        let bestScore = -Infinity;
+
+        for (const move of candidates) {
+            const followUp = BotLogic.evaluateFollowUp(move, hand, handOrganization);
+
+            // Calculate sequence score
+            let sequenceScore = followUp.followUpScore;
+
+            // Bonus if this leads to likely win
+            if (followUp.canLikelyWin) {
+                sequenceScore += 200;
+            }
+
+            // Penalty for moves that leave us with no good options
+            if (followUp.followUpMoves < 3 && hand.length > 5) {
+                sequenceScore -= 100;
+            }
+
+            if (sequenceScore > bestScore) {
+                bestScore = sequenceScore;
+                bestSequence = {
+                    move,
+                    sequenceScore,
+                    followUpScore: followUp.followUpScore,
+                    canLikelyWin: followUp.canLikelyWin,
+                    plan: `Play ${move.type}, ${hand.length - move.cards.length} cards remain, ${followUp.followUpMoves} follow-up moves`
+                };
+            }
+        }
+
+        return bestSequence;
+    },
+
+    /**
+     * PHASE 2.3: Endgame solver for hands with ≤5 cards
+     * Attempts to find guaranteed winning sequence
+     * @param {Array} hand - Current hand (must be ≤5 cards)
+     * @param {Object|null} lastPlayedHand - Hand to beat
+     * @param {Object} ctx - Game context
+     * @returns {Object|null} - { move, guaranteedWin: boolean } or null if no guaranteed win
+     */
+    solveEndgame: (hand, lastPlayedHand, ctx) => {
+        if (hand.length > 5) return null;
+
+        const { playerCardCounts } = ctx;
+
+        // Get all valid moves
+        const allMoves = BotLogic.getAllValidMoves(hand);
+
+        // Filter candidates
+        let candidates = lastPlayedHand
+            ? allMoves.filter(m => Big2Rules.canBeat(m, lastPlayedHand))
+            : allMoves;
+
+        if (candidates.length === 0) return null;
+
+        // Try to find a guaranteed winning sequence
+        for (const move of candidates) {
+            const remainingCards = hand.filter(card =>
+                !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+            );
+
+            // If this empties our hand, we win!
+            if (remainingCards.length === 0) {
+                return { move, guaranteedWin: true, reason: 'Empties hand - instant win' };
+            }
+
+            // If remaining cards can all be played as one hand
+            const remainingAsMove = Big2Rules.validateHand(remainingCards);
+            if (remainingAsMove) {
+                // We can play all remaining cards next turn
+                // This guarantees win if:
+                // 1. We'll have free play (everyone passes on our current move)
+                // 2. Or remaining hand is so strong no one can beat it
+
+                const isUnbeatable =
+                    remainingAsMove.type === HAND_TYPES.STRAIGHT_FLUSH ||
+                    (remainingAsMove.type === HAND_TYPES.QUADS) ||
+                    (remainingAsMove.cards.some(c => c.rank === '2' && c.suit === 'S'));
+
+                if (isUnbeatable || remainingCards.length <= 2) {
+                    return {
+                        move,
+                        guaranteedWin: true,
+                        reason: `2-move win: Play ${move.type}, then play ${remainingAsMove.type}`
+                    };
+                }
+            }
+
+            // Check if remaining cards give us total control
+            // (all high cards that opponents can't beat)
+            if (remainingCards.length <= 2) {
+                const allHigh = remainingCards.every(c =>
+                    ['A', '2'].includes(c.rank)
+                );
+                if (allHigh) {
+                    return {
+                        move,
+                        guaranteedWin: true,
+                        reason: 'Remaining cards are all control (A/2)'
+                    };
+                }
+            }
+        }
+
+        // No guaranteed win found, but return best move for endgame
+        // Prefer moves that give us the most powerful remaining hand
+        let bestMove = null;
+        let bestRemainingPower = -Infinity;
+
+        for (const move of candidates) {
+            const remainingCards = hand.filter(card =>
+                !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
+            );
+
+            // Calculate power of remaining cards
+            let power = 0;
+
+            remainingCards.forEach(card => {
+                const rankIndex = RANKS.indexOf(card.rank);
+                power += rankIndex * 10;
+
+                if (card.rank === '2') power += 100;
+                if (card.rank === 'A') power += 50;
+            });
+
+            // Prefer fewer cards
+            power += (5 - remainingCards.length) * 30;
+
+            // Check if remaining forms valid combo
+            const remainingAsMove = Big2Rules.validateHand(remainingCards);
+            if (remainingAsMove) {
+                power += 200; // Big bonus for valid combo
+            }
+
+            if (power > bestRemainingPower) {
+                bestRemainingPower = power;
+                bestMove = move;
+            }
+        }
+
+        return bestMove ? { move: bestMove, guaranteedWin: false } : null;
     },
 
     /**
@@ -652,7 +942,7 @@ const BotLogic = {
      * Enhanced with Game Phase Strategy, Anti-Hoarding, Lead Strength, and One-Trick Win Detection
      */
     selectBestMove: (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}, captureReasoning = false) => {
-        const { playerCardCounts, handOrganization } = ctx;
+        const { playerCardCounts, handOrganization, passInference, allValidMoves } = ctx;
         const nextPlayerCards = playerCardCounts[0];
 
         // "Freeze the Winner" Check
@@ -660,6 +950,12 @@ const BotLogic = {
 
         // Define common variables for heuristics
         const minOpponentCards = Math.min(...playerCardCounts);
+
+        // PHASE 1.1: Evaluate position advantage
+        const positionInfo = BotLogic.evaluatePositionAdvantage(ctx);
+
+        // PHASE 1.2: Get opponent weakness inference (default if not available)
+        const opponentWeakness = passInference || { opponentsLikelyWeak: false, confidence: 0 };
 
         // --- PRIORITY 1: Determine Game Phase ---
         const gamePhase = BotLogic.getGamePhase(hand.length);
@@ -674,6 +970,29 @@ const BotLogic = {
             };
         } else if (winCheck.canWin) {
             return winCheck.move;
+        }
+
+        // PHASE 2.3: Use endgame solver for hands with ≤5 cards
+        if (hand.length <= 5) {
+            const endgameSolution = BotLogic.solveEndgame(hand, lastPlayedHand, ctx);
+            if (endgameSolution) {
+                if (captureReasoning) {
+                    const score = endgameSolution.guaranteedWin ? 999000 : 800;
+                    return {
+                        move: endgameSolution.move,
+                        scoredMoves: [{
+                            move: endgameSolution.move,
+                            score,
+                            factors: [{
+                                factor: endgameSolution.guaranteedWin ? 'ENDGAME SOLVER: Guaranteed Win!' : 'Endgame Solver: Optimal',
+                                points: score
+                            }]
+                        }],
+                        primaryReason: endgameSolution.reason || 'Endgame optimal play'
+                    };
+                }
+                return endgameSolution.move;
+            }
         }
 
         // OPTIMIZATION: Pre-filter candidates if too many
@@ -745,6 +1064,59 @@ const BotLogic = {
             // Max value is around 60 (Straight Flush A-2-3-4-5).
             score += (100 - move.value);
 
+            // PHASE 1.1: Apply position advantage
+            if (positionInfo.isLastToAct && lastPlayedHand) {
+                // Being last to act is powerful - be more aggressive
+                score += positionInfo.positionAdvantage;
+                if (factors) factors.push({ factor: 'Last to Act - Aggressive Play', points: positionInfo.positionAdvantage });
+
+                // Can play slightly higher cards more confidently
+                if (move.type === HAND_TYPES.SINGLE && move.cards[0].rank !== '2') {
+                    score += 30;
+                    if (factors) factors.push({ factor: 'Position Confidence Boost', points: 30 });
+                }
+            } else if (positionInfo.positionAdvantage !== 0) {
+                // Apply general position modifier
+                score += positionInfo.positionAdvantage;
+                const posLabel = positionInfo.positionAdvantage > 0 ? 'Good Position' : 'Weak Position';
+                if (factors) factors.push({ factor: posLabel, points: positionInfo.positionAdvantage });
+            }
+
+            // PHASE 1.3: Calculate and apply flexibility scoring
+            if (allValidMoves && !lastPlayedHand && gamePhase === 'early') {
+                // On free plays in early game, prefer playing rigid cards (low flexibility)
+                const flexibility = BotLogic.calculateCardFlexibility(move.cards, hand, allValidMoves);
+
+                // Lower flexibility = better (play rigid cards first)
+                // Flexibility typically ranges from 1 (only in 1 combo) to 20+ (in many combos)
+                const flexibilityPenalty = Math.min(50, flexibility * 5);
+                score -= flexibilityPenalty;
+                if (factors) factors.push({ factor: `Flexibility (${flexibility.toFixed(1)})`, points: -flexibilityPenalty });
+            }
+
+            // PHASE 2.2: Evaluate follow-up strength (2-move lookahead)
+            if (!lastPlayedHand && hand.length > 5 && !isWin) {
+                // On free plays with more than 5 cards, consider follow-up strength
+                const followUp = BotLogic.evaluateFollowUp(move, hand, handOrganization);
+
+                // Bonus for good follow-up positions
+                const followUpBonus = Math.min(100, followUp.followUpScore / 3);
+                score += followUpBonus;
+                if (factors) factors.push({ factor: `Follow-Up Strength`, points: followUpBonus });
+
+                // Big bonus if this leads to likely win
+                if (followUp.canLikelyWin) {
+                    score += 120;
+                    if (factors) factors.push({ factor: 'Path to Victory', points: 120 });
+                }
+
+                // Penalty if this leaves us with very few options
+                if (followUp.followUpMoves < 3 && hand.length > 7) {
+                    score -= 80;
+                    if (factors) factors.push({ factor: 'Weak Follow-Up Options', points: -80 });
+                }
+            }
+
             // --- PRIORITY 1: Game Phase Strategy ---
             if (gamePhase === 'early') {
                 // Early game: Shed trash, avoid using control cards
@@ -795,12 +1167,40 @@ const BotLogic = {
 
             // --- Leading Strategy (Free Play) ---
             if (!lastPlayedHand) {
+                // PHASE 1.2: If opponents are weak in singles, aggressively lead with singles
+                if (opponentWeakness.opponentsWeakInSingles && move.type === HAND_TYPES.SINGLE) {
+                    const bonus = Math.floor(opponentWeakness.confidence * 100);
+                    score += bonus;
+                    if (factors) factors.push({ factor: 'Opponents Weak in Singles - Exploit', points: bonus });
+                }
+
+                // PHASE 1.2: If opponents weak in pairs, lead with pairs
+                if (opponentWeakness.opponentsWeakInPairs && move.type === HAND_TYPES.PAIR) {
+                    const bonus = Math.floor(opponentWeakness.confidence * 80);
+                    score += bonus;
+                    if (factors) factors.push({ factor: 'Opponents Weak in Pairs - Exploit', points: bonus });
+                }
+
+                // PHASE 1.2: If opponents weak in 5-cards, prefer other plays
+                if (opponentWeakness.opponentsWeakInFiveCards && FIVE_CARD_PRIORITY[move.type]) {
+                    score -= 60;
+                    if (factors) factors.push({ factor: 'Save 5-Card - Opponents Weak', points: -60 });
+                }
+
                 // --- PRIORITY 4: Lead Strength Evaluation ---
                 // Only take lead if we have strong follow-up (except in late game)
+                // PHASE 1.2: But if opponents are likely weak, we can lead more freely
                 if (gamePhase !== 'late' && !BotLogic.hasStrongFollowUp(handOrganization, hand)) {
                     // We have weak follow-up, penalize taking lead
-                    score -= 120;
-                    if (factors) factors.push({ factor: 'Weak Follow-Up: Avoid Leading', points: -120 });
+                    // But reduce penalty if opponents are weak
+                    const penalty = opponentWeakness.opponentsLikelyWeak
+                        ? -60 // Reduced penalty
+                        : -120; // Normal penalty
+                    score += penalty;
+                    const label = opponentWeakness.opponentsLikelyWeak
+                        ? 'Weak Follow-Up (Reduced - Opponents Weak)'
+                        : 'Weak Follow-Up: Avoid Leading';
+                    if (factors) factors.push({ factor: label, points: penalty });
                 }
 
                 // Priority A: 5-Card Hands
@@ -1040,6 +1440,220 @@ const BotLogic = {
 
         analysis.weHaveHighest = highestInHandValue >= highestOutstandingValue;
         return analysis;
+    },
+
+    /**
+     * PHASE 2.1: Create opponent hand model for tracking probabilities
+     * @param {number} opponentIndex - Index of opponent (0=next, 1=across, 2=previous)
+     * @param {number} cardCount - Number of cards opponent has
+     * @returns {Object} - Opponent model
+     */
+    createOpponentModel: (opponentIndex, cardCount) => {
+        return {
+            index: opponentIndex,
+            cardCount: cardCount,
+            possibleCards: new Set([...Array(52).keys()]), // All cards possible initially
+            unlikelyCards: new Set(), // Cards they probably don't have
+            likelyHasPairs: 0.33, // Probability they have pairs
+            likelyHas2s: 0.25, // Probability they have 2s (4 2s / 52 cards / 4 players)
+            likelyHasFiveCardHands: 0.2,
+            passHistory: [], // What they passed on
+            playHistory: [], // What they played
+            aggressionScore: 0.5, // 0=passive, 1=aggressive
+            lastAction: null
+        };
+    },
+
+    /**
+     * PHASE 2.1: Update opponent model based on their action
+     * @param {Object} model - Opponent model
+     * @param {string} action - 'play' or 'pass'
+     * @param {Object} hand - The hand they played (if action=play) or passed on (if action=pass)
+     * @param {Array} myHand - Our current hand
+     * @param {Array} playedCards - All played cards
+     */
+    updateOpponentModel: (model, action, hand, myHand, playedCards) => {
+        model.lastAction = action;
+
+        if (action === 'pass') {
+            model.passHistory.push(hand);
+
+            // Update probabilities based on what they passed on
+            if (hand.type === HAND_TYPES.SINGLE) {
+                const rankIndex = RANKS.indexOf(hand.cards[0].rank);
+
+                // They likely don't have higher singles
+                // Remove cards higher than what they passed on (with 70% confidence)
+                for (let r = rankIndex + 1; r < RANKS.length; r++) {
+                    for (let s = 0; s < 4; s++) {
+                        const cardValue = r * 4 + s;
+                        const cardRank = RANKS[r];
+                        const cardSuit = SUITS[s];
+
+                        // Don't eliminate if in our hand or already played
+                        const inOurHand = myHand.some(c => c.rank === cardRank && c.suit === cardSuit);
+                        const wasPlayed = playedCards.some(c => c.rank === cardRank && c.suit === cardSuit);
+
+                        if (!inOurHand && !wasPlayed) {
+                            model.unlikelyCards.add(cardValue);
+                        }
+                    }
+                }
+
+                // Increase pair probability (they might be holding combos)
+                model.likelyHasPairs = Math.min(0.9, model.likelyHasPairs + 0.1);
+
+            } else if (hand.type === HAND_TYPES.PAIR) {
+                // They likely don't have higher pairs
+                model.likelyHasPairs = Math.max(0.1, model.likelyHasPairs - 0.1);
+
+            } else if ([HAND_TYPES.STRAIGHT, HAND_TYPES.FLUSH, HAND_TYPES.FULL_HOUSE].includes(hand.type)) {
+                // They likely don't have 5-card hands
+                model.likelyHasFiveCardHands = Math.max(0.05, model.likelyHasFiveCardHands - 0.2);
+            }
+
+            // Passing is less aggressive
+            model.aggressionScore = Math.max(0, model.aggressionScore - 0.05);
+
+        } else if (action === 'play') {
+            model.playHistory.push(hand);
+
+            // Update based on what they played
+            if (hand.cards) {
+                // Remove played cards from possible cards
+                hand.cards.forEach(card => {
+                    const cardValue = RANKS.indexOf(card.rank) * 4 + SUITS.indexOf(card.suit);
+                    model.possibleCards.delete(cardValue);
+                });
+
+                // If they played a 2
+                if (hand.cards.some(c => c.rank === '2')) {
+                    model.likelyHas2s = Math.max(0, model.likelyHas2s - 0.25);
+                }
+
+                // If they played a 5-card hand
+                if (hand.cards.length === 5) {
+                    model.likelyHasFiveCardHands = Math.max(0, model.likelyHasFiveCardHands - 0.3);
+                }
+
+                // If they played a pair
+                if (hand.type === HAND_TYPES.PAIR) {
+                    model.likelyHasPairs = Math.max(0, model.likelyHasPairs - 0.15);
+                }
+            }
+
+            // Playing is more aggressive
+            model.aggressionScore = Math.min(1, model.aggressionScore + 0.05);
+        }
+    },
+
+    /**
+     * PHASE 2.1: Estimate opponent hand strength based on model
+     * @param {Object} model - Opponent model
+     * @returns {string} - Strength assessment: 'very-weak', 'weak', 'medium', 'strong', 'very-strong'
+     */
+    estimateOpponentStrength: (model) => {
+        let strengthScore = 50; // Base 50/100
+
+        // Adjust based on card count
+        if (model.cardCount <= 3) {
+            strengthScore += 30; // Very dangerous with few cards
+        } else if (model.cardCount <= 6) {
+            strengthScore += 15;
+        } else if (model.cardCount >= 11) {
+            strengthScore -= 15; // Weak if many cards
+        }
+
+        // Adjust based on probabilities
+        if (model.likelyHas2s > 0.5) strengthScore += 20;
+        if (model.likelyHasFiveCardHands > 0.5) strengthScore += 15;
+        if (model.likelyHasPairs > 0.6) strengthScore += 10;
+
+        // Adjust based on pass history
+        const recentPasses = model.passHistory.slice(-3);
+        const passedOnLowCards = recentPasses.filter(h =>
+            h.type === HAND_TYPES.SINGLE && RANKS.indexOf(h.cards[0].rank) < 7
+        ).length;
+
+        if (passedOnLowCards >= 2) {
+            strengthScore -= 25; // Weak if passing on low cards
+        }
+
+        // Convert to assessment
+        if (strengthScore >= 80) return 'very-strong';
+        if (strengthScore >= 60) return 'strong';
+        if (strengthScore >= 40) return 'medium';
+        if (strengthScore >= 20) return 'weak';
+        return 'very-weak';
+    },
+
+    /**
+     * PHASE 1.2: Infer opponent card probabilities based on pass history
+     * @param {Object} lastPlayedHand - The hand that was passed on
+     * @param {number} passCount - How many players passed
+     * @param {Array} hand - Our current hand
+     * @param {Array} playedCards - Cards already played
+     * @returns {Object} - Inference about opponent hands
+     */
+    inferFromPasses: (lastPlayedHand, passCount, hand, playedCards) => {
+        if (!lastPlayedHand || passCount === 0) {
+            return { opponentsLikelyWeak: false, confidence: 0 };
+        }
+
+        const inference = {
+            opponentsLikelyWeak: false,
+            opponentsWeakInSingles: false,
+            opponentsWeakInPairs: false,
+            opponentsWeakInFiveCards: false,
+            confidence: 0,
+            unlikelyOpponentCards: []
+        };
+
+        // If multiple players passed on a low/medium card, they're likely weak in that type
+        if (passCount >= 2) {
+            if (lastPlayedHand.type === HAND_TYPES.SINGLE) {
+                const rankIndex = RANKS.indexOf(lastPlayedHand.cards[0].rank);
+
+                // If they passed on a card below Queen (rankIndex < 9), they're weak in singles
+                if (rankIndex < 9) {
+                    inference.opponentsWeakInSingles = true;
+                    inference.opponentsLikelyWeak = true;
+                    inference.confidence = 0.7;
+
+                    // They likely don't have higher singles (but account for strategic passes)
+                    for (let r = rankIndex + 1; r < RANKS.length; r++) {
+                        for (let s = 0; s < 4; s++) {
+                            const card = { rank: RANKS[r], suit: SUITS[s] };
+                            // Don't add if it's in our hand or played
+                            const inOurHand = hand.some(c => c.rank === card.rank && c.suit === card.suit);
+                            const wasPlayed = playedCards.some(c => c.rank === card.rank && c.suit === card.suit);
+                            if (!inOurHand && !wasPlayed) {
+                                inference.unlikelyOpponentCards.push(card);
+                            }
+                        }
+                    }
+                }
+            } else if (lastPlayedHand.type === HAND_TYPES.PAIR) {
+                const rankIndex = RANKS.indexOf(lastPlayedHand.cards[0].rank);
+                if (rankIndex < 8) {
+                    inference.opponentsWeakInPairs = true;
+                    inference.opponentsLikelyWeak = true;
+                    inference.confidence = 0.6;
+                }
+            } else if ([HAND_TYPES.STRAIGHT, HAND_TYPES.FLUSH, HAND_TYPES.FULL_HOUSE].includes(lastPlayedHand.type)) {
+                // If multiple players passed on a 5-card hand, they likely don't have 5-card hands
+                inference.opponentsWeakInFiveCards = true;
+                inference.confidence = 0.8;
+            }
+        }
+
+        // If all 3 opponents passed, very high confidence they're weak
+        if (passCount === 3) {
+            inference.opponentsLikelyWeak = true;
+            inference.confidence = Math.min(1.0, inference.confidence + 0.2);
+        }
+
+        return inference;
     },
 
     // Helpers
