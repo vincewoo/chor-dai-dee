@@ -6,7 +6,7 @@ import { getPlayedHandKey } from '../../utils/cardUtils';
  * Played cards display component - shows cards played in the center area
  * Handles both card displays and turn indicators with animations
  */
-const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, trickWinPending = false }) => {
+const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName = '', isMe = false, trickWinPending = false, isDesktop }) => {
     // Mobile: position near avatars; Desktop: original positions
     // Bottom position adjusted higher to be visible above controls
     // Add vertical offset for side players
@@ -103,7 +103,12 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
                         ) : (
                             lastPlayed.cards?.map((card) => (
                                 <div key={`${card.rank}-${card.suit}`} className="-ml-4 md:-ml-[2vmax]">
-                                    <Card rank={card.rank} suit={card.suit} size={cardSize} />
+                                    <Card
+                                        rank={card.rank}
+                                        suit={card.suit}
+                                        size={cardSize}
+                                        isDesktop={isDesktop}
+                                    />
                                 </div>
                             ))
                         )}
