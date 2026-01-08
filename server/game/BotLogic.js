@@ -1503,10 +1503,26 @@ const BotLogic = {
                     if (factors) factors.push({ factor: 'Early Game: Dump Trash', points: 100 });
                 }
 
-                // Avoid fights - don't use control cards unless winning
-                if (['A', '2'].includes(move.cards[0].rank) && !isWin) {
-                    score -= 150;
-                    if (factors) factors.push({ factor: 'Early Game: Save Control Cards', points: -150 });
+                // Avoid fights - don't use control cards (A, 2) unless winning
+                // Check all cards in the move, not just the first
+                const hasTwos = move.cards.some(c => c.rank === '2');
+                const hasAces = move.cards.some(c => c.rank === 'A');
+
+                if (hasTwos && !isWin) {
+                    // Extra penalty for using 2s in early game
+                    const numTwos = move.cards.filter(c => c.rank === '2').length;
+                    const penalty = -150 * numTwos;
+                    score += penalty;
+                    if (factors) factors.push({
+                        factor: `Early Game: Save 2s (${numTwos}x)`,
+                        points: penalty
+                    });
+                }
+
+                if (hasAces && !isWin && !hasTwos) {
+                    // Moderate penalty for using Aces in early game (if not already penalized for 2s)
+                    score -= 100;
+                    if (factors) factors.push({ factor: 'Early Game: Save Aces', points: -100 });
                 }
             }
 
@@ -1770,6 +1786,65 @@ const BotLogic = {
                                 points: -100
                             });
                         }
+                    }
+                }
+            }
+
+            // Rule 6: Avoid Wasting 2s in Weak Straights
+            // Wheel (A-2-3-4-5) and 2-3-4-5-6 are the weakest straights
+            if (move.type === HAND_TYPES.STRAIGHT && !isWin) {
+                const twosInMove = move.cards.filter(c => c.rank === '2');
+
+                if (twosInMove.length > 0) {
+                    // Check if this is a weak straight (Wheel or 2-3-4-5-6)
+                    const ranks = move.cards.map(c => c.rank).sort((a, b) => RANKS.indexOf(a) - RANKS.indexOf(b));
+                    const isWheel = ranks.join('') === '23,45,A' || ranks.join(',') === 'A,2,3,4,5';
+                    const isLowStraight = ranks.join(',') === '2,3,4,5,6';
+
+                    if (isWheel || isLowStraight) {
+                        // These are the weakest straights - heavily penalize using 2s
+                        const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                        if (!isDesperate) {
+                            score -= 300;
+                            const straightName = isWheel ? 'Wheel (A-2-3-4-5)' : 'Low Straight (2-3-4-5-6)';
+                            if (factors) factors.push({
+                                factor: `Wasting 2 in ${straightName}`,
+                                points: -300
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Rule 7: Avoid Wasting 2s in Flushes
+            // Only use 2s in flushes when necessary (high value flush or desperate)
+            if (move.type === HAND_TYPES.FLUSH && !isWin) {
+                const twosInMove = move.cards.filter(c => c.rank === '2');
+
+                if (twosInMove.length > 0) {
+                    // Check if this is a high-value flush (has multiple high cards)
+                    const highCards = move.cards.filter(c => ['A', 'K', 'Q'].includes(c.rank));
+                    const isHighValueFlush = highCards.length >= 3;
+
+                    // Only acceptable in desperate situations or if it's a genuinely strong flush
+                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                    if (!isDesperate && !isHighValueFlush) {
+                        // Penalize using 2s in mediocre flushes
+                        const penalty = twosInMove.length * -200;
+                        score += penalty;
+                        if (factors) factors.push({
+                            factor: `Wasting ${twosInMove.length} 2(s) in Mediocre Flush`,
+                            points: penalty
+                        });
+                    } else if (!isDesperate && isHighValueFlush && gamePhase === 'early') {
+                        // Even high flushes shouldn't use 2s in early game
+                        score -= 100;
+                        if (factors) factors.push({
+                            factor: 'Using 2 in Flush (Early Game)',
+                            points: -100
+                        });
                     }
                 }
             }
