@@ -1323,6 +1323,7 @@ const GameRoom = ({ user, socket }) => {
                 playerName={getRelativePlayer(2)?.name}
                 isMe={getRelativePlayer(2)?.id === myPlayerId}
                 trickWinPending={gameState.trickWinPending}
+                isDesktop={isDesktop}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(3)?.lastPlayed}
@@ -1331,6 +1332,7 @@ const GameRoom = ({ user, socket }) => {
                 playerName={getRelativePlayer(3)?.name}
                 isMe={getRelativePlayer(3)?.id === myPlayerId}
                 trickWinPending={gameState.trickWinPending}
+                isDesktop={isDesktop}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(1)?.lastPlayed}
@@ -1339,6 +1341,7 @@ const GameRoom = ({ user, socket }) => {
                 playerName={getRelativePlayer(1)?.name}
                 isMe={getRelativePlayer(1)?.id === myPlayerId}
                 trickWinPending={gameState.trickWinPending}
+                isDesktop={isDesktop}
             />
             <PlayedCards
                 lastPlayed={getRelativePlayer(0)?.lastPlayed}
@@ -1347,6 +1350,7 @@ const GameRoom = ({ user, socket }) => {
                 playerName={getRelativePlayer(0)?.name}
                 isMe={true}
                 trickWinPending={gameState.trickWinPending}
+                isDesktop={isDesktop}
             />
 
             {/* Bottom: My Hand & Controls - Anchored at bottom, flows upward */}
