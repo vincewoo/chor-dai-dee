@@ -10,6 +10,7 @@ const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
     const [error, setError] = useState('');
     const [reconnecting, setReconnecting] = useState(false);
+    const [isJoining, setIsJoining] = useState(false);
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
@@ -157,16 +158,21 @@ const Lobby = ({ user, socket, setUser }) => {
     };
 
     const createRoom = () => {
+        if (isJoining) return;
+        setIsJoining(true);
         console.log('createRoom called, socket connected:', socket.connected);
         socket.emit('join_room', { roomId: 'create', username: user.username, isGuest: user.isGuest });
     };
 
     const joinRoom = () => {
-        if (!roomId) return;
+        if (!roomId || isJoining) return;
+        setIsJoining(true);
         socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, isGuest: user.isGuest });
     };
 
     const joinInProgressRoom = (targetRoomId) => {
+        if (isJoining) return;
+        setIsJoining(true);
         socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
     };
 
@@ -250,6 +256,7 @@ const Lobby = ({ user, socket, setUser }) => {
                 }
                 return false;
             });
+            setIsJoining(false);
         });
 
         // Attempt reconnection on mount if already connected
@@ -500,8 +507,22 @@ const Lobby = ({ user, socket, setUser }) => {
                 </div>
 
                 <div className="space-y-4">
-                    <button onClick={createRoom} className="w-full bg-yellow-500 text-white py-3 rounded-lg font-bold hover:bg-yellow-600 transition shadow-md">
-                        Create New Room
+                    <button
+                        onClick={createRoom}
+                        disabled={isJoining}
+                        className={`w-full bg-yellow-500 text-white py-3 rounded-lg font-bold hover:bg-yellow-600 transition shadow-md flex justify-center items-center ${isJoining ? 'opacity-75 cursor-not-allowed' : ''}`}
+                    >
+                        {isJoining ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Connecting...
+                            </>
+                        ) : (
+                            'Create New Room'
+                        )}
                     </button>
 
                     <div className="relative flex py-2 items-center">
@@ -524,8 +545,19 @@ const Lobby = ({ user, socket, setUser }) => {
                                 onChange={e => setRoomId(e.target.value)}
                             />
                         </div>
-                        <button onClick={joinRoom} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition h-[42px]">
-                            Join
+                        <button
+                            onClick={joinRoom}
+                            disabled={isJoining}
+                            className={`bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition h-[42px] flex items-center justify-center min-w-[80px] ${isJoining ? 'opacity-75 cursor-not-allowed' : ''}`}
+                        >
+                            {isJoining ? (
+                                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            ) : (
+                                'Join'
+                            )}
                         </button>
                     </div>
 
@@ -541,7 +573,8 @@ const Lobby = ({ user, socket, setUser }) => {
                                 {joinableRooms.map(room => (
                                     <button
                                         key={room.roomId}
-                                        className="w-full text-left border border-gray-300 rounded p-3 hover:bg-gray-50 cursor-pointer transition"
+                                        disabled={isJoining}
+                                        className={`w-full text-left border border-gray-300 rounded p-3 hover:bg-gray-50 cursor-pointer transition ${isJoining ? 'opacity-75 cursor-not-allowed' : ''}`}
                                         onClick={() => joinInProgressRoom(room.roomId)}
                                     >
                                         <div className="flex justify-between items-start mb-1">
