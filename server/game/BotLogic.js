@@ -1790,34 +1790,10 @@ const BotLogic = {
                 }
             }
 
-            // Rule 6: Avoid Wasting 2s in Weak Straights
-            // Wheel (A-2-3-4-5) and 2-3-4-5-6 are the weakest straights
-            if (move.type === HAND_TYPES.STRAIGHT && !isWin) {
-                const twosInMove = move.cards.filter(c => c.rank === '2');
+            // Note: Straights with 2s (A-2-3-4-5 and 2-3-4-5-6) are the HIGHEST straights
+            // and should be played strategically - no blanket penalty needed
 
-                if (twosInMove.length > 0) {
-                    // Check if this is a weak straight (Wheel or 2-3-4-5-6)
-                    const ranks = move.cards.map(c => c.rank).sort((a, b) => RANKS.indexOf(a) - RANKS.indexOf(b));
-                    const isWheel = ranks.join('') === '23,45,A' || ranks.join(',') === 'A,2,3,4,5';
-                    const isLowStraight = ranks.join(',') === '2,3,4,5,6';
-
-                    if (isWheel || isLowStraight) {
-                        // These are the weakest straights - heavily penalize using 2s
-                        const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
-
-                        if (!isDesperate) {
-                            score -= 300;
-                            const straightName = isWheel ? 'Wheel (A-2-3-4-5)' : 'Low Straight (2-3-4-5-6)';
-                            if (factors) factors.push({
-                                factor: `Wasting 2 in ${straightName}`,
-                                points: -300
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Rule 7: Avoid Wasting 2s in Flushes
+            // Rule 6: Avoid Wasting 2s in Flushes
             // Only use 2s in flushes when necessary (high value flush or desperate)
             if (move.type === HAND_TYPES.FLUSH && !isWin) {
                 const twosInMove = move.cards.filter(c => c.rank === '2');
