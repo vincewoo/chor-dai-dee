@@ -1503,10 +1503,26 @@ const BotLogic = {
                     if (factors) factors.push({ factor: 'Early Game: Dump Trash', points: 100 });
                 }
 
-                // Avoid fights - don't use control cards unless winning
-                if (['A', '2'].includes(move.cards[0].rank) && !isWin) {
-                    score -= 150;
-                    if (factors) factors.push({ factor: 'Early Game: Save Control Cards', points: -150 });
+                // Avoid fights - don't use control cards (A, 2) unless winning
+                // Check all cards in the move, not just the first
+                const hasTwos = move.cards.some(c => c.rank === '2');
+                const hasAces = move.cards.some(c => c.rank === 'A');
+
+                if (hasTwos && !isWin) {
+                    // Extra penalty for using 2s in early game
+                    const numTwos = move.cards.filter(c => c.rank === '2').length;
+                    const penalty = -150 * numTwos;
+                    score += penalty;
+                    if (factors) factors.push({
+                        factor: `Early Game: Save 2s (${numTwos}x)`,
+                        points: penalty
+                    });
+                }
+
+                if (hasAces && !isWin && !hasTwos) {
+                    // Moderate penalty for using Aces in early game (if not already penalized for 2s)
+                    score -= 100;
+                    if (factors) factors.push({ factor: 'Early Game: Save Aces', points: -100 });
                 }
             }
 
@@ -1726,6 +1742,92 @@ const BotLogic = {
                     }
                 }
             }
+
+            // Rule 4.5: Avoid Playing Triple 2s and Breaking Quads
+            if (move.type === HAND_TYPES.TRIPLE && move.cards[0].rank === '2' && !isWin) {
+                // Count how many 2s we have in total
+                const totalTwos = hand.filter(c => c.rank === '2').length;
+
+                if (totalTwos === 4) {
+                    // Breaking quad 2s to play triple 2s is extremely wasteful!
+                    // Quads are nearly unbeatable, triple 2s can be beaten by other triples with higher suit
+                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                    if (!isDesperate) {
+                        score -= 500; // Massive penalty - similar to wasting 2S
+                        if (factors) factors.push({
+                            factor: 'Breaking Quad 2s (Save for Quads!)',
+                            points: -500
+                        });
+                    }
+                } else if (totalTwos === 3) {
+                    // Playing triple 2s in early/mid game when not desperate
+                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                    if (!isDesperate && gamePhase !== 'late') {
+                        score -= 200; // Significant penalty
+                        if (factors) factors.push({
+                            factor: 'Playing Triple 2s (Early/Mid Game)',
+                            points: -200
+                        });
+                    }
+                }
+            }
+
+            // Rule 5: Avoid Wasting 2s in Full Houses
+            // Full houses should use lower cards when possible
+            if (move.type === HAND_TYPES.FULL_HOUSE && !isWin) {
+                const twosInMove = move.cards.filter(c => c.rank === '2');
+
+                if (twosInMove.length > 0) {
+                    // Determine if 2s are in the triple or pair part
+                    // In a full house, the middle card (index 2) is always part of the triple
+                    const sortedMove = [...move.cards].sort((a, b) => {
+                        const aVal = RANKS.indexOf(a.rank) * 4 + SUITS.indexOf(a.suit);
+                        const bVal = RANKS.indexOf(b.rank) * 4 + SUITS.indexOf(b.suit);
+                        return aVal - bVal;
+                    });
+                    const tripleRank = sortedMove[2].rank;
+
+                    // Check if 2s are in the pair (not triple)
+                    const twosInPair = twosInMove.filter(c => c.rank !== tripleRank);
+
+                    if (twosInPair.length > 0) {
+                        // Using 2s as a pair in full house is wasteful
+                        // Only acceptable in desperate situations
+                        const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                        if (!isDesperate) {
+                            // Massive penalty - this is almost as bad as breaking pair of 2s
+                            const penalty = twosInPair.length === 2 ? -400 : -250;
+                            score += penalty;
+                            if (factors) factors.push({
+                                factor: `Wasting ${twosInPair.length} 2(s) in Full House Pair`,
+                                points: penalty
+                            });
+                        }
+                    } else if (tripleRank === '2') {
+                        // Using triple 2s in full house - less problematic but still not ideal
+                        // Only penalize if not desperate
+                        const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+                        if (!isDesperate && gamePhase !== 'late') {
+                            score -= 100;
+                            if (factors) factors.push({
+                                factor: 'Using Triple 2s in Full House (Questionable)',
+                                points: -100
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Note: Straights with 2s (A-2-3-4-5 and 2-3-4-5-6) are the HIGHEST straights
+            // and should be played strategically - no blanket penalty needed
+
+            // Note: Flushes with 2s are the HIGHEST flushes of that suit
+            // (2 is the highest rank in Big 2, so any flush containing a 2 is automatically
+            // the strongest possible flush in that suit)
+            // Early game penalty already discourages using 2s in flushes during early game
 
             // Save 2 of Spades (Nuclear Option) - unless winning
             if (move.cards.some(c => c.rank === '2' && c.suit === 'S') && !isWin) {
@@ -2349,7 +2451,17 @@ const BotLogic = {
         // OPTIMIZATION: Instead of generating ALL combinations, pick strategic ones:
         // - Lowest value triple + pair (shed low cards)
         // - Highest value triple + pair (strongest full house)
+        // IMPORTANT: Avoid using 2s in pairs when lower alternatives exist
         // This reduces from O(T×C(3,3)×P×C(2,2)) to O(T×P)
+
+        // Sort pairs by rank value to prioritize non-2 pairs
+        const pairsSorted = pairs.sort((a, b) => {
+            // Strongly deprioritize 2s - put them at the end
+            if (a === '2' && b !== '2') return 1;
+            if (b === '2' && a !== '2') return -1;
+            // Otherwise sort by rank index (lower first)
+            return RANKS.indexOf(a) - RANKS.indexOf(b);
+        });
 
         triples.forEach(tRank => {
             const tripleCards = byRank[tRank];
@@ -2360,16 +2472,28 @@ const BotLogic = {
                 : [tripleCards.slice(0, 3), [tripleCards[0], tripleCards[1], tripleCards[3]]];
 
             tripleCombos.forEach(triple => {
-                pairs.forEach(pRank => {
+                // Track if we've added a full house for this triple already
+                let addedLowFullHouse = false;
+
+                pairsSorted.forEach(pRank => {
                     if (pRank !== tRank) {
                         const pairCards = byRank[pRank];
+
+                        // CRITICAL FIX: Skip using 2s as pairs if we have other pair options
+                        // Only use 2s if this is the ONLY pair available for this triple
+                        if (pRank === '2' && !addedLowFullHouse && pairsSorted.filter(p => p !== tRank && p !== '2').length > 0) {
+                            // Skip 2s if we have other pair choices
+                            return;
+                        }
 
                         // Pick lowest 2 cards for pair
                         const pair = pairCards.slice(0, 2);
                         fullHouses.push([...triple, ...pair]);
+                        addedLowFullHouse = true;
 
                         // If more than 2 cards available, also add highest pair
-                        if (pairCards.length > 2) {
+                        // BUT: Never add high pair if it's 2s (too valuable)
+                        if (pairCards.length > 2 && pRank !== '2') {
                             const highPair = pairCards.slice(-2);
                             const isSame = pair[0].suit === highPair[0].suit && pair[1].suit === highPair[1].suit;
                             if (!isSame) {
