@@ -1824,37 +1824,10 @@ const BotLogic = {
             // Note: Straights with 2s (A-2-3-4-5 and 2-3-4-5-6) are the HIGHEST straights
             // and should be played strategically - no blanket penalty needed
 
-            // Rule 6: Avoid Wasting 2s in Flushes
-            // Only use 2s in flushes when necessary (high value flush or desperate)
-            if (move.type === HAND_TYPES.FLUSH && !isWin) {
-                const twosInMove = move.cards.filter(c => c.rank === '2');
-
-                if (twosInMove.length > 0) {
-                    // Check if this is a high-value flush (has multiple high cards)
-                    const highCards = move.cards.filter(c => ['A', 'K', 'Q'].includes(c.rank));
-                    const isHighValueFlush = highCards.length >= 3;
-
-                    // Only acceptable in desperate situations or if it's a genuinely strong flush
-                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
-
-                    if (!isDesperate && !isHighValueFlush) {
-                        // Penalize using 2s in mediocre flushes
-                        const penalty = twosInMove.length * -200;
-                        score += penalty;
-                        if (factors) factors.push({
-                            factor: `Wasting ${twosInMove.length} 2(s) in Mediocre Flush`,
-                            points: penalty
-                        });
-                    } else if (!isDesperate && isHighValueFlush && gamePhase === 'early') {
-                        // Even high flushes shouldn't use 2s in early game
-                        score -= 100;
-                        if (factors) factors.push({
-                            factor: 'Using 2 in Flush (Early Game)',
-                            points: -100
-                        });
-                    }
-                }
-            }
+            // Note: Flushes with 2s are the HIGHEST flushes of that suit
+            // (2 is the highest rank in Big 2, so any flush containing a 2 is automatically
+            // the strongest possible flush in that suit)
+            // Early game penalty already discourages using 2s in flushes during early game
 
             // Save 2 of Spades (Nuclear Option) - unless winning
             if (move.cards.some(c => c.rank === '2' && c.suit === 'S') && !isWin) {
