@@ -21,6 +21,9 @@ const SettingsModal = ({
                 exit={{ opacity: 0 }}
                 className="absolute inset-0 z-[200] bg-black/70 flex items-center justify-center"
                 onClick={onClose}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-title"
             >
                 <motion.div
                     initial={{ scale: 0.8, opacity: 0 }}
@@ -30,10 +33,10 @@ const SettingsModal = ({
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="flex justify-between items-center mb-6 md:mb-[1.5vmax]">
-                        <h2 className="text-2xl md:text-[1.8vmax] font-bold text-white">Settings</h2>
+                        <h2 id="settings-title" className="text-2xl md:text-[1.8vmax] font-bold text-white">Settings</h2>
                         <button
                             onClick={onClose}
-                            className="text-gray-400 hover:text-white text-3xl md:text-[2vmax] font-bold leading-none"
+                            className="text-gray-400 hover:text-white text-3xl md:text-[2vmax] font-bold leading-none focus-visible:ring-2 focus-visible:ring-white rounded"
                             aria-label="Close settings"
                         >
                             ×
@@ -44,12 +47,18 @@ const SettingsModal = ({
                         {/* Auto-Pass Setting */}
                         <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
                             <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
-                                <label className="text-white font-semibold text-lg md:text-[1.2vmax]">
+                                <label
+                                    id="auto-pass-label"
+                                    className="text-white font-semibold text-lg md:text-[1.2vmax]"
+                                >
                                     Auto-Pass
                                 </label>
                                 <button
+                                    role="switch"
+                                    aria-checked={autoPass}
+                                    aria-labelledby="auto-pass-label"
                                     onClick={toggleAutoPass}
-                                    className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]
+                                    className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500 focus-visible:outline-none
                                         ${autoPass ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
                                 >
                                     {autoPass ? 'ON' : 'OFF'}
@@ -63,12 +72,18 @@ const SettingsModal = ({
                         {/* 4-Color Setting */}
                         <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
                             <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
-                                <label className="text-white font-semibold text-lg md:text-[1.2vmax]">
+                                <label
+                                    id="four-color-label"
+                                    className="text-white font-semibold text-lg md:text-[1.2vmax]"
+                                >
                                     4-Color Suits
                                 </label>
                                 <button
+                                    role="switch"
+                                    aria-checked={fourColorMode}
+                                    aria-labelledby="four-color-label"
                                     onClick={toggleFourColorMode}
-                                    className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]
+                                    className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 focus-visible:outline-none
                                         ${fourColorMode ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'}`}
                                 >
                                     {fourColorMode ? 'ON' : 'OFF'}
@@ -83,7 +98,7 @@ const SettingsModal = ({
                     <div className="mt-6 md:mt-[1.5vmax] flex justify-end">
                         <button
                             onClick={onClose}
-                            className="bg-green-600 hover:bg-green-700 text-white px-6 md:px-[2vmax] py-2 md:py-[0.6vmax] rounded-lg font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax]"
+                            className="bg-green-600 hover:bg-green-700 text-white px-6 md:px-[2vmax] py-2 md:py-[0.6vmax] rounded-lg font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-white"
                         >
                             Close
                         </button>
