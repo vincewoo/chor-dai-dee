@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { memo } from 'react';
 import Card from '../Card';
 import { getPlayedHandKey } from '../../utils/cardUtils';
+import { arePlayedCardsPropsEqual } from '../../utils/memoUtils';
 
 /**
  * Played cards display component - shows cards played in the center area
@@ -119,4 +121,4 @@ const PlayedCards = ({ lastPlayed, position, isCurrentTurn = false, playerName =
     );
 };
 
-export default PlayedCards;
+export default memo(PlayedCards, arePlayedCardsPropsEqual);
