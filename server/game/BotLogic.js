@@ -1743,6 +1743,37 @@ const BotLogic = {
                 }
             }
 
+            // Rule 4.5: Avoid Playing Triple 2s and Breaking Quads
+            if (move.type === HAND_TYPES.TRIPLE && move.cards[0].rank === '2' && !isWin) {
+                // Count how many 2s we have in total
+                const totalTwos = hand.filter(c => c.rank === '2').length;
+
+                if (totalTwos === 4) {
+                    // Breaking quad 2s to play triple 2s is extremely wasteful!
+                    // Quads are nearly unbeatable, triple 2s can be beaten by other triples with higher suit
+                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                    if (!isDesperate) {
+                        score -= 500; // Massive penalty - similar to wasting 2S
+                        if (factors) factors.push({
+                            factor: 'Breaking Quad 2s (Save for Quads!)',
+                            points: -500
+                        });
+                    }
+                } else if (totalTwos === 3) {
+                    // Playing triple 2s in early/mid game when not desperate
+                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
+
+                    if (!isDesperate && gamePhase !== 'late') {
+                        score -= 200; // Significant penalty
+                        if (factors) factors.push({
+                            factor: 'Playing Triple 2s (Early/Mid Game)',
+                            points: -200
+                        });
+                    }
+                }
+            }
+
             // Rule 5: Avoid Wasting 2s in Full Houses
             // Full houses should use lower cards when possible
             if (move.type === HAND_TYPES.FULL_HOUSE && !isWin) {
