@@ -61,12 +61,17 @@ const BotLogic = {
         // PHASE 1.2: Infer opponent weaknesses from passes
         ctx.passInference = BotLogic.inferFromPasses(lastPlayedHand, ctx.passCount, hand, ctx.playedCards);
 
+        // Get all valid moves first (needed for organization and analysis)
+        const validMoves = BotLogic.getAllValidMoves(hand);
+        ctx.allValidMoves = validMoves;
+
         // Organize hand according to "Poker First" heuristic (with caching)
         const handKey = hand.map(c => `${c.rank}${c.suit}`).sort().join(',');
         if (!gameContext._handOrgCache || gameContext._handOrgCache.key !== handKey) {
             gameContext._handOrgCache = {
                 key: handKey,
-                organization: BotLogic.organizeHand(hand)
+                // OPTIMIZATION: Pass pre-calculated moves to avoid recalculation
+                organization: BotLogic.organizeHand(hand, validMoves)
             };
         }
         ctx.handOrganization = gameContext._handOrgCache.organization;
@@ -93,8 +98,6 @@ const BotLogic = {
                 }
             };
         }
-
-        const validMoves = BotLogic.getAllValidMoves(hand);
 
         // Filter by what can beat the current hand
         let candidates = [];
@@ -148,7 +151,7 @@ const BotLogic = {
 
         // Apply strategic selection
         // PHASE 1.3: Pass all valid moves for flexibility calculation
-        ctx.allValidMoves = validMoves;
+        // ctx.allValidMoves is already set above
         const selectionResult = BotLogic.selectBestMove(candidates, hand, lastPlayedHand, isFirstTurn, ctx, captureReasoning);
         const selectedMove = captureReasoning ? selectionResult.move : selectionResult;
 
@@ -283,8 +286,10 @@ const BotLogic = {
     /**
      * Organize the hand according to "Poker First, Pairs Second" heuristic.
      * Identify "Control" (2s, As) and "Trash" (3-6 singles).
+     * @param {Array} hand - The cards to organize
+     * @param {Array} [precalculatedMoves] - Optional pre-calculated valid moves to avoid redundant calculation
      */
-    organizeHand: (hand) => {
+    organizeHand: (hand, precalculatedMoves = null) => {
         const remainingHand = [...hand];
         const organized = {
             fiveCardHands: [],
@@ -311,7 +316,8 @@ const BotLogic = {
         };
 
         // Get all possible 5-card moves from original hand
-        const allMoves = BotLogic.getAllValidMoves(hand);
+        // OPTIMIZATION: Use pre-calculated moves if available
+        const allMoves = precalculatedMoves || BotLogic.getAllValidMoves(hand);
         const fiveCardMoves = allMoves.filter(m => m.cards.length === 5);
 
         // Sort by priority (Straight Flush > Quads > Full House > Flush > Straight)
@@ -607,7 +613,8 @@ const BotLogic = {
 
         // Get all valid moves from remaining hand
         const followUpMoves = BotLogic.getAllValidMoves(remainingCards);
-        const followUpOrg = BotLogic.organizeHand(remainingCards);
+        // OPTIMIZATION: Pass pre-calculated moves to organizeHand
+        const followUpOrg = BotLogic.organizeHand(remainingCards, followUpMoves);
 
         let followUpScore = 0;
 
@@ -821,11 +828,13 @@ const BotLogic = {
         // Fewer cards = better
         score += (13 - hand.length) * 100;
 
+        // OPTIMIZATION: Calculate valid moves once and pass to organizeHand
+        const validMoves = BotLogic.getAllValidMoves(hand);
+
         // Analyze remaining cards
-        const org = BotLogic.organizeHand(hand);
+        const org = BotLogic.organizeHand(hand, validMoves);
 
         // Penalize if cards don't form good combos
-        const validMoves = BotLogic.getAllValidMoves(hand);
         score += validMoves.length * 10;
 
         // Bonus if all cards form one combo
@@ -2201,6 +2210,8 @@ const BotLogic = {
         let value = 0;
 
         // Value 1: Can we play strong 5-card hands?
+        // Note: organizeHand will call getAllValidMoves internally since we don't need moves elsewhere here
+        // We could optimize this too but it's less critical than the main loops
         const remainingOrg = BotLogic.organizeHand(remainingCards);
         value += remainingOrg.fiveCardHands.length * 150;
 
