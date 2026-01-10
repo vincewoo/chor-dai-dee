@@ -2062,15 +2062,29 @@ server.listen(PORT, HOST, () => {
 
 // Periodic cleanup of inactive rooms
 // Runs every 5 minutes
-const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+// Periodic cleanup and autostop check
+// Runs every 1 minute
+const CHECK_INTERVAL = 60 * 1000;
 setInterval(() => {
     const deletedCount = roomManager.cleanupInactiveRooms();
     if (deletedCount > 0) {
         console.log(`[Cleanup] Removed ${deletedCount} inactive room(s)`);
     }
-}, CLEANUP_INTERVAL);
 
-console.log(`[Cleanup] Automatic room cleanup enabled (every ${CLEANUP_INTERVAL / 60000} minutes)`);
+    // Autostop check
+    // Logic: If there are no active rooms AND no connected clients, stop the server.
+    // This allows Fly.io to scale down to zero when idle.
+    const activeRooms = roomManager.rooms.size;
+    const connectedClients = io.engine.clientsCount;
+
+    // Only log strictly if verbose logging is enabled or if we are about to stop, to avoid spamming logs
+    if (activeRooms === 0 && connectedClients === 0) {
+        console.log(`[Autostop] No active rooms (${activeRooms}) and no connections (${connectedClients}). Shutting down server...`);
+        process.exit(0);
+    }
+}, CHECK_INTERVAL);
+
+console.log(`[Cleanup] Automatic room cleanup and autostop enabled (every ${CHECK_INTERVAL / 60000} minutes)`);
 
 // Error handlers to catch crashes
 process.on('uncaughtException', (error) => {
