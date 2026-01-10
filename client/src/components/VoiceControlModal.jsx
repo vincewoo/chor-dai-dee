@@ -64,7 +64,7 @@ const VoiceControlModal = ({
                   }
                 `}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -100,7 +100,7 @@ const VoiceControlModal = ({
                       }
                     `}
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       {isMuted ? (
                         <path
                           strokeLinecap="round"
@@ -131,7 +131,7 @@ const VoiceControlModal = ({
                       }
                     `}
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       {isDeafened ? (
                         <path
                           strokeLinecap="round"
@@ -176,6 +176,7 @@ const VoiceControlModal = ({
                                 onInput={(e) => onVolumeChange(player.name, parseInt(e.target.value))}
                                 className="flex-1 accent-green-500 h-1"
                                 style={{ touchAction: 'manipulation' }}
+                                aria-label={`Volume for ${player.name}`}
                               />
                               <span className="text-gray-400 text-xs w-8 text-right">
                                 {volumePercent}%
