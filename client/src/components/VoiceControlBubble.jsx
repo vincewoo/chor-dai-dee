@@ -62,7 +62,7 @@ const VoiceControlBubble = ({
     if (muted) {
       // Muted mic with X
       return (
-        <svg className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4l16 16" className="text-red-300" />
         </svg>
@@ -72,7 +72,7 @@ const VoiceControlBubble = ({
     if (deafened) {
       // Deafened - headphones with X
       return (
-        <svg className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4l16 16" className="text-orange-300" />
         </svg>
@@ -81,7 +81,7 @@ const VoiceControlBubble = ({
 
     // Normal mic icon
     return (
-      <svg className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
       </svg>
     );
@@ -100,6 +100,13 @@ const VoiceControlBubble = ({
               ${getBubbleClasses()}
             `}
             title={voiceEnabled ? 'Voice Controls' : 'Enable Voice Chat'}
+            aria-label={
+              !voiceEnabled ? 'Enable Voice Chat' :
+              !isVoiceConnected ? 'Connecting to Voice Chat' :
+              isMuted ? 'Voice Controls (Muted)' :
+              isDeafened ? 'Voice Controls (Deafened)' :
+              'Voice Controls'
+            }
           >
             <MicIcon
               muted={voiceEnabled && isVoiceConnected && isMuted}
