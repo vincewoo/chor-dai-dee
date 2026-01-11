@@ -107,6 +107,7 @@ const VoiceChat = ({
             }
           `}
           title={voiceEnabled ? 'Disable Voice Chat' : 'Enable Voice Chat'}
+          aria-label={voiceEnabled ? 'Disable Voice Chat' : 'Enable Voice Chat'}
         >
           <svg
             className="w-5 h-5"
@@ -145,6 +146,7 @@ const VoiceChat = ({
                 } text-white
               `}
               title={isMuted ? 'Unmute' : 'Mute'}
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
             >
               <svg
                 className="w-5 h-5"
@@ -181,6 +183,7 @@ const VoiceChat = ({
                 } text-white
               `}
               title={isDeafened ? 'Undeafen' : 'Deafen'}
+              aria-label={isDeafened ? 'Undeafen' : 'Deafen'}
             >
               <svg
                 className="w-5 h-5"
@@ -211,6 +214,7 @@ const VoiceChat = ({
               onClick={() => setShowVolumeControls(!showVolumeControls)}
               className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
               title="Volume Controls"
+              aria-label="Volume Controls"
             >
               <svg
                 className="w-5 h-5"
@@ -260,6 +264,7 @@ const VoiceChat = ({
                       value={(playerVolumes[player.name] ?? 1) * 100}
                       onChange={(e) => handleVolumeChange(player.name, e.target.value)}
                       className="w-32"
+                      aria-label={`Volume for ${player.name}`}
                     />
                     <span className="text-gray-400 text-xs w-10">
                       {Math.round((playerVolumes[player.name] ?? 1) * 100)}%
