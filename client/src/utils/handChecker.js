@@ -197,7 +197,8 @@ export const canBeatWithAnyHand = (playerHand, lastPlayedHand) => {
 
     for (const type of typesToCheck) {
         // findEligibleHands checks for hands of 'type' that can beat 'lastPlayedHand'
-        const eligible = findEligibleHands(playerHand, lastPlayedHand, type);
+        // Limit to 1 for performance - we only need to know if ANY hand exists
+        const eligible = findEligibleHands(playerHand, lastPlayedHand, type, 1);
         if (eligible.length > 0) return true;
     }
 
