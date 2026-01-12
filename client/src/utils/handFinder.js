@@ -75,6 +75,23 @@ const combinations = (arr, k) => {
     return result;
 };
 
+// Optimized generator that calls callback for each combination
+// callback should return true to stop generation (limit reached)
+const generateCombinations = (arr, k, callback) => {
+    const combine = (start, combo) => {
+        if (combo.length === k) {
+            return callback([...combo]);
+        }
+        for (let i = start; i < arr.length; i++) {
+            combo.push(arr[i]);
+            if (combine(i + 1, combo)) return true;
+            combo.pop();
+        }
+        return false;
+    };
+    combine(0, []);
+};
+
 // Helper to group cards by rank
 const groupCardsByRank = (cards) => {
     const groups = {};
@@ -96,10 +113,28 @@ const groupCardsBySuit = (cards) => {
 };
 
 // Cartesian product for generating straights from rank groups
+// Kept for backward compatibility if needed, but generateCartesianProduct is preferred
+// eslint-disable-next-line no-unused-vars
 const cartesianProduct = (arrays) => {
     return arrays.reduce((acc, curr) => {
         return acc.flatMap(a => curr.map(c => [...a, c]));
     }, [[]]);
+};
+
+// Optimized generator for cartesian product
+const generateCartesianProduct = (arrays, callback) => {
+    const generate = (index, current) => {
+        if (index === arrays.length) {
+            return callback([...current]);
+        }
+        for (const item of arrays[index]) {
+            current.push(item);
+            if (generate(index + 1, current)) return true;
+            current.pop();
+        }
+        return false;
+    };
+    generate(0, []);
 };
 
 // Find all valid hands of a specific type that can beat the current hand
@@ -266,10 +301,11 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
             const groups = Object.values(suitGroups);
             for (const group of groups) {
                 if (group.length >= 5) {
-                    const combos = combinations(group, 5);
-                    for (const combo of combos) {
-                        if (addIfValid(combo, HAND_TYPES.FLUSH) && eligibleHands.length >= limit) break;
-                    }
+                    // Use lazy generation to avoid creating all combinations at once
+                    generateCombinations(group, 5, (combo) => {
+                        addIfValid(combo, HAND_TYPES.FLUSH);
+                        return eligibleHands.length >= limit;
+                    });
                 }
                 if (eligibleHands.length >= limit) break;
             }
@@ -300,10 +336,11 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
 
             for (const seq of sequences) {
                  const groups = seq.map(r => rankGroups[r]);
-                 const combos = cartesianProduct(groups);
-                 for (const combo of combos) {
-                     if (addIfValid(combo, HAND_TYPES.STRAIGHT) && eligibleHands.length >= limit) break;
-                 }
+                 // Use lazy generation for Cartesian product
+                 generateCartesianProduct(groups, (combo) => {
+                     addIfValid(combo, HAND_TYPES.STRAIGHT);
+                     return eligibleHands.length >= limit;
+                 });
                  if (eligibleHands.length >= limit) break;
             }
             break;
