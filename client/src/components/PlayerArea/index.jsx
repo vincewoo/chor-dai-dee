@@ -1,11 +1,15 @@
+import { memo } from 'react';
 import CardCountIndicator from '../CardCountIndicator';
 import VoiceIndicator from '../VoiceIndicator';
 import { FaceDownCardHorizontal, FaceDownCardVertical } from './FaceDownCard';
 
+// ⚡ Bolt Optimization: Memoized sub-components to prevent re-renders of static UI
+// when high-frequency props (like voiceAudioLevels) update in the parent.
+
 /**
  * Player avatar component - shared between all player areas
  */
-const PlayerAvatar = ({ player, isTurn, isClickable, onPlayerClick, voiceAudioLevels }) => {
+const PlayerAvatarBase = ({ player, isTurn, isClickable, onPlayerClick, voiceAudioLevels }) => {
     const isDisconnected = player.isDisconnected;
 
     return (
@@ -21,29 +25,50 @@ const PlayerAvatar = ({ player, isTurn, isClickable, onPlayerClick, voiceAudioLe
             </div>
             <VoiceIndicator
                 isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
-                level={voiceAudioLevels[player.name] || 0}
+                level={voiceAudioLevels?.[player.name] || 0}
             />
         </div>
     );
 };
 
+const PlayerAvatar = memo(PlayerAvatarBase, (prevProps, nextProps) => {
+    // ⚡ Bolt Optimization: Custom comparison to prevent re-renders when other players speak
+    // or when the audio level object changes but THIS player's level remains the same.
+
+    // Check if critical props changed
+    if (
+        prevProps.player !== nextProps.player ||
+        prevProps.isTurn !== nextProps.isTurn ||
+        prevProps.isClickable !== nextProps.isClickable ||
+        prevProps.onPlayerClick !== nextProps.onPlayerClick
+    ) {
+        return false; // Re-render needed
+    }
+
+    // Check voice levels specifically for this player
+    const prevLevel = prevProps.voiceAudioLevels?.[prevProps.player.name];
+    const nextLevel = nextProps.voiceAudioLevels?.[nextProps.player.name];
+
+    return prevLevel === nextLevel; // Only skip render if level is identical
+});
+
 /**
  * Disconnected badge component
  */
-const DisconnectedBadge = () => (
+const DisconnectedBadge = memo(() => (
     <div className="absolute -top-1 md:-top-[0.5vmax] -right-1 md:-right-[0.5vmax] bg-red-500 text-white text-[10px] md:text-[0.6vmax] px-1 md:px-[0.3vmax] rounded font-bold">
         DC
     </div>
-);
+));
 
 /**
  * Player name label component
  */
-const PlayerNameLabel = ({ player }) => (
+const PlayerNameLabel = memo(({ player }) => (
     <div className="text-white bg-black/50 px-2 md:px-[0.5vmax] py-0.5 md:py-[0.15vmax] rounded text-xs md:text-[0.8vmax] font-semibold shadow mt-1 md:mt-[0.25vmax]">
         {player.name} {player.rating !== undefined && <span className="text-yellow-200">({player.rating})</span>}
     </div>
-);
+), (prev, next) => prev.player === next.player && prev.player.rating === next.player.rating && prev.player.name === next.player.name);
 
 /**
  * Top Player Area - cards horizontal on left, avatar on right
