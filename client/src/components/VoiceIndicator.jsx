@@ -1,5 +1,8 @@
 import { motion } from 'framer-motion';
+import { memo } from 'react';
 
+// ⚡ Bolt Optimization: Memoized to prevent re-renders when parent components update.
+// This component should only re-render when 'isActive' or 'level' changes.
 const VoiceIndicator = ({ isActive, level = 0 }) => {
   // Removed verbose logging for cleaner console
   if (!isActive) return null;
@@ -65,4 +68,4 @@ const VoiceIndicator = ({ isActive, level = 0 }) => {
   );
 };
 
-export default VoiceIndicator;
+export default memo(VoiceIndicator);

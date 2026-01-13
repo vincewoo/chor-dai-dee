@@ -1,5 +1,8 @@
 import { motion } from 'framer-motion';
+import { memo } from 'react';
 
+// ⚡ Bolt Optimization: Memoized to prevent re-renders when parent (PlayerArea)
+// updates due to unrelated state changes (like voice activity).
 const CardCountIndicator = ({ cardCount, className = '' }) => {
     return (
         <motion.div
@@ -45,4 +48,4 @@ const CardCountIndicator = ({ cardCount, className = '' }) => {
     );
 };
 
-export default CardCountIndicator;
+export default memo(CardCountIndicator);
