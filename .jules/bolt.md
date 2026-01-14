@@ -1,3 +1,3 @@
-## 2025-02-14 - Responsive Card Rendering Optimization
-**Learning:** React components that render both mobile and desktop layouts (hiding one with CSS) significantly increase DOM node count, especially when the component is repeated many times (like cards in a hand). Conditionally rendering based on viewport size (via JS) reduces this overhead.
-**Action:** When optimizing components with distinct responsive layouts, prefer conditional JS rendering over CSS display toggling if the component is heavy or frequent. Ensure `React.memo` comparison functions are updated to include the responsive state prop (e.g., `isDesktop`).
+## 2025-02-14 - Voice Context Performance Optimization
+**Learning:** Frequent context updates (e.g., 10fps audio levels) trigger re-renders in all consumers, even if they only use stable parts of the context. Splitting context into stable (control/state) and unstable (high-frequency data) parts isolates re-renders.
+**Action:** When integrating real-time data (like audio levels) into a large component tree, split the Context Provider and use specific hooks (`useVoiceControl` vs `useVoiceAudio`) or dedicated wrapper components (`SelfPlayerAvatar`, `ConnectedVoiceControlBubble`) to prevent root component re-renders.

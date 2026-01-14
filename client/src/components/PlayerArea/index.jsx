@@ -2,6 +2,7 @@ import { memo } from 'react';
 import CardCountIndicator from '../CardCountIndicator';
 import VoiceIndicator from '../VoiceIndicator';
 import { FaceDownCardHorizontal, FaceDownCardVertical } from './FaceDownCard';
+import { useVoiceAudio } from '../../contexts/VoiceContext';
 
 // ⚡ Bolt Optimization: Memoized sub-components to prevent re-renders of static UI
 // when high-frequency props (like voiceAudioLevels) update in the parent.
@@ -9,8 +10,11 @@ import { FaceDownCardHorizontal, FaceDownCardVertical } from './FaceDownCard';
 /**
  * Player avatar component - shared between all player areas
  */
-const PlayerAvatarBase = ({ player, isTurn, isClickable, onPlayerClick, voiceAudioLevels }) => {
+const PlayerAvatarBase = ({ player, isTurn, isClickable, onPlayerClick }) => {
     const isDisconnected = player.isDisconnected;
+    const { audioLevels } = useVoiceAudio();
+    const audioLevel = audioLevels?.[player.name] || 0;
+    const isActive = audioLevel > 0.05;
 
     return (
         <div className="relative">
@@ -24,33 +28,14 @@ const PlayerAvatarBase = ({ player, isTurn, isClickable, onPlayerClick, voiceAud
                 {player.name.substring(0, 2).toUpperCase()}
             </div>
             <VoiceIndicator
-                isActive={voiceAudioLevels && voiceAudioLevels[player.name] > 0.05}
-                level={voiceAudioLevels?.[player.name] || 0}
+                isActive={isActive}
+                level={audioLevel}
             />
         </div>
     );
 };
 
-const PlayerAvatar = memo(PlayerAvatarBase, (prevProps, nextProps) => {
-    // ⚡ Bolt Optimization: Custom comparison to prevent re-renders when other players speak
-    // or when the audio level object changes but THIS player's level remains the same.
-
-    // Check if critical props changed
-    if (
-        prevProps.player !== nextProps.player ||
-        prevProps.isTurn !== nextProps.isTurn ||
-        prevProps.isClickable !== nextProps.isClickable ||
-        prevProps.onPlayerClick !== nextProps.onPlayerClick
-    ) {
-        return false; // Re-render needed
-    }
-
-    // Check voice levels specifically for this player
-    const prevLevel = prevProps.voiceAudioLevels?.[prevProps.player.name];
-    const nextLevel = nextProps.voiceAudioLevels?.[nextProps.player.name];
-
-    return prevLevel === nextLevel; // Only skip render if level is identical
-});
+const PlayerAvatar = memo(PlayerAvatarBase);
 
 /**
  * Disconnected badge component
@@ -73,7 +58,7 @@ const PlayerNameLabel = memo(({ player }) => (
 /**
  * Top Player Area - cards horizontal on left, avatar on right
  */
-export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -95,7 +80,6 @@ export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voic
                         isTurn={isTurn}
                         isClickable={isClickable}
                         onPlayerClick={onPlayerClick}
-                        voiceAudioLevels={voiceAudioLevels}
                     />
                     {isDisconnected && <DisconnectedBadge />}
                     <PlayerNameLabel player={player} />
@@ -111,7 +95,7 @@ export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voic
 /**
  * Left Player Area - cards vertical (rotated 90°), avatar at top
  */
-export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -127,7 +111,6 @@ export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voi
                         isTurn={isTurn}
                         isClickable={isClickable}
                         onPlayerClick={onPlayerClick}
-                        voiceAudioLevels={voiceAudioLevels}
                     />
                     {isDisconnected && <DisconnectedBadge />}
                     <PlayerNameLabel player={player} />
@@ -148,7 +131,7 @@ export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voi
 /**
  * Right Player Area - cards vertical (rotated 90°), avatar at top
  */
-export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -164,7 +147,6 @@ export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, vo
                         isTurn={isTurn}
                         isClickable={isClickable}
                         onPlayerClick={onPlayerClick}
-                        voiceAudioLevels={voiceAudioLevels}
                     />
                     {isDisconnected && <DisconnectedBadge />}
                     <PlayerNameLabel player={player} />
