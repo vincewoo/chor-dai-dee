@@ -34,13 +34,15 @@ const GameRoom = ({ user, socket }) => {
     const [myPlayerId, setMyPlayerId] = useState(socket.id);
     // Determine desktop mode for dynamic card spacing
     // Initialize with a safe check for SSR (though this is a client app)
-    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+    const [isDesktop, setIsDesktop] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return window.matchMedia('(min-width: 768px)').matches;
+        }
+        return true;
+    });
 
     useEffect(() => {
         const media = window.matchMedia('(min-width: 768px)');
-
-        // Set initial value from media query
-        setIsDesktop(media.matches);
 
         const listener = (e) => setIsDesktop(e.matches);
         media.addEventListener('change', listener);
@@ -1295,6 +1297,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(2))}
                 voiceAudioLevels={voiceAudioLevels}
+                isDesktop={isDesktop}
             />
 
             {/* Left Player (Offset 3) */}
@@ -1304,6 +1307,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(3))}
                 voiceAudioLevels={voiceAudioLevels}
+                isDesktop={isDesktop}
             />
 
             {/* Right Player (Offset 1) */}
@@ -1313,6 +1317,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(1))}
                 voiceAudioLevels={voiceAudioLevels}
+                isDesktop={isDesktop}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}
