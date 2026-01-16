@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useVoiceAudio } from '../contexts/VoiceContext';
 import VoiceControlModal from './VoiceControlModal';
 
 const VoiceControlBubble = ({
@@ -7,7 +8,6 @@ const VoiceControlBubble = ({
   isVoiceConnected,
   isMuted,
   isDeafened,
-  audioLevel = 0,
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -18,6 +18,8 @@ const VoiceControlBubble = ({
   size = 'mobile' // 'mobile' or 'desktop'
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const { audioLevels } = useVoiceAudio();
+  const audioLevel = audioLevels?.[username] || 0;
 
   const isSpeaking = voiceEnabled && isVoiceConnected && audioLevel > 0.05;
 
