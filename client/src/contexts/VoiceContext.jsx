@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as SimplePeerModule from 'simple-peer';
 
 // Handle both default export and named export scenarios
@@ -11,6 +11,7 @@ const ICE_SERVERS = [
 ];
 
 const VoiceContext = createContext(null);
+export const VoiceAudioContext = createContext({});
 
 export const useVoice = () => {
   const context = useContext(VoiceContext);
@@ -18,6 +19,10 @@ export const useVoice = () => {
     throw new Error('useVoice must be used within a VoiceProvider');
   }
   return context;
+};
+
+export const useVoiceAudio = () => {
+  return useContext(VoiceAudioContext);
 };
 
 export const VoiceProvider = ({ socket, children }) => {
@@ -209,6 +214,43 @@ export const VoiceProvider = ({ socket, children }) => {
     return peer;
   }, [socket, monitorAudioLevel, playerVolumes]);
 
+  // Leave voice room
+  const leaveVoiceRoom = useCallback(() => {
+    // Stop local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Destroy all peer connections
+    Object.values(peersRef.current).forEach(peer => {
+      try {
+        peer.destroy();
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+    });
+    peersRef.current = {};
+    setPeers({});
+
+    // Clear analyzers
+    analyzersRef.current = {};
+    setAudioLevels({});
+
+    // Notify server
+    if (socket && currentRoomId) {
+      socket.emit('voice:leave');
+    }
+
+    // Reset state
+    setCurrentRoomId(null);
+    setCurrentUsername(null);
+    setIsVoiceConnected(false);
+    setVoiceEnabled(false);
+    setIsMuted(false);
+    setIsDeafened(false);
+  }, [socket, currentRoomId]);
+
   // Join voice room
   const joinVoiceRoom = useCallback(async (roomId, username) => {
     if (!socket || !roomId || !username) return false;
@@ -275,44 +317,7 @@ export const VoiceProvider = ({ socket, children }) => {
       setIsVoiceConnected(false);
       return false;
     }
-  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel]);
-
-  // Leave voice room
-  const leaveVoiceRoom = useCallback(() => {
-    // Stop local stream
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    // Destroy all peer connections
-    Object.values(peersRef.current).forEach(peer => {
-      try {
-        peer.destroy();
-      } catch (e) {
-        // Ignore errors during cleanup
-      }
-    });
-    peersRef.current = {};
-    setPeers({});
-
-    // Clear analyzers
-    analyzersRef.current = {};
-    setAudioLevels({});
-
-    // Notify server
-    if (socket && currentRoomId) {
-      socket.emit('voice:leave');
-    }
-
-    // Reset state
-    setCurrentRoomId(null);
-    setCurrentUsername(null);
-    setIsVoiceConnected(false);
-    setVoiceEnabled(false);
-    setIsMuted(false);
-    setIsDeafened(false);
-  }, [socket, currentRoomId]);
+  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel, leaveVoiceRoom]);
 
   // Toggle voice on/off
   const toggleVoice = useCallback(async (roomId, username) => {
@@ -462,15 +467,16 @@ export const VoiceProvider = ({ socket, children }) => {
     };
   }, []);
 
-  const value = {
-    // State
+  // ⚡ Bolt Optimization: Memoize the main context value to prevent re-renders
+  // when only audioLevels change. Audio levels are passed via VoiceAudioContext.
+  const value = useMemo(() => ({
+    // State (excluding audioLevels)
     voiceEnabled,
     isVoiceConnected,
     isMuted,
     isDeafened,
     currentRoomId,
     peers: Object.keys(peers),
-    audioLevels,
     permissionError,
     playerVolumes,
 
@@ -482,11 +488,29 @@ export const VoiceProvider = ({ socket, children }) => {
     toggleDeafen,
     setPlayerVolume,
     setVoiceEnabled
-  };
+  }), [
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
+    currentRoomId,
+    peers,
+    permissionError,
+    playerVolumes,
+    joinVoiceRoom,
+    leaveVoiceRoom,
+    toggleVoice,
+    toggleMute,
+    toggleDeafen,
+    setPlayerVolume,
+    setVoiceEnabled
+  ]);
 
   return (
     <VoiceContext.Provider value={value}>
-      {children}
+      <VoiceAudioContext.Provider value={audioLevels}>
+        {children}
+      </VoiceAudioContext.Provider>
     </VoiceContext.Provider>
   );
 };

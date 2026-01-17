@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import VoiceControlModal from './VoiceControlModal';
+import { useVoiceAudio } from '../contexts/VoiceContext';
 
 const VoiceControlBubble = ({
   username,
@@ -7,7 +8,7 @@ const VoiceControlBubble = ({
   isVoiceConnected,
   isMuted,
   isDeafened,
-  audioLevel = 0,
+  audioLevel: propAudioLevel, // ⚡ Bolt Optimization: Accept audio level as prop or fetch from context
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -18,6 +19,12 @@ const VoiceControlBubble = ({
   size = 'mobile' // 'mobile' or 'desktop'
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const audioLevels = useVoiceAudio();
+
+  // Use prop if provided, otherwise fetch from context (preferred for performance)
+  const audioLevel = propAudioLevel !== undefined
+    ? propAudioLevel
+    : (audioLevels?.[username] || 0);
 
   const isSpeaking = voiceEnabled && isVoiceConnected && audioLevel > 0.05;
 
