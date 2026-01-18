@@ -1295,6 +1295,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(2))}
                 voiceAudioLevels={voiceAudioLevels}
+                isDesktop={isDesktop}
             />
 
             {/* Left Player (Offset 3) */}
@@ -1304,6 +1305,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(3))}
                 voiceAudioLevels={voiceAudioLevels}
+                isDesktop={isDesktop}
             />
 
             {/* Right Player (Offset 1) */}
@@ -1313,6 +1315,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(1))}
                 voiceAudioLevels={voiceAudioLevels}
+                isDesktop={isDesktop}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}

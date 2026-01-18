@@ -73,7 +73,7 @@ const PlayerNameLabel = memo(({ player }) => (
 /**
  * Top Player Area - cards horizontal on left, avatar on right
  */
-export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels, isDesktop }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -83,11 +83,13 @@ export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voic
             {/* Player info and cards */}
             <div className={`absolute top-[8px] md:top-[2vh] left-1/2 -translate-x-1/3 flex items-center gap-4 md:gap-[2vmax] transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Cards - horizontal (hidden on mobile) */}
-                <div className="hidden md:flex -ml-4 md:-ml-[2vmax]">
-                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <FaceDownCardHorizontal key={i} index={i} />
-                    ))}
-                </div>
+                {isDesktop && (
+                    <div className="hidden md:flex -ml-4 md:-ml-[2vmax]">
+                        {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
+                            <FaceDownCardHorizontal key={i} index={i} />
+                        ))}
+                    </div>
+                )}
                 {/* Avatar */}
                 <div className="flex flex-col items-center shrink-0 relative">
                     <PlayerAvatar
@@ -111,7 +113,7 @@ export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voic
 /**
  * Left Player Area - cards vertical (rotated 90°), avatar at top
  */
-export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels, isDesktop }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -135,11 +137,13 @@ export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voi
                     <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
                 {/* Cards - horizontal stack (hidden on mobile) */}
-                <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
-                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <FaceDownCardVertical key={i} index={i} />
-                    ))}
-                </div>
+                {isDesktop && (
+                    <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
+                        {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
+                            <FaceDownCardVertical key={i} index={i} />
+                        ))}
+                    </div>
+                )}
             </div>
         </>
     );
@@ -148,7 +152,7 @@ export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voi
 /**
  * Right Player Area - cards vertical (rotated 90°), avatar at top
  */
-export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels, isDesktop }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -172,11 +176,13 @@ export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, vo
                     <div className="hidden md:block text-yellow-300 md:text-[0.7vmax]">{player.cardCount} Cards</div>
                 </div>
                 {/* Cards - horizontal stack (hidden on mobile) */}
-                <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
-                    {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
-                        <FaceDownCardVertical key={i} index={i} />
-                    ))}
-                </div>
+                {isDesktop && (
+                    <div className="hidden md:flex flex-col md:-mt-[1.5vmax] pt-4">
+                        {Array.from({ length: Math.min(player.cardCount, 13) }).map((_, i) => (
+                            <FaceDownCardVertical key={i} index={i} />
+                        ))}
+                    </div>
+                )}
             </div>
         </>
     );
