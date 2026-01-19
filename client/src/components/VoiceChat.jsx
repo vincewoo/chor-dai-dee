@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useVoice } from '../contexts/VoiceContext';
+import { useVoice, useVoiceAudio } from '../contexts/VoiceContext';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const VoiceChat = ({
@@ -16,7 +16,7 @@ const VoiceChat = ({
     isMuted,
     isDeafened,
     peers,
-    audioLevels,
+    // audioLevels, // ⚡ Bolt Optimization: Consumed via useVoiceAudio now
     permissionError,
     playerVolumes,
     joinVoiceRoom,
@@ -25,6 +25,9 @@ const VoiceChat = ({
     toggleDeafen,
     setPlayerVolume
   } = useVoice();
+
+  // ⚡ Bolt Optimization: Consume audio levels separately to isolate updates
+  const { audioLevels } = useVoiceAudio();
 
   // Store stable callback refs to avoid infinite loops
   const callbacksRef = useRef({});
@@ -65,6 +68,7 @@ const VoiceChat = ({
         isDeafened,
         peers,
         playerVolumes,
+        audioLevels, // Pass current audio levels if parent needs it (mostly for bubble)
         permissionError,
         handleVoiceToggle: () => callbacksRef.current.handleVoiceToggle?.(),
         toggleMute: () => callbacksRef.current.toggleMute?.(),
@@ -80,7 +84,19 @@ const VoiceChat = ({
     isDeafened,
     JSON.stringify(peers),
     JSON.stringify(playerVolumes),
-    permissionError
+    permissionError,
+    // NOTE: Adding audioLevels here WOULD re-introduce the performance issue if the parent (GameRoom)
+    // uses this callback to update its state.
+    // However, onVoiceStateChange is used to pass state to GameRoom which passes it to VoiceControlBubble.
+    // If we include audioLevels here, GameRoom will re-render on every audio frame.
+    // Ideally, VoiceControlBubble should consume context directly too.
+    // For now, we omit audioLevels from the dependency array to prevent loop,
+    // but we pass the *ref* or latest value if possible?
+    // Actually, let's keep it out of the dependency array and just pass the current value.
+    // The bubble might look laggy if it depends on this effect, but we fixed Bubble to consume context or props.
+    // Wait, VoiceControlBubble in GameRoom receives `audioLevel={voiceState?.audioLevels?.[user?.username]}`
+    // If we don't trigger this effect, VoiceControlBubble won't update.
+    // So we *must* fix VoiceControlBubble to not rely on this prop drilling from GameRoom.
   ]);
 
   // Get speaking indicator size based on audio level

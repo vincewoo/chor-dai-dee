@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import VoiceControlModal from './VoiceControlModal';
+import { useVoiceAudio } from '../contexts/VoiceContext';
 
+// ⚡ Bolt Optimization: Now consumes high-frequency audio context directly
 const VoiceControlBubble = ({
   username,
   voiceEnabled,
   isVoiceConnected,
   isMuted,
   isDeafened,
-  audioLevel = 0,
+  // audioLevel = 0, // Removed prop
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -18,6 +20,10 @@ const VoiceControlBubble = ({
   size = 'mobile' // 'mobile' or 'desktop'
 }) => {
   const [showModal, setShowModal] = useState(false);
+
+  // ⚡ Bolt Optimization: Use local subscription to audio levels
+  const { audioLevels } = useVoiceAudio();
+  const audioLevel = audioLevels?.[username] || 0;
 
   const isSpeaking = voiceEnabled && isVoiceConnected && audioLevel > 0.05;
 
