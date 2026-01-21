@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import VoiceControlModal from './VoiceControlModal';
+import { useVoiceAudio } from '../contexts/VoiceContext';
 
 const VoiceControlBubble = ({
   username,
@@ -7,7 +8,7 @@ const VoiceControlBubble = ({
   isVoiceConnected,
   isMuted,
   isDeafened,
-  audioLevel = 0,
+  audioLevel, // Optional: if not provided, will be fetched from context
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -18,8 +19,14 @@ const VoiceControlBubble = ({
   size = 'mobile' // 'mobile' or 'desktop'
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const { audioLevels } = useVoiceAudio();
 
-  const isSpeaking = voiceEnabled && isVoiceConnected && audioLevel > 0.05;
+  // Use prop if provided, otherwise fetch from context
+  const currentLevel = audioLevel !== undefined
+    ? audioLevel
+    : (username && audioLevels?.[username]) || 0;
+
+  const isSpeaking = voiceEnabled && isVoiceConnected && currentLevel > 0.05;
 
   // Check if other players have voice active (to prompt user to join)
   const othersInVoice = !voiceEnabled && peers && peers.length > 0;
@@ -137,9 +144,9 @@ const VoiceControlBubble = ({
                 <div
                   key={index}
                   className={`w-1 rounded-full transition-all duration-100 ${
-                    audioLevel > threshold ? 'bg-green-400' : 'bg-gray-500'
+                    currentLevel > threshold ? 'bg-green-400' : 'bg-gray-500'
                   }`}
-                  style={{ height: audioLevel > threshold ? '6px' : '3px' }}
+                  style={{ height: currentLevel > threshold ? '6px' : '3px' }}
                 />
               ))}
             </div>

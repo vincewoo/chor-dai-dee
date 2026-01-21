@@ -15,11 +15,11 @@ import { GAME_MODES } from '../constants/gameModes';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import Modal from './Modal';
 import VoiceChat from './VoiceChat';
-import VoiceIndicator from './VoiceIndicator';
 import VoiceControlBubble from './VoiceControlBubble';
 import { useVoice } from '../contexts/VoiceContext';
 import { SortableCard, PlayedCards } from './cards';
 import { TopPlayerArea, LeftPlayerArea, RightPlayerArea } from './PlayerArea';
+import SelfPlayerAvatar from './SelfPlayerAvatar';
 import { SettingsModal, LeaveConfirmModal, KickConfirmModal } from './modals';
 import { RoundOverScreen, MobileScoreboard } from './overlays';
 
@@ -128,8 +128,6 @@ const GameRoom = ({ user, socket }) => {
 
     // Voice context for persistent voice across navigation
     const voiceContext = useVoice();
-    // Use audio levels directly from context to avoid double renders
-    const { audioLevels: voiceAudioLevels } = voiceContext;
 
     // Track voice user count for non-connected users to see who's in voice
     const [voiceUserCount, setVoiceUserCount] = useState(0);
@@ -1294,7 +1292,6 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(2)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(2))}
-                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* Left Player (Offset 3) */}
@@ -1303,7 +1300,6 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(3)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(3))}
-                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* Right Player (Offset 1) */}
@@ -1312,7 +1308,6 @@ const GameRoom = ({ user, socket }) => {
                 isTurn={gameState.currentTurn === getRelativePlayer(1)?.id}
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(1))}
-                voiceAudioLevels={voiceAudioLevels}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}
@@ -1433,7 +1428,6 @@ const GameRoom = ({ user, socket }) => {
                             isVoiceConnected={voiceState?.isVoiceConnected || false}
                             isMuted={voiceState?.isMuted || false}
                             isDeafened={voiceState?.isDeafened || false}
-                            audioLevel={voiceAudioLevels[user?.username] || 0}
                             onToggleVoice={voiceState?.handleVoiceToggle}
                             onToggleMute={voiceState?.toggleMute}
                             onToggleDeafen={voiceState?.toggleDeafen}
@@ -1493,29 +1487,12 @@ const GameRoom = ({ user, socket }) => {
                     </div>
 
                     {/* Avatar - Right side (Desktop only) */}
-                    <div className="hidden md:flex flex-col items-center mb-[0.5vmax]">
-                        <div className="relative">
-                            <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
-                                ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
-                                    ? 'border-green-400 bg-green-400 text-white animate-pulse'
-                                    : isMyTurn
-                                        ? 'border-yellow-400 bg-yellow-400 text-black animate-pulse'
-                                        : 'border-yellow-600 bg-yellow-500 text-black'}`}>
-                                {user?.username?.substring(0, 2).toUpperCase() || 'ME'}
-                            </div>
-                            <VoiceIndicator
-                                isActive={voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05}
-                                level={voiceAudioLevels[user?.username] || 0}
-                            />
-                        </div>
-                        <div className="text-white bg-black/50 px-[0.5vmax] py-[0.15vmax] rounded text-[0.8vmax] font-semibold shadow mt-[0.25vmax]">
-                            {user?.username || 'You'}
-                            {myIndex !== -1 && gameState.players[myIndex].rating !== undefined && (
-                                <span className="text-yellow-200"> ({gameState.players[myIndex].rating})</span>
-                            )}
-                        </div>
-                        <div className="text-yellow-300 text-[0.7vmax]">{myHand.length} Cards</div>
-                    </div>
+                    <SelfPlayerAvatar
+                        user={user}
+                        isMyTurn={isMyTurn}
+                        rating={myIndex !== -1 ? gameState.players[myIndex].rating : undefined}
+                        cardCount={myHand.length}
+                    />
                 </div>
             </div>
 
