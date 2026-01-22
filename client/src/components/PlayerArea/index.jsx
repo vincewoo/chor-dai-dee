@@ -2,6 +2,7 @@ import { memo } from 'react';
 import CardCountIndicator from '../CardCountIndicator';
 import VoiceIndicator from '../VoiceIndicator';
 import { FaceDownCardHorizontal, FaceDownCardVertical } from './FaceDownCard';
+import { useVoiceAudio } from '../../contexts/VoiceContext';
 
 // ⚡ Bolt Optimization: Memoized sub-components to prevent re-renders of static UI
 // when high-frequency props (like voiceAudioLevels) update in the parent.
@@ -53,6 +54,23 @@ const PlayerAvatar = memo(PlayerAvatarBase, (prevProps, nextProps) => {
 });
 
 /**
+ * Connected wrapper for PlayerAvatar to consume voice context
+ * This isolates the high-frequency updates to this small component
+ */
+export const ConnectedPlayerAvatar = ({ player, isTurn, isClickable, onPlayerClick }) => {
+    const { audioLevels } = useVoiceAudio();
+    return (
+        <PlayerAvatar
+            player={player}
+            isTurn={isTurn}
+            isClickable={isClickable}
+            onPlayerClick={onPlayerClick}
+            voiceAudioLevels={audioLevels}
+        />
+    );
+};
+
+/**
  * Disconnected badge component
  */
 const DisconnectedBadge = memo(() => (
@@ -73,7 +91,7 @@ const PlayerNameLabel = memo(({ player }) => (
 /**
  * Top Player Area - cards horizontal on left, avatar on right
  */
-export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -90,12 +108,11 @@ export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voic
                 </div>
                 {/* Avatar */}
                 <div className="flex flex-col items-center shrink-0 relative">
-                    <PlayerAvatar
+                    <ConnectedPlayerAvatar
                         player={player}
                         isTurn={isTurn}
                         isClickable={isClickable}
                         onPlayerClick={onPlayerClick}
-                        voiceAudioLevels={voiceAudioLevels}
                     />
                     {isDisconnected && <DisconnectedBadge />}
                     <PlayerNameLabel player={player} />
@@ -111,7 +128,7 @@ export const TopPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voic
 /**
  * Left Player Area - cards vertical (rotated 90°), avatar at top
  */
-export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -122,12 +139,11 @@ export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voi
             <div className={`absolute left-[2px] md:left-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
                 <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <PlayerAvatar
+                    <ConnectedPlayerAvatar
                         player={player}
                         isTurn={isTurn}
                         isClickable={isClickable}
                         onPlayerClick={onPlayerClick}
-                        voiceAudioLevels={voiceAudioLevels}
                     />
                     {isDisconnected && <DisconnectedBadge />}
                     <PlayerNameLabel player={player} />
@@ -148,7 +164,7 @@ export const LeftPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voi
 /**
  * Right Player Area - cards vertical (rotated 90°), avatar at top
  */
-export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, voiceAudioLevels }) => {
+export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable }) => {
     if (!player) return null;
 
     const isDisconnected = player.isDisconnected;
@@ -159,12 +175,11 @@ export const RightPlayerArea = ({ player, isTurn, onPlayerClick, isClickable, vo
             <div className={`absolute right-[2px] md:right-[1vw] top-1/2 -translate-y-1/2 flex flex-col items-center transition-all ${isTurn ? 'scale-105' : 'scale-100'} ${isDisconnected ? 'opacity-50' : ''}`}>
                 {/* Avatar */}
                 <div className="flex flex-col items-center mb-8 md:mb-[2.5vmax] relative">
-                    <PlayerAvatar
+                    <ConnectedPlayerAvatar
                         player={player}
                         isTurn={isTurn}
                         isClickable={isClickable}
                         onPlayerClick={onPlayerClick}
-                        voiceAudioLevels={voiceAudioLevels}
                     />
                     {isDisconnected && <DisconnectedBadge />}
                     <PlayerNameLabel player={player} />
