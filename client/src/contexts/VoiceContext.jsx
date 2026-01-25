@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as SimplePeerModule from 'simple-peer';
 
 // Handle both default export and named export scenarios
@@ -11,11 +11,20 @@ const ICE_SERVERS = [
 ];
 
 const VoiceContext = createContext(null);
+const VoiceAudioContext = createContext(null);
 
 export const useVoice = () => {
   const context = useContext(VoiceContext);
   if (!context) {
     throw new Error('useVoice must be used within a VoiceProvider');
+  }
+  return context;
+};
+
+export const useVoiceAudio = () => {
+  const context = useContext(VoiceAudioContext);
+  if (!context) {
+    throw new Error('useVoiceAudio must be used within a VoiceProvider');
   }
   return context;
 };
@@ -128,6 +137,43 @@ export const VoiceProvider = ({ socket, children }) => {
       }
     };
   }, []);
+
+  // Leave voice room
+  const leaveVoiceRoom = useCallback(() => {
+    // Stop local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Destroy all peer connections
+    Object.values(peersRef.current).forEach(peer => {
+      try {
+        peer.destroy();
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+    });
+    peersRef.current = {};
+    setPeers({});
+
+    // Clear analyzers
+    analyzersRef.current = {};
+    setAudioLevels({});
+
+    // Notify server
+    if (socket && currentRoomId) {
+      socket.emit('voice:leave');
+    }
+
+    // Reset state
+    setCurrentRoomId(null);
+    setCurrentUsername(null);
+    setIsVoiceConnected(false);
+    setVoiceEnabled(false);
+    setIsMuted(false);
+    setIsDeafened(false);
+  }, [socket, currentRoomId]);
 
   // Create peer connection
   const createPeer = useCallback((userId, initiator) => {
@@ -275,44 +321,7 @@ export const VoiceProvider = ({ socket, children }) => {
       setIsVoiceConnected(false);
       return false;
     }
-  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel]);
-
-  // Leave voice room
-  const leaveVoiceRoom = useCallback(() => {
-    // Stop local stream
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    // Destroy all peer connections
-    Object.values(peersRef.current).forEach(peer => {
-      try {
-        peer.destroy();
-      } catch (e) {
-        // Ignore errors during cleanup
-      }
-    });
-    peersRef.current = {};
-    setPeers({});
-
-    // Clear analyzers
-    analyzersRef.current = {};
-    setAudioLevels({});
-
-    // Notify server
-    if (socket && currentRoomId) {
-      socket.emit('voice:leave');
-    }
-
-    // Reset state
-    setCurrentRoomId(null);
-    setCurrentUsername(null);
-    setIsVoiceConnected(false);
-    setVoiceEnabled(false);
-    setIsMuted(false);
-    setIsDeafened(false);
-  }, [socket, currentRoomId]);
+  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel, leaveVoiceRoom]);
 
   // Toggle voice on/off
   const toggleVoice = useCallback(async (roomId, username) => {
@@ -462,7 +471,7 @@ export const VoiceProvider = ({ socket, children }) => {
     };
   }, []);
 
-  const value = {
+  const contextValue = useMemo(() => ({
     // State
     voiceEnabled,
     isVoiceConnected,
@@ -470,9 +479,7 @@ export const VoiceProvider = ({ socket, children }) => {
     isDeafened,
     currentRoomId,
     peers: Object.keys(peers),
-    audioLevels,
     permissionError,
-    playerVolumes,
 
     // Actions
     joinVoiceRoom,
@@ -482,11 +489,33 @@ export const VoiceProvider = ({ socket, children }) => {
     toggleDeafen,
     setPlayerVolume,
     setVoiceEnabled
-  };
+  }), [
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
+    currentRoomId,
+    peers,
+    permissionError,
+    joinVoiceRoom,
+    leaveVoiceRoom,
+    toggleVoice,
+    toggleMute,
+    toggleDeafen,
+    setPlayerVolume,
+    setVoiceEnabled
+  ]);
+
+  const audioValue = useMemo(() => ({
+    audioLevels,
+    playerVolumes
+  }), [audioLevels, playerVolumes]);
 
   return (
-    <VoiceContext.Provider value={value}>
-      {children}
+    <VoiceContext.Provider value={contextValue}>
+      <VoiceAudioContext.Provider value={audioValue}>
+        {children}
+      </VoiceAudioContext.Provider>
     </VoiceContext.Provider>
   );
 };
