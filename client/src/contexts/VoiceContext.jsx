@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as SimplePeerModule from 'simple-peer';
 
 // Handle both default export and named export scenarios
@@ -11,11 +11,20 @@ const ICE_SERVERS = [
 ];
 
 const VoiceContext = createContext(null);
+const VoiceAudioContext = createContext(null);
 
 export const useVoice = () => {
   const context = useContext(VoiceContext);
   if (!context) {
     throw new Error('useVoice must be used within a VoiceProvider');
+  }
+  return context;
+};
+
+export const useVoiceAudio = () => {
+  const context = useContext(VoiceAudioContext);
+  if (!context) {
+    throw new Error('useVoiceAudio must be used within a VoiceProvider');
   }
   return context;
 };
@@ -111,7 +120,7 @@ export const VoiceProvider = ({ socket, children }) => {
         lastUpdateTime = now;
         // Reset error flag on successful read
         errorLogged = false;
-      } catch (err) {
+      } catch {
         // Only log once to avoid spamming
         if (!errorLogged) {
           console.debug('[VoiceContext] Audio level monitoring paused (context suspended)');
@@ -128,6 +137,111 @@ export const VoiceProvider = ({ socket, children }) => {
       }
     };
   }, []);
+
+  // Leave voice room
+  const leaveVoiceRoom = useCallback(() => {
+    // Stop local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Destroy all peer connections
+    Object.values(peersRef.current).forEach(peer => {
+      try {
+        peer.destroy();
+      } catch {
+        // Ignore errors during cleanup
+      }
+    });
+    peersRef.current = {};
+    setPeers({});
+
+    // Clear analyzers
+    analyzersRef.current = {};
+    setAudioLevels({});
+
+    // Notify server
+    if (socket && currentRoomId) {
+      socket.emit('voice:leave');
+    }
+
+    // Reset state
+    setCurrentRoomId(null);
+    setCurrentUsername(null);
+    setIsVoiceConnected(false);
+    setVoiceEnabled(false);
+    setIsMuted(false);
+    setIsDeafened(false);
+  }, [socket, currentRoomId]);
+
+  // Join voice room
+  const joinVoiceRoom = useCallback(async (roomId, username) => {
+    if (!socket || !roomId || !username) return false;
+
+    // If already in a different room, leave it first
+    if (currentRoomId && currentRoomId !== roomId) {
+      leaveVoiceRoom();
+    }
+
+    try {
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          // iOS Safari specific constraints that might help
+          sampleRate: 44100,
+          channelCount: 1
+        }
+      });
+
+      localStreamRef.current = stream;
+      setPermissionError(false);
+
+      // Initialize audio context and monitor local audio
+      const audioCtx = initAudioContext();
+
+      // Setup audio analyzer regardless of context state
+      // This is important for iOS where context starts suspended
+      try {
+        // For iOS Safari, we need to resume the context on user interaction
+        if (audioCtx.state === 'suspended') {
+          console.log('[VoiceContext] AudioContext suspended, attempting to resume...');
+          audioCtx.resume().then(() => {
+            console.log('[VoiceContext] AudioContext resumed successfully');
+          }).catch(err => {
+            console.warn('[VoiceContext] Failed to resume AudioContext:', err);
+          });
+        }
+
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyzer = audioCtx.createAnalyser();
+        analyzer.fftSize = 256;
+        analyzer.smoothingTimeConstant = 0.8;
+        source.connect(analyzer);
+        analyzersRef.current[username] = analyzer;
+        monitorAudioLevel(username, analyzer);
+      } catch (err) {
+        console.error('[VoiceContext] Failed to setup audio analyzer:', err);
+      }
+
+      // Join the voice channel
+      socket.emit('voice:join', { roomId, username });
+      setCurrentRoomId(roomId);
+      setCurrentUsername(username);
+      setIsVoiceConnected(true);
+      setVoiceEnabled(true);
+
+      return true;
+    } catch (err) {
+      console.error('[VoiceContext] Failed to get user media:', err);
+      setPermissionError(true);
+      setIsVoiceConnected(false);
+      return false;
+    }
+  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel, leaveVoiceRoom]);
 
   // Create peer connection
   const createPeer = useCallback((userId, initiator) => {
@@ -208,111 +322,6 @@ export const VoiceProvider = ({ socket, children }) => {
 
     return peer;
   }, [socket, monitorAudioLevel, playerVolumes]);
-
-  // Join voice room
-  const joinVoiceRoom = useCallback(async (roomId, username) => {
-    if (!socket || !roomId || !username) return false;
-
-    // If already in a different room, leave it first
-    if (currentRoomId && currentRoomId !== roomId) {
-      leaveVoiceRoom();
-    }
-
-    try {
-      // Request microphone permission
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          // iOS Safari specific constraints that might help
-          sampleRate: 44100,
-          channelCount: 1
-        }
-      });
-
-      localStreamRef.current = stream;
-      setPermissionError(false);
-
-      // Initialize audio context and monitor local audio
-      const audioCtx = initAudioContext();
-
-      // Setup audio analyzer regardless of context state
-      // This is important for iOS where context starts suspended
-      try {
-        // For iOS Safari, we need to resume the context on user interaction
-        if (audioCtx.state === 'suspended') {
-          console.log('[VoiceContext] AudioContext suspended, attempting to resume...');
-          audioCtx.resume().then(() => {
-            console.log('[VoiceContext] AudioContext resumed successfully');
-          }).catch(err => {
-            console.warn('[VoiceContext] Failed to resume AudioContext:', err);
-          });
-        }
-
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyzer = audioCtx.createAnalyser();
-        analyzer.fftSize = 256;
-        analyzer.smoothingTimeConstant = 0.8;
-        source.connect(analyzer);
-        analyzersRef.current[username] = analyzer;
-        monitorAudioLevel(username, analyzer);
-      } catch (err) {
-        console.error('[VoiceContext] Failed to setup audio analyzer:', err);
-      }
-
-      // Join the voice channel
-      socket.emit('voice:join', { roomId, username });
-      setCurrentRoomId(roomId);
-      setCurrentUsername(username);
-      setIsVoiceConnected(true);
-      setVoiceEnabled(true);
-
-      return true;
-    } catch (err) {
-      console.error('[VoiceContext] Failed to get user media:', err);
-      setPermissionError(true);
-      setIsVoiceConnected(false);
-      return false;
-    }
-  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel]);
-
-  // Leave voice room
-  const leaveVoiceRoom = useCallback(() => {
-    // Stop local stream
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    // Destroy all peer connections
-    Object.values(peersRef.current).forEach(peer => {
-      try {
-        peer.destroy();
-      } catch (e) {
-        // Ignore errors during cleanup
-      }
-    });
-    peersRef.current = {};
-    setPeers({});
-
-    // Clear analyzers
-    analyzersRef.current = {};
-    setAudioLevels({});
-
-    // Notify server
-    if (socket && currentRoomId) {
-      socket.emit('voice:leave');
-    }
-
-    // Reset state
-    setCurrentRoomId(null);
-    setCurrentUsername(null);
-    setIsVoiceConnected(false);
-    setVoiceEnabled(false);
-    setIsMuted(false);
-    setIsDeafened(false);
-  }, [socket, currentRoomId]);
 
   // Toggle voice on/off
   const toggleVoice = useCallback(async (roomId, username) => {
@@ -455,14 +464,15 @@ export const VoiceProvider = ({ socket, children }) => {
       Object.values(peersRef.current).forEach(peer => {
         try {
           peer.destroy();
-        } catch (e) {
+        } catch {
           // Ignore
         }
       });
     };
   }, []);
 
-  const value = {
+  // Stable value for general voice state (re-renders only on significant state changes)
+  const value = useMemo(() => ({
     // State
     voiceEnabled,
     isVoiceConnected,
@@ -470,7 +480,6 @@ export const VoiceProvider = ({ socket, children }) => {
     isDeafened,
     currentRoomId,
     peers: Object.keys(peers),
-    audioLevels,
     permissionError,
     playerVolumes,
 
@@ -482,11 +491,33 @@ export const VoiceProvider = ({ socket, children }) => {
     toggleDeafen,
     setPlayerVolume,
     setVoiceEnabled
-  };
+  }), [
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
+    currentRoomId,
+    peers,
+    permissionError,
+    playerVolumes,
+    joinVoiceRoom,
+    leaveVoiceRoom,
+    toggleVoice,
+    toggleMute,
+    toggleDeafen,
+    setPlayerVolume
+  ]);
+
+  // High-frequency value for audio levels
+  const audioValue = useMemo(() => ({
+    audioLevels
+  }), [audioLevels]);
 
   return (
     <VoiceContext.Provider value={value}>
-      {children}
+      <VoiceAudioContext.Provider value={audioValue}>
+        {children}
+      </VoiceAudioContext.Provider>
     </VoiceContext.Provider>
   );
 };
