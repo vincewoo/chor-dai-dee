@@ -535,32 +535,36 @@ const BotLogic = {
     },
 
     /**
+     * Helper to pre-calculate card flexibility map
+     * @param {Array} allMoves - All valid moves
+     * @returns {Object} - Map of card key -> count of moves it appears in
+     */
+    calculateFlexibilityMap: (allMoves) => {
+        const map = {};
+        for (const move of allMoves) {
+            for (const card of move.cards) {
+                const key = `${card.rank}-${card.suit}`;
+                map[key] = (map[key] || 0) + 1;
+            }
+        }
+        return map;
+    },
+
+    /**
      * PHASE 1.3: Calculate flexibility score for cards in a move
      * Cards that appear in more combos are more flexible and should be preserved
      * @param {Array} moveCards - Cards in the proposed move
      * @param {Array} hand - Current hand
-     * @param {Array} allMoves - All possible valid moves
+     * @param {Object} flexibilityMap - Pre-calculated map of card frequencies
      * @returns {number} - Flexibility score (lower = more rigid, higher = more flexible)
      */
-    calculateCardFlexibility: (moveCards, hand, allMoves) => {
+    calculateCardFlexibility: (moveCards, hand, flexibilityMap) => {
         let totalFlexibility = 0;
 
-        // For each card in the move, count how many different combos it appears in
+        // For each card in the move, lookup flexibility from map
         moveCards.forEach(moveCard => {
-            let comboCount = 0;
-
-            // Count how many moves include this card
-            allMoves.forEach(move => {
-                const cardInMove = move.cards.some(c =>
-                    c.rank === moveCard.rank && c.suit === moveCard.suit
-                );
-                if (cardInMove) comboCount++;
-            });
-
-            // Add to total flexibility
-            // Cards in many combos = high flexibility (we want to keep these)
-            // Cards in few combos = low flexibility (we can play these)
-            totalFlexibility += comboCount;
+            const key = `${moveCard.rank}-${moveCard.suit}`;
+            totalFlexibility += (flexibilityMap[key] || 0);
         });
 
         // Average flexibility per card
@@ -1382,6 +1386,12 @@ const BotLogic = {
             });
         }
 
+        // Pre-calculate flexibility map if needed
+        let flexibilityMap = null;
+        if (allValidMoves && !lastPlayedHand && gamePhase === 'early') {
+            flexibilityMap = BotLogic.calculateFlexibilityMap(allValidMoves);
+        }
+
         // Priority Scoring
         const scoredMoves = candidatesToScore.map(move => {
             let score = 0;
@@ -1447,9 +1457,9 @@ const BotLogic = {
             }
 
             // PHASE 1.3: Calculate and apply flexibility scoring
-            if (allValidMoves && !lastPlayedHand && gamePhase === 'early') {
+            if (flexibilityMap) {
                 // On free plays in early game, prefer playing rigid cards (low flexibility)
-                const flexibility = BotLogic.calculateCardFlexibility(move.cards, hand, allValidMoves);
+                const flexibility = BotLogic.calculateCardFlexibility(move.cards, hand, flexibilityMap);
 
                 // Lower flexibility = better (play rigid cards first)
                 // Flexibility typically ranges from 1 (only in 1 combo) to 20+ (in many combos)
