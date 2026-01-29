@@ -1,38 +1,5 @@
 import { useState } from 'react';
-import { useVoiceAudio } from '../contexts/VoiceContext';
 import VoiceControlModal from './VoiceControlModal';
-
-// Moved outside component to prevent re-creation on render
-const MicIcon = ({ muted, deafened, size }) => {
-  const iconSize = size === 'desktop' ? 'w-[1.5vmax] h-[1.5vmax]' : 'w-5 h-5';
-
-  if (muted) {
-    // Muted mic with X
-    return (
-      <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4l16 16" className="text-red-300" />
-      </svg>
-    );
-  }
-
-  if (deafened) {
-    // Deafened - headphones with X
-    return (
-      <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4l16 16" className="text-orange-300" />
-      </svg>
-    );
-  }
-
-  // Normal mic icon
-  return (
-    <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-    </svg>
-  );
-};
 
 const VoiceControlBubble = ({
   username,
@@ -40,7 +7,7 @@ const VoiceControlBubble = ({
   isVoiceConnected,
   isMuted,
   isDeafened,
-  audioLevel: propAudioLevel,
+  audioLevel = 0,
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -51,10 +18,6 @@ const VoiceControlBubble = ({
   size = 'mobile' // 'mobile' or 'desktop'
 }) => {
   const [showModal, setShowModal] = useState(false);
-
-  // ⚡ Bolt Optimization: Consume audio levels from context directly if not provided as prop
-  const { audioLevels } = useVoiceAudio();
-  const audioLevel = propAudioLevel !== undefined ? propAudioLevel : (audioLevels?.[username] || 0);
 
   const isSpeaking = voiceEnabled && isVoiceConnected && audioLevel > 0.05;
 
@@ -92,6 +55,38 @@ const VoiceControlBubble = ({
     ? 'w-[4vmax] h-[4vmax] text-[1.2vmax]'
     : 'w-10 h-10 text-sm';
 
+  // Mic icon for all states
+  const MicIcon = ({ muted, deafened }) => {
+    const iconSize = size === 'desktop' ? 'w-[1.5vmax] h-[1.5vmax]' : 'w-5 h-5';
+
+    if (muted) {
+      // Muted mic with X
+      return (
+        <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4l16 16" className="text-red-300" />
+        </svg>
+      );
+    }
+
+    if (deafened) {
+      // Deafened - headphones with X
+      return (
+        <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4l16 16" className="text-orange-300" />
+        </svg>
+      );
+    }
+
+    // Normal mic icon
+    return (
+      <svg aria-hidden="true" className={iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+      </svg>
+    );
+  };
+
   return (
     <>
       <div className="flex flex-col items-center shrink-0 relative">
@@ -116,7 +111,6 @@ const VoiceControlBubble = ({
             <MicIcon
               muted={voiceEnabled && isVoiceConnected && isMuted}
               deafened={voiceEnabled && isVoiceConnected && isDeafened && !isMuted}
-              size={size}
             />
           </button>
 
