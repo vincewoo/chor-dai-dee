@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useVoice } from '../contexts/VoiceContext';
+import { useVoice, useVoiceAudio } from '../contexts/VoiceContext';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const VoiceChat = ({
@@ -16,7 +16,6 @@ const VoiceChat = ({
     isMuted,
     isDeafened,
     peers,
-    audioLevels,
     permissionError,
     playerVolumes,
     joinVoiceRoom,
@@ -25,6 +24,8 @@ const VoiceChat = ({
     toggleDeafen,
     setPlayerVolume
   } = useVoice();
+
+  const { audioLevels } = useVoiceAudio();
 
   // Store stable callback refs to avoid infinite loops
   const callbacksRef = useRef({});
