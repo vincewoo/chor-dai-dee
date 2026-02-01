@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { GoogleLogin } from '@react-oauth/google';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 
 // In production, use same origin; in development, use localhost:3000
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+
+// Check if Google OAuth is configured
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 const Login = ({ setUser }) => {
     const [isRegistering, setIsRegistering] = useState(false);
@@ -14,6 +18,12 @@ const Login = ({ setUser }) => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+
+    // Google OAuth state
+    const [googleFlowStep, setGoogleFlowStep] = useState(null); // null | 'choose' | 'register' | 'link'
+    const [googleIdToken, setGoogleIdToken] = useState(null);
+    const [googleEmail, setGoogleEmail] = useState('');
+    const [suggestedUsername, setSuggestedUsername] = useState('');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -57,6 +67,255 @@ const Login = ({ setUser }) => {
         navigate('/lobby');
     };
 
+    // Handle Google Sign-In success
+    const handleGoogleSuccess = async (credentialResponse) => {
+        setError('');
+        setIsLoading(true);
+
+        try {
+            const res = await axios.post(`${API_BASE}/api/auth/google`, {
+                idToken: credentialResponse.credential
+            });
+
+            if (res.data.success) {
+                // Existing Google user - log them in
+                setUser(res.data.user);
+                navigate('/lobby');
+            } else if (res.data.needsAction) {
+                // New Google user - show choice dialog
+                setGoogleIdToken(credentialResponse.credential);
+                setGoogleEmail(res.data.googleEmail || '');
+                setSuggestedUsername(res.data.suggestedUsername || '');
+                setGoogleFlowStep('choose');
+            }
+        } catch (err) {
+            console.error('Google auth error:', err);
+            setError(err.response?.data?.error || 'Google sign-in failed');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Handle Google Sign-In error
+    const handleGoogleError = () => {
+        setError('Google sign-in failed. Please try again.');
+    };
+
+    // Complete Google registration with chosen username
+    const handleGoogleRegister = async (e) => {
+        e.preventDefault();
+        setError('');
+        setIsLoading(true);
+
+        try {
+            const res = await axios.post(`${API_BASE}/api/auth/google/register`, {
+                idToken: googleIdToken,
+                username: suggestedUsername
+            });
+
+            if (res.data.success) {
+                setUser(res.data.user);
+                navigate('/lobby');
+            }
+        } catch (err) {
+            console.error('Google registration error:', err);
+            setError(err.response?.data?.error || 'Registration failed');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Link Google to existing account
+    const handleGoogleLink = async (e) => {
+        e.preventDefault();
+        setError('');
+        setIsLoading(true);
+
+        try {
+            const res = await axios.post(`${API_BASE}/api/auth/google/link`, {
+                idToken: googleIdToken,
+                username,
+                password
+            });
+
+            if (res.data.success) {
+                setUser(res.data.user);
+                navigate('/lobby');
+            }
+        } catch (err) {
+            console.error('Google link error:', err);
+            setError(err.response?.data?.error || 'Account linking failed');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Cancel Google flow and return to main login
+    const cancelGoogleFlow = () => {
+        setGoogleFlowStep(null);
+        setGoogleIdToken(null);
+        setGoogleEmail('');
+        setSuggestedUsername('');
+        setUsername('');
+        setPassword('');
+        setError('');
+    };
+
+    // Render Google registration form (choose username for new account)
+    if (googleFlowStep === 'register') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
+                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
+                <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
+                    <h2 className="text-2xl font-bold mb-2 text-center">Choose Username</h2>
+                    <p className="text-sm text-gray-600 mb-4 text-center">
+                        Creating account with {googleEmail}
+                    </p>
+                    {error && (
+                        <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                            {error}
+                        </div>
+                    )}
+                    <form onSubmit={handleGoogleRegister} className="space-y-4">
+                        <div>
+                            <label htmlFor="google-username" className="block text-sm font-medium text-gray-700 mb-1">
+                                Username
+                            </label>
+                            <input
+                                id="google-username"
+                                type="text"
+                                autoFocus
+                                required
+                                minLength={3}
+                                maxLength={20}
+                                pattern="[a-zA-Z0-9_]+"
+                                title="Username can only contain letters, numbers, and underscores"
+                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                value={suggestedUsername}
+                                onChange={e => setSuggestedUsername(e.target.value)}
+                                disabled={isLoading}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">3-20 characters, letters, numbers, and underscores only</p>
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                        >
+                            {isLoading ? 'Creating Account...' : 'Create Account'}
+                        </button>
+                    </form>
+                    <button
+                        onClick={cancelGoogleFlow}
+                        className="w-full mt-3 text-gray-500 hover:text-gray-700 text-sm"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Render account linking form (verify existing account)
+    if (googleFlowStep === 'link') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
+                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
+                <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
+                    <h2 className="text-2xl font-bold mb-2 text-center">Link Existing Account</h2>
+                    <p className="text-sm text-gray-600 mb-4 text-center">
+                        Enter your existing account credentials to link with Google
+                    </p>
+                    {error && (
+                        <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                            {error}
+                        </div>
+                    )}
+                    <form onSubmit={handleGoogleLink} className="space-y-4">
+                        <div>
+                            <label htmlFor="link-username" className="block text-sm font-medium text-gray-700 mb-1">
+                                Username
+                            </label>
+                            <input
+                                id="link-username"
+                                type="text"
+                                autoFocus
+                                required
+                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                value={username}
+                                onChange={e => setUsername(e.target.value)}
+                                disabled={isLoading}
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="link-password" className="block text-sm font-medium text-gray-700 mb-1">
+                                Password
+                            </label>
+                            <input
+                                id="link-password"
+                                type="password"
+                                required
+                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                disabled={isLoading}
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                        >
+                            {isLoading ? 'Linking Account...' : 'Link & Sign In'}
+                        </button>
+                    </form>
+                    <button
+                        onClick={cancelGoogleFlow}
+                        className="w-full mt-3 text-gray-500 hover:text-gray-700 text-sm"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Render choice dialog (create new or link existing)
+    if (googleFlowStep === 'choose') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
+                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
+                <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
+                    <h2 className="text-2xl font-bold mb-2 text-center">Welcome!</h2>
+                    <p className="text-sm text-gray-600 mb-6 text-center">
+                        Signing in with {googleEmail}
+                    </p>
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => setGoogleFlowStep('register')}
+                            className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition font-bold"
+                        >
+                            Create New Account
+                        </button>
+                        <button
+                            onClick={() => setGoogleFlowStep('link')}
+                            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-bold"
+                        >
+                            Link Existing Account
+                        </button>
+                    </div>
+                    <button
+                        onClick={cancelGoogleFlow}
+                        className="w-full mt-4 text-gray-500 hover:text-gray-700 text-sm"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Main login form
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
             <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
@@ -71,6 +330,22 @@ const Login = ({ setUser }) => {
                     </svg>
                     Play as Guest
                 </button>
+
+                {/* Google Sign-In Button */}
+                {GOOGLE_CLIENT_ID && (
+                    <div className="mb-4">
+                        <GoogleLogin
+                            onSuccess={handleGoogleSuccess}
+                            onError={handleGoogleError}
+                            useOneTap={false}
+                            theme="outline"
+                            size="large"
+                            width="100%"
+                            text="signin_with"
+                            shape="rectangular"
+                        />
+                    </div>
+                )}
 
                 <div className="flex items-center my-4">
                     <div className="flex-1 border-t border-gray-300"></div>

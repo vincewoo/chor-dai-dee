@@ -3,6 +3,10 @@
 # Node 20 is used to match the runtime environment.
 FROM node:20-bookworm as client-builder
 
+# Build arguments for client-side environment variables
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+
 # Set working directory for client build
 WORKDIR /app/client
 

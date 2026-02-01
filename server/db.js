@@ -240,6 +240,31 @@ function initDb() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_placement_history_user
                 ON placement_history(user_id, game_mode)`);
 
+        // Check if users table needs google_id column (migration for Google OAuth)
+        db.all("PRAGMA table_info(users)", (err, columns) => {
+            if (err) {
+                console.error("Error checking users schema", err);
+                return;
+            }
+
+            if (columns.length > 0) {
+                const hasGoogleId = columns.some(c => c.name === 'google_id');
+                if (!hasGoogleId) {
+                    console.log("Adding Google OAuth columns to users table");
+                    db.run(`ALTER TABLE users ADD COLUMN google_id TEXT UNIQUE`, (err) => {
+                        if (err && !err.message.includes('duplicate column')) {
+                            console.error("Error adding google_id:", err.message);
+                        }
+                    });
+                    db.run(`ALTER TABLE users ADD COLUMN google_email TEXT`, (err) => {
+                        if (err && !err.message.includes('duplicate column')) {
+                            console.error("Error adding google_email:", err.message);
+                        }
+                    });
+                }
+            }
+        });
+
         // Check if round_stats table needs leads_won column (migration for existing databases)
         db.all("PRAGMA table_info(round_stats)", (err, columns) => {
             if (err) {
@@ -1469,6 +1494,84 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
     });
 };
 
+// ========== GOOGLE OAUTH FUNCTIONS ==========
+
+// Find user by Google ID
+const getUserByGoogleId = (googleId) => {
+    return new Promise((resolve, reject) => {
+        db.get('SELECT id, username, google_id, google_email FROM users WHERE google_id = ?',
+            [googleId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+};
+
+// Create user with Google OAuth (no password)
+const createGoogleUser = async (username, googleId, googleEmail) => {
+    return new Promise((resolve, reject) => {
+        db.run(`INSERT INTO users (username, google_id, google_email) VALUES (?, ?, ?)`,
+            [username, googleId, googleEmail], function(err) {
+            if (err) return reject(err);
+            const userId = this.lastID;
+
+            // Initialize stats tables (same as createUser)
+            db.serialize(() => {
+                db.run(`INSERT INTO stats (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                });
+
+                db.run(`INSERT INTO stats_standard (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                });
+
+                db.run(`INSERT INTO stats_short (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                });
+
+                db.run(`INSERT INTO user_preferences (user_id) VALUES (?)`, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    // All inserts successful
+                    resolve({ id: userId, username, googleId, googleEmail });
+                });
+            });
+        });
+    });
+};
+
+// Link Google account to existing user
+const linkGoogleAccount = (userId, googleId, googleEmail) => {
+    return new Promise((resolve, reject) => {
+        db.run(`UPDATE users SET google_id = ?, google_email = ? WHERE id = ?`,
+            [googleId, googleEmail, userId], function(err) {
+            if (err) reject(err);
+            else resolve({ success: true });
+        });
+    });
+};
+
+// Check if username is available
+const isUsernameAvailable = (username) => {
+    return new Promise((resolve, reject) => {
+        db.get('SELECT id FROM users WHERE username = ?', [username], (err, row) => {
+            if (err) reject(err);
+            else resolve(!row);
+        });
+    });
+};
+
 module.exports = {
     db,
     createUser,
@@ -1510,5 +1613,10 @@ module.exports = {
     saveGameEvent,
     getActivityFeed,
     getGameEvents,
-    getActivityFeedCount
+    getActivityFeedCount,
+    // Google OAuth
+    getUserByGoogleId,
+    createGoogleUser,
+    linkGoogleAccount,
+    isUsernameAvailable
 };

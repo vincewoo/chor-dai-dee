@@ -4,7 +4,8 @@ const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
@@ -1859,6 +1860,170 @@ app.post('/api/login', async (req, res) => {
         }
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ========== GOOGLE OAUTH ROUTES ==========
+
+// Initialize Google OAuth client
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+
+// Verify Google ID token
+async function verifyGoogleToken(idToken) {
+    if (!googleClient) {
+        throw new Error('Google OAuth not configured');
+    }
+    const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: GOOGLE_CLIENT_ID
+    });
+    return ticket.getPayload();
+}
+
+// Helper function to generate username suggestion from Google profile
+function generateUsername(email, name) {
+    // Try name first, then email prefix
+    let base = name ? name.replace(/\s+/g, '') : email.split('@')[0];
+    base = base.replace(/[^a-zA-Z0-9_]/g, '').substring(0, 15);
+    return base || 'Player';
+}
+
+// Google OAuth Login/Register endpoint
+app.post('/api/auth/google', async (req, res) => {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+        return res.status(400).json({ error: 'Missing ID token' });
+    }
+
+    if (!googleClient) {
+        return res.status(500).json({ error: 'Google OAuth not configured on server' });
+    }
+
+    try {
+        // Verify the Google token
+        const payload = await verifyGoogleToken(idToken);
+        const { sub: googleId, email, name } = payload;
+
+        // Check if user exists with this Google ID
+        const user = await getUserByGoogleId(googleId);
+
+        if (user) {
+            // Existing Google user - log them in
+            return res.json({
+                success: true,
+                user: { id: user.id, username: user.username },
+                isNewUser: false
+            });
+        }
+
+        // New Google user - need to choose between create or link
+        // Generate a username suggestion from email or name
+        const suggestedUsername = generateUsername(email, name);
+
+        return res.json({
+            success: false,
+            needsAction: true,
+            suggestedUsername,
+            googleEmail: email
+        });
+
+    } catch (err) {
+        console.error('Google auth error:', err);
+        res.status(401).json({ error: 'Invalid Google token' });
+    }
+});
+
+// Complete Google registration (create new account for Google users)
+app.post('/api/auth/google/register', async (req, res) => {
+    const { idToken, username } = req.body;
+
+    if (!idToken || !username) {
+        return res.status(400).json({ error: 'Missing fields' });
+    }
+
+    if (!googleClient) {
+        return res.status(500).json({ error: 'Google OAuth not configured on server' });
+    }
+
+    try {
+        const payload = await verifyGoogleToken(idToken);
+        const { sub: googleId, email } = payload;
+
+        // Validate username
+        if (username.length < 3 || username.length > 20) {
+            return res.status(400).json({ error: 'Username must be 3-20 characters' });
+        }
+
+        // Check for invalid characters
+        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+            return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
+        }
+
+        // Check username availability
+        const available = await isUsernameAvailable(username);
+        if (!available) {
+            return res.status(400).json({ error: 'Username already taken' });
+        }
+
+        // Check if this Google account is already linked to another user
+        const existingGoogleUser = await getUserByGoogleId(googleId);
+        if (existingGoogleUser) {
+            return res.status(400).json({ error: 'This Google account is already registered' });
+        }
+
+        // Create the user
+        const user = await createGoogleUser(username, googleId, email);
+        res.json({ success: true, user: { id: user.id, username: user.username } });
+
+    } catch (err) {
+        console.error('Google registration error:', err);
+        res.status(400).json({ error: 'Registration failed' });
+    }
+});
+
+// Link Google account to existing user (requires password verification)
+app.post('/api/auth/google/link', async (req, res) => {
+    const { idToken, username, password } = req.body;
+
+    if (!idToken || !username || !password) {
+        return res.status(400).json({ error: 'Missing fields' });
+    }
+
+    if (!googleClient) {
+        return res.status(500).json({ error: 'Google OAuth not configured on server' });
+    }
+
+    try {
+        // Verify existing credentials
+        const user = await verifyUser(username, password);
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Verify Google token
+        const payload = await verifyGoogleToken(idToken);
+        const { sub: googleId, email } = payload;
+
+        // Check if this Google account is already linked to another user
+        const existingGoogleUser = await getUserByGoogleId(googleId);
+        if (existingGoogleUser) {
+            return res.status(400).json({ error: 'This Google account is already linked to another user' });
+        }
+
+        // Link the accounts
+        await linkGoogleAccount(user.id, googleId, email);
+
+        res.json({
+            success: true,
+            user: { id: user.id, username: user.username },
+            message: 'Google account linked successfully'
+        });
+
+    } catch (err) {
+        console.error('Google link error:', err);
+        res.status(400).json({ error: 'Failed to link account' });
     }
 });
 

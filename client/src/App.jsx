@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import io from 'socket.io-client'
 import Login from './components/Login';
 import Lobby from './components/Lobby';
@@ -12,6 +13,9 @@ import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
 import { VoiceProvider } from './contexts/VoiceContext';
 import './utils/voiceDebug'; // Load voice debug utilities
+
+// Google OAuth Client ID from environment
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 // In production, connect to same origin; in development, connect to localhost:3000
 const socketUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3000');
@@ -63,7 +67,8 @@ function App() {
     setUser(userData);
   };
 
-  return (
+  // Wrap with GoogleOAuthProvider only if client ID is configured
+  const AppContent = (
     <UserPreferencesProvider user={user}>
       <SuitColorProvider>
         <VoiceProvider socket={socket}>
@@ -82,7 +87,18 @@ function App() {
         </VoiceProvider>
       </SuitColorProvider>
     </UserPreferencesProvider>
-  )
+  );
+
+  // Only wrap with GoogleOAuthProvider if client ID is configured
+  if (GOOGLE_CLIENT_ID) {
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        {AppContent}
+      </GoogleOAuthProvider>
+    );
+  }
+
+  return AppContent;
 }
 
 export default App
