@@ -251,9 +251,18 @@ function initDb() {
                 const hasGoogleId = columns.some(c => c.name === 'google_id');
                 if (!hasGoogleId) {
                     console.log("Adding Google OAuth columns to users table");
-                    db.run(`ALTER TABLE users ADD COLUMN google_id TEXT UNIQUE`, (err) => {
+                    // SQLite doesn't support adding UNIQUE columns directly via ALTER TABLE
+                    // Add column without constraint, then create unique index
+                    db.run(`ALTER TABLE users ADD COLUMN google_id TEXT`, (err) => {
                         if (err && !err.message.includes('duplicate column')) {
                             console.error("Error adding google_id:", err.message);
+                        } else {
+                            // Create unique index after column is added
+                            db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)`, (err) => {
+                                if (err) {
+                                    console.error("Error creating google_id index:", err.message);
+                                }
+                            });
                         }
                     });
                     db.run(`ALTER TABLE users ADD COLUMN google_email TEXT`, (err) => {

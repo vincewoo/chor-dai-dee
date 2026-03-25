@@ -11,6 +11,7 @@ primary_region = 'lax'
     VITE_GOOGLE_CLIENT_ID = "677189818876-r0bt1l7qbi9n2v948jt4n35f21i0rh47.apps.googleusercontent.com"
 
 [env]
+  CLIENT_URL = "https://big2.onlyslop.dev"
   GOOGLE_CLIENT_ID = "677189818876-r0bt1l7qbi9n2v948jt4n35f21i0rh47.apps.googleusercontent.com"
 
 [http_service]
