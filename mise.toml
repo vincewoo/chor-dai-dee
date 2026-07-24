@@ -1,0 +1,28 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+
+# Task runner for Chor Dai Dee.
+# Run `mise run dev` to start the server and client together.
+
+[tasks.dev]
+description = "Run the server and client together"
+depends = ["dev:server", "dev:client"]
+
+[tasks."dev:server"]
+description = "Start the Express/Socket.io server (port 3000)"
+dir = "server"
+run = "node index.js"
+
+[tasks."dev:client"]
+description = "Start the Vite dev client (port 5173)"
+dir = "client"
+run = "npm run dev"
+
+[tasks.build]
+description = "Production build of the client"
+dir = "client"
+run = "npm run build"
+
+[tasks.lint]
+description = "Lint the client"
+dir = "client"
+run = "npm run lint"

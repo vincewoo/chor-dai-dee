@@ -73,6 +73,9 @@ export const useWebRTC = (socket, roomId, username, enabled = false) => {
               // Don't connect to destination - we just want to analyze
 
               analyzersRef.current[username] = analyzer;
+              // monitorAudioLevel is a useCallback declared later in this hook;
+              // stable and defined by the time this async callback executes.
+              // eslint-disable-next-line react-hooks/immutability
               monitorAudioLevel(username, analyzer);
               console.log('Started monitoring local audio for:', username);
             } catch (err) {

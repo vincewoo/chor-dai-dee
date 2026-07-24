@@ -81,6 +81,15 @@ io.on('connection', (socket) => {
     socket.on('join_room', async ({ roomId, username, isGuest }) => {
         console.log(`join_room event received: roomId=${roomId}, username=${username}, isGuest=${isGuest}`);
 
+        // Reject joins without a username. An empty username would fall through the
+        // username-keyed reconnection/dedup logic and stack up duplicate phantom
+        // "Player <socketId>" seats on repeated join_room emits.
+        if (!username || typeof username !== 'string' || !username.trim()) {
+            console.warn(`Rejecting join_room from ${socket.id}: missing username`);
+            socket.emit('error', 'You must be signed in to join a room.');
+            return;
+        }
+
         // Fetch user stats to get rating
         // Skip database lookup for guest users
         let ratingMu, ratingSigma, displayRating;
@@ -112,8 +121,19 @@ io.on('connection', (socket) => {
         // Determine the target room ID early to check if it's a different room
         let targetRoomId = roomId;
         if (roomId === 'create') {
-            targetRoomId = roomManager.createRoom();
-            console.log(`Created new room: ${targetRoomId}`);
+            // If this user is already waiting in a room, reuse it instead of minting
+            // a new one. Repeated 'create' emits (e.g. socket reconnect, double-fire)
+            // would otherwise spawn orphan rooms and bounce the user between them.
+            const reusableRoom = existingRooms.find(
+                ({ room }) => room.gameState === 'waiting'
+            );
+            if (reusableRoom) {
+                targetRoomId = reusableRoom.roomId;
+                console.log(`Reusing existing waiting room ${targetRoomId} for ${username} instead of creating a new one`);
+            } else {
+                targetRoomId = roomManager.createRoom();
+                console.log(`Created new room: ${targetRoomId}`);
+            }
         }
 
         // If player is in other rooms (not the target room), leave them
@@ -305,7 +325,7 @@ io.on('connection', (socket) => {
 
         const player = {
             id: socket.id,
-            name: username || `Player ${socket.id.substring(0, 4)}`,
+            name: username,
             socket,
             rating: displayRating,
             isGuest: isGuest || false
@@ -2034,7 +2054,10 @@ app.get('/api/preferences/:userId', async (req, res) => {
         const preferences = await getUserPreferences(userId);
         res.json({
             fourColorMode: preferences.four_color_mode === 1,
-            autoPass: preferences.auto_pass === 1
+            autoPass: preferences.auto_pass === 1,
+            tableTheme: preferences.table_theme || 'felt',
+            accentColor: preferences.accent_color || 'gold',
+            reducedMotion: preferences.reduced_motion === 1
         });
     } catch (err) {
         console.error('Error fetching preferences:', err);
@@ -2045,8 +2068,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, autoPass } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, autoPass });
+        const { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);

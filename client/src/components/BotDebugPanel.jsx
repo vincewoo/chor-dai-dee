@@ -9,6 +9,9 @@ const BotDebugPanel = ({ reasoning, isVisible, onClose }) => {
     // Add to history when new reasoning comes in
     useEffect(() => {
         if (reasoning && reasoning.timestamp) {
+            // Append to history when a new reasoning prop arrives (functional
+            // update from an external prop change, not a render cascade).
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setReasoningHistory(prev => {
                 const newHistory = [reasoning, ...prev].slice(0, 20); // Keep last 20
                 return newHistory;

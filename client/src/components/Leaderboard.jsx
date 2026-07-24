@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ArchetypeDialog from './ArchetypeDialog';
+import { LeaderboardV2 } from './tableV2';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
@@ -15,11 +16,18 @@ const Leaderboard = ({ user }) => {
     const [error, setError] = useState('');
     const [showArchetypeDialog, setShowArchetypeDialog] = useState(false);
     const [selectedArchetype, setSelectedArchetype] = useState(null);
+    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchLeaderboard();
     }, [mode, sortBy, minGames]);
+
+    useEffect(() => {
+        const onResize = () => setIsDesktop(window.innerWidth >= 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     const handleArchetypeClick = (archetype) => {
         setSelectedArchetype(archetype);
@@ -42,7 +50,7 @@ const Leaderboard = ({ user }) => {
                         `${API_BASE}/api/leaderboard/${user.username}/rank?mode=${mode}&sortBy=${sortBy}`
                     );
                     setPlayerRank(rankRes.data.rank);
-                } catch (err) {
+                } catch {
                     setPlayerRank(null);
                 }
             }
@@ -56,6 +64,22 @@ const Leaderboard = ({ user }) => {
     if (!user) {
         navigate('/');
         return null;
+    }
+
+    // v2 mobile leaderboard (global only). Desktop keeps the full table below.
+    if (!isDesktop) {
+        return (
+            <LeaderboardV2
+                data={leaderboardData}
+                mode={mode}
+                onSetMode={setMode}
+                user={user}
+                loading={loading}
+                error={error}
+                onBack={() => navigate('/lobby')}
+                onPlayerClick={(username) => navigate(`/stats/${username}?mode=${mode}`)}
+            />
+        );
     }
 
     const formatRating = (rating) => Math.round(rating);

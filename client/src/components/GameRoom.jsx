@@ -22,12 +22,18 @@ import { SortableCard, PlayedCards } from './cards';
 import { TopPlayerArea, LeftPlayerArea, RightPlayerArea } from './PlayerArea';
 import { SettingsModal, LeaveConfirmModal, KickConfirmModal } from './modals';
 import { RoundOverScreen, MobileScoreboard } from './overlays';
+import { GameTableMobile, WaitingRoomV2, GameOverV2 } from './tableV2';
 
 const GameRoom = ({ user, socket }) => {
     const { roomId } = useParams();
     const navigate = useNavigate();
     const { fourColorMode, toggleFourColorMode } = useSuitColors();
-    const { autoPass, toggleAutoPass } = useUserPreferences();
+    const {
+        autoPass, toggleAutoPass,
+        tableTheme, setTableTheme,
+        accentColor, setAccentColor,
+        reducedMotion, toggleReducedMotion,
+    } = useUserPreferences();
     const handContainerRef = useRef(null);
     const [containerWidth, setContainerWidth] = useState(0);
     // Track our actual player ID (may differ from socket.id due to reconnection timing)
@@ -37,11 +43,9 @@ const GameRoom = ({ user, socket }) => {
     const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
 
     useEffect(() => {
+        // Initial value is set from the useState initializer; here we only
+        // subscribe to viewport changes (avoids a synchronous set-in-effect).
         const media = window.matchMedia('(min-width: 768px)');
-
-        // Set initial value from media query
-        setIsDesktop(media.matches);
-
         const listener = (e) => setIsDesktop(e.matches);
         media.addEventListener('change', listener);
         return () => media.removeEventListener('change', listener);
@@ -835,6 +839,10 @@ const GameRoom = ({ user, socket }) => {
         return isHost && player && !player.isBot && player.id !== myPlayerId;
     };
 
+    // Use the v2 mobile table for the in-game screen on narrow viewports.
+    // The waiting room, game-over, modals, voice, and toasts stay shared.
+    const useMobileV2 = !isDesktop && gameState.gameState !== 'waiting';
+
     return (
         <div className="h-screen-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             {/* Game Logo - Background */}
@@ -844,8 +852,8 @@ const GameRoom = ({ user, socket }) => {
                 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] md:w-[30%] opacity-[0.15] pointer-events-none z-0"
             />
 
-            {/* Guest User Banner */}
-            {user?.isGuest && (
+            {/* Guest User Banner (legacy / desktop; the v2 mobile table shows guest status inline in the HudBar) */}
+            {user?.isGuest && !useMobileV2 && (
                 <div className="absolute top-[1vh] left-1/2 -translate-x-1/2 z-20 w-[90%] md:w-auto">
                     <div className="bg-blue-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg text-center">
                         <p className="text-xs md:text-sm font-medium">
@@ -863,31 +871,33 @@ const GameRoom = ({ user, socket }) => {
                 players={gameState?.players || []}
                 onVoiceStateChange={setVoiceState}
             />
-            {/* Top Bar */}
-            <div className="absolute top-[1vh] left-[1vw] text-white z-10">
-                <h1 className="text-xl md:text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
-                {gameState.gameMode && (
-                    <div className="text-xs md:text-[0.8vmax] text-green-300">
-                        {GAME_MODES[gameState.gameMode.toUpperCase()]?.name || 'Standard Game'}
+            {/* Top Bar (legacy / desktop; hidden when the v2 mobile table is active) */}
+            {!useMobileV2 && (
+                <div className="absolute top-[1vh] left-[1vw] text-white z-10">
+                    <h1 className="text-xl md:text-[1.5vmax] font-bold drop-shadow-md">Room: {roomId}</h1>
+                    {gameState.gameMode && (
+                        <div className="text-xs md:text-[0.8vmax] text-green-300">
+                            {GAME_MODES[gameState.gameMode.toUpperCase()]?.name || 'Standard Game'}
+                        </div>
+                    )}
+                    {gameState.roundNumber > 0 && (
+                        <div className="text-sm md:text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
+                    )}
+                    <div className="flex gap-2 mt-1">
+                        <button onClick={handleLeaveClick} className="text-xs md:text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
+                        <button
+                            onClick={() => setShowSettings(true)}
+                            className="text-xs md:text-[0.7vmax] px-2 py-0.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            title="Game Settings"
+                        >
+                            ⚙️ Settings
+                        </button>
                     </div>
-                )}
-                {gameState.roundNumber > 0 && (
-                    <div className="text-sm md:text-[0.9vmax] text-yellow-300">Round {gameState.roundNumber}</div>
-                )}
-                <div className="flex gap-2 mt-1">
-                    <button onClick={handleLeaveClick} className="text-xs md:text-[0.7vmax] underline text-gray-300 hover:text-white">Leave</button>
-                    <button
-                        onClick={() => setShowSettings(true)}
-                        className="text-xs md:text-[0.7vmax] px-2 py-0.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
-                        title="Game Settings"
-                    >
-                        ⚙️ Settings
-                    </button>
                 </div>
-            </div>
+            )}
 
-            {/* Mobile Scores button - top right corner */}
-            {gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
+            {/* Mobile Scores button - top right corner (legacy; superseded by v2 Info toggle) */}
+            {!useMobileV2 && gameState.gameState === 'playing' && gameState.roundNumber > 0 && (
                 <button
                     onClick={() => setShowMobileScoreboard(true)}
                     className="md:hidden absolute top-[1vh] right-[1vw] text-xs px-3 py-1.5 rounded-lg bg-yellow-600 text-white hover:bg-yellow-500 font-semibold shadow-lg z-10"
@@ -955,47 +965,18 @@ const GameRoom = ({ user, socket }) => {
                 )}
             </AnimatePresence>
 
-            {/* Round Over Modal */}
-            <RoundOverScreen
-                roundResult={roundResult}
-                pointThreshold={gameState.pointThreshold}
-                onNextRound={nextRound}
-            />
+            {/* Round Over Modal (desktop; mobile v2 shows RoundCelebration instead) */}
+            {!useMobileV2 && (
+                <RoundOverScreen
+                    roundResult={roundResult}
+                    pointThreshold={gameState.pointThreshold}
+                    onNextRound={nextRound}
+                />
+            )}
 
-            {/* Game Over Modal */}
-            {gameOver && (
-                <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-8">
-                    <h2 className="text-6xl font-bold text-yellow-400 mb-4 animate-bounce">
-                        {gameOver.isDragonWin ? '🐉 DRAGON! 🐉' : 'Game Over!'}
-                    </h2>
-                    <div className="text-2xl mb-2 text-green-300">Winner: {gameOver.winner.name}</div>
-                    {gameOver.isDragonWin ? (
-                        <div className="text-lg mb-4 text-yellow-300 font-bold">
-                            Won with a DRAGON (13-card Straight)!
-                        </div>
-                    ) : (
-                        <div className="text-lg mb-4 text-gray-400">Completed in {gameOver.roundNumber} rounds</div>
-                    )}
-
-                    <div className="bg-white/10 rounded-lg p-6 mb-8 w-full max-w-md">
-                        <h3 className="text-xl font-bold mb-4 border-b pb-2">Final Scores</h3>
-                        {gameOver.scores && gameOver.scores
-                            .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
-                            .map((s, idx) => (
-                                <div key={s.name} className={`flex justify-between mb-2 ${idx === 0 ? 'text-green-400 font-bold text-lg' : ''}`}>
-                                    <span>
-                                        {idx === 0 && '🏆 '}
-                                        {s.name} {s.isBot ? '(Bot)' : ''}
-                                    </span>
-                                    <span className={s.cumulativeScore >= 100 ? 'text-red-500' : ''}>
-                                        {s.cumulativeScore} pts
-                                    </span>
-                                </div>
-                            ))}
-                    </div>
-
-                    {/* Post-game buttons - different for host vs non-host */}
-                    {(() => {
+            {/* Game Over — shared post-game action buttons (host / non-host / solo) */}
+            {gameOver && (() => {
+                const gameOverActions = (() => {
                         const humanPlayers = gameState?.players?.filter(p => !p.isBot) || [];
                         const hasMultipleHumans = humanPlayers.length >= 2;
                         const isHost = user?.username === gameState?.hostUsername;
@@ -1120,12 +1101,76 @@ const GameRoom = ({ user, socket }) => {
                                 </div>
                             );
                         }
-                    })()}
-                </div>
+                    })();
+
+                // v2 mobile game-over screen; desktop keeps the legacy modal.
+                if (!isDesktop) {
+                    return (
+                        <GameOverV2 gameOver={gameOver} myName={user?.username}>
+                            {gameOverActions}
+                        </GameOverV2>
+                    );
+                }
+
+                return (
+                    <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-8">
+                        <h2 className="text-6xl font-bold text-yellow-400 mb-4 animate-bounce">
+                            {gameOver.isDragonWin ? '🐉 DRAGON! 🐉' : 'Game Over!'}
+                        </h2>
+                        <div className="text-2xl mb-2 text-green-300">Winner: {gameOver.winner.name}</div>
+                        {gameOver.isDragonWin ? (
+                            <div className="text-lg mb-4 text-yellow-300 font-bold">
+                                Won with a DRAGON (13-card Straight)!
+                            </div>
+                        ) : (
+                            <div className="text-lg mb-4 text-gray-400">Completed in {gameOver.roundNumber} rounds</div>
+                        )}
+
+                        <div className="bg-white/10 rounded-lg p-6 mb-8 w-full max-w-md">
+                            <h3 className="text-xl font-bold mb-4 border-b pb-2">Final Scores</h3>
+                            {gameOver.scores && gameOver.scores
+                                .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
+                                .map((s, idx) => (
+                                    <div key={s.name} className={`flex justify-between mb-2 ${idx === 0 ? 'text-green-400 font-bold text-lg' : ''}`}>
+                                        <span>
+                                            {idx === 0 && '🏆 '}
+                                            {s.name} {s.isBot ? '(Bot)' : ''}
+                                        </span>
+                                        <span className={s.cumulativeScore >= 100 ? 'text-red-500' : ''}>
+                                            {s.cumulativeScore} pts
+                                        </span>
+                                    </div>
+                                ))}
+                        </div>
+
+                        {gameOverActions}
+                    </div>
+                );
+            })()}
+
+            {/* Waiting State (v2 mobile) */}
+            {gameState.gameState === 'waiting' && !isDesktop && (
+                <WaitingRoomV2
+                    roomId={roomId}
+                    players={gameState.players}
+                    myPlayerId={myPlayerId}
+                    isHost={gameState.players.find(p => p.name === gameState.hostUsername)?.id === myPlayerId}
+                    hostUsername={gameState.hostUsername}
+                    gameMode={gameState.gameMode}
+                    fourColorMode={fourColorMode}
+                    onSetGameMode={(mode) => socket.emit('set_game_mode', { gameMode: mode })}
+                    onToggleFourColor={toggleFourColorMode}
+                    onStartGame={startGame}
+                    onLeave={handleLeaveClick}
+                    onOpenSettings={() => setShowSettings(true)}
+                    onShareInvite={() => {
+                        try { navigator.clipboard?.writeText(window.location.href); } catch { /* ignore */ }
+                    }}
+                />
             )}
 
-            {/* Waiting State */}
-            {gameState.gameState === 'waiting' && (
+            {/* Waiting State (legacy / desktop) */}
+            {gameState.gameState === 'waiting' && isDesktop && (
                 <div className="absolute inset-0 z-40 bg-green-800 overflow-y-auto">
                     <div className="min-h-full flex flex-col items-center justify-center text-white px-4 py-8">
                         <div className="text-sm md:text-[1vmax] text-green-300 mb-2 md:mb-[0.5vmax]">Room Code</div>
@@ -1286,7 +1331,8 @@ const GameRoom = ({ user, socket }) => {
                 </div>
             )}
 
-            {/* Game Table Layout */}
+            {/* Game Table Layout (legacy / desktop) */}
+            {!useMobileV2 && (<>
 
             {/* Top Player (Offset 2) */}
             <TopPlayerArea
@@ -1519,6 +1565,48 @@ const GameRoom = ({ user, socket }) => {
                 </div>
             </div>
 
+            </>)}
+
+            {/* v2 Mobile Game Table */}
+            {useMobileV2 && (
+                <GameTableMobile
+                    user={user}
+                    roomId={roomId}
+                    gameState={gameState}
+                    myPlayerId={myPlayerId}
+                    fourColorMode={fourColorMode}
+                    sortedHand={sortedHand}
+                    myHand={myHand}
+                    selectedCards={selectedCards}
+                    toggleCard={toggleCard}
+                    handleSelectCards={handleSelectCards}
+                    playCards={playCards}
+                    passTurn={passTurn}
+                    isSubmitting={isSubmitting}
+                    isMyTurn={isMyTurn}
+                    getRelativePlayer={getRelativePlayer}
+                    canKickPlayer={canKickPlayer}
+                    handlePlayerClick={handlePlayerClick}
+                    sortMode={sortMode}
+                    isCustomOrder={isCustomOrder}
+                    handleSortClick={handleSortClick}
+                    roundResult={roundResult}
+                    nextRound={nextRound}
+                    onOpenSettings={() => setShowSettings(true)}
+                    onCreateAccount={() => navigate('/')}
+                    sensors={sensors}
+                    handleDragStart={handleDragStart}
+                    handleDragEnd={handleDragEnd}
+                    handContainerRef={handContainerRef}
+                    handleTouchStart={handleTouchStart}
+                    handleTouchMove={handleTouchMove}
+                    handleTouchEnd={handleTouchEnd}
+                    containerWidth={containerWidth}
+                    voiceState={voiceState}
+                    voiceAudioLevels={voiceAudioLevels}
+                />
+            )}
+
             {/* Settings Modal */}
             <SettingsModal
                 show={showSettings}
@@ -1527,6 +1615,13 @@ const GameRoom = ({ user, socket }) => {
                 toggleAutoPass={toggleAutoPass}
                 fourColorMode={fourColorMode}
                 toggleFourColorMode={toggleFourColorMode}
+                tableTheme={tableTheme}
+                setTableTheme={setTableTheme}
+                accentColor={accentColor}
+                setAccentColor={setAccentColor}
+                reducedMotion={reducedMotion}
+                toggleReducedMotion={toggleReducedMotion}
+                onLeave={() => { setShowSettings(false); handleLeaveClick(); }}
             />
 
             {/* Leave Confirmation Modal */}

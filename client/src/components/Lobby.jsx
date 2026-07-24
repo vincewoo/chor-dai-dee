@@ -5,6 +5,8 @@ import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
 import { useVoice } from '../contexts/VoiceContext';
 import { GAME_MODES } from '../constants/gameModes';
+import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
+import { useSuitColors } from '../contexts/SuitColorContext';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -15,10 +17,22 @@ const Lobby = ({ user, socket, setUser }) => {
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
     const [recentGames, setRecentGames] = useState([]);
+    // Snapshot "now" once at mount so the relative "Xm ago" labels stay pure
+    // across re-renders (avoids calling Date.now() during render).
+    const [nowTs] = useState(() => Date.now());
     const [selectedGame, setSelectedGame] = useState(null);
+    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
     const navigate = useNavigate();
     const location = useLocation();
     const voiceContext = useVoice();
+    const { fourColorMode, toggleFourColorMode } = useSuitColors();
+
+    // Track viewport to gate the v2 mobile home screen (matches GameRoom's 768px breakpoint).
+    useEffect(() => {
+        const onResize = () => setIsDesktop(window.innerWidth >= 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     // Room lobby state (when returning from a game)
     const [roomLobbyData, setRoomLobbyData] = useState(null);
@@ -29,6 +43,9 @@ const Lobby = ({ user, socket, setUser }) => {
     useEffect(() => {
         if (location.state?.isRoomLobby && location.state?.roomId) {
             console.log('Returning to room lobby:', location.state);
+            // Deriving state from router navigation on mount; guarded by the
+            // condition above so this isn't an unconditional render cascade.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setRoomLobbyData({
                 roomId: location.state.roomId,
                 players: location.state.players || [],
@@ -59,7 +76,7 @@ const Lobby = ({ user, socket, setUser }) => {
             }
         };
 
-        const handleGameStarted = (state) => {
+        const handleGameStarted = () => {
             // Game started, navigate to game room
             navigate(`/game/${roomLobbyData.roomId}`);
         };
@@ -241,7 +258,7 @@ const Lobby = ({ user, socket, setUser }) => {
         });
 
         // Handle reconnection to existing game
-        socket.on('reconnected', ({ roomId, playerId, gameState }) => {
+        socket.on('reconnected', ({ roomId }) => {
             console.log('Reconnected to existing game:', roomId);
             setReconnecting(false);
             navigate(`/game/${roomId}`);
@@ -259,8 +276,11 @@ const Lobby = ({ user, socket, setUser }) => {
             setIsJoining(false);
         });
 
-        // Attempt reconnection on mount if already connected
+        // Attempt reconnection on mount if already connected. This drives an
+        // external system (the socket) — the setState inside is a legitimate
+        // sync from that external source.
         if (socket.connected) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             attemptReconnect();
         }
 
@@ -285,6 +305,28 @@ const Lobby = ({ user, socket, setUser }) => {
     if (roomLobbyData) {
         const isHost = user.username === roomLobbyData.hostUsername;
         const players = roomLobbyData.players || [];
+
+        // v2 mobile room lobby (narrow viewports). Desktop keeps the layout below.
+        if (!isDesktop) {
+            return (
+                <WaitingRoomV2
+                    roomId={roomLobbyData.roomId}
+                    players={players}
+                    myPlayerId={players.find(p => p.name === user.username)?.id}
+                    isHost={isHost}
+                    hostUsername={roomLobbyData.hostUsername}
+                    gameMode={selectedGameMode}
+                    fourColorMode={fourColorMode}
+                    onSetGameMode={handleGameModeChange}
+                    onToggleFourColor={toggleFourColorMode}
+                    onStartGame={handleStartGameFromLobby}
+                    onLeave={handleLeaveRoomLobby}
+                    onShareInvite={() => {
+                        try { navigator.clipboard?.writeText(window.location.href); } catch { /* ignore */ }
+                    }}
+                />
+            );
+        }
 
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white p-6 sm:p-4">
@@ -440,6 +482,31 @@ const Lobby = ({ user, socket, setUser }) => {
                     </div>
                 </div>
             </div>
+        );
+    }
+
+    // v2 mobile home screen (narrow viewports). Desktop keeps the layout below.
+    if (!isDesktop) {
+        return (
+            <>
+                <HomeScreenV2
+                    username={user.username}
+                    isGuest={user.isGuest}
+                    connected={connected}
+                    reconnecting={reconnecting}
+                    isJoining={isJoining}
+                    code={roomId}
+                    onCodeChange={setRoomId}
+                    onCreateRoom={createRoom}
+                    onJoinRoom={joinRoom}
+                    onHowToPlay={() => setShowHowToPlay(true)}
+                    onLeaderboard={() => navigate('/leaderboard')}
+                    onStats={() => navigate('/stats')}
+                    onEditAvatar={() => navigate('/avatar')}
+                    error={error}
+                />
+                <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
+            </>
         );
     }
 
@@ -611,10 +678,7 @@ const Lobby = ({ user, socket, setUser }) => {
                         </div>
                         <div className="space-y-2">
                             {recentGames.slice(0, 3).map((game) => {
-                                const winner = game.participants?.find(p => p.placement === 1);
-                                const humanPlayers = game.participants?.filter(p => !p.isBot) || [];
-                                const botCount = game.participants?.filter(p => p.isBot).length || 0;
-                                const timeDiff = Date.now() - new Date(game.end_time);
+                                const timeDiff = nowTs - new Date(game.end_time);
                                 const minutesAgo = Math.floor(timeDiff / 60000);
                                 const hoursAgo = Math.floor(timeDiff / 3600000);
                                 const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;

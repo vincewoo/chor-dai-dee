@@ -111,7 +111,7 @@ export const VoiceProvider = ({ socket, children }) => {
         lastUpdateTime = now;
         // Reset error flag on successful read
         errorLogged = false;
-      } catch (err) {
+      } catch {
         // Only log once to avoid spamming
         if (!errorLogged) {
           console.debug('[VoiceContext] Audio level monitoring paused (context suspended)');
@@ -213,8 +213,11 @@ export const VoiceProvider = ({ socket, children }) => {
   const joinVoiceRoom = useCallback(async (roomId, username) => {
     if (!socket || !roomId || !username) return false;
 
-    // If already in a different room, leave it first
+    // If already in a different room, leave it first.
+    // leaveVoiceRoom is a useCallback declared later in this component; it's
+    // stable and always defined by the time this handler runs at call time.
     if (currentRoomId && currentRoomId !== roomId) {
+      // eslint-disable-next-line react-hooks/immutability
       leaveVoiceRoom();
     }
 
@@ -289,7 +292,7 @@ export const VoiceProvider = ({ socket, children }) => {
     Object.values(peersRef.current).forEach(peer => {
       try {
         peer.destroy();
-      } catch (e) {
+      } catch {
         // Ignore errors during cleanup
       }
     });
@@ -455,7 +458,7 @@ export const VoiceProvider = ({ socket, children }) => {
       Object.values(peersRef.current).forEach(peer => {
         try {
           peer.destroy();
-        } catch (e) {
+        } catch {
           // Ignore
         }
       });
