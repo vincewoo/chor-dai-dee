@@ -23,6 +23,8 @@ import { TopPlayerArea, LeftPlayerArea, RightPlayerArea } from './PlayerArea';
 import { SettingsModal, LeaveConfirmModal, KickConfirmModal } from './modals';
 import { RoundOverScreen, MobileScoreboard } from './overlays';
 import { GameTableMobile, WaitingRoomV2, GameOverV2 } from './tableV2';
+import useGameSounds from '../hooks/useGameSounds';
+import { playSound } from '../utils/sounds';
 
 const GameRoom = ({ user, socket }) => {
     const { roomId } = useParams();
@@ -33,6 +35,8 @@ const GameRoom = ({ user, socket }) => {
         tableTheme, setTableTheme,
         accentColor, setAccentColor,
         reducedMotion, toggleReducedMotion,
+        soundEnabled, toggleSound,
+        soundVolume, setSoundVolume,
     } = useUserPreferences();
     const handContainerRef = useRef(null);
     const [containerWidth, setContainerWidth] = useState(0);
@@ -129,6 +133,9 @@ const GameRoom = ({ user, socket }) => {
     const [readyStatus, setReadyStatus] = useState(null); // { ready: [], notReady: [], host: 'username', allReady: bool }
     const [isReady, setIsReady] = useState(false); // Whether current player clicked Ready
     const [isSubmitting, setIsSubmitting] = useState(false); // Prevent double-submission of plays/passes
+
+    // Sound effects driven by game state transitions
+    useGameSounds({ gameState, roundResult, gameOver, myPlayerId });
 
     // Voice context for persistent voice across navigation
     const voiceContext = useVoice();
@@ -324,6 +331,7 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('error', (err) => {
             setError(err);
+            playSound('error');
             setIsSubmitting(false); // Reset submission state on error
             setTimeout(() => setError(''), 3000);
             // If error is "Room not found", redirect to lobby
@@ -551,10 +559,19 @@ const GameRoom = ({ user, socket }) => {
         socket.emit('next_round', { roomId });
     };
 
+    // Keeps the state updater pure — playing the sound inside it would double
+    // up under StrictMode's double-invoked updaters.
+    const selectedCardsRef = useRef(selectedCards);
+    useEffect(() => {
+        selectedCardsRef.current = selectedCards;
+    }, [selectedCards]);
+
     const toggleCard = useCallback((card) => {
+        const isSelected = selectedCardsRef.current.some(c => c.rank === card.rank && c.suit === card.suit);
+        playSound(isSelected ? 'deselect' : 'select');
         setSelectedCards(prevSelected => {
-            const isSelected = prevSelected.some(c => c.rank === card.rank && c.suit === card.suit);
-            if (isSelected) {
+            const wasSelected = prevSelected.some(c => c.rank === card.rank && c.suit === card.suit);
+            if (wasSelected) {
                 return prevSelected.filter(c => !(c.rank === card.rank && c.suit === card.suit));
             } else {
                 return [...prevSelected, card];
@@ -1621,6 +1638,10 @@ const GameRoom = ({ user, socket }) => {
                 setAccentColor={setAccentColor}
                 reducedMotion={reducedMotion}
                 toggleReducedMotion={toggleReducedMotion}
+                soundEnabled={soundEnabled}
+                toggleSound={toggleSound}
+                soundVolume={soundVolume}
+                setSoundVolume={setSoundVolume}
                 onLeave={() => { setShowSettings(false); handleLeaveClick(); }}
             />
 

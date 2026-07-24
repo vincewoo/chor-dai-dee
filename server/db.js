@@ -295,6 +295,8 @@ function initDb() {
                 addColumn('table_theme', "table_theme TEXT DEFAULT 'felt'");
                 addColumn('accent_color', "accent_color TEXT DEFAULT 'gold'");
                 addColumn('reduced_motion', 'reduced_motion INTEGER DEFAULT 0');
+                addColumn('sound_enabled', 'sound_enabled INTEGER DEFAULT 1');
+                addColumn('sound_volume', 'sound_volume REAL DEFAULT 0.6');
             }
         });
 
@@ -1131,7 +1133,9 @@ const getUserPreferences = (userId) => {
                     auto_pass: 0,
                     table_theme: 'felt',
                     accent_color: 'gold',
-                    reduced_motion: 0
+                    reduced_motion: 0,
+                    sound_enabled: 1,
+                    sound_volume: 0.6
                 });
             }
             resolve(row);
@@ -1152,21 +1156,28 @@ const updateUserPreferences = async (userId, preferences) => {
     const tableThemeValue = pick(preferences.tableTheme, existing.table_theme ?? 'felt');
     const accentColorValue = pick(preferences.accentColor, existing.accent_color ?? 'gold');
     const reducedMotionValue = toInt(pick(preferences.reducedMotion, existing.reduced_motion));
+    // Sound defaults to ON, so fall back to 1 when the column is absent/null
+    // rather than letting toInt() read the missing value as "off".
+    const soundEnabledValue = toInt(pick(preferences.soundEnabled, existing.sound_enabled ?? 1));
+    const rawVolume = Number(pick(preferences.soundVolume, existing.sound_volume ?? 0.6));
+    const soundVolumeValue = Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : 0.6;
 
     return new Promise((resolve, reject) => {
         const query = `INSERT INTO user_preferences
-                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion)
-                       VALUES (?, ?, ?, ?, ?, ?)
+                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
                            auto_pass = ?,
                            table_theme = ?,
                            accent_color = ?,
-                           reduced_motion = ?`;
+                           reduced_motion = ?,
+                           sound_enabled = ?,
+                           sound_volume = ?`;
 
         const values = [
-            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue,
-            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue
+            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue,
+            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue
         ];
 
         db.run(query, values, (err) => {
