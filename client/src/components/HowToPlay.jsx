@@ -2,31 +2,31 @@ import React, { useState } from 'react';
 import Card from './Card';
 import { SUIT_SYMBOLS } from '../constants';
 
+// Helper to render a row of example cards (stacked like in-game)
+// Uses traditional red-black colors instead of 4-color mode
+const CardRow = ({ cards }) => (
+    <div className="flex justify-center items-center my-2">
+        <div className="flex">
+            {cards.map((card, idx) => (
+                <div
+                    key={idx}
+                    style={{
+                        marginLeft: idx === 0 ? '0' : '-45px',
+                        position: 'relative',
+                        zIndex: idx
+                    }}
+                >
+                    <Card rank={card.rank} suit={card.suit} size="large" forceTraditionalColors={true} />
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
 const HowToPlay = React.memo(({ isOpen, onClose }) => {
     const [activeTab, setActiveTab] = useState('overview');
 
     if (!isOpen) return null;
-
-    // Helper to render a row of example cards (stacked like in-game)
-    // Uses traditional red-black colors instead of 4-color mode
-    const CardRow = ({ cards }) => (
-        <div className="flex justify-center items-center my-2">
-            <div className="flex">
-                {cards.map((card, idx) => (
-                    <div
-                        key={idx}
-                        style={{
-                            marginLeft: idx === 0 ? '0' : '-45px',
-                            position: 'relative',
-                            zIndex: idx
-                        }}
-                    >
-                        <Card rank={card.rank} suit={card.suit} size="large" forceTraditionalColors={true} />
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

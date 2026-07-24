@@ -16,6 +16,11 @@
   height: 100dvh;
 }
 
+.min-h-screen-safe {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 /* Custom scrollbar styles */
 .scrollbar-thin::-webkit-scrollbar {
   height: 6px;
@@ -38,4 +43,64 @@
 .scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: rgba(75, 85, 99, 0.5) transparent;
+}
+
+/* ============================================================
+   Game Table v2 (mobile) animations.
+   Accent-driven keyframes read --cdd-acc / --cdd-acc-soft,
+   which the mobile table root sets from the active accent.
+   ============================================================ */
+@keyframes cddPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--cdd-acc-soft, rgba(110, 231, 168, .5)); }
+  50%      { box-shadow: 0 0 0 9px rgba(0, 0, 0, 0); }
+}
+@keyframes cddGlow {
+  0%, 100% { box-shadow: 0 0 0 2px var(--cdd-acc, #6ee7a8), 0 0 16px 3px var(--cdd-acc-soft, rgba(110, 231, 168, .5)); }
+  50%      { box-shadow: 0 0 0 2px var(--cdd-acc, #6ee7a8), 0 0 5px 1px var(--cdd-acc-soft, rgba(110, 231, 168, .25)); }
+}
+@keyframes cddFlyUp {
+  from { transform: translateY(315px) scale(.82) rotate(6deg); opacity: .25; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes cddFlyDown {
+  from { transform: translateY(-235px) scale(.82) rotate(-6deg); opacity: .25; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes cddFlyLeft {
+  from { transform: translateX(-210px) scale(.82) rotate(-9deg); opacity: .25; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes cddFlyRight {
+  from { transform: translateX(210px) scale(.82) rotate(9deg); opacity: .25; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes cddToast {
+  0%   { transform: translateY(14px) scale(.85); opacity: 0; }
+  60%  { transform: translateY(-2px) scale(1.04); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes cddConfetti {
+  0%   { transform: translateY(-30px) rotate(0); }
+  100% { transform: translateY(900px) rotate(720deg); }
+}
+@keyframes cddPop {
+  0%   { transform: scale(.4); opacity: 0; }
+  70%  { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes cddBreathe {
+  0%, 100% { opacity: .35; }
+  50%      { opacity: .7; }
+}
+@keyframes cddFloat {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50%      { transform: translateY(-10px) rotate(-3deg); }
+}
+@keyframes cddShine {
+  0%   { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(240%) skewX(-18deg); }
+}
+@keyframes cddWiggle {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
 }

@@ -20,22 +20,22 @@ const VoiceControlModal = ({
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Invisible backdrop to catch clicks */}
+          {/* Backdrop to catch clicks and dim the table behind the popover */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300]"
+            className="fixed inset-0 z-[300] bg-black/30"
             onClick={onClose}
           />
 
-          {/* Floating modal - positioned near bottom right */}
+          {/* Floating modal - anchored under the mic button in the top HUD */}
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="fixed bottom-20 right-4 z-[301] bg-gray-800/95 backdrop-blur-sm rounded-xl shadow-xl p-4 w-64 border border-gray-700"
+            className="fixed top-16 right-4 z-[301] bg-gray-800/95 backdrop-blur-sm rounded-xl shadow-xl p-4 w-72 border border-gray-700"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -156,17 +156,22 @@ const VoiceControlModal = ({
                 {peers.length > 0 && (
                   <div className="border-t border-gray-700 pt-3">
                     <h3 className="text-white font-medium text-sm mb-2">Player Volumes</h3>
-                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                    <div className="space-y-3 max-h-40 overflow-y-auto">
                       {players
                         .filter(p => p.name !== username && peers.includes(p.name))
                         .map(player => {
                           // playerVolumes stores values as 0-1 decimals, convert to 0-100 for display
                           const volumePercent = Math.round((playerVolumes[player.name] ?? 1) * 100);
                           return (
-                            <div key={player.id} className="flex items-center gap-2">
-                              <span className="text-gray-300 w-16 text-xs truncate">
-                                {player.name}
-                              </span>
+                            <div key={player.id} className="flex flex-col gap-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-300 text-xs truncate">
+                                  {player.name}
+                                </span>
+                                <span className="text-gray-400 text-xs tabular-nums">
+                                  {volumePercent}%
+                                </span>
+                              </div>
                               <input
                                 type="range"
                                 min="0"
@@ -174,13 +179,10 @@ const VoiceControlModal = ({
                                 value={volumePercent}
                                 onChange={(e) => onVolumeChange(player.name, parseInt(e.target.value))}
                                 onInput={(e) => onVolumeChange(player.name, parseInt(e.target.value))}
-                                className="flex-1 accent-green-500 h-1"
+                                className="w-full accent-green-500 h-1"
                                 style={{ touchAction: 'manipulation' }}
                                 aria-label={`Volume for ${player.name}`}
                               />
-                              <span className="text-gray-400 text-xs w-8 text-right">
-                                {volumePercent}%
-                              </span>
                             </div>
                           );
                         })}

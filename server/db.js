@@ -274,6 +274,30 @@ function initDb() {
             }
         });
 
+        // Migration: add v2 table-theme preference columns to user_preferences
+        db.all("PRAGMA table_info(user_preferences)", (err, columns) => {
+            if (err) {
+                console.error("Error checking user_preferences schema", err);
+                return;
+            }
+            if (columns.length > 0) {
+                const addColumn = (name, ddl) => {
+                    if (!columns.some(c => c.name === name)) {
+                        db.run(`ALTER TABLE user_preferences ADD COLUMN ${ddl}`, (err) => {
+                            if (err && !err.message.includes('duplicate column')) {
+                                console.error(`Error adding ${name} to user_preferences:`, err.message);
+                            } else {
+                                console.log(`Successfully added ${name} column to user_preferences`);
+                            }
+                        });
+                    }
+                };
+                addColumn('table_theme', "table_theme TEXT DEFAULT 'felt'");
+                addColumn('accent_color', "accent_color TEXT DEFAULT 'gold'");
+                addColumn('reduced_motion', 'reduced_motion INTEGER DEFAULT 0');
+            }
+        });
+
         // Check if round_stats table needs leads_won column (migration for existing databases)
         db.all("PRAGMA table_info(round_stats)", (err, columns) => {
             if (err) {
@@ -1104,7 +1128,10 @@ const getUserPreferences = (userId) => {
                 return resolve({
                     user_id: userId,
                     four_color_mode: 0,
-                    auto_pass: 0
+                    auto_pass: 0,
+                    table_theme: 'felt',
+                    accent_color: 'gold',
+                    reduced_motion: 0
                 });
             }
             resolve(row);
@@ -1112,21 +1139,37 @@ const getUserPreferences = (userId) => {
     });
 };
 
-// Update user preferences (creates if doesn't exist)
-const updateUserPreferences = (userId, preferences) => {
-    return new Promise((resolve, reject) => {
-        const { fourColorMode, autoPass } = preferences;
+// Update user preferences (creates if doesn't exist).
+// Merges provided fields onto existing values so a partial POST doesn't wipe others.
+const updateUserPreferences = async (userId, preferences) => {
+    const existing = await getUserPreferences(userId);
 
-        const query = `INSERT INTO user_preferences (user_id, four_color_mode, auto_pass)
-                       VALUES (?, ?, ?)
+    const pick = (incoming, fallback) => (incoming === undefined ? fallback : incoming);
+    const toInt = (v) => (v ? 1 : 0);
+
+    const fourColorValue = toInt(pick(preferences.fourColorMode, existing.four_color_mode));
+    const autoPassValue = toInt(pick(preferences.autoPass, existing.auto_pass));
+    const tableThemeValue = pick(preferences.tableTheme, existing.table_theme ?? 'felt');
+    const accentColorValue = pick(preferences.accentColor, existing.accent_color ?? 'gold');
+    const reducedMotionValue = toInt(pick(preferences.reducedMotion, existing.reduced_motion));
+
+    return new Promise((resolve, reject) => {
+        const query = `INSERT INTO user_preferences
+                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion)
+                       VALUES (?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
-                           auto_pass = ?`;
+                           auto_pass = ?,
+                           table_theme = ?,
+                           accent_color = ?,
+                           reduced_motion = ?`;
 
-        const fourColorValue = fourColorMode ? 1 : 0;
-        const autoPassValue = autoPass ? 1 : 0;
+        const values = [
+            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue,
+            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue
+        ];
 
-        db.run(query, [userId, fourColorValue, autoPassValue, fourColorValue, autoPassValue], (err) => {
+        db.run(query, values, (err) => {
             if (err) return reject(err);
             resolve();
         });

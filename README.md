@@ -42,29 +42,35 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
 
 ### Prerequisites
 - Node.js (v16+)
+- [mise](https://mise.jdx.dev/) (optional, for the single-command dev workflow)
 
-### Running the Server
+### Running everything (recommended)
+Install dependencies once, then start the server and client together:
 ```bash
+# Install deps for both packages
+npm --prefix server install
+npm --prefix client install
+
+# Start server (:3000) + client (:5173) in one command
+mise run dev
+```
+The first time you run a mise task in this repo, run `mise trust` to allow the
+config. Logs from both processes are interleaved and prefixed with `[dev:server]`
+/ `[dev:client]`; press Ctrl+C to stop both.
+
+### Running each part manually
+If you'd rather not use mise, run the two processes in separate terminals:
+```bash
+# Terminal 1 — server (http://localhost:3000)
 cd server/
 npm install
 node index.js
-```
-Server runs on http://localhost:3000
 
-### Running the Client
-```bash
+# Terminal 2 — client (http://localhost:5173)
 cd client/
 npm install
 npm run dev
 ```
-
-### Running the Client
-```bash
-cd client/
-npm install
-npm run dev
-```
-Client runs on http://localhost:5173
 
 ### Deployment (Fly.io)
 The application is configured for deployment on Fly.io using Docker.

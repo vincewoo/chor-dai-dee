@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { ACCENTS, ACCENT_KEYS } from '../../theme/tableTheme';
 
 /**
- * Settings Modal - Game settings like Auto-Pass and 4-Color mode
+ * Settings Modal - Game settings like Auto-Pass and 4-Color mode,
+ * plus the v2 mobile table theme (surface / accent / reduced motion).
  */
 const SettingsModal = ({
     show,
@@ -9,7 +11,15 @@ const SettingsModal = ({
     autoPass,
     toggleAutoPass,
     fourColorMode,
-    toggleFourColorMode
+    toggleFourColorMode,
+    // v2 table theme (optional)
+    tableTheme,
+    setTableTheme,
+    accentColor,
+    setAccentColor,
+    reducedMotion,
+    toggleReducedMotion,
+    onLeave
 }) => {
     if (!show) return null;
 
@@ -93,9 +103,80 @@ const SettingsModal = ({
                                 Use 4-color suits for better visibility (blue diamonds, green clubs)
                             </p>
                         </div>
+
+                        {/* Table Theme (mobile) */}
+                        {setTableTheme && (
+                            <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-white font-semibold text-lg md:text-[1.2vmax]">Table Theme</span>
+                                    <span className="text-gray-400 text-xs">mobile</span>
+                                </div>
+
+                                {/* Surface */}
+                                <div className="flex items-center gap-2 mb-3" role="group" aria-label="Table surface">
+                                    {['felt', 'ink'].map(s => (
+                                        <button
+                                            key={s}
+                                            onClick={() => setTableTheme(s)}
+                                            aria-pressed={tableTheme === s}
+                                            className={`flex-1 py-2 rounded-lg font-semibold text-sm capitalize transition
+                                                ${tableTheme === s
+                                                    ? 'bg-white/90 text-gray-900'
+                                                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'}`}
+                                        >
+                                            {s}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Accent */}
+                                <div className="flex items-center gap-3 mb-3" role="group" aria-label="Accent color">
+                                    {ACCENT_KEYS.map(key => (
+                                        <button
+                                            key={key}
+                                            onClick={() => setAccentColor(key)}
+                                            aria-label={`${key} accent`}
+                                            aria-pressed={accentColor === key}
+                                            className="w-9 h-9 rounded-full transition transform hover:scale-110"
+                                            style={{
+                                                background: `linear-gradient(135deg,${ACCENTS[key].acc},${ACCENTS[key].dark})`,
+                                                boxShadow: accentColor === key
+                                                    ? `0 0 0 2px #1f2937, 0 0 0 4px ${ACCENTS[key].acc}`
+                                                    : 'none'
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+
+                                {/* Reduced motion */}
+                                <div className="flex items-center justify-between">
+                                    <label id="reduced-motion-label" className="text-white font-semibold text-base md:text-[1vmax]">
+                                        Reduced Motion
+                                    </label>
+                                    <button
+                                        role="switch"
+                                        aria-checked={!!reducedMotion}
+                                        aria-labelledby="reduced-motion-label"
+                                        onClick={toggleReducedMotion}
+                                        className={`px-4 py-2 rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base
+                                            ${reducedMotion ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                    >
+                                        {reducedMotion ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="mt-6 md:mt-[1.5vmax] flex justify-end">
+                    <div className="mt-6 md:mt-[1.5vmax] flex justify-between items-center gap-3">
+                        {onLeave ? (
+                            <button
+                                onClick={onLeave}
+                                className="bg-red-600/80 hover:bg-red-600 text-white px-5 py-2 rounded-lg font-bold shadow-lg transition text-base"
+                            >
+                                Leave Room
+                            </button>
+                        ) : <span />}
                         <button
                             onClick={onClose}
                             className="bg-green-600 hover:bg-green-700 text-white px-6 md:px-[2vmax] py-2 md:py-[0.6vmax] rounded-lg font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-white"

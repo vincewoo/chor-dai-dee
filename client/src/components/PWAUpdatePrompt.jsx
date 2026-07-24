@@ -61,8 +61,10 @@ function PWAUpdatePrompt() {
     return null;
   }
 
+  // Mobile: top-centered banner (clears the v2 screens' bottom footer/CTAs).
+  // Desktop (sm+): original bottom-right card.
   return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-md">
+    <div className="fixed z-[60] top-3 left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] max-w-sm sm:top-auto sm:left-auto sm:translate-x-0 sm:right-4 sm:bottom-4 sm:w-auto sm:max-w-md">
       {/* Update Available Notification */}
       {needRefresh && (
         <div className="bg-slate-800 text-white p-4 rounded-lg shadow-lg border border-slate-700 mb-2">

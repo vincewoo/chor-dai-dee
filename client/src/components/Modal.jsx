@@ -14,6 +14,8 @@ const Modal = ({ isOpen, onClose, title, message, type = 'alert', onConfirm, pla
             setTimeout(() => inputRef.current?.focus(), 100);
         }
         if (isOpen) {
+            // Reset the input each time the modal opens (sync to the isOpen prop).
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setInputValue('');
         }
     }, [isOpen, type]);
