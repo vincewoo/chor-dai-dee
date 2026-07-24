@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { ACCENTS, ACCENT_KEYS } from '../../theme/tableTheme';
+import { playSound } from '../../utils/sounds';
 
 /**
  * Settings Modal - Game settings like Auto-Pass and 4-Color mode,
@@ -19,6 +20,11 @@ const SettingsModal = ({
     setAccentColor,
     reducedMotion,
     toggleReducedMotion,
+    // sound (optional)
+    soundEnabled,
+    toggleSound,
+    soundVolume,
+    setSoundVolume,
     onLeave
 }) => {
     if (!show) return null;
@@ -103,6 +109,58 @@ const SettingsModal = ({
                                 Use 4-color suits for better visibility (blue diamonds, green clubs)
                             </p>
                         </div>
+
+                        {/* Sound Effects */}
+                        {toggleSound && (
+                            <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
+                                <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
+                                    <label
+                                        id="sound-label"
+                                        className="text-white font-semibold text-lg md:text-[1.2vmax]"
+                                    >
+                                        Sound Effects
+                                    </label>
+                                    <button
+                                        role="switch"
+                                        aria-checked={!!soundEnabled}
+                                        aria-labelledby="sound-label"
+                                        onClick={toggleSound}
+                                        className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500 focus-visible:outline-none
+                                            ${soundEnabled ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                    >
+                                        {soundEnabled ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+                                <p className="text-gray-300 text-sm md:text-[0.85vmax] mb-3">
+                                    Card shuffles, plays, and win chimes
+                                </p>
+
+                                {setSoundVolume && (
+                                    <div className="flex items-center gap-3">
+                                        <label htmlFor="sound-volume" className="text-gray-300 text-sm shrink-0">
+                                            Volume
+                                        </label>
+                                        <input
+                                            id="sound-volume"
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.05"
+                                            value={soundVolume ?? 0.6}
+                                            disabled={!soundEnabled}
+                                            onChange={(e) => setSoundVolume(parseFloat(e.target.value))}
+                                            // Preview the new level once the user settles on it.
+                                            onPointerUp={() => playSound('play')}
+                                            onKeyUp={() => playSound('play')}
+                                            className={`flex-1 accent-green-500 ${soundEnabled ? '' : 'opacity-40'}`}
+                                        />
+                                        <span className="text-gray-300 text-sm w-10 text-right tabular-nums">
+                                            {Math.round((soundVolume ?? 0.6) * 100)}%
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Table Theme (mobile) */}
                         {setTableTheme && (

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { setSoundEnabled as applySoundEnabled, setSoundVolume as applySoundVolume } from '../utils/sounds';
 
 const UserPreferencesContext = createContext();
 
@@ -40,6 +41,16 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return ['gold', 'mint', 'coral', 'violet'].includes(saved) ? saved : 'gold';
     });
 
+    const [soundEnabled, setSoundEnabled] = useState(() => {
+        const saved = localStorage.getItem('soundEnabled');
+        return saved !== 'false'; // Default to on
+    });
+
+    const [soundVolume, setSoundVolume] = useState(() => {
+        const saved = parseFloat(localStorage.getItem('soundVolume'));
+        return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.6;
+    });
+
     const [reducedMotion, setReducedMotion] = useState(() => {
         const saved = localStorage.getItem('reducedMotion');
         if (saved === 'true') return true;
@@ -78,6 +89,12 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         if (data.reducedMotion !== undefined) {
                             setReducedMotion(data.reducedMotion);
                         }
+                        if (data.soundEnabled !== undefined) {
+                            setSoundEnabled(data.soundEnabled);
+                        }
+                        if (data.soundVolume !== undefined) {
+                            setSoundVolume(data.soundVolume);
+                        }
                         // Also update localStorage
                         localStorage.setItem('fourColorMode', data.fourColorMode);
                         localStorage.setItem('autoPass', data.autoPass);
@@ -92,6 +109,12 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         }
                         if (data.reducedMotion !== undefined) {
                             localStorage.setItem('reducedMotion', data.reducedMotion);
+                        }
+                        if (data.soundEnabled !== undefined) {
+                            localStorage.setItem('soundEnabled', data.soundEnabled);
+                        }
+                        if (data.soundVolume !== undefined) {
+                            localStorage.setItem('soundVolume', data.soundVolume);
                         }
                     }
                 })
@@ -120,7 +143,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion }),
+                        body: JSON.stringify({ fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -136,7 +159,19 @@ export const UserPreferencesProvider = ({ children, user }) => {
         localStorage.setItem('tableTheme', tableTheme);
         localStorage.setItem('accentColor', accentColor);
         localStorage.setItem('reducedMotion', reducedMotion);
-    }, [fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, user?.id, isLoading]);
+        localStorage.setItem('soundEnabled', soundEnabled);
+        localStorage.setItem('soundVolume', soundVolume);
+    }, [fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
+
+    // Mirror sound settings into the audio engine, which keeps its own state so
+    // that playSound() callers don't have to thread preferences through props.
+    useEffect(() => {
+        applySoundEnabled(soundEnabled);
+    }, [soundEnabled]);
+
+    useEffect(() => {
+        applySoundVolume(soundVolume);
+    }, [soundVolume]);
 
     const toggleFourColorMode = () => {
         setFourColorMode(prev => !prev);
@@ -154,6 +189,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
         setReducedMotion(prev => !prev);
     };
 
+    const toggleSound = () => {
+        setSoundEnabled(prev => !prev);
+    };
+
     return (
         <UserPreferencesContext.Provider value={{
             fourColorMode,
@@ -162,14 +201,19 @@ export const UserPreferencesProvider = ({ children, user }) => {
             tableTheme,
             accentColor,
             reducedMotion,
+            soundEnabled,
+            soundVolume,
             toggleFourColorMode,
             toggleAutoPass,
             toggleVoiceChat,
             toggleReducedMotion,
+            toggleSound,
             setAutoPass,
             setTableTheme,
             setAccentColor,
             setReducedMotion,
+            setSoundEnabled,
+            setSoundVolume,
             isLoading
         }}>
             {children}
