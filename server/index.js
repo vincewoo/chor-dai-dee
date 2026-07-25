@@ -5,11 +5,12 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
+const { normalizeAvatar } = require('./avatars');
 const gamelog = require('./gamelog');
 const gamelogRecorder = require('./gamelogRecorder');
 
@@ -2456,7 +2457,10 @@ app.get('/api/preferences/:userId', async (req, res) => {
             reducedMotion: preferences.reduced_motion === 1,
             // Sound defaults to on, so treat a missing column as enabled.
             soundEnabled: (preferences.sound_enabled ?? 1) === 1,
-            soundVolume: preferences.sound_volume ?? 0.6
+            soundVolume: preferences.sound_volume ?? 0.6,
+            // null when the player has never picked one
+            avatarAnimal: preferences.avatar_animal ?? null,
+            avatarTile: preferences.avatar_tile ?? null
         });
     } catch (err) {
         console.error('Error fetching preferences:', err);
@@ -2472,6 +2476,45 @@ app.post('/api/preferences/:userId', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Save the avatar chosen in the picker. Kept off the preferences POST so the
+// periodic preference sync can never clobber an avatar with a stale value.
+app.post('/api/avatar/:userId', async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        if (!Number.isInteger(userId)) {
+            return res.status(400).json({ error: 'Invalid user' });
+        }
+        const avatar = normalizeAvatar(req.body?.animal, req.body?.tile);
+        if (!avatar) {
+            return res.status(400).json({ error: 'Unknown avatar' });
+        }
+        await updateUserPreferences(userId, { avatarAnimal: avatar.animal, avatarTile: avatar.tile });
+        res.json({ success: true, ...avatar });
+    } catch (err) {
+        console.error('Error saving avatar:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Batch avatar lookup by username, so a client can render everyone at a table
+// (or in a leaderboard row) with the avatar they actually chose.
+app.get('/api/avatars', async (req, res) => {
+    try {
+        const raw = typeof req.query.usernames === 'string' ? req.query.usernames : '';
+        const names = [...new Set(raw.split(',').map(n => n.trim()).filter(Boolean))].slice(0, 60);
+        const rows = await getAvatarsByUsernames(names);
+        const avatars = {};
+        for (const row of rows) {
+            const avatar = normalizeAvatar(row.avatar_animal, row.avatar_tile);
+            if (avatar) avatars[row.username] = avatar;
+        }
+        res.json({ avatars });
+    } catch (err) {
+        console.error('Error fetching avatars:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });

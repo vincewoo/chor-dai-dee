@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTableTheme } from '../../theme/tableTheme';
-import { PICKER_ANIMALS, TILE_GRADS, NAME_POOLS, getAvatarChoice, saveAvatarChoice } from '../../utils/avatars';
+import { PICKER_ANIMALS, TILE_GRADS, NAME_POOLS, getAvatarChoice, saveAvatarChoice, persistAvatarChoice } from '../../utils/avatars';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
-// v2 mobile avatar picker. Mirrors the "Avatar Picker v2" mockup. Persists the
-// choice to localStorage (no server avatar field yet) keyed to the current user.
-function AvatarPickerV2({ username }) {
+// v2 mobile avatar picker. Mirrors the "Avatar Picker v2" mockup. The choice is
+// saved to the account so every other player sees it, and mirrored into
+// localStorage so it renders instantly here (and at all for guests, who have no
+// account to attach it to).
+function AvatarPickerV2({ user }) {
+    const username = user?.username;
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const navigate = useNavigate();
 
@@ -23,6 +26,9 @@ function AvatarPickerV2({ username }) {
 
     const confirm = () => {
         saveAvatarChoice({ owner: username, animal, tile, name: previewName });
+        // Fire-and-forget: the local save already drives this session's UI, and
+        // a failed upload is retried by the next sync on startup.
+        persistAvatarChoice(user, { animal, tile });
         navigate('/lobby');
     };
 

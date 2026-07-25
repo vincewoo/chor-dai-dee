@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { useRoundLog } from '../../hooks/useRoundLog';
+import { useAvatars } from '../../hooks/useAvatars';
 import TableBackground from './TableBackground';
 import HudBar from './HudBar';
 import ScoreStrip from './ScoreStrip';
@@ -36,6 +37,9 @@ function GameTableMobile(props) {
     const [logOpen, setLogOpen] = useState(false);
 
     const players = gameState.players || [];
+    // Load the avatars everyone at this table chose. Covers the seats, the
+    // round log and the celebration, which all render from these same names.
+    useAvatars(players.map(p => p.name));
     // viewerIndex is computed once in GameRoom and shared with CenterPile's
     // fly-in math, so seat rotation can't drift between the two.
 

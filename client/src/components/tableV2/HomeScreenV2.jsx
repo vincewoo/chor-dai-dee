@@ -1,5 +1,6 @@
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { useAvatars } from '../../hooks/useAvatars';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 const footerLink = {
@@ -42,6 +43,9 @@ function HomeScreenV2({
     const codeReady = (code || '').trim().length >= 4;
     const anim = (delay) => (rm ? undefined : { animation: `cddToast .4s ${delay} ease-out both` });
     const showActiveGames = !!onJoinActiveGame && activeGames.length > 0;
+
+    // Your own avatar plus the players shown on the joinable-game cards.
+    useAvatars([username, ...activeGames.flatMap(g => (g.players || []).map(p => p.name))]);
 
     const statusText = reconnecting
         ? 'Checking for existing game…'

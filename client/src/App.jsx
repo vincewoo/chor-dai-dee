@@ -6,6 +6,7 @@ import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
+import { useOwnAvatarSync } from './hooks/useAvatars';
 
 // Login -> Lobby -> GameRoom is the path essentially every session takes, so those
 // stay in the entry chunk. The rest are side trips that most sessions never make;
@@ -64,6 +65,10 @@ function App() {
     return savedGuest ? JSON.parse(savedGuest) : null;
   });
 
+  // Pull this account's saved avatar down (or push up one picked before the
+  // account existed) so it follows the player between devices.
+  useOwnAvatarSync(user);
+
   const handleSetUser = (userData) => {
     if (userData) {
       if (userData.isGuest) {
@@ -97,7 +102,7 @@ function App() {
                   <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
                   <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
                   <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} user={user} /> : <Navigate to="/" />} />
-                  <Route path="/avatar" element={user ? <AvatarPickerV2 username={user.username} /> : <Navigate to="/" />} />
+                  <Route path="/avatar" element={user ? <AvatarPickerV2 user={user} /> : <Navigate to="/" />} />
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>
             </Suspense>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { useAvatars } from '../../hooks/useAvatars';
 import { archetypeDescriptions } from '../ArchetypeDialog';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -207,6 +208,9 @@ function StatsV2({
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const [tab, setTab] = useState('overview');
     const [archetypeSheet, setArchetypeSheet] = useState(null);
+
+    // Identity card plus the head-to-head rows below it.
+    useAvatars([username, ...headToHead.map((r) => r.opponent_name)]);
 
     const game = stats?.gameStats || {};
     const rounds = stats?.roundAggregates || {};
