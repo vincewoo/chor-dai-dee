@@ -51,7 +51,7 @@ const RULES_PIN = '33a83047302d0de5927ad80aadcdf6185d44e95fb6b96ad7bad923bd915ad
 // BotLogic.js is the heuristics; BotContext.js is the observation they run on.
 // Changing either changes what the bot plays.
 const BOT_FILES = ['game/BotLogic.js', 'game/BotContext.js'];
-const BOT_PIN = '52309fded50b68efae8b12aef0a1cf458bdb5217a2cd1fa008eb4767542ab556';
+const BOT_PIN = 'fc12ec6261161042626fd52ca43b131c8e50ff0452cc3e88bcdaa0a83776469b';
 
 const explain = (label, constant, version, actual, pin) => `
 ${label} changed but ${constant} is still ${version}.

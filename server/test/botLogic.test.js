@@ -225,3 +225,129 @@ test('bots still win tricks - the price rule has not made them passive', () => {
     const avgPerPlayer = totalCardsLeft / (rounds * 4);
     assert.ok(avgPerPlayer < 5, `average cards left ${avgPerPlayer.toFixed(2)} suggests bots are stalling`);
 });
+
+// --- Penalty-tier awareness ------------------------------------------------
+// Round points count cards, not ranks, and the 10-card (2x) and 13-card (3x)
+// boundaries make the cards straddling them worth several times face value.
+// The rule only applies in rounds we cannot win, so the gate matters as much
+// as the bonus.
+
+test('penalty multiplier matches the round scoring tiers', () => {
+    // Must agree with Scoring.js: 1-9 = 1x, 10-12 = 2x, 13 = 3x.
+    for (const size of [0, 1, 5, 9]) assert.strictEqual(BotLogic.penaltyMultiplier(size), 1, `size ${size}`);
+    for (const size of [10, 11, 12]) assert.strictEqual(BotLogic.penaltyMultiplier(size), 2, `size ${size}`);
+    assert.strictEqual(BotLogic.penaltyMultiplier(13), 3);
+});
+
+test('roundLostness is zero while we are still racing', () => {
+    const h = hand('3D 4C 5H 6S 7D');
+    // Everyone even.
+    assert.strictEqual(BotLogic.roundLostness(h, ctx({ playerCardCounts: [5, 5, 5] })), 0);
+    // We are ahead.
+    assert.strictEqual(BotLogic.roundLostness(h, ctx({ playerCardCounts: [9, 9, 9] })), 0);
+    // Opponents are far from out, so being behind does not matter yet.
+    const big = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC KH');
+    assert.strictEqual(BotLogic.roundLostness(big, ctx({ playerCardCounts: [11, 12, 13] })), 0);
+});
+
+test('roundLostness rises as we fall behind a player who is nearly out', () => {
+    const big = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC KH');
+    const nearlyLost = BotLogic.roundLostness(big, ctx({ playerCardCounts: [1, 8, 9] }));
+    const partly = BotLogic.roundLostness(big, ctx({ playerCardCounts: [5, 8, 9] }));
+    assert.ok(nearlyLost > partly, `${nearlyLost} should exceed ${partly}`);
+    assert.ok(nearlyLost > 0.9, `an 11-card hand against an opponent on 1 is lost: ${nearlyLost}`);
+    assert.ok(nearlyLost <= 1 && partly >= 0, 'must stay within 0..1');
+});
+
+test('penalty tier value only pays for actually crossing a boundary', () => {
+    const lostCtx = ctx({ playerCardCounts: [1, 8, 9] });
+    const ten = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC');   // 10 cards, at the 2x tier
+    const single = Big2Rules.validateHand([card('3D')]);
+
+    // 10 -> 9 escapes the 2x multiplier and is worth real points.
+    assert.ok(BotLogic.penaltyTierValue(single, ten, lostCtx) > 0);
+
+    // The same play from 9 cards crosses nothing.
+    const nine = hand('3D 4C 5H 6S 7D 8C 9H 10S JD');
+    assert.strictEqual(BotLogic.penaltyTierValue(single, nine, lostCtx), 0);
+});
+
+test('penalty tier value is gated on the round being lost', () => {
+    const ten = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC');
+    const single = Big2Rules.validateHand([card('3D')]);
+
+    // Identical crossing, but the round is still live - no bonus, so the bot
+    // is never tempted to dump a hand to duck a penalty it may not pay.
+    assert.strictEqual(BotLogic.penaltyTierValue(single, ten, ctx({ playerCardCounts: [10, 11, 12] })), 0);
+    assert.ok(BotLogic.penaltyTierValue(single, ten, ctx({ playerCardCounts: [1, 8, 9] })) > 0);
+});
+
+test('a buried bot sheds volume rather than protecting its high cards', () => {
+    // 11 cards against an opponent on one: the round is gone, so the only
+    // thing that matters is getting under 10 cards. Leading a five-card hand
+    // does that; leading a single 3 does not.
+    const buried = hand('3D 4D 5D 6D 7D 8C 9H 10S JC QH 2S');
+    const move = BotLogic.getBotMove(buried, null, false, ctx({ playerCardCounts: [1, 9, 10] }), false);
+    assert.ok(move.length >= 5, `expected a volume play, got ${move.map(c => c.rank + c.suit).join(' ')}`);
+});
+
+// --- 2s inside combinations ------------------------------------------------
+// COST_WEIGHT_BY_SIZE discounts cards in a five-card hand on the premise that
+// they are unavailable as standalone control. A 2 is the one card for which
+// that is provably false, and the bot was dumping 2s in full houses because
+// of it.
+
+test('spending a 2 inside a five-card hand is surcharged, low cards are not', () => {
+    const h = hand('2S 2H 2C 3D 3C 5H 7S 9D JC');
+    const live = ctx({ playerCardCounts: [9, 9, 9] });
+    const fullHouseOfTwos = Big2Rules.validateHand(hand('2S 2H 2C 3D 3C'));
+
+    assert.ok(BotLogic.standaloneControlSurcharge(fullHouseOfTwos, h, live, 'early') > 0,
+        'a full house built on 2s should be charged for the 2s it spends');
+
+    // A five-card hand with no 2 in it is untouched.
+    const lowHand = hand('3D 4C 5H 6S 7D 9C JH');
+    const straight = Big2Rules.validateHand(hand('3D 4C 5H 6S 7D'));
+    assert.strictEqual(BotLogic.standaloneControlSurcharge(straight, lowHand, live, 'early'), 0);
+});
+
+test('a single 2 carries no surcharge - nothing is being discounted', () => {
+    const h = hand('2S 5H 7S 9D JC');
+    const single = Big2Rules.validateHand([card('2S')]);
+    // COST_WEIGHT_BY_SIZE[1] is 1.0, so there is no discount to charge back.
+    assert.strictEqual(
+        BotLogic.standaloneControlSurcharge(single, h, ctx({ playerCardCounts: [5, 5, 5] }), 'early'), 0);
+});
+
+test('the surcharge lifts once the round is lost', () => {
+    const h = hand('2S 2H 2C 3D 3C 5H 7S 9D JC 10C 4D');
+    const fullHouse = Big2Rules.validateHand(hand('2S 2H 2C 3D 3C'));
+
+    // Still racing: keep the 2s back.
+    assert.ok(BotLogic.standaloneControlSurcharge(fullHouse, h, ctx({ playerCardCounts: [10, 11, 11] }), 'early') > 0);
+
+    // Round is gone: points count cards, so dumping five at once is correct
+    // and the surcharge must not stand in the way.
+    assert.strictEqual(
+        BotLogic.standaloneControlSurcharge(fullHouse, h, ctx({ playerCardCounts: [1, 9, 10] }), 'early'), 0);
+});
+
+test('bots burn far fewer 2s inside five-card hands than they used to', () => {
+    // Regression guard on the reported behaviour. Was 23.5% before the
+    // surcharge; anything back near that means the rule has stopped biting.
+    const rng = makeRng(4321);
+    let inCombo = 0, alone = 0;
+    const watcher = {
+        getBotMove(...args) {
+            const move = BotLogic.getBotMove(...args);
+            if (move && move.length === 5) inCombo += move.filter(c => c.rank === '2').length;
+            else if (move && move.length) alone += move.filter(c => c.rank === '2').length;
+            return move;
+        }
+    };
+    const seats = [0, 1, 2, 3].map(() => ({ name: 'w', logic: watcher }));
+    for (let r = 0; r < 400; r++) playRound(seats, deal(rng), null);
+
+    const burned = inCombo / (inCombo + alone) * 100;
+    assert.ok(burned < 18, `${burned.toFixed(1)}% of 2s spent inside five-card hands (was 23.5%)`);
+});

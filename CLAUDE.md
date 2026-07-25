@@ -196,6 +196,20 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
     more than the card (`evaluateTrickValue`, `shouldStrategicPass`)
   - "Poker First" hand organisation - preserves strong 5-card hands, with the
     break penalty scaled by what is actually lost (`comboBreakPenalty`)
+  - **2s are never "locked" in a combination** - `standaloneControlSurcharge`
+    charges back the `COST_WEIGHT_BY_SIZE` discount for 2s, which can always be
+    pulled out and played as an unbeatable single. Without it the bot dumped 2s
+    inside full houses and quads (23.5% of all 2s played, now 12%). Lifts once
+    `roundLostness` fires. See `docs/BOT-HEURISTICS-REVIEW.md` § 14.
+  - **Phase is deliberately own-hand-only** - `getGamePhase` ignores opponents
+    on purpose; it prices *our* control to *us*. Making it track the leader was
+    measured and cost 3pp of win rate (§ 13). Round-ending risk is a separate
+    question, answered by `dangerLevel` and `roundLostness`.
+  - **Penalty-tier awareness** - `roundLostness` reads opponents' card counts to
+    detect a round that cannot be won; once it fires, `penaltyTierValue` prices
+    ducking under the 10-card (2x) and 13-card (3x) scoring tiers. Round points
+    count *cards, not ranks*, so in a lost round retention cost is pricing an
+    asset that no longer exists. Worth -0.069 round points per round (3.2 sigma).
   - **Opponent modelling** - `buildOpponentModels` replays the round's
     `trickHistory` (maintained by RoomManager, survives trick boundaries) to
     infer what each opponent cannot beat, and stops trusting that read once an
@@ -220,6 +234,18 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
   - Formula: Display Rating = 1200 + (mu - 3*sigma) * 40
   - Updates based on game placement (not just win/loss)
   - Only updates ratings for human players
+- `DealStrength.js` - Scores a 13-card deal before play, so stats can separate
+  card luck from skill. Control (2s/aces/kings) against the plays needed to shed,
+  mapped to five tiers with a measured win-rate baseline. See
+  `docs/HAND-STRENGTH-STATS.md`; regenerate the constants with
+  `node test/dealStrength.bench.js`.
+  - Deliberately separate from `DecisionAnalyzer.calculateHandStrength`, which
+    scores *partial* hands mid-round and is entangled with hand size by design.
+  - `rank` is derived from all four hands and must never reach a client
+    mid-round - it leaks opponents' holdings.
+  - Bots do **not** use it: feeding own-hand strength into bot scoring was
+    measured and made play worse. A *relative* signal (`BotLogic.roundLostness`)
+    did work and shipped instead. See `docs/BOT-HEURISTICS-REVIEW.md` §§ 11-12.
 - `DecisionAnalyzer.js` - Advanced analytics engine for Tier 3 stats
   - Hand strength calculation
   - Decision quality evaluation (optimal/suboptimal/risky)
@@ -239,6 +265,10 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `GET /api/stats/:username/rounds` - Recent round history
 - `GET /api/stats/:username/head-to-head` - Head-to-head records vs other players
 - `GET /api/stats/:username/tier3` - Advanced analytics (Tier 3)
+- `GET /api/stats/:username/hand-strength` - Deal strength vs. outcome. Returns
+  three scopes (`all`, `vsBots`, `vsHumans`) so beating bots and beating humans
+  stay distinguishable, each with a per-tier win rate against the baseline,
+  "Edge" (results minus what the deals were worth) and its confidence interval.
 
 #### Preferences
 - `GET /api/preferences/:userId` - Get user preferences (includes the chosen avatar)
@@ -302,7 +332,11 @@ Unsetting it is the kill switch.
 - `stats_standard` - Standard game mode statistics
 
 #### Analytics Tables
-- `round_stats` - Per-round granular stats (plays, passes, leads_won, combinations)
+- `round_stats` - Per-round granular stats (plays, passes, leads_won, combinations,
+  plus deal strength: `deal_strength_raw`, `deal_tier`, `deal_rank`,
+  `deal_baseline_version`, `human_opponents`). The deal columns are NULL on rows
+  written before the feature - an unknown deal is not an average one, so every
+  deal-strength query filters `IS NOT NULL` rather than treating them as zero.
 - `head_to_head_stats` - Win/loss records against specific opponents
 - `decision_tracking` - Decision quality tracking for Tier 3 analytics
 - `card_awareness_stats` - Optimal/suboptimal decision counts

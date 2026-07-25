@@ -14,6 +14,7 @@ const Stats = ({ user }) => {
     const [stats, setStats] = useState(null);
     const [headToHead, setHeadToHead] = useState([]);
     const [tier3Stats, setTier3Stats] = useState(null);
+    const [handStrength, setHandStrength] = useState(null);
     const [playerRank, setPlayerRank] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -49,16 +50,18 @@ const Stats = ({ user }) => {
         setLoading(true);
         setError('');
         try {
-            const [statsRes, h2hRes, tier3Res, rankRes] = await Promise.all([
+            const [statsRes, h2hRes, tier3Res, rankRes, dealRes] = await Promise.all([
                 axios.get(`${API_BASE}/api/stats/${viewingUsername}/detailed?mode=${mode}`),
                 axios.get(`${API_BASE}/api/stats/${viewingUsername}/head-to-head?mode=${mode}`),
                 axios.get(`${API_BASE}/api/stats/${viewingUsername}/tier3?mode=${mode}`),
-                axios.get(`${API_BASE}/api/leaderboard/${viewingUsername}/rank?mode=${mode}&sortBy=rating`).catch(() => ({ data: { rank: null } }))
+                axios.get(`${API_BASE}/api/leaderboard/${viewingUsername}/rank?mode=${mode}&sortBy=rating`).catch(() => ({ data: { rank: null } })),
+                axios.get(`${API_BASE}/api/stats/${viewingUsername}/hand-strength?mode=${mode}`).catch(() => ({ data: null }))
             ]);
             setStats(statsRes.data);
             setHeadToHead(h2hRes.data.headToHead || []);
             setTier3Stats(tier3Res.data);
             setPlayerRank(rankRes.data.rank);
+            setHandStrength(dealRes.data);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load stats');
         } finally {
@@ -237,6 +240,7 @@ const Stats = ({ user }) => {
                                 <CardAwarenessCard stats={tier3Stats.cardAwareness} />
                                 <VarianceCard stats={tier3Stats.variance} />
                                 <BehavioralCard stats={tier3Stats.behavioral} onArchetypeClick={handleArchetypeClick} />
+                                <HandStrengthCard data={handStrength} />
                             </>
                         )}
                     </div>
@@ -767,6 +771,175 @@ const BehavioralCard = ({ stats, onArchetypeClick }) => {
 };
 
 // Reusable Stat Item Component
+// Deal Strength vs Outcome Card - Tier 3
+//
+// Answers "did I do better or worse than my cards deserved?". The deal is
+// scored before a card is played, which gives an expected result to measure
+// against - so a player who wins off weak hands is distinguishable from one
+// who has simply been dealt well.
+const HandStrengthCard = ({ data }) => {
+    // Bot rounds are the bulk of play, so they are shown rather than hidden -
+    // but kept on their own tab, since beating three bots is a different test
+    // from beating three humans.
+    const [scope, setScope] = useState('all');
+
+    if (!data || !data.all || data.all.rounds === 0) {
+        return (
+            <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl">
+                <h2 className="text-2xl font-bold text-teal-600 mb-4">Deal Strength vs Outcome</h2>
+                <p className="text-gray-500 text-center py-4">
+                    No scored rounds yet &mdash; play a few rounds to see how your results compare to the cards you were dealt.
+                </p>
+            </div>
+        );
+    }
+
+    const s = data[scope] || data.all;
+    const pct = (v, digits = 1) => `${(v * 100).toFixed(digits)}%`;
+    const signed = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}pp`;
+
+    const scopes = [
+        { key: 'all', label: 'All' },
+        { key: 'vsBots', label: 'vs Bots' },
+        { key: 'vsHumans', label: 'vs Humans' }
+    ];
+
+    // Below the threshold the interval is wider than any plausible skill
+    // effect, so the number is not presented as a verdict.
+    const edgeIsMeaningful = s.confidence !== 'insufficient';
+    const edgeColor = !edgeIsMeaningful
+        ? 'text-gray-400'
+        : s.winRateAboveExpected > 0 ? 'text-green-600' : 'text-red-600';
+
+    return (
+        <div className="bg-white text-gray-800 p-6 rounded-xl shadow-2xl border-2 border-teal-400 col-span-full">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-2xl font-bold text-teal-600">Deal Strength vs Outcome</h2>
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                    {scopes.map(({ key, label }) => (
+                        <button
+                            key={key}
+                            onClick={() => setScope(key)}
+                            disabled={!data[key] || data[key].rounds === 0}
+                            className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                                scope === key
+                                    ? 'bg-teal-600 text-white font-semibold'
+                                    : 'text-gray-600 hover:bg-gray-200 disabled:opacity-40 disabled:hover:bg-transparent'
+                            }`}
+                        >
+                            {label}
+                            {data[key] ? ` (${data[key].rounds})` : ''}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {s.rounds === 0 ? (
+                <p className="text-gray-500 text-center py-4">No rounds recorded in this category yet.</p>
+            ) : (
+                <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <StatItem
+                            label="Deal Luck"
+                            value={`p${s.avgDealPercentile}`}
+                            valueColor={s.avgDealPercentile > 55 ? 'text-yellow-600' : s.avgDealPercentile < 45 ? 'text-blue-600' : 'text-gray-700'}
+                        />
+                        <StatItem
+                            label="Edge (win rate)"
+                            value={edgeIsMeaningful ? signed(s.winRateAboveExpected) : '—'}
+                            valueColor={edgeColor}
+                        />
+                        <StatItem
+                            label="Steals"
+                            value={`${s.steals} / ${s.worstDeals}`}
+                            valueColor="text-green-600"
+                        />
+                        <StatItem
+                            label="Squanders"
+                            value={`${s.squanders} / ${s.bestDeals}`}
+                            valueColor="text-orange-600"
+                        />
+                    </div>
+
+                    {edgeIsMeaningful ? (
+                        <p className="text-sm text-gray-600 mb-4">
+                            Over <strong>{s.rounds}</strong> rounds you won{' '}
+                            <strong className={edgeColor}>{signed(s.winRateAboveExpected)}</strong> more often than
+                            these deals were worth (95% confidence: &plusmn;{(s.winRateConfidence * 100).toFixed(1)}pp
+                            {s.confidence === 'provisional' ? ', still provisional' : ''}).
+                        </p>
+                    ) : (
+                        <p className="text-sm text-gray-500 mb-4">
+                            Edge needs about <strong>{data.minRoundsForEdge}</strong> scored rounds before it means
+                            anything &mdash; single-round luck in Big 2 is large enough to swamp skill below that.
+                            You have <strong>{s.rounds}</strong>.
+                        </p>
+                    )}
+
+                    <div className="space-y-2">
+                        {s.tiers.map(tier => {
+                            const enough = tier.rounds >= 10;
+                            const actual = tier.winRate ?? 0;
+                            const expected = tier.expectedWinRate;
+                            const scale = (v) => `${Math.min(100, v * 160)}%`;
+                            return (
+                                <div key={tier.key} className="flex items-center gap-3">
+                                    <div className="w-28 shrink-0 text-sm text-gray-600">{tier.label}</div>
+                                    <div className="flex-1 relative h-7 bg-gray-100 rounded">
+                                        {enough && (
+                                            <div
+                                                className={`absolute top-1 bottom-1 left-0 rounded-sm ${
+                                                    actual >= expected ? 'bg-teal-500' : 'bg-orange-400'
+                                                }`}
+                                                style={{ width: scale(actual) }}
+                                            />
+                                        )}
+                                        {/* Expected win rate for this tier: the mark to beat. Drawn
+                                            last so it stays visible when the bar overtakes it. */}
+                                        <div
+                                            className="absolute top-0 bottom-0 border-r-2 border-gray-700 border-dashed z-10"
+                                            style={{ width: scale(expected) }}
+                                            title={`Expected ${pct(expected, 0)}`}
+                                        />
+                                    </div>
+                                    <div className="w-32 shrink-0 text-right text-sm">
+                                        {enough ? (
+                                            <span className={actual >= expected ? 'text-teal-700' : 'text-orange-700'}>
+                                                {pct(actual, 0)} <span className="text-gray-400">vs {pct(expected, 0)}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400">{tier.rounds} rounds</span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="mt-4 text-sm text-gray-600 space-y-1">
+                        <p>
+                            <strong>Deal Luck:</strong> how strong your starting hands have been, as a percentile.
+                            p50 is average; this is variance, not skill.
+                        </p>
+                        <p>
+                            <strong>Edge:</strong> how much more (or less) you win than the baseline expects from
+                            those same hands. This is the part that is actually you.
+                        </p>
+                        <p>
+                            <strong>Steals / Squanders:</strong> rounds won holding the weakest hand at the table,
+                            and rounds finished in the bottom half holding the strongest.
+                        </p>
+                        <p className="text-gray-400 pt-1">
+                            Bars show your win rate per tier; the dashed line is the expected rate. Tiers with fewer
+                            than 10 rounds are left blank rather than drawn from too little data.
+                        </p>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 const StatItem = ({ label, value, valueColor = 'text-gray-900' }) => (
     <div className="text-center">
         <div className="text-sm text-gray-600 mb-1">{label}</div>

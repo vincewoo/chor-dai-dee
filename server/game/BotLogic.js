@@ -43,6 +43,14 @@ const COST_WEIGHT_BY_SIZE = { 1: 1.0, 2: 0.85, 3: 0.7, 5: 0.35 };
 // Value of getting one card out of our hand, before card quality is considered.
 const SHED_VALUE_PER_CARD = 45;
 
+// Round scoring multiplies cards left by 2 at 10 cards and by 3 at 13, so the
+// cards straddling those boundaries are worth several times their face value.
+// Kept in sync with Scoring.js by test.
+const PENALTY_TIER_BOUNDARIES = [
+    { atLeast: 13, multiplier: 3 },
+    { atLeast: 10, multiplier: 2 }
+];
+
 // Base worth of winning a trick and taking the lead.
 const TRICK_BASE_VALUE = 55;
 
@@ -72,10 +80,19 @@ const moveRetentionCost = (move, gamePhase) => {
     return raw * sizeWeight * (PHASE_COST_MULTIPLIER[gamePhase] || 1.0);
 };
 
+/** Penalty multiplier applied to a hand of this size at round end. */
+const penaltyMultiplier = (handSize) => {
+    for (const tier of PENALTY_TIER_BOUNDARIES) {
+        if (handSize >= tier.atLeast) return tier.multiplier;
+    }
+    return 1;
+};
+
 const BotLogic = {
     // Exposed for tests and for the debug panel.
     cardRetentionCost,
     moveRetentionCost,
+    penaltyMultiplier,
 
     /**
      * Main entry point: Get the best move for the bot
@@ -771,6 +788,104 @@ const BotLogic = {
     },
 
     /**
+     * Charges back the part of the five-card size discount that should never
+     * have applied to a 2.
+     *
+     * COST_WEIGHT_BY_SIZE discounts a card inside a larger combination on the
+     * premise that it "is not really available as standalone control". For a 2
+     * that premise is false: the combination can always be broken and the 2
+     * played as a single that cannot be beaten - which is the very reason
+     * TWO_OF_SPADES_PREMIUM exists. Pricing a 2 at 35% inside a five-card hand
+     * discounts an option the bot still holds.
+     *
+     * It showed up in play before it showed up in a benchmark: bots dumped 2s
+     * inside full houses and quads far more than a human would. Measured at
+     * 23.5% of every 2 played, and a full house of 2-2-2-3-3 cost the bot about
+     * the same as spending one 2 as a single.
+     *
+     * Applies to 2s only. Aces and below genuinely are more constrained inside
+     * a combination, so the existing discount is closer to right for them, and
+     * extending this to them measured worse.
+     *
+     * Not applied once the round is lost - there, points count cards rather
+     * than ranks and dumping the whole combination is correct. Same reasoning
+     * as penaltyTierValue, which is the other half of this idea.
+     */
+    standaloneControlSurcharge: (move, hand, ctx, gamePhase) => {
+        if (BotLogic.roundLostness(hand, ctx) > 0) return 0;
+
+        const sizeWeight = COST_WEIGHT_BY_SIZE[move.cards.length] || 0.5;
+        const phase = PHASE_COST_MULTIPLIER[gamePhase] || 1.0;
+        // Zero for singles, where sizeWeight is already 1.0.
+        const discounted = 1 - sizeWeight;
+        if (discounted <= 0) return 0;
+
+        return move.cards.reduce((sum, card) => card.rank === '2'
+            ? sum + cardRetentionCost(card) * discounted * phase
+            : sum, 0);
+    },
+
+    /**
+     * How far out of the running we are, 0 (still racing) to 1 (round is gone).
+     *
+     * The complement of dangerLevel, which asks "should I block the leader".
+     * This asks "can I still win at all" - and when the answer is no, the
+     * objective changes from taking the round to limiting what it costs.
+     *
+     * Uses only public information: card counts are visible to every player.
+     *
+     * Deliberately relative. getGamePhase keys on our own hand size alone, so a
+     * bot holding 11 cards against an opponent on 1 still reads as 'early' and
+     * pays full retention cost - hoarding control while the round ends around
+     * it. This is the signal that case needs.
+     *
+     * @param {Array} hand - our cards
+     * @param {Object} ctx - game context
+     * @returns {number} 0..1
+     */
+    roundLostness: (hand, ctx) => {
+        const counts = ctx.playerCardCounts || [13, 13, 13];
+        const minOpp = Math.min(...counts);
+        // How far behind the leader we are, and whether anyone is close enough
+        // for it to matter yet. Both must hold: being behind early is normal.
+        const behind = (hand.length - minOpp - 2) / 6;
+        const proximity = (6 - minOpp) / 5;
+        return Math.max(0, Math.min(1, behind)) * Math.max(0, Math.min(1, proximity));
+    },
+
+    /**
+     * Extra value of a move for crossing a penalty tier, beyond the one point
+     * per card that ordinary shedding already earns.
+     *
+     * Round points count CARDS, not ranks - a held 2 and a held 3 are both worth
+     * exactly one point. So in a round we cannot win, the only thing that
+     * matters is how many cards are left and which side of 10 and 13 that lands
+     * on. Going from 10 cards to 9 turns 20 points into 9.
+     *
+     * Priced at SHED_VALUE_PER_CARD per point of penalty avoided, which is the
+     * same currency the bot already uses for shedding, rather than a magnitude
+     * invented for this rule. Measured: pricing it higher keeps gaining only
+     * marginally (0.065 -> 0.088 points per round from 1x to 5x) and does so by
+     * overweighting a rule that is already correctly priced.
+     *
+     * Scaled by lostness, so a bot still in the race is not tempted to dump its
+     * hand to duck a penalty it may never pay.
+     */
+    penaltyTierValue: (move, hand, ctx) => {
+        const lost = BotLogic.roundLostness(hand, ctx);
+        if (lost <= 0) return 0;
+
+        const size = hand.length;
+        const after = size - move.cards.length;
+        const saved = size * penaltyMultiplier(size) - after * penaltyMultiplier(after);
+        // Subtract the plain one-per-card saving; scoreLeadMove already pays it.
+        const beyondFaceValue = saved - move.cards.length;
+        if (beyondFaceValue <= 0) return 0;
+
+        return beyondFaceValue * SHED_VALUE_PER_CARD * lost;
+    },
+
+    /**
      * What winning the current trick is worth to us.
      *
      * This is the "price of the trick" the bot pays retention cost against: a
@@ -856,11 +971,24 @@ const BotLogic = {
         const cost = moveRetentionCost(move, gamePhase);
         const broken = BotLogic.comboBreakPenalty(move, ctx.handOrganization, gamePhase);
 
-        let score = shed - cost - broken;
+        // A 2 buried in a combination is still an unbeatable single, so the
+        // size discount above under-prices it.
+        const surcharge = BotLogic.standaloneControlSurcharge(move, hand, ctx, gamePhase);
+
+        let score = shed - cost - broken - surcharge;
         if (factors) {
             factors.push({ factor: `Sheds ${move.cards.length}`, points: shed });
             factors.push({ factor: 'Card retention cost', points: -Math.round(cost) });
             if (broken) factors.push({ factor: 'Breaks a saved combination', points: -Math.round(broken) });
+            if (surcharge) factors.push({ factor: 'Spends a 2 inside a combination', points: -Math.round(surcharge) });
+        }
+
+        // In a round we cannot win, ducking under a penalty tier is worth more
+        // than any card it costs.
+        const tierValue = BotLogic.penaltyTierValue(move, hand, ctx);
+        if (tierValue > 0) {
+            score += tierValue;
+            if (factors) factors.push({ factor: 'Ducks under a penalty tier', points: Math.round(tierValue) });
         }
 
         // Five-card hands are the cheapest way to unload volume and the hardest
@@ -937,11 +1065,24 @@ const BotLogic = {
         const cost = moveRetentionCost(move, gamePhase);
         const broken = BotLogic.comboBreakPenalty(move, ctx.handOrganization, gamePhase);
 
-        let score = shed - cost - broken;
+        // A 2 buried in a combination is still an unbeatable single, so the
+        // size discount above under-prices it.
+        const surcharge = BotLogic.standaloneControlSurcharge(move, hand, ctx, gamePhase);
+
+        let score = shed - cost - broken - surcharge;
         if (factors) {
             factors.push({ factor: `Sheds ${move.cards.length}`, points: shed });
             factors.push({ factor: 'Card retention cost', points: -Math.round(cost) });
             if (broken) factors.push({ factor: 'Breaks a saved combination', points: -Math.round(broken) });
+            if (surcharge) factors.push({ factor: 'Spends a 2 inside a combination', points: -Math.round(surcharge) });
+        }
+
+        // Same as on the lead: a round already lost is scored in cards, not
+        // control, and the tier boundaries dominate.
+        const tierValue = BotLogic.penaltyTierValue(move, hand, ctx);
+        if (tierValue > 0) {
+            score += tierValue;
+            if (factors) factors.push({ factor: 'Ducks under a penalty tier', points: Math.round(tierValue) });
         }
 
         // What we stand to gain if this play holds up and we take the lead.
@@ -1789,8 +1930,12 @@ const BotLogic = {
  *
  * Changelog:
  *   1 - as of the first logged game.
+ *   2 - penalty-tier awareness: in a round it cannot win, the bot now values
+ *       ducking under the 10-card (2x) and 13-card (3x) penalty boundaries.
+ *   3 - 2s are no longer discounted as "locked inside" a five-card hand, since
+ *       a 2 can always be pulled out and played as an unbeatable single.
  */
-const BOT_LOGIC_VERSION = 1;
+const BOT_LOGIC_VERSION = 3;
 
 /**
  * Which PPO checkpoint the advanced bot loads. Recorded per seat so a corpus

@@ -382,3 +382,178 @@ copy `BotLogic.js` aside before editing and seat the old copy against the new on
   be more accurate.
 - `getAllValidMoves` still prunes flushes and straights to lowest/highest representatives,
   so the bot cannot construct a middle-value flush to win a trick cheaply.
+
+## 11. Tried and rejected: own-hand global strength
+
+When `DealStrength.js` was added for the stats, the obvious next question was whether the
+bot should read the same signal — know its hand is globally strong or weak and adjust for
+the trick. It was measured rather than assumed, and it does not work.
+
+Both formulations were tested, one seat running the variant against three current bots,
+seats rotating, 8,000 rounds per configuration:
+
+- **Deal-anchored** — score the 13-card deal once, use it all round.
+- **Live** — recompute control-per-card from the current hand every turn, so the signal
+  cannot go stale as the bot spends its 2s.
+
+Each fed two levers: scaling `evaluateTrickValue` by strength (strong hand → contest
+harder) and adding a shed bonus when weak (round points are cards left, so a hand that
+cannot win the race should dump volume instead).
+
+| Bias strength | Win rate vs baseline | Round points |
+|---|---|---|
+| Weak (0.2–0.6) | within ±1σ, no effect | +0.08 |
+| Moderate (1.5) | +0.5pp (0.9σ) | +0.48 |
+| Strong (3) | −3.5pp (6.4σ) | +3.31 |
+| Very strong (6) | −7.0pp (13.2σ) | +7.02 |
+
+Monotonically worse as the signal gains influence, never better, in both formulations and
+on both levers. Inverting the sign did not help either, which rules out a simple direction
+error. A control run with the patch installed but zeroed reproduced the baseline, and a
+separate check confirmed the patch really does change decisions (2.3% of them at moderate
+strength), so the null result is real rather than a no-op.
+
+The reason is redundancy, not staleness — the live variant failed the same way as the
+static one. `evaluateTrickValue` already reads `handOrganization.trash` and
+`fiveCardHands`, `dangerLevel` reads the table, and `estimateControlProbability` prices
+individual cards against what is still out. Those are the same facts deal strength
+summarises, except they are situational, and a scalar bias on top mostly just distorts
+prices the retention-cost model had already set correctly.
+
+What *did* work was the follow-up in § 12: not "how strong am I" but "am I still in this
+round".
+
+## 12. Shipped: penalty-tier awareness in a lost round
+
+The successor to § 11, and the contrast is instructive. Deal strength failed because it
+was an absolute property of our own cards, duplicating what the retention model already
+knew. This signal is *relative* — it reads opponents' card counts — and it targets a
+specific decision the bot was getting wrong.
+
+### The gap
+
+`getGamePhase` keys purely on our own hand size, so a bot holding 11 cards while an
+opponent sits on 1 still reads as `early` and pays a full `PHASE_COST_MULTIPLIER` of 1.0.
+It hoards its 2s for a round that is already over.
+
+Worse, that hoarding is measuring the wrong thing entirely. **Round points count cards,
+not ranks.** A held 2 and a held 3 are both worth exactly one point. Once a round is
+unwinnable, retention cost — which prices high cards as expensive to give up — is pricing
+an asset that has stopped existing.
+
+And the scoring tiers make it sharper still: 10–12 cards doubles the penalty, 13 triples
+it. Going from 10 cards to 9 turns 20 points into 9.
+
+### What was measured
+
+Three levers, gated on `roundLostness`, one seat against three current bots, seats
+rotating, 12,000 rounds × 4 seeds:
+
+| Lever | Points/round vs control | Win rate |
+|---|---|---|
+| Refund retention cost | −0.04 | **−1.3pp** — bad trade |
+| Flat shed bonus | −0.02 | −0.1pp |
+| **Penalty-tier crossing** | **−0.07** | −0.24pp |
+
+Only the tier lever paid. Refunding retention cost wholesale cost more than a point of
+win rate for almost no points gain — the bot needs its control cards even in a losing
+round, because taking the lead is how it gets to dump.
+
+The shipped rule reproduces the benchmark: **−0.069 points per round (3.2σ), improving on
+all four seeds**, with rounds ending at 10+ cards down 0.35pp — the mechanism the rule
+targets, moving in the direction it was designed to move.
+
+### Why it is priced at 1×
+
+The bonus is `pointsSaved × SHED_VALUE_PER_CARD`, which values a penalty point at exactly
+what the bot already pays to shed a card. Raising the multiplier keeps gaining, but
+barely — 0.065 at 1×, 0.088 at 5× — and it does so by overweighting a rule that is
+already correctly priced. Per § 9, a new rule earns its place by being denominated in the
+existing currency, not by being handed a magnitude that wins a benchmark.
+
+### Note on the state's frequency
+
+`roundLostness > 0` on 37% of scored decisions and `> 0.5` on 13% — the state is common,
+not exotic. The gain is modest not because the situation is rare but because the bot was
+already shedding reasonably; the rule sharpens the tail rather than changing the plan.
+
+Reproduce with the scripts described in `docs/HAND-STRENGTH-STATS.md`.
+
+## 13. Tried and rejected: table-aware game phase
+
+§ 12 exposed that `getGamePhase` keys purely on our own hand size, so a bot with 11 cards
+facing an opponent on 1 still reads as `early`. That looks like a bug. It was tested as
+one, and the naive fix is worse:
+
+| Phase definition | Points/round | Win rate |
+|---|---|---|
+| unchanged | +0.007 (0.3σ) | −0.42pp |
+| `min(own, opponents)` | −0.014 (0.4σ) | **−3.09pp** |
+| average across all four | −0.022 (0.7σ) | −0.71pp |
+| blend of own and leader | −0.012 (0.4σ) | −1.71pp |
+
+12,000 rounds × 4 seeds. Nothing reaches significance on points, and making phase track
+the leader costs three points of win rate: the bot reads "late", discounts its retention
+cost, dumps control, and loses rounds it could still have won.
+
+The conclusion is that phase is own-hand-only *by design*, not by oversight. It answers
+"how much is my control still worth to me", and our own hand is the right clock for that.
+"How close is the round to ending" is a genuinely different question, and it is answered
+by `dangerLevel` and `roundLostness` — which is why the § 12 fix was targeted rather than
+a re-plumbing of phase.
+
+For the record, the bot is not otherwise blind to the table: `dangerLevel`,
+`buildOpponentModels`, `solveEndgame`, `estimateControlProbability` and two explicit
+"next player has one card" checks all read `playerCardCounts`.
+
+## 14. Shipped from a playtest report: 2s buried in five-card hands
+
+Reported from play, not from a benchmark: bots spend 2s inside full houses and quads far
+more than a human would.
+
+It reproduced immediately. **23.5% of every 2 the bot plays is spent inside a five-card
+hand** — 23.3% with per-bot profiles, i.e. the configuration real rooms use.
+
+### Cause
+
+`COST_WEIGHT_BY_SIZE[5] = 0.35` discounts every card in a five-card hand to 35% of its
+retention cost, on the stated premise that a card "locked inside" a combination is not
+available as standalone control.
+
+That premise is false for a 2, and only for a 2. A 2 can always be pulled out and played
+as a single that cannot be beaten — the very fact `TWO_OF_SPADES_PREMIUM` encodes. The
+discount priced away an option the bot still held. The arithmetic was stark: a full house
+of `2-2-2-3-3` cost `(3 × 215) × 0.35 ≈ 226`, while a single 2 cost `215`. Dumping three
+2s cost about the same as spending one.
+
+### What ships
+
+`standaloneControlSurcharge` charges the discount back, for 2s only, and lifts once
+`roundLostness` fires — in a lost round points count cards, so dumping the combination is
+correct. Extending it to aces and below measured worse: those cards genuinely are more
+constrained inside a combination, so the existing discount is closer to right for them.
+
+Effect: **23.5% → 12.0%** of 2s burned in combinations, +0.31pp round win rate, +0.040
+round points.
+
+### Why ship a rule that costs round points
+
+Because the points cost does not survive to the level that decides a match. Full games to
+50, won by lowest cumulative score:
+
+| Sample | Variant vs its own control |
+|---|---|
+| 6,000 games | +0.82pp |
+| 18,000 games | +0.99pp |
+
+Consistent in direction across two independent runs, and neither conclusive — the control
+alone swung from +0.36pp to −0.62pp between them, which is the effect size. Game-level
+measurement cannot resolve this without far more compute than it is worth.
+
+So the benchmark is not the argument. The argument is that the code justified a discount
+with a claim that is factually wrong for this card, and the error was visible to a player
+before it was visible in any metric. Fixing a false premise is worth doing at
+benchmark-neutral; the round-win gain and the play-feel improvement come free.
+
+Worth remembering as a limit of the harness: bot-vs-bot round statistics found nothing
+here, and a human noticed it in an evening of play.
