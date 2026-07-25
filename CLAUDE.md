@@ -401,6 +401,7 @@ Unsetting it is the kill switch.
 |---|---|---|
 | `PORT` | `3000` | |
 | `NODE_ENV` | — | `production` switches DB path to `/data` and tightens CORS |
+| `IDLE_SHUTDOWN_MINUTES` | `360` (6h) | The process exits once it has been continuously idle — no rooms and no connected sockets — for this long, letting Fly scale to zero. Any room or socket resets the clock. Fly restarts the machine on the next request. |
 | `CLIENT_URL` | — | Allowed CORS origin in production |
 | `GOOGLE_CLIENT_ID` | — | Google OAuth |
 | `GAMELOG_ENABLED` | off | Must be exactly `"1"`. Enabled in `fly.toml`. |
