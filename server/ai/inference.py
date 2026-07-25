@@ -122,11 +122,77 @@ def reconstruct_game_state(game_data, game_instance):
     # Ensure "Players Go" is set to 1 (Us)
     game_instance.playersGo = 1
 
+def decide(data, game, network):
+    """Run one inference. Returns the response dict to emit."""
+    # Setup game state
+    reconstruct_game_state(data, game)
+
+    if game.control == 0:
+        last_hand_data = data.get('lastPlayedHand')
+        if last_hand_data:
+            cards = []
+            for c in last_hand_data['cards']:
+                cards.append(convert_card_to_int(c['rank'], c['suit']))
+
+            # Mock a handPlayed object
+            game.goIndex = 2
+            game.handsPlayed[1] = big2Game.handPlayed(np.array(cards), 2)
+
+    pGo, cState, availAcs = game.getCurrentState()
+
+    # Run Inference
+    action, value, neglogp = network.step(np.squeeze(cState).reshape(1, -1), np.squeeze(availAcs).reshape(1, -1))
+
+    selected_action_idx = action[0]
+
+    # Decode Action
+    opt, nCards = enumerateOptions.getOptionNC(selected_action_idx)
+
+    if opt == -1:
+        return {"action": "pass"}
+
+    curr_hand = game.currentHands[1]
+    final_cards = []
+
+    if nCards == 1:
+        card_int = curr_hand[opt]
+        final_cards.append(int_to_card(card_int))
+    elif nCards == 2:
+        indices = enumerateOptions.inverseTwoCardIndices[opt]
+        vals = curr_hand[list(indices)]
+        for v in vals: final_cards.append(int_to_card(v))
+    elif nCards == 3:
+        indices = enumerateOptions.inverseThreeCardIndices[opt]
+        vals = curr_hand[list(indices)]
+        for v in vals: final_cards.append(int_to_card(v))
+    elif nCards == 4:
+        indices = enumerateOptions.inverseFourCardIndices[opt]
+        vals = curr_hand[list(indices)]
+        for v in vals: final_cards.append(int_to_card(v))
+    elif nCards == 5:
+        indices = enumerateOptions.inverseFiveCardIndices[opt]
+        vals = curr_hand[list(indices)]
+        for v in vals: final_cards.append(int_to_card(v))
+
+    return {"action": "play", "cards": final_cards}
+
+
 def main():
+    """
+    Long-lived worker.
+
+    The model, the TensorFlow session and the 1.6 MB action-index pickle are
+    loaded exactly once, then the process serves requests forever over stdin.
+    Previously Node spawned a fresh `python3 inference.py` for every bot move,
+    which meant importing TensorFlow and reloading the weights per decision --
+    several seconds of work for a single forward pass.
+
+    Protocol: one JSON request per line on stdin, one JSON response per line on
+    stdout. Each response echoes the request's "id" so the Node side can match
+    them up. A line containing only "ping" is answered with a readiness message.
+    """
     # Load Model
     sess = tf.Session()
-    # Initialize game to get dimensions
-    game = big2Game.big2Game()
 
     # Load network
     # inpDim = 412, actDim = 1695
@@ -139,70 +205,36 @@ def main():
     params = joblib.load('modelParameters136500')
     network.loadParams(params)
 
-    # Read input from stdin
-    try:
-        input_str = sys.stdin.read()
-        if not input_str:
-            return
+    # Signal readiness so the parent knows warm-up is finished.
+    sys.stdout.write(json.dumps({"ready": True}) + "\n")
+    sys.stdout.flush()
 
-        data = json.loads(input_str)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
 
-        # Setup game state
-        reconstruct_game_state(data, game)
+        request_id = None
+        try:
+            data = json.loads(line)
+            request_id = data.get('id')
 
-        if game.control == 0:
-            last_hand_data = data.get('lastPlayedHand')
-            if last_hand_data:
-                cards = []
-                for c in last_hand_data['cards']:
-                    cards.append(convert_card_to_int(c['rank'], c['suit']))
+            # Fresh game object per request: reconstruct_game_state only sets the
+            # fields it knows about, so reusing one instance would let stale
+            # state (hands played, pass counts) leak between decisions.
+            game = big2Game.big2Game()
+            response = decide(data, game, network)
+        except Exception as e:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            response = {"error": str(e)}
 
-                # Mock a handPlayed object
-                game.goIndex = 2
-                game.handsPlayed[1] = big2Game.handPlayed(np.array(cards), 2)
+        if request_id is not None:
+            response['id'] = request_id
 
-        pGo, cState, availAcs = game.getCurrentState()
+        sys.stdout.write(json.dumps(response) + "\n")
+        sys.stdout.flush()
 
-        # Run Inference
-        action, value, neglogp = network.step(np.squeeze(cState).reshape(1, -1), np.squeeze(availAcs).reshape(1, -1))
-
-        selected_action_idx = action[0]
-
-        # Decode Action
-        opt, nCards = enumerateOptions.getOptionNC(selected_action_idx)
-
-        if opt == -1:
-            print(json.dumps({"action": "pass"}))
-        else:
-            curr_hand = game.currentHands[1]
-            final_cards = []
-
-            if nCards == 1:
-                card_int = curr_hand[opt]
-                final_cards.append(int_to_card(card_int))
-            elif nCards == 2:
-                indices = enumerateOptions.inverseTwoCardIndices[opt]
-                vals = curr_hand[list(indices)]
-                for v in vals: final_cards.append(int_to_card(v))
-            elif nCards == 3:
-                indices = enumerateOptions.inverseThreeCardIndices[opt]
-                vals = curr_hand[list(indices)]
-                for v in vals: final_cards.append(int_to_card(v))
-            elif nCards == 4:
-                indices = enumerateOptions.inverseFourCardIndices[opt]
-                vals = curr_hand[list(indices)]
-                for v in vals: final_cards.append(int_to_card(v))
-            elif nCards == 5:
-                indices = enumerateOptions.inverseFiveCardIndices[opt]
-                vals = curr_hand[list(indices)]
-                for v in vals: final_cards.append(int_to_card(v))
-
-            print(json.dumps({"action": "play", "cards": final_cards}))
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc(file=sys.stderr)
-        print(json.dumps({"error": str(e)}))
 
 if __name__ == "__main__":
     main()

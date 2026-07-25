@@ -14,6 +14,8 @@ node_modules
 
 # Database files (will be created in volume)
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # OS files
 .DS_Store

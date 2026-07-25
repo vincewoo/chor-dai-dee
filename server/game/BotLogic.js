@@ -1,8 +1,7 @@
 // server/game/BotLogic.js
 const { Big2Rules, HAND_TYPES } = require('./Big2Rules');
 const { RANKS, SUITS } = require('./Deck');
-const { spawn } = require('child_process');
-const path = require('path');
+const { worker: advancedBotWorker } = require('./AdvancedBotWorker');
 
 // Hand type priorities for 5-card hands (higher = stronger)
 const FIVE_CARD_PRIORITY = {
@@ -179,11 +178,15 @@ const BotLogic = {
      * @returns {Promise<Array|Object>} - Returns Promise resolving to cards array
      */
     getAdvancedBotMove: async (hand, lastPlayedHand, isFirstTurn, gameContext = {}) => {
-        return new Promise((resolve, reject) => {
-            const pythonScript = path.join(__dirname, '../ai/inference.py');
+        const fallback = () => BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext);
 
-            // Construct input JSON
-            const inputData = {
+        if (advancedBotWorker.isDisabled()) {
+            return fallback();
+        }
+
+        let result;
+        try {
+            result = await advancedBotWorker.request({
                 hand: hand,
                 lastPlayedHand: lastPlayedHand,
                 isFirstTurn: isFirstTurn,
@@ -195,92 +198,38 @@ const BotLogic = {
                 playedCards: gameContext.playedCards || [],
                 // Who played last relative to us (for context reconstruction)
                 lastPlayedByRelative: gameContext.lastPlayedByRelative
-            };
-
-            // Set a timeout to fallback if Python script takes too long
-            const timeout = setTimeout(() => {
-                console.warn('Advanced bot timeout - falling back to legacy bot');
-                proc.kill();
-                resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
-            }, 5000); // 5 second timeout
-
-            const proc = spawn('python3', [pythonScript]);
-
-            let stdoutData = '';
-            let stderrData = '';
-
-            proc.stdout.on('data', (data) => {
-                stdoutData += data.toString();
             });
+        } catch (err) {
+            console.warn('Advanced bot unavailable, falling back to legacy bot:', err.message);
+            return fallback();
+        }
 
-            proc.stderr.on('data', (data) => {
-                stderrData += data.toString();
-            });
+        if (result.action === 'pass') {
+            return null;
+        }
 
-            proc.on('close', (code) => {
-                clearTimeout(timeout); // Clear timeout when process completes
+        if (result.action !== 'play') {
+            return fallback();
+        }
 
-                if (code !== 0) {
-                    console.error('Python bot failed:', stderrData);
-                    // Fallback to legacy bot
-                    console.log('Falling back to legacy bot...');
-                    resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
-                    return;
-                }
+        // Validate the move against our own rules engine so a hallucinated action
+        // can never put the game into an illegal state.
+        const moveCards = result.cards;
+        const validMoves = BotLogic.getAllValidMoves(hand);
 
-                try {
-                    const result = JSON.parse(stdoutData);
-
-                    if (result.error) {
-                         console.error('Python bot error:', result.error);
-                         resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
-                         return;
-                    }
-
-                    if (result.action === 'pass') {
-                        resolve(null);
-                    } else if (result.action === 'play') {
-                        // The Python bot returns card objects.
-                        // We need to ensure they match our internal structure if needed.
-                        // Our internal structure is { rank: '...', suit: '...' }.
-                        // inference.py returns exactly that.
-
-                        // However, we should validate the move is valid using our rules engine.
-                        const moveCards = result.cards;
-                        const validMoves = BotLogic.getAllValidMoves(hand);
-
-                        // Find matching valid move
-                        // This ensures we don't play something illegal if the ML bot hallucinates
-                        const match = validMoves.find(m => {
-                            if (m.cards.length !== moveCards.length) return false;
-                            // Check if all cards match
-                            return m.cards.every(c =>
-                                moveCards.some(mc => mc.rank === c.rank && mc.suit === c.suit)
-                            );
-                        });
-
-                        if (match) {
-                             resolve(match.cards);
-                        } else {
-                            console.warn('ML Bot suggested invalid move:', moveCards);
-                            // Fallback
-                            resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
-                        }
-                    } else {
-                         // Fallback
-                         resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
-                    }
-
-                } catch (e) {
-                    console.error('Failed to parse ML bot output:', e, stdoutData);
-                    resolve(BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext));
-                }
-            });
-
-            // Send input
-            proc.stdin.write(JSON.stringify(inputData));
-            proc.stdin.end();
+        const match = validMoves.find(m => {
+            if (m.cards.length !== moveCards.length) return false;
+            return m.cards.every(c =>
+                moveCards.some(mc => mc.rank === c.rank && mc.suit === c.suit)
+            );
         });
+
+        if (!match) {
+            console.warn('ML Bot suggested invalid move:', moveCards);
+            return fallback();
+        }
+
+        return match.cards;
     },
 
     /**
@@ -711,13 +660,22 @@ const BotLogic = {
 
         const cache = new Map();
 
-        const recursivePlan = (currentHand, currentDepth, alpha, beta) => {
+        // Node budget stands in for the alpha-beta pruning this used to claim: this
+        // is a single-agent maximisation, so there is no opponent bound to cut on
+        // and the old `beta <= alpha` test could never fire (beta stayed +Infinity
+        // down every path). Branching 8 wide at depth 4 is ~4k nodes, and each node
+        // calls getAllValidMoves plus organizeHand, so an explicit ceiling is what
+        // actually bounds the work.
+        const MAX_NODES = 1500;
+        let nodesVisited = 0;
+
+        const recursivePlan = (currentHand, currentDepth) => {
             // Terminal conditions
             if (currentHand.length === 0) {
                 return { sequence: [], score: 10000, winProbability: 1.0 };
             }
 
-            if (currentDepth === 0) {
+            if (currentDepth === 0 || nodesVisited >= MAX_NODES) {
                 // Evaluate terminal position
                 const terminalScore = BotLogic.evaluateTerminalPosition(currentHand, ctx);
                 return { sequence: [], score: terminalScore, winProbability: terminalScore / 1000 };
@@ -728,6 +686,8 @@ const BotLogic = {
             if (cache.has(cacheKey)) {
                 return cache.get(cacheKey);
             }
+
+            nodesVisited++;
 
             // Get all valid moves (assuming free play for simplicity in lookahead)
             const allMoves = BotLogic.getAllValidMoves(currentHand);
@@ -749,7 +709,7 @@ const BotLogic = {
                 const immediateValue = BotLogic.evaluateMoveValue(move, currentHand, ctx);
 
                 // Recursive call
-                const futureResult = recursivePlan(remainingHand, currentDepth - 1, alpha, beta);
+                const futureResult = recursivePlan(remainingHand, currentDepth - 1);
 
                 // Total score with decay (future moves are less certain)
                 const decayFactor = 0.85;
@@ -764,10 +724,8 @@ const BotLogic = {
                     };
                 }
 
-                // Alpha-beta pruning
-                alpha = Math.max(alpha, totalScore);
-                if (beta <= alpha) {
-                    break; // Beta cutoff
+                if (nodesVisited >= MAX_NODES) {
+                    break;
                 }
             }
 
@@ -775,7 +733,7 @@ const BotLogic = {
             return bestPlan || { sequence: [], score: 0, winProbability: 0 };
         };
 
-        return recursivePlan(hand, Math.min(depth, 4), -Infinity, Infinity);
+        return recursivePlan(hand, Math.min(depth, 4));
     },
 
     /**
@@ -927,9 +885,15 @@ const BotLogic = {
         const unknownCards = BotLogic.getUnknownCards(ourHand, playedCards);
         const opponentHands = BotLogic.distributeCardsToOpponents(unknownCards, opponentCardCounts);
 
-        // Simulate game until someone wins
+        // Simulate game until someone wins.
+        //
+        // Each iteration sheds at least one card from our hand when we have a legal
+        // move, so the simulation cannot run longer than our starting hand size --
+        // the old cap of 50 was ~4x more iterations than reachable, and every extra
+        // iteration costs four getAllValidMoves calls. Cap it at the hand size with
+        // a small allowance for turns where we have no move.
         let round = 0;
-        const maxRounds = 50; // Prevent infinite loops
+        const maxRounds = ourSimHand.length + 5;
 
         while (round < maxRounds && ourSimHand.length > 0) {
             // Simulate opponent plays (simplified)

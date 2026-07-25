@@ -12,6 +12,21 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the big third-party libraries out of the app chunk. They change
+        // only on dependency bumps, so a routine app deploy no longer invalidates
+        // ~350 KB of vendor code in everyone's cache.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-motion': ['framer-motion'],
+          'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+          'vendor-socket': ['socket.io-client'],
+        },
+      },
+    },
+  },
   plugins: [
     nodePolyfills({
       // Include specific polyfills for SimplePeer
@@ -100,7 +115,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff,woff2}'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

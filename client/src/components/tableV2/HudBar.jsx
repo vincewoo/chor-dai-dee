@@ -1,4 +1,4 @@
-import logoImage from '../../assets/chor-dai-dee-logo.png';
+import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { GAME_MODES } from '../../constants/gameModes';
 
 // Top HUD bar: logo + room/round on the left, Info toggle + gear on the right.

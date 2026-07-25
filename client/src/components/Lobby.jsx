@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import logoImage from '../assets/chor-dai-dee-logo.png';
+import logoImage from '../assets/chor-dai-dee-logo.webp';
 import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
 import { useVoice } from '../contexts/VoiceContext';

@@ -3,8 +3,9 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, withTransaction, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -44,6 +45,9 @@ const corsOptions = isProduction
     };
 
 app.use(cors(corsOptions));
+// gzip static assets and JSON responses. The entry bundle is ~915 KB raw and
+// ~276 KB gzipped, so this is the single largest first-load win.
+app.use(compression());
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -64,6 +68,21 @@ const io = new Server(server, {
 });
 
 const roomManager = new RoomManager();
+
+// Per-invocation memo for getUserByUsername. The round-end and game-end paths
+// look the same handful of usernames up over and over (once for game history,
+// once per participant, again for Tier 3, then twice per head-to-head pair --
+// roughly 20 identical queries for 4 players). Usernames cannot change mid-game,
+// so one lookup each is enough.
+const createUserLookup = () => {
+    const cache = new Map();
+    return (username) => {
+        if (!cache.has(username)) {
+            cache.set(username, getUserByUsername(username));
+        }
+        return cache.get(username);
+    };
+};
 
 // Voice Chat WebRTC Signaling - Global voice rooms tracker
 const voiceRooms = {}; // Track voice participants by room
@@ -411,6 +430,7 @@ io.on('connection', (socket) => {
     });
 
     const handleDragonWin = async (room, roomId, dragonWinner) => {
+        const lookupUser = createUserLookup();
         // Dragon win - player with all 13 different ranks wins the entire game immediately
         const dragonScores = calculateDragonScores(dragonWinner, room.players);
         room.updateScores(dragonScores);
@@ -447,38 +467,42 @@ io.on('connection', (socket) => {
             const endTime = new Date();
             const startTime = new Date(room.createdAt);
             const durationSeconds = Math.floor((endTime - startTime) / 1000);
+            const winner = dragonWinner.isBot ? null : await lookupUser(dragonWinner.name);
 
-            await saveGameHistory({
-                gameId: room.gameId,
-                roomName: room.id,
-                gameMode: room.gameMode,
-                isPublic: !room.isPrivate,
-                status: 'completed',
-                winnerId: dragonWinner.isBot ? null : await getUserByUsername(dragonWinner.name).then(u => u ? u.id : null),
-                winnerUsername: dragonWinner.name,
-                startTime: startTime.toISOString(),
-                endTime: endTime.toISOString(),
-                durationSeconds: durationSeconds,
-                totalRounds: 1,
-                maxPoints: room.pointThreshold
-            });
-
-            // Save participants with dragon win placements
-            for (const p of room.players) {
-                await saveGameParticipant({
+            await withTransaction(async () => {
+                await saveGameHistory({
                     gameId: room.gameId,
-                    userId: p.isBot ? null : await getUserByUsername(p.name).then(u => u ? u.id : null),
-                    username: p.name,
-                    isBot: p.isBot,
-                    finalPlacement: p.id === dragonWinner.id ? 1 : 4,
-                    finalScore: p.id === dragonWinner.id ? 0 : 39,
-                    roundsWon: p.id === dragonWinner.id ? 1 : 0
+                    roomName: room.id,
+                    gameMode: room.gameMode,
+                    isPublic: !room.isPrivate,
+                    status: 'completed',
+                    winnerId: winner ? winner.id : null,
+                    winnerUsername: dragonWinner.name,
+                    startTime: startTime.toISOString(),
+                    endTime: endTime.toISOString(),
+                    durationSeconds: durationSeconds,
+                    totalRounds: 1,
+                    maxPoints: room.pointThreshold
                 });
-            }
 
-            // Save dragon win event
-            await saveGameEvent(room.gameId, 'dragon_win', {
-                winner: dragonWinner.name
+                // Save participants with dragon win placements
+                for (const p of room.players) {
+                    const participant = p.isBot ? null : await lookupUser(p.name);
+                    await saveGameParticipant({
+                        gameId: room.gameId,
+                        userId: participant ? participant.id : null,
+                        username: p.name,
+                        isBot: p.isBot,
+                        finalPlacement: p.id === dragonWinner.id ? 1 : 4,
+                        finalScore: p.id === dragonWinner.id ? 0 : 39,
+                        roundsWon: p.id === dragonWinner.id ? 1 : 0
+                    });
+                }
+
+                // Save dragon win event
+                await saveGameEvent(room.gameId, 'dragon_win', {
+                    winner: dragonWinner.name
+                });
             });
         } catch (e) {
             console.error("Failed to save game history for dragon win:", e);
@@ -510,35 +534,38 @@ io.on('connection', (socket) => {
         // Update ratings for all human players (excluding mid-game joiners)
         const newRatings = calculateNewRatings(playersWithStats, placements);
 
-        for (let i = 0; i < room.players.length; i++) {
-            const player = room.players[i];
-            // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
-            if (player.joinedMidGame) {
-                console.log(`Dragon win: Skipping stats for ${player.name} (joined mid-game at round ${player.joinedAtRound})`);
-            }
-            if (!player.isBot && !player.isGuest && !player.joinedMidGame && newRatings[i]) {
-                try {
-                    const user = await getUserByUsername(player.name);
-                    if (user) {
-                        // Update mode-specific stats
-                        await updateUserStatsByMode(user.id, room.gameMode, {
-                            games: 1,
-                            wins: player.id === dragonWinner.id ? 1 : 0,
-                            rating_mu: newRatings[i].mu,
-                            rating_sigma: newRatings[i].sigma
-                        });
+        await withTransaction(async () => {
+            for (let i = 0; i < room.players.length; i++) {
+                const player = room.players[i];
+                // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
+                if (player.joinedMidGame) {
+                    console.log(`Dragon win: Skipping stats for ${player.name} (joined mid-game at round ${player.joinedAtRound})`);
+                }
+                if (!player.isBot && !player.isGuest && !player.joinedMidGame && newRatings[i]) {
+                    try {
+                        const user = await lookupUser(player.name);
+                        if (user) {
+                            // Update mode-specific stats
+                            await updateUserStatsByMode(user.id, room.gameMode, {
+                                games: 1,
+                                wins: player.id === dragonWinner.id ? 1 : 0,
+                                rating_mu: newRatings[i].mu,
+                                rating_sigma: newRatings[i].sigma
+                            });
 
-                        // Save placement history for variance tracking
-                        await savePlacementHistory(user.id, room.gameMode, placements[i]);
+                            // Save placement history for variance tracking
+                            await savePlacementHistory(user.id, room.gameMode, placements[i]);
+                        }
+                    } catch (e) {
+                        console.error("Failed to update stats for", player.name, e);
                     }
-                } catch (e) {
-                    console.error("Failed to update stats for", player.name, e);
                 }
             }
-        }
+        }).catch(e => console.error("Dragon win stats transaction failed:", e));
     };
 
     const handleRoundOver = async (room, roomId, roundWinner) => {
+        const lookupUser = createUserLookup();
         const roundScores = calculateRoundScores(roundWinner, room.players);
         const isGameOver = room.updateScores(roundScores);
 
@@ -560,44 +587,47 @@ io.on('connection', (socket) => {
             placement: index + 1
         }));
 
-        // Save round stats for each player (only registered human players, not guests)
-        for (const scoreData of roundScoresWithPlacements) {
-            if (!scoreData.isBot && !scoreData.isGuest) {
+        // Save round stats for each player (only registered human players, not guests).
+        // One transaction for the whole loop: these are up to 4 independent inserts
+        // that would otherwise each pay their own commit.
+        await withTransaction(async () => {
+            for (const scoreData of roundScoresWithPlacements) {
+                if (scoreData.isBot || scoreData.isGuest) continue;
                 try {
-                    const user = await getUserByUsername(scoreData.name);
-                    if (user) {
-                        const playStats = room.roundPlayStats[scoreData.id] || {
-                            plays: 0,
-                            passes: 0,
-                            leadsWon: 0,
-                            handTypes: {}
-                        };
+                    const user = await lookupUser(scoreData.name);
+                    if (!user) continue;
 
-                        // Determine penalty multiplier
-                        let penaltyMultiplier = 1;
-                        if (scoreData.cardsLeft >= 13) penaltyMultiplier = 3;
-                        else if (scoreData.cardsLeft >= 10) penaltyMultiplier = 2;
+                    const playStats = room.roundPlayStats[scoreData.id] || {
+                        plays: 0,
+                        passes: 0,
+                        leadsWon: 0,
+                        handTypes: {}
+                    };
 
-                        const roundData = {
-                            roundNumber: room.roundNumber,
-                            placement: scoreData.placement,
-                            cardsLeft: scoreData.cardsLeft,
-                            penaltyMultiplier: penaltyMultiplier,
-                            roundPoints: scoreData.roundPoints,
-                            cumulativeScore: room.cumulativeScores[scoreData.id] || 0,
-                            plays: playStats.plays,
-                            passes: playStats.passes,
-                            leadsWon: playStats.leadsWon,
-                            handTypes: playStats.handTypes
-                        };
+                    // Determine penalty multiplier
+                    let penaltyMultiplier = 1;
+                    if (scoreData.cardsLeft >= 13) penaltyMultiplier = 3;
+                    else if (scoreData.cardsLeft >= 10) penaltyMultiplier = 2;
 
-                        await saveRoundStats(room.gameId, user.id, room.gameMode, roundData);
-                    }
+                    const roundData = {
+                        roundNumber: room.roundNumber,
+                        placement: scoreData.placement,
+                        cardsLeft: scoreData.cardsLeft,
+                        penaltyMultiplier: penaltyMultiplier,
+                        roundPoints: scoreData.roundPoints,
+                        cumulativeScore: room.cumulativeScores[scoreData.id] || 0,
+                        plays: playStats.plays,
+                        passes: playStats.passes,
+                        leadsWon: playStats.leadsWon,
+                        handTypes: playStats.handTypes
+                    };
+
+                    await saveRoundStats(room.gameId, user.id, room.gameMode, roundData);
                 } catch (e) {
                     console.error("Failed to save round stats for", scoreData.name, e);
                 }
             }
-        }
+        }).catch(e => console.error("Round stats transaction failed:", e));
 
         const sanitizedRoundWinner = {
             id: roundWinner.id,
@@ -647,30 +677,34 @@ io.on('connection', (socket) => {
                 const endTime = new Date();
                 const startTime = new Date(room.createdAt);
                 const durationSeconds = Math.floor((endTime - startTime) / 1000);
+                const winner = gameWinner.isBot ? null : await lookupUser(gameWinner.name);
 
-                await saveGameHistory({
-                    gameId: room.gameId,
-                    roomName: room.id,
-                    gameMode: room.gameMode,
-                    isPublic: !room.isPrivate,
-                    status: 'completed',
-                    winnerId: gameWinner.isBot ? null : await getUserByUsername(gameWinner.name).then(u => u ? u.id : null),
-                    winnerUsername: gameWinner.name,
-                    startTime: startTime.toISOString(),
-                    endTime: endTime.toISOString(),
-                    durationSeconds: durationSeconds,
-                    totalRounds: room.roundNumber,
-                    maxPoints: room.pointThreshold
-                });
+                await withTransaction(async () => {
+                    await saveGameHistory({
+                        gameId: room.gameId,
+                        roomName: room.id,
+                        gameMode: room.gameMode,
+                        isPublic: !room.isPrivate,
+                        status: 'completed',
+                        winnerId: winner ? winner.id : null,
+                        winnerUsername: gameWinner.name,
+                        startTime: startTime.toISOString(),
+                        endTime: endTime.toISOString(),
+                        durationSeconds: durationSeconds,
+                        totalRounds: room.roundNumber,
+                        maxPoints: room.pointThreshold
+                    });
 
-                // Update participants with final placements
-                for (const p of finalPlacements) {
-                    const player = room.players.find(pl => pl.id === p.playerId);
-                    if (player) {
+                    // Update participants with final placements
+                    for (const p of finalPlacements) {
+                        const player = room.players.find(pl => pl.id === p.playerId);
+                        if (!player) continue;
+
                         const roundsWon = room.roundPlayStats[p.playerId]?.roundsWon || 0;
+                        const participant = player.isBot ? null : await lookupUser(player.name);
                         await saveGameParticipant({
                             gameId: room.gameId,
-                            userId: player.isBot ? null : await getUserByUsername(player.name).then(u => u ? u.id : null),
+                            userId: participant ? participant.id : null,
                             username: player.name,
                             isBot: player.isBot,
                             finalPlacement: p.placement,
@@ -678,14 +712,14 @@ io.on('connection', (socket) => {
                             roundsWon: roundsWon
                         });
                     }
-                }
 
-                // Save notable events (e.g., perfect games, comebacks)
-                if (gameWinner && room.cumulativeScores[gameWinner.id] === 0) {
-                    await saveGameEvent(room.gameId, 'perfect_game', {
-                        winner: gameWinner.name
-                    });
-                }
+                    // Save notable events (e.g., perfect games, comebacks)
+                    if (gameWinner && room.cumulativeScores[gameWinner.id] === 0) {
+                        await saveGameEvent(room.gameId, 'perfect_game', {
+                            winner: gameWinner.name
+                        });
+                    }
+                });
             } catch (e) {
                 console.error("Failed to save game history on completion:", e);
             }
@@ -717,239 +751,237 @@ io.on('connection', (socket) => {
                 ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
             });
 
-            // 3. Update DB for human players (final game results + ratings + aggregate stats, mode-specific)
-            for (const p of room.players) {
-                // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
-                if (p.joinedMidGame) {
-                    console.log(`Skipping stats for ${p.name} (joined mid-game at round ${p.joinedAtRound} with score ${p.joinedWithScore})`);
-                }
-                if (!p.isBot && !p.isGuest && !p.joinedMidGame) {
-                    try {
-                        const isWinner = p.id === gameWinner.id;
-                        const totalScore = room.cumulativeScores[p.id] || 0;
-                        const newRating = ratingUpdates[p.name];
-                        const playerPlacement = finalPlacements.find(fp => fp.playerId === p.id);
+            // Sections 3 and 4 issue ~40 writes for a 4-human game (stats, ratings,
+            // Tier 3 aggregates, and 12 head-to-head upserts). One transaction turns
+            // that into a single commit.
+            await withTransaction(async () => {
+                // 3. Update DB for human players (final game results + ratings + aggregate stats, mode-specific)
+                for (const p of room.players) {
+                    // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
+                    if (p.joinedMidGame) {
+                        console.log(`Skipping stats for ${p.name} (joined mid-game at round ${p.joinedAtRound} with score ${p.joinedWithScore})`);
+                    }
+                    if (!p.isBot && !p.isGuest && !p.joinedMidGame) {
+                        try {
+                            const isWinner = p.id === gameWinner.id;
+                            const totalScore = room.cumulativeScores[p.id] || 0;
+                            const newRating = ratingUpdates[p.name];
+                            const playerPlacement = finalPlacements.find(fp => fp.playerId === p.id);
 
-                        // Update game-level stats (wins/losses/points/rating)
-                        await updateUserStatsByMode(
-                            p.name,
-                            room.gameMode,
-                            isWinner,
-                            totalScore,
-                            newRating ? newRating.mu : null,
-                            newRating ? newRating.sigma : null
-                        );
-
-                        // Update aggregate stats (placement, plays, passes, penalties)
-                        if (playerPlacement) {
-                            await updateAggregateStats(
+                            // Update game-level stats (wins/losses/points/rating)
+                            await updateUserStatsByMode(
                                 p.name,
                                 room.gameMode,
-                                playerPlacement.placement,
-                                room.gameId
+                                isWinner,
+                                totalScore,
+                                newRating ? newRating.mu : null,
+                                newRating ? newRating.sigma : null
                             );
-                        }
 
-                        // Calculate and save Tier 3 advanced analytics
-                        const tier3Data = room.tier3DecisionTracking[p.id];
-                        if (tier3Data && tier3Data.decisions.length > 0) {
-                            try {
-                                const user = await getUserByUsername(p.name);
-                                if (user) {
-                                    // Save all decisions to decision_tracking table
-                                    for (const decision of tier3Data.decisions) {
+                            // Update aggregate stats (placement, plays, passes, penalties)
+                            if (playerPlacement) {
+                                await updateAggregateStats(
+                                    p.name,
+                                    room.gameMode,
+                                    playerPlacement.placement,
+                                    room.gameId
+                                );
+                            }
+
+                            // Calculate and save Tier 3 advanced analytics
+                            const tier3Data = room.tier3DecisionTracking[p.id];
+                            if (tier3Data && tier3Data.decisions.length > 0) {
+                                try {
+                                    const user = await lookupUser(p.name);
+                                    if (user) {
+                                        // Save all decisions in one batched insert rather than
+                                        // one awaited statement per decision.
                                         try {
-                                            await trackDecision(
+                                            await trackDecisionsBatch(
                                                 room.gameId,
                                                 user.id,
                                                 room.roundNumber,
-                                                decision.turn,
-                                                decision.action,
-                                                decision.handSize || 0,
-                                                decision.cardsInDeck || 0,
-                                                decision.pileStrength || 0,
-                                                decision.handStrength || 0,
-                                                decision.quality
+                                                tier3Data.decisions
                                             );
                                         } catch (err) {
-                                            console.error("Failed to track decision:", err);
+                                            console.error("Failed to track decisions:", err);
                                         }
-                                    }
 
-                                    // Get round aggregates for this player
-                                    const roundAggregates = await getRoundAggregates(user.id, room.gameMode);
+                                        // Get round aggregates for this player
+                                        const roundAggregates = await getRoundAggregates(user.id, room.gameMode);
 
-                                    // 1. Card Awareness Stats
-                                    const totalDecisions = tier3Data.decisions.length;
-                                    const optimalCount = tier3Data.optimalPlays || 0;
-                                    const isOptimal = optimalCount > (totalDecisions / 2);
-                                    const riskyCount = tier3Data.riskyPlays || 0;
-                                    const isRisky = riskyCount > 0;
+                                        // 1. Card Awareness Stats
+                                        const totalDecisions = tier3Data.decisions.length;
+                                        const optimalCount = tier3Data.optimalPlays || 0;
+                                        const isOptimal = optimalCount > (totalDecisions / 2);
+                                        const riskyCount = tier3Data.riskyPlays || 0;
+                                        const isRisky = riskyCount > 0;
 
-                                    // Determine risky play success (risky plays that led to good placement)
-                                    const riskSucceeded = isRisky && playerPlacement.placement <= 2;
+                                        // Determine risky play success (risky plays that led to good placement)
+                                        const riskSucceeded = isRisky && playerPlacement.placement <= 2;
 
-                                    // Calculate late game accuracy
-                                    const lateGameAccuracy = DecisionAnalyzer.calculateLateGameAccuracy(
-                                        room.cumulativeScores[p.id] || 0,
-                                        52 // Full deck
-                                    );
+                                        // Calculate late game accuracy
+                                        const lateGameAccuracy = DecisionAnalyzer.calculateLateGameAccuracy(
+                                            room.cumulativeScores[p.id] || 0,
+                                            52 // Full deck
+                                        );
 
-                                    await updateCardAwarenessStats(
-                                        user.id,
-                                        room.gameMode,
-                                        isOptimal,
-                                        isRisky,
-                                        riskSucceeded,
-                                        lateGameAccuracy
-                                    );
-
-                                    // 2. Variance Stats (Streaks and Lucky/Skilled wins)
-                                    const isWinner = p.id === gameWinner.id;
-
-                                    // Determine if win was lucky vs skilled
-                                    let isLucky = false;
-                                    if (isWinner) {
-                                        // Calculate avg cards remaining for other players
-                                        const otherPlayers = room.players.filter(pl => pl.id !== p.id);
-                                        const avgCardsRemaining = otherPlayers.reduce((sum, pl) => {
-                                            const playerScore = room.cumulativeScores[pl.id] || 0;
-                                            return sum + playerScore;
-                                        }, 0) / otherPlayers.length;
-
-                                        const optimalRate = optimalCount / totalDecisions;
-                                        isLucky = DecisionAnalyzer.isLuckyWin(avgCardsRemaining, optimalRate);
-                                    }
-
-                                    await updateVarianceStats(
-                                        user.id,
-                                        room.gameMode,
-                                        isWinner,
-                                        isLucky
-                                    );
-
-                                    // 3. Save placement history for adaptability tracking
-                                    if (playerPlacement) {
-                                        await savePlacementHistory(
+                                        await updateCardAwarenessStats(
                                             user.id,
                                             room.gameMode,
-                                            room.gameId,
-                                            playerPlacement.placement
+                                            isOptimal,
+                                            isRisky,
+                                            riskSucceeded,
+                                            lateGameAccuracy
+                                        );
+
+                                        // 2. Variance Stats (Streaks and Lucky/Skilled wins)
+                                        const isWinner = p.id === gameWinner.id;
+
+                                        // Determine if win was lucky vs skilled
+                                        let isLucky = false;
+                                        if (isWinner) {
+                                            // Calculate avg cards remaining for other players
+                                            const otherPlayers = room.players.filter(pl => pl.id !== p.id);
+                                            const avgCardsRemaining = otherPlayers.reduce((sum, pl) => {
+                                                const playerScore = room.cumulativeScores[pl.id] || 0;
+                                                return sum + playerScore;
+                                            }, 0) / otherPlayers.length;
+
+                                            const optimalRate = optimalCount / totalDecisions;
+                                            isLucky = DecisionAnalyzer.isLuckyWin(avgCardsRemaining, optimalRate);
+                                        }
+
+                                        await updateVarianceStats(
+                                            user.id,
+                                            room.gameMode,
+                                            isWinner,
+                                            isLucky
+                                        );
+
+                                        // 3. Save placement history for adaptability tracking
+                                        if (playerPlacement) {
+                                            await savePlacementHistory(
+                                                user.id,
+                                                room.gameMode,
+                                                room.gameId,
+                                                playerPlacement.placement
+                                            );
+                                        }
+
+                                        // 4. Update variance/consistency scores based on placement history
+                                        await updateVarianceScores(user.id, room.gameMode);
+
+                                        // 5. Behavioral Stats
+                                        const totalPlays = roundAggregates?.total_plays || 0;
+                                        const totalPasses = roundAggregates?.total_passes || 0;
+                                        const leadsWon = roundAggregates?.leads_won || 0;
+
+                                        const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
+                                            totalPlays,
+                                            totalPasses,
+                                            leadsWon
+                                        );
+
+                                        // Get existing card awareness stats for risk score calculation
+                                        const existingAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
+                                        const riskySuccessful = existingAwareness?.risky_plays_successful || 0;
+                                        const riskyFailed = existingAwareness?.risky_plays_failed || 0;
+
+                                        const riskScore = DecisionAnalyzer.calculateRiskScore(
+                                            riskySuccessful,
+                                            riskyFailed,
+                                            totalPlays
+                                        );
+
+                                        // Get placement history for adaptability calculation
+                                        const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
+                                        const adaptabilityScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
+
+                                        // Calculate early/late game phase-specific behaviors
+                                        // Early game = decisions in first 40% of turns
+                                        // Late game = decisions in last 30% of turns
+                                        const totalTurns = tier3Data.decisions.length;
+                                        const earlyGameCutoff = Math.floor(totalTurns * 0.4);
+                                        const lateGameStart = Math.floor(totalTurns * 0.7);
+
+                                        const earlyDecisions = tier3Data.decisions.slice(0, earlyGameCutoff);
+                                        const lateDecisions = tier3Data.decisions.slice(lateGameStart);
+
+                                        // Calculate early game aggression (play rate in early game)
+                                        const earlyPlays = earlyDecisions.filter(d => d.action === 'play').length;
+                                        const earlyGameAggression = earlyDecisions.length > 0 ? earlyPlays / earlyDecisions.length : 0.5;
+
+                                        // Calculate late game risk (risky play rate in late game)
+                                        const lateRiskyPlays = lateDecisions.filter(d => d.isRisky).length;
+                                        const lateGameRisk = lateDecisions.length > 0 ? lateRiskyPlays / lateDecisions.length : 0.5;
+
+                                        await updateBehavioralStats(
+                                            user.id,
+                                            room.gameMode,
+                                            aggressionScore,
+                                            riskScore,
+                                            adaptabilityScore,
+                                            earlyGameAggression,
+                                            lateGameRisk
                                         );
                                     }
+                                } catch (e) {
+                                    console.error("Failed to update Tier 3 stats for", p.name, e);
+                                }
+                            }
 
-                                    // 4. Update variance/consistency scores based on placement history
-                                    await updateVarianceScores(user.id, room.gameMode);
+                            // Update player object in room with new rating so UI updates
+                            if (newRating) {
+                                p.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
+                            }
+                        } catch (e) {
+                            console.error("Failed to update stats for", p.name, e);
+                        }
+                    }
+                }
 
-                                    // 5. Behavioral Stats
-                                    const totalPlays = roundAggregates?.total_plays || 0;
-                                    const totalPasses = roundAggregates?.total_passes || 0;
-                                    const leadsWon = roundAggregates?.leads_won || 0;
+                // 4. Update head-to-head stats for all registered human player pairs (exclude guests)
+                const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest);
+                for (let i = 0; i < humanPlayers.length; i++) {
+                    for (let j = i + 1; j < humanPlayers.length; j++) {
+                        try {
+                            const player1 = humanPlayers[i];
+                            const player2 = humanPlayers[j];
 
-                                    const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
-                                        totalPlays,
-                                        totalPasses,
-                                        leadsWon
-                                    );
+                            const user1 = await lookupUser(player1.name);
+                            const user2 = await lookupUser(player2.name);
 
-                                    // Get existing card awareness stats for risk score calculation
-                                    const existingAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
-                                    const riskySuccessful = existingAwareness?.risky_plays_successful || 0;
-                                    const riskyFailed = existingAwareness?.risky_plays_failed || 0;
+                            if (user1 && user2) {
+                                const placement1 = finalPlacements.find(fp => fp.playerId === player1.id);
+                                const placement2 = finalPlacements.find(fp => fp.playerId === player2.id);
 
-                                    const riskScore = DecisionAnalyzer.calculateRiskScore(
-                                        riskySuccessful,
-                                        riskyFailed,
-                                        totalPlays
-                                    );
-
-                                    // Get placement history for adaptability calculation
-                                    const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
-                                    const adaptabilityScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
-
-                                    // Calculate early/late game phase-specific behaviors
-                                    // Early game = decisions in first 40% of turns
-                                    // Late game = decisions in last 30% of turns
-                                    const totalTurns = tier3Data.decisions.length;
-                                    const earlyGameCutoff = Math.floor(totalTurns * 0.4);
-                                    const lateGameStart = Math.floor(totalTurns * 0.7);
-
-                                    const earlyDecisions = tier3Data.decisions.slice(0, earlyGameCutoff);
-                                    const lateDecisions = tier3Data.decisions.slice(lateGameStart);
-
-                                    // Calculate early game aggression (play rate in early game)
-                                    const earlyPlays = earlyDecisions.filter(d => d.action === 'play').length;
-                                    const earlyGameAggression = earlyDecisions.length > 0 ? earlyPlays / earlyDecisions.length : 0.5;
-
-                                    // Calculate late game risk (risky play rate in late game)
-                                    const lateRiskyPlays = lateDecisions.filter(d => d.isRisky).length;
-                                    const lateGameRisk = lateDecisions.length > 0 ? lateRiskyPlays / lateDecisions.length : 0.5;
-
-                                    await updateBehavioralStats(
-                                        user.id,
+                                if (placement1 && placement2) {
+                                    // Update player1's record vs player2
+                                    await updateHeadToHeadStats(
+                                        user1.id,
+                                        user2.id,
                                         room.gameMode,
-                                        aggressionScore,
-                                        riskScore,
-                                        adaptabilityScore,
-                                        earlyGameAggression,
-                                        lateGameRisk
+                                        placement1.placement,
+                                        placement2.placement
+                                    );
+
+                                    // Update player2's record vs player1
+                                    await updateHeadToHeadStats(
+                                        user2.id,
+                                        user1.id,
+                                        room.gameMode,
+                                        placement2.placement,
+                                        placement1.placement
                                     );
                                 }
-                            } catch (e) {
-                                console.error("Failed to update Tier 3 stats for", p.name, e);
                             }
+                        } catch (e) {
+                            console.error("Failed to update head-to-head stats:", e);
                         }
-
-                        // Update player object in room with new rating so UI updates
-                        if (newRating) {
-                            p.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
-                        }
-                    } catch (e) {
-                        console.error("Failed to update stats for", p.name, e);
                     }
                 }
-            }
-
-            // 4. Update head-to-head stats for all registered human player pairs (exclude guests)
-            const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest);
-            for (let i = 0; i < humanPlayers.length; i++) {
-                for (let j = i + 1; j < humanPlayers.length; j++) {
-                    try {
-                        const player1 = humanPlayers[i];
-                        const player2 = humanPlayers[j];
-
-                        const user1 = await getUserByUsername(player1.name);
-                        const user2 = await getUserByUsername(player2.name);
-
-                        if (user1 && user2) {
-                            const placement1 = finalPlacements.find(fp => fp.playerId === player1.id);
-                            const placement2 = finalPlacements.find(fp => fp.playerId === player2.id);
-
-                            if (placement1 && placement2) {
-                                // Update player1's record vs player2
-                                await updateHeadToHeadStats(
-                                    user1.id,
-                                    user2.id,
-                                    room.gameMode,
-                                    placement1.placement,
-                                    placement2.placement
-                                );
-
-                                // Update player2's record vs player1
-                                await updateHeadToHeadStats(
-                                    user2.id,
-                                    user1.id,
-                                    room.gameMode,
-                                    placement2.placement,
-                                    placement1.placement
-                                );
-                            }
-                        }
-                    } catch (e) {
-                        console.error("Failed to update head-to-head stats:", e);
-                    }
-                }
-            }
+            }).catch(e => console.error("Final stats transaction failed:", e));
 
         } else {
             // Round is over, but game continues
@@ -1165,34 +1197,37 @@ io.on('connection', (socket) => {
 
             // Save game history entry when game starts
             try {
-                await saveGameHistory({
-                    gameId: room.gameId,
-                    roomName: room.id,
-                    gameMode: room.gameMode,
-                    isPublic: !room.isPrivate,
-                    status: 'in_progress',
-                    winnerId: null,
-                    winnerUsername: null,
-                    startTime: new Date().toISOString(),
-                    endTime: null,
-                    durationSeconds: null,
-                    totalRounds: 0,
-                    maxPoints: room.pointThreshold
-                });
-
-                // Save initial participants
-                for (const p of room.players) {
-                    const user = p.isBot ? null : await getUserByUsername(p.name);
-                    await saveGameParticipant({
+                await withTransaction(async () => {
+                    await saveGameHistory({
                         gameId: room.gameId,
-                        userId: user ? user.id : null,
-                        username: p.name,
-                        isBot: p.isBot,
-                        finalPlacement: null,
-                        finalScore: null,
-                        roundsWon: 0
+                        roomName: room.id,
+                        gameMode: room.gameMode,
+                        isPublic: !room.isPrivate,
+                        status: 'in_progress',
+                        winnerId: null,
+                        winnerUsername: null,
+                        startTime: new Date().toISOString(),
+                        endTime: null,
+                        durationSeconds: null,
+                        totalRounds: 0,
+                        maxPoints: room.pointThreshold
                     });
-                }
+
+                    // Save initial participants
+                    const lookupUser = createUserLookup();
+                    for (const p of room.players) {
+                        const user = p.isBot ? null : await lookupUser(p.name);
+                        await saveGameParticipant({
+                            gameId: room.gameId,
+                            userId: user ? user.id : null,
+                            username: p.name,
+                            isBot: p.isBot,
+                            finalPlacement: null,
+                            finalScore: null,
+                            roundsWon: 0
+                        });
+                    }
+                });
             } catch (e) {
                 console.error("Failed to save game history on start:", e);
             }
@@ -1496,34 +1531,37 @@ io.on('connection', (socket) => {
 
         // Save new game history
         try {
-            await saveGameHistory({
-                gameId: room.gameId,
-                roomName: room.id,
-                gameMode: room.gameMode,
-                isPublic: !room.isPrivate,
-                status: 'in_progress',
-                winnerId: null,
-                winnerUsername: null,
-                startTime: new Date().toISOString(),
-                endTime: null,
-                durationSeconds: null,
-                totalRounds: 0,
-                maxPoints: room.pointThreshold
-            });
-
-            // Save initial participants
-            for (const p of room.players) {
-                const user = p.isBot ? null : await getUserByUsername(p.name);
-                await saveGameParticipant({
+            await withTransaction(async () => {
+                await saveGameHistory({
                     gameId: room.gameId,
-                    userId: user ? user.id : null,
-                    username: p.name,
-                    isBot: p.isBot,
-                    finalPlacement: null,
-                    finalScore: null,
-                    roundsWon: 0
+                    roomName: room.id,
+                    gameMode: room.gameMode,
+                    isPublic: !room.isPrivate,
+                    status: 'in_progress',
+                    winnerId: null,
+                    winnerUsername: null,
+                    startTime: new Date().toISOString(),
+                    endTime: null,
+                    durationSeconds: null,
+                    totalRounds: 0,
+                    maxPoints: room.pointThreshold
                 });
-            }
+
+                // Save initial participants
+                const lookupUser = createUserLookup();
+                for (const p of room.players) {
+                    const user = p.isBot ? null : await lookupUser(p.name);
+                    await saveGameParticipant({
+                        gameId: room.gameId,
+                        userId: user ? user.id : null,
+                        username: p.name,
+                        isBot: p.isBot,
+                        finalPlacement: null,
+                        finalScore: null,
+                        roundsWon: 0
+                    });
+                }
+            });
         } catch (e) {
             console.error("Failed to save game history for rematch:", e);
         }
@@ -2233,7 +2271,22 @@ app.get('/api/leaderboard/:username/rank', async (req, res) => {
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
     console.log('Serving static files from public directory');
-    app.use(express.static(path.join(__dirname, 'public')));
+    const publicDir = path.join(__dirname, 'public');
+
+    // Vite emits content-hashed filenames under /assets, so those are safe to
+    // cache indefinitely. Everything else (index.html, sw.js, manifest) must stay
+    // revalidated or clients would pin to a stale build.
+    app.use('/assets', express.static(path.join(publicDir, 'assets'), {
+        maxAge: '1y',
+        immutable: true
+    }));
+    app.use(express.static(publicDir, {
+        setHeaders: (res, filePath) => {
+            if (/(?:index\.html|sw\.js|manifest\.webmanifest)$/.test(filePath)) {
+                res.setHeader('Cache-Control', 'no-cache');
+            }
+        }
+    }));
 
     // Handle SPA routing - serve index.html for any unknown routes
     app.get(/(.*)/, (req, res) => {
@@ -2241,7 +2294,8 @@ if (process.env.NODE_ENV === 'production') {
         if (req.path.startsWith('/api/')) {
             return res.status(404).json({ error: 'Endpoint not found' });
         }
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        res.setHeader('Cache-Control', 'no-cache');
+        res.sendFile(path.join(publicDir, 'index.html'));
     });
 }
 

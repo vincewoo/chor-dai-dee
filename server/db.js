@@ -14,9 +14,70 @@ const db = new sqlite3.Database(dbPath, (err) => {
         console.error('Error opening database', err.message);
     } else {
         console.log(`Connected to SQLite database at ${dbPath}`);
+        applyPragmas();
         initDb();
     }
 });
+
+// Connection tuning. SQLite defaults to journal_mode=delete + synchronous=FULL,
+// which fsyncs on every statement -- the round-end stats path issues dozens of
+// writes, so those fsyncs dominate. WAL + NORMAL keeps durability across process
+// crashes (only an OS-level crash can lose the last commits) at a fraction of the
+// I/O, and busy_timeout stops concurrent writers from failing outright.
+function applyPragmas() {
+    db.serialize(() => {
+        db.run(`PRAGMA journal_mode = WAL`, (err) => {
+            if (err) console.error('Error setting journal_mode:', err.message);
+        });
+        db.run(`PRAGMA synchronous = NORMAL`, (err) => {
+            if (err) console.error('Error setting synchronous:', err.message);
+        });
+        db.run(`PRAGMA busy_timeout = 5000`, (err) => {
+            if (err) console.error('Error setting busy_timeout:', err.message);
+        });
+    });
+}
+
+// Runs `fn` inside a single SQLite transaction so a burst of related writes
+// costs one commit instead of one per statement.
+//
+// Transactions are serialized through a promise chain: node-sqlite3 uses one
+// connection, so two overlapping BEGINs would fail with "cannot start a
+// transaction within a transaction". Queueing means a second game ending while
+// the first is still writing waits its turn rather than erroring.
+//
+// Caveat: writes issued elsewhere while a transaction is open ride along in that
+// transaction and would be lost on rollback. That is acceptable here -- callers
+// are stats/history persistence, and a rollback only happens on an error path
+// that would have lost the writes anyway.
+let transactionQueue = Promise.resolve();
+
+const withTransaction = (fn) => {
+    const run = (sql) => new Promise((resolve, reject) => {
+        db.run(sql, (err) => (err ? reject(err) : resolve()));
+    });
+
+    const result = transactionQueue.then(async () => {
+        await run('BEGIN IMMEDIATE');
+        try {
+            const value = await fn();
+            await run('COMMIT');
+            return value;
+        } catch (err) {
+            try {
+                await run('ROLLBACK');
+            } catch (rollbackErr) {
+                console.error('Rollback failed:', rollbackErr.message);
+            }
+            throw err;
+        }
+    });
+
+    // Keep the queue alive regardless of this transaction's outcome.
+    transactionQueue = result.then(() => {}, () => {});
+
+    return result;
+};
 
 function initDb() {
     db.serialize(() => {
@@ -153,6 +214,14 @@ function initDb() {
                 ON game_participants(user_id, game_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_game_events_game
                 ON game_events(game_id)`);
+        // The activity feed pages by (status, game_mode) ordered by end_time; a
+        // composite index lets that page be read straight off the index instead of
+        // scanning and sorting game_history.
+        db.run(`CREATE INDEX IF NOT EXISTS idx_game_history_status_mode_time
+                ON game_history(status, game_mode, end_time DESC)`);
+        // Joining participants onto the selected page, and the "my games" filter.
+        db.run(`CREATE INDEX IF NOT EXISTS idx_game_participants_game
+                ON game_participants(game_id)`);
 
         // Create Tier 3 advanced analytics tables
 
@@ -330,9 +399,11 @@ function initDb() {
             }
 
             if (columns.length === 0) {
-                // Table does not exist
+                // Table does not exist. createStatsTable creates the indexes itself
+                // once the CREATE TABLE statements have actually run.
                 createStatsTable();
             } else {
+                createStatsIndexes();
                 const hasElo = columns.some(c => c.name === 'elo');
                 const hasRatingMu = columns.some(c => c.name === 'rating_mu');
                 const hasFirstPlace = columns.some(c => c.name === 'first_place');
@@ -357,73 +428,102 @@ function initDb() {
     });
 }
 
+// Leaderboard sort indexes. rating_display is a computed expression so it cannot
+// be indexed directly, but games_played/wins/first_place are the other sort keys,
+// and the minGames filter reads games_played on every leaderboard request.
+//
+// Called after the stats tables are known to exist -- the schema check that
+// creates them runs inside an async callback, so queueing these alongside the
+// other DDL would race on a fresh database.
+function createStatsIndexes() {
+    for (const table of ['stats_short', 'stats_standard']) {
+        db.run(`CREATE INDEX IF NOT EXISTS idx_${table}_games ON ${table}(games_played DESC)`, (err) => {
+            if (err) console.error(`Error creating games index on ${table}:`, err.message);
+        });
+        db.run(`CREATE INDEX IF NOT EXISTS idx_${table}_wins ON ${table}(wins DESC)`, (err) => {
+            if (err) console.error(`Error creating wins index on ${table}:`, err.message);
+        });
+        db.run(`CREATE INDEX IF NOT EXISTS idx_${table}_first_place ON ${table}(first_place DESC)`, (err) => {
+            if (err) console.error(`Error creating first_place index on ${table}:`, err.message);
+        });
+    }
+}
+
 function createStatsTable() {
-    db.run(`CREATE TABLE IF NOT EXISTS stats (
-        user_id INTEGER PRIMARY KEY,
-        wins INTEGER DEFAULT 0,
-        losses INTEGER DEFAULT 0,
-        points INTEGER DEFAULT 0,
-        games_played INTEGER DEFAULT 0,
-        rating_mu REAL DEFAULT 25.0,
-        rating_sigma REAL DEFAULT 8.333,
-        first_place INTEGER DEFAULT 0,
-        second_place INTEGER DEFAULT 0,
-        third_place INTEGER DEFAULT 0,
-        fourth_place INTEGER DEFAULT 0,
-        penalty_2x_rounds INTEGER DEFAULT 0,
-        penalty_3x_rounds INTEGER DEFAULT 0,
-        total_plays INTEGER DEFAULT 0,
-        total_passes INTEGER DEFAULT 0,
-        total_rounds INTEGER DEFAULT 0,
-        leads_won INTEGER DEFAULT 0,
-        lead_attempts INTEGER DEFAULT 0,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
+    // serialize so the CREATE INDEX statements queued at the end cannot run before
+    // the tables they target exist -- we are inside a query callback here, where
+    // node-sqlite3 is back in parallel mode.
+    db.serialize(() => {
+        db.run(`CREATE TABLE IF NOT EXISTS stats (
+            user_id INTEGER PRIMARY KEY,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            points INTEGER DEFAULT 0,
+            games_played INTEGER DEFAULT 0,
+            rating_mu REAL DEFAULT 25.0,
+            rating_sigma REAL DEFAULT 8.333,
+            first_place INTEGER DEFAULT 0,
+            second_place INTEGER DEFAULT 0,
+            third_place INTEGER DEFAULT 0,
+            fourth_place INTEGER DEFAULT 0,
+            penalty_2x_rounds INTEGER DEFAULT 0,
+            penalty_3x_rounds INTEGER DEFAULT 0,
+            total_plays INTEGER DEFAULT 0,
+            total_passes INTEGER DEFAULT 0,
+            total_rounds INTEGER DEFAULT 0,
+            leads_won INTEGER DEFAULT 0,
+            lead_attempts INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
 
-    // Create mode-specific stats tables
-    db.run(`CREATE TABLE IF NOT EXISTS stats_short (
-        user_id INTEGER PRIMARY KEY,
-        wins INTEGER DEFAULT 0,
-        losses INTEGER DEFAULT 0,
-        points INTEGER DEFAULT 0,
-        games_played INTEGER DEFAULT 0,
-        rating_mu REAL DEFAULT 25.0,
-        rating_sigma REAL DEFAULT 8.333,
-        first_place INTEGER DEFAULT 0,
-        second_place INTEGER DEFAULT 0,
-        third_place INTEGER DEFAULT 0,
-        fourth_place INTEGER DEFAULT 0,
-        penalty_2x_rounds INTEGER DEFAULT 0,
-        penalty_3x_rounds INTEGER DEFAULT 0,
-        total_plays INTEGER DEFAULT 0,
-        total_passes INTEGER DEFAULT 0,
-        total_rounds INTEGER DEFAULT 0,
-        leads_won INTEGER DEFAULT 0,
-        lead_attempts INTEGER DEFAULT 0,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
+        // Create mode-specific stats tables
+        db.run(`CREATE TABLE IF NOT EXISTS stats_short (
+            user_id INTEGER PRIMARY KEY,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            points INTEGER DEFAULT 0,
+            games_played INTEGER DEFAULT 0,
+            rating_mu REAL DEFAULT 25.0,
+            rating_sigma REAL DEFAULT 8.333,
+            first_place INTEGER DEFAULT 0,
+            second_place INTEGER DEFAULT 0,
+            third_place INTEGER DEFAULT 0,
+            fourth_place INTEGER DEFAULT 0,
+            penalty_2x_rounds INTEGER DEFAULT 0,
+            penalty_3x_rounds INTEGER DEFAULT 0,
+            total_plays INTEGER DEFAULT 0,
+            total_passes INTEGER DEFAULT 0,
+            total_rounds INTEGER DEFAULT 0,
+            leads_won INTEGER DEFAULT 0,
+            lead_attempts INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS stats_standard (
-        user_id INTEGER PRIMARY KEY,
-        wins INTEGER DEFAULT 0,
-        losses INTEGER DEFAULT 0,
-        points INTEGER DEFAULT 0,
-        games_played INTEGER DEFAULT 0,
-        rating_mu REAL DEFAULT 25.0,
-        rating_sigma REAL DEFAULT 8.333,
-        first_place INTEGER DEFAULT 0,
-        second_place INTEGER DEFAULT 0,
-        third_place INTEGER DEFAULT 0,
-        fourth_place INTEGER DEFAULT 0,
-        penalty_2x_rounds INTEGER DEFAULT 0,
-        penalty_3x_rounds INTEGER DEFAULT 0,
-        total_plays INTEGER DEFAULT 0,
-        total_passes INTEGER DEFAULT 0,
-        total_rounds INTEGER DEFAULT 0,
-        leads_won INTEGER DEFAULT 0,
-        lead_attempts INTEGER DEFAULT 0,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
+        db.run(`CREATE TABLE IF NOT EXISTS stats_standard (
+            user_id INTEGER PRIMARY KEY,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            points INTEGER DEFAULT 0,
+            games_played INTEGER DEFAULT 0,
+            rating_mu REAL DEFAULT 25.0,
+            rating_sigma REAL DEFAULT 8.333,
+            first_place INTEGER DEFAULT 0,
+            second_place INTEGER DEFAULT 0,
+            third_place INTEGER DEFAULT 0,
+            fourth_place INTEGER DEFAULT 0,
+            penalty_2x_rounds INTEGER DEFAULT 0,
+            penalty_3x_rounds INTEGER DEFAULT 0,
+            total_plays INTEGER DEFAULT 0,
+            total_passes INTEGER DEFAULT 0,
+            total_rounds INTEGER DEFAULT 0,
+            leads_won INTEGER DEFAULT 0,
+            lead_attempts INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
+
+        // Safe now: queued after the CREATE TABLE statements inside serialize().
+        createStatsIndexes();
+    });
 }
 
 function addAdvancedStatsColumns() {
@@ -897,6 +997,58 @@ const trackDecision = (gameId, userId, roundNumber, turnNumber, action, handSize
     });
 };
 
+// Batched form of trackDecision. A single game can produce hundreds of decisions
+// per player; inserting them one awaited statement at a time was the largest
+// write source in the app. One multi-row INSERT collapses that into one
+// statement (chunked to stay under SQLITE_MAX_VARIABLE_NUMBER).
+const COLUMNS_PER_DECISION = 10;
+const MAX_DECISIONS_PER_INSERT = 90; // 900 bound params, well under the 999 default
+
+const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
+    if (!decisions || decisions.length === 0) return Promise.resolve();
+
+    const chunks = [];
+    for (let i = 0; i < decisions.length; i += MAX_DECISIONS_PER_INSERT) {
+        chunks.push(decisions.slice(i, i + MAX_DECISIONS_PER_INSERT));
+    }
+
+    const insertChunk = (chunk) => new Promise((resolve, reject) => {
+        const placeholders = chunk
+            .map(() => `(${new Array(COLUMNS_PER_DECISION).fill('?').join(', ')})`)
+            .join(', ');
+
+        const query = `INSERT INTO decision_tracking
+            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality)
+            VALUES ${placeholders}`;
+
+        const params = [];
+        for (const d of chunk) {
+            params.push(
+                gameId,
+                userId,
+                roundNumber,
+                d.turn,
+                d.action,
+                d.handSize || 0,
+                d.cardsInDeck || 0,
+                d.pileStrength || 0,
+                d.handStrength || 0,
+                d.quality
+            );
+        }
+
+        db.run(query, params, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+
+    return chunks.reduce(
+        (chain, chunk) => chain.then(() => insertChunk(chunk)),
+        Promise.resolve()
+    );
+};
+
 // Update card awareness stats
 const updateCardAwarenessStats = (userId, gameMode, isOptimal, isRisky, riskSucceeded, lateGameAccuracy) => {
     return new Promise((resolve, reject) => {
@@ -1310,14 +1462,20 @@ const getActivityFeed = (options = {}) => {
         // Filter by status
         if (includeStatus.length > 0) {
             const statusPlaceholders = includeStatus.map(() => '?').join(',');
-            whereClauses.push(`gh.status IN (${statusPlaceholders})`);
+            whereClauses.push(`status IN (${statusPlaceholders})`);
             params.push(...includeStatus);
         }
 
         // Filter by game mode
         if (gameMode) {
-            whereClauses.push('gh.game_mode = ?');
+            whereClauses.push('game_mode = ?');
             params.push(gameMode);
+        }
+
+        // Restrict to games a specific user took part in.
+        if (userId) {
+            whereClauses.push(`game_id IN (SELECT game_id FROM game_participants WHERE user_id = ?)`);
+            params.push(userId);
         }
 
         // Show ALL games for now (full transparency approach)
@@ -1326,9 +1484,21 @@ const getActivityFeed = (options = {}) => {
 
         const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
+        // Select the page from game_history FIRST, then join participants onto just
+        // those rows. Joining and grouping before the LIMIT forced SQLite to
+        // aggregate every matching game on every request, so cost grew with total
+        // history rather than page size; this way idx_game_history_status can drive
+        // the ordering and only `limit` rows are ever aggregated.
         const query = `
+            WITH page AS (
+                SELECT *
+                FROM game_history
+                ${whereClause}
+                ORDER BY end_time DESC, start_time DESC, game_id DESC
+                LIMIT ? OFFSET ?
+            )
             SELECT
-                gh.*,
+                page.*,
                 GROUP_CONCAT(
                     json_object(
                         'username', gp.username,
@@ -1338,13 +1508,11 @@ const getActivityFeed = (options = {}) => {
                         'roundsWon', gp.rounds_won
                     )
                 ) as participants_json,
-                (SELECT COUNT(*) FROM game_events ge WHERE ge.game_id = gh.game_id) as event_count
-            FROM game_history gh
-            LEFT JOIN game_participants gp ON gp.game_id = gh.game_id
-            ${whereClause}
-            GROUP BY gh.game_id
-            ORDER BY gh.end_time DESC, gh.start_time DESC
-            LIMIT ? OFFSET ?
+                (SELECT COUNT(*) FROM game_events ge WHERE ge.game_id = page.game_id) as event_count
+            FROM page
+            LEFT JOIN game_participants gp ON gp.game_id = page.game_id
+            GROUP BY page.game_id
+            ORDER BY page.end_time DESC, page.start_time DESC, page.game_id DESC
         `;
 
         params.push(limit, offset);
@@ -1418,6 +1586,13 @@ const getActivityFeedCount = (options = {}) => {
         if (gameMode) {
             whereClauses.push('game_mode = ?');
             params.push(gameMode);
+        }
+
+        // Must mirror getActivityFeed's filters or the pagination total disagrees
+        // with the rows actually returned.
+        if (userId) {
+            whereClauses.push(`game_id IN (SELECT game_id FROM game_participants WHERE user_id = ?)`);
+            params.push(userId);
         }
 
         // Show ALL games for now (full transparency approach)
@@ -1516,43 +1691,71 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
     return new Promise((resolve, reject) => {
         const tableName = gameMode === 'short' ? 'stats_short' : 'stats_standard';
 
-        let orderByClause;
+        const RATING = '(1200 + (s.rating_mu - 3 * s.rating_sigma) * 40)';
+        const WIN_RATE = 'CASE WHEN s.games_played > 0 THEN CAST(s.wins AS REAL) / s.games_played ELSE 0 END';
+        const AVG_PLACEMENT = 'CASE WHEN s.total_rounds > 0 THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL) ELSE 0 END';
+
+        // Primary metric plus its tiebreaker, matching the leaderboard's ORDER BY.
+        // `betterCmp` is the comparison that means "ahead of me" for the primary
+        // metric -- '>' for the DESC sorts, '<' for avg placement where lower wins.
+        let primary, tiebreak, betterCmp;
         switch (sortBy) {
             case 'games':
-                orderByClause = 's.games_played DESC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
+                primary = 's.games_played'; tiebreak = RATING; betterCmp = '>';
                 break;
             case 'wins':
-                orderByClause = 's.wins DESC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
+                primary = 's.wins'; tiebreak = RATING; betterCmp = '>';
                 break;
             case 'winRate':
-                orderByClause = 'CASE WHEN s.games_played > 0 THEN CAST(s.wins AS REAL) / s.games_played ELSE 0 END DESC, s.games_played DESC';
+                primary = WIN_RATE; tiebreak = 's.games_played'; betterCmp = '>';
                 break;
             case 'firstPlace':
-                orderByClause = 's.first_place DESC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
+                primary = 's.first_place'; tiebreak = RATING; betterCmp = '>';
                 break;
             case 'avgPlacement':
-                orderByClause = 'CASE WHEN s.total_rounds > 0 THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL) ELSE 0 END ASC, (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC';
+                primary = AVG_PLACEMENT; tiebreak = RATING; betterCmp = '<';
                 break;
             case 'rating':
             default:
-                orderByClause = '(1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) DESC, s.games_played DESC';
+                primary = RATING; tiebreak = 's.games_played'; betterCmp = '>';
                 break;
         }
 
+        // Counting beats ranking: the previous version built a ROW_NUMBER window
+        // over every player on the leaderboard and then threw away all but one row,
+        // on every Stats and Leaderboard page load. Counting how many players are
+        // strictly ahead gives the same rank without materialising the ordering.
         const query = `
-            WITH RankedPlayers AS (
-                SELECT
-                    u.username,
-                    ROW_NUMBER() OVER (ORDER BY ${orderByClause}) as rank
+            WITH me AS (
+                SELECT ${primary} AS primary_metric, ${tiebreak} AS tiebreak_metric
                 FROM ${tableName} s
                 INNER JOIN users u ON s.user_id = u.id
+                WHERE u.username = ?
             )
-            SELECT rank FROM RankedPlayers WHERE username = ?
+            SELECT COUNT(*) + 1 AS rank
+            FROM ${tableName} s
+            INNER JOIN users u ON s.user_id = u.id
+            CROSS JOIN me
+            WHERE ${primary} ${betterCmp} me.primary_metric
+               OR (${primary} = me.primary_metric AND ${tiebreak} > me.tiebreak_metric)
         `;
 
-        db.get(query, [username], (err, row) => {
-            if (err) return reject(err);
-            resolve(row ? row.rank : null);
+        // The COUNT always returns a row, so the user's own presence has to be
+        // checked separately -- otherwise an unknown username would report rank 1.
+        const existsQuery = `
+            SELECT 1 FROM ${tableName} s
+            INNER JOIN users u ON s.user_id = u.id
+            WHERE u.username = ?
+        `;
+
+        db.get(existsQuery, [username], (existsErr, existsRow) => {
+            if (existsErr) return reject(existsErr);
+            if (!existsRow) return resolve(null);
+
+            db.get(query, [username], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.rank : null);
+            });
         });
     });
 };
@@ -1654,6 +1857,8 @@ module.exports = {
     getHeadToHeadStats,
     // Tier 3 functions
     trackDecision,
+    trackDecisionsBatch,
+    withTransaction,
     updateCardAwarenessStats,
     getCardAwarenessStats,
     updateVarianceStats,

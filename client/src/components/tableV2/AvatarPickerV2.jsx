@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTableTheme } from '../../theme/tableTheme';
 import { PICKER_ANIMALS, TILE_GRADS, NAME_POOLS, getAvatarChoice, saveAvatarChoice } from '../../utils/avatars';
-import logoImage from '../../assets/chor-dai-dee-logo.png';
+import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile avatar picker. Mirrors the "Avatar Picker v2" mockup. Persists the
 // choice to localStorage (no server avatar field yet) keyed to the current user.
