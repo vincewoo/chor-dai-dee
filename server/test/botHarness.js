@@ -14,6 +14,8 @@ const { Big2Rules } = require('../game/Big2Rules');
 const { SUITS, RANKS } = require('../game/Deck');
 const { calculateRoundScores } = require('../game/Scoring');
 const { buildGameContext } = require('../game/BotContext');
+const { HAND_TYPE_ORDINALS } = require('../game/Big2Rules');
+const { ACTION, encodeCards } = require('../game/TapeCodec');
 
 /** Deterministic PRNG (mulberry32) so benchmark runs are reproducible. */
 function makeRng(seed) {
@@ -50,10 +52,16 @@ function deal(rng) {
  * @param {Array<Object>} seats - 4 entries of { name, logic } where logic exposes getBotMove
  * @param {Array<Array>} hands - starting hands
  * @param {number|null} startingSeat - seat to lead, or null to use the 3D rule
+ * @param {Function|null} onPly - optional recorder called with each ply in the
+ *        game-log format, plus the observation the bot actually saw. Lets tests
+ *        produce real tapes from self-play and check that replay reconstructs
+ *        the identical state. Purely observational - it must not affect play.
  * @returns {Object} { winnerSeat, cardsLeft: number[], tricks, plays }
  */
-function playRound(seats, hands, startingSeat = null) {
+function playRound(seats, hands, startingSeat = null, onPly = null) {
     hands = hands.map(h => [...h]);
+    let ply = 0;
+    const record = (entry) => { if (onPly) onPly({ ply: ply++, ...entry }); };
 
     let turn = startingSeat;
     if (turn === null) {
@@ -108,6 +116,14 @@ function playRound(seats, hands, startingSeat = null) {
                 playedCards.push({ rank: card.rank, suit: card.suit, value: card.value });
             }
             plays++;
+            record({
+                seat: turn,
+                action: ACTION.PLAY,
+                cards_mask: encodeCards(validated.cards),
+                hand_type: HAND_TYPE_ORDINALS[validated.type],
+                hand_value: validated.value,
+                obs: gameContext
+            });
             trickHistory.push({ seat: turn, action: 'play', hand: validated });
             lastPlayedHand = { ...validated, seat: turn };
 
@@ -119,12 +135,21 @@ function playRound(seats, hands, startingSeat = null) {
             if (isSingleBig2) {
                 passedSeats = new Set([0, 1, 2, 3].filter(s => s !== turn));
                 consecutivePasses = 3;
+                // The server records these as explicit plies rather than
+                // leaving replay to re-derive a house rule that may change.
+                for (const seat of [1, 2, 3].map(i => (turn + i) % 4)) {
+                    record({ seat, action: ACTION.AUTO_PASS, cards_mask: 0 });
+                }
             } else {
                 passedSeats = new Set();
                 consecutivePasses = 0;
             }
         } else {
-            trickHistory.push({ seat: turn, action: 'pass', hand: lastPlayedHand });
+            record({ seat: turn, action: ACTION.PASS, cards_mask: 0, obs: gameContext });
+            // Strip `seat` from the pile: identity lives on the entry, not on
+            // the hand. Matches RoomManager and Replayer.
+            const { seat: _pileSeat, ...pileHand } = lastPlayedHand;
+            trickHistory.push({ seat: turn, action: 'pass', hand: pileHand });
             passedSeats.add(turn);
             consecutivePasses++;
         }

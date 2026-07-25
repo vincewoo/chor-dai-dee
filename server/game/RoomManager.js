@@ -982,8 +982,14 @@ class Room {
         this.playerLastPlayed[playerId] = { type: 'pass', playerId, timestamp: Date.now(), playOrder: this.playOrder };
         this.passedPlayers.add(playerId); // Mark player as passed for this round
 
-        // Record what this player declined to beat, for opponent modelling
-        this.trickHistory.push({ seat: playerIndex, action: 'pass', hand: this.lastPlayedHand });
+        // Record what this player declined to beat, for opponent modelling.
+        // The pile is stripped of its playerId: identity belongs on the entry,
+        // which already carries `seat`. Play entries above always pushed a clean
+        // validatedHand, so without this the two entry kinds carried different
+        // shapes, and the replayer - which has no playerId concept by design -
+        // could not reproduce the observation exactly.
+        const { playerId: _pileOwner, ...pileHand } = this.lastPlayedHand;
+        this.trickHistory.push({ seat: playerIndex, action: 'pass', hand: pileHand });
 
         // Track pass stats for advanced stats
         if (this.roundPlayStats[playerId]) {
