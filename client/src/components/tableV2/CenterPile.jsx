@@ -87,12 +87,22 @@ const CenterPile = memo(function CenterPile({
                                                 style={{
                                                     marginLeft: i === 0 ? 0 : -22,
                                                     transform: `rotate(${(i - (cards.length - 1) / 2) * 5}deg)`,
-                                                    animation: isTop && !rm
-                                                        ? `${flyName} .5s cubic-bezier(.2,.8,.3,1.1) ${i * 80}ms both`
-                                                        : 'none',
                                                 }}
                                             >
-                                                <PileCardGlyph rank={c.rank} suit={c.suit} fourColor={fourColor} size="pile" />
+                                                {/* The fly-in gets its own element: the keyframes end at
+                                                    `transform: none`, which would otherwise flatten the fan
+                                                    rotation above. It is keyed to this play's mount rather
+                                                    than to `isTop`, so a play that lands within the stagger
+                                                    (i * 80ms) can't cancel the cards still waiting to fly. */}
+                                                <div
+                                                    style={{
+                                                        animation: rm
+                                                            ? 'none'
+                                                            : `${flyName} .5s cubic-bezier(.2,.8,.3,1.1) ${i * 80}ms both`,
+                                                    }}
+                                                >
+                                                    <PileCardGlyph rank={c.rank} suit={c.suit} fourColor={fourColor} size="pile" />
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
