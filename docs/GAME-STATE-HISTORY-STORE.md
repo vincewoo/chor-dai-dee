@@ -205,7 +205,9 @@ CREATE TABLE mlog_game (
                        ('all_bots','single_player_timeout',
                         'multiplayer_timeout','orphaned_restart')),
     total_rounds    INTEGER NOT NULL DEFAULT 0,
-    winner_seat     INTEGER
+    winner_seat     INTEGER,
+    previous_game_key INTEGER,                 -- prior game in the same room; NULL starts a chain
+    chain_kind      TEXT CHECK(chain_kind IN ('rematch','lobby_restart'))
 );
 
 -- Seat occupancy segments. A new segment starts whenever the occupant changes.
@@ -267,6 +269,8 @@ CREATE INDEX idx_mlog_game_started   ON mlog_game(started_at);
 CREATE INDEX idx_mlog_game_reason    ON mlog_game(end_reason, started_at);
 CREATE INDEX idx_mlog_seat_user      ON mlog_seat(user_id) WHERE user_id IS NOT NULL;
 CREATE INDEX idx_mlog_seat_occupant  ON mlog_seat(occupant);
+CREATE INDEX idx_mlog_game_prev      ON mlog_game(previous_game_key)
+                                        WHERE previous_game_key IS NOT NULL;
 ```
 
 ### What the existing tables already cover
@@ -311,6 +315,33 @@ departed human keeps NULL placement and score forever. Seat-plus-segment makes
 the handover explicit and attributable.
 
 ### Notes on specific columns
+
+**`previous_game_key` / `chain_kind` — rematch chains.** Two paths create a
+successor game in the same room, and both link:
+
+- `startRematch()` (`RoomManager.js:1428`) → `'rematch'`. The players explicitly
+  chose to face the same opponents again, which is itself behaviourally
+  informative — they were not tilted enough to walk.
+- `transitionToLobby()` (`RoomManager.js:1382`) then a fresh `start_game` →
+  `'lobby_restart'`. A weaker link: the roster can change in the lobby.
+
+Both mint a new `gameId` while keeping the room, so the `Room` must stash the
+outgoing `gameId` as `previousGameId` *before* overwriting it. The store resolves
+that to a surrogate key on insert with
+`(SELECT game_key FROM mlog_game WHERE game_id = ?)`, which yields NULL if the
+predecessor was never logged — an opted-out or failed-write game breaks the
+chain rather than corrupting it, which is the right failure.
+
+Roster continuity is deliberately *not* denormalized here: compare `subject_key`
+across the two games' `mlog_seat` rows. That matters most for `'lobby_restart'`,
+where a chain link does not imply the same people. Nor is there a `session_key` —
+a session is the maximal chain, recoverable by traversal, and storing it would
+be a second source of truth for something already recorded.
+
+Chains are bounded by room lifetime, not by time in general: a `'finished'` room
+is reaped after 5 minutes idle and a `'waiting'` room after 30, so consecutive
+games in a chain are always close together. Abandoned games never chain at all,
+since both entry points require `gameState === 'finished'`.
 
 **`end_reason` / `abandon_reason` — truncated games.** Abandoned games are kept,
 not discarded, because abandonment truncates a *game*, not a *round*. Rounds
@@ -576,7 +607,8 @@ channel: `checkBotTurn` calls the same `playHand`/`passTurn`
 
 | Hook | Site | Does |
 |---|---|---|
-| Open game | `start_game` handler, `index.js:1427` | Insert `mlog_game` + `mlog_seat` segments |
+| Open game | `start_game` handler, `index.js:1427` | Insert `mlog_game` (resolving `previousGameId` to `previous_game_key`) + `mlog_seat` segments |
+| Chain link | `startRematch()` / `transitionToLobby()` | Stash the outgoing `gameId` as `previousGameId` before regenerating it |
 | Capture deal | `Room.startRound()`, after dealing | Buffer the 52-byte deal + `start_seat` |
 | Append ply | `Room.playHand()` / `Room.passTurn()`, on the success paths only | Push onto in-memory `room.mlTape` |
 | Seat change | `replaceWithBot()` / `replaceBot()` | Close current segment, open the next |
@@ -756,16 +788,33 @@ line up.
 - **Counterfactual bot evaluation** — replay a real trajectory to any decision
   point, ask a candidate bot what it would have done, and compare. Evaluation
   against recorded human play, with no need to run live games.
-- **Timing and behavioural models** — `think_ms` against decision difficulty.
+- **Timing and behavioural models** — `think_ms` against decision difficulty,
+  excluding rows flagged as clamped or disconnect-overlapped.
+- **Within-session adaptation** — traverse `previous_game_key` to get a chain of
+  games against a stable opponent set, and ask whether a player's policy shifts
+  as they learn the table. Big 2's fixed four-seat structure makes this cleaner
+  than it would be in a game with churn mid-match.
 
 ---
 
-## 11. Open questions
+## 11. Decisions taken during review
 
-1. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
-   players in the same room. Linking consecutive games would enable
-   within-session adaptation modelling — a `previous_game_key` column on
-   `mlog_game` is nearly free if it is added now rather than backfilled.
+No open questions remain; the schema below is buildable as written. Decisions
+made while reviewing this design, with where each is argued:
+
+| Question | Decision | Where |
+|---|---|---|
+| Bot logic generation | Record per seat, heuristic and PPO separately | [§5](#notes-on-specific-columns) |
+| Enforcing version bumps | Golden-hash test, not discipline | [§5](#notes-on-specific-columns) |
+| Bot reasoning capture | Dropped — cost outweighed speculative value | — |
+| `think_ms` when disconnected | Clamp at 120 s, plus a flags bitfield | [§5](#notes-on-specific-columns) |
+| Abandoned games | Keep, and record which cleanup rule fired | [§5](#notes-on-specific-columns) |
+| Rematch chains | Link, distinguishing rematch from lobby restart | [§5](#notes-on-specific-columns) |
+| Observation builder | Extract to `BotContext.js` as build step 1 | [§5](#extracting-the-observation-builder) |
+
+The defaults in [Assumptions](#assumptions) were never explicitly confirmed and
+remain the cheapest things to revisit — particularly the privacy posture, which
+should be settled before the first game is logged rather than after.
 
 ---
 
