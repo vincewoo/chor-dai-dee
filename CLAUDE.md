@@ -23,7 +23,14 @@ cd server/
 node index.js        # Start server on port 3000
 ```
 
-Note: No test framework is currently configured.
+Tests (server, no external test dependencies — uses Node's built-in runner):
+```bash
+cd server/
+npm test             # regression tests (bot logic)
+npm run bench        # bot self-play benchmark + behavioural metrics
+```
+
+Note: only the bot logic is currently covered by tests.
 
 ### Deployment (Fly.io)
 ```bash
@@ -159,11 +166,27 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `RoomManager.js` - Room creation, player management, game state, reconnection handling
 - `Big2Rules.js` - Hand validation and comparison logic
 - `Deck.js` - Card deck (ranks: 3→2, suits: Diamonds < Clubs < Hearts < Spades)
-- `BotLogic.js` - Advanced heuristic-based AI with decision reasoning
-  - "Poker First" strategy - preserves strong 5-card hands
-  - Combo-breaking heuristics
-  - Card counting and strategic passing
-  - Configurable difficulty (simple vs advanced)
+- `BotLogic.js` - Heuristic AI with decision reasoning. See
+  `docs/BOT-HEURISTICS-REVIEW.md` for the design rationale.
+  - **Retention-cost scoring** - every heuristic is denominated in one currency:
+    a convex per-card cost (`RANK_RETENTION_COST`) for giving up a card,
+    discounted by game phase and by combination size. Adding a new rule means
+    pricing it against that scale, not inventing a fresh bonus magnitude.
+  - **Separate lead and response scoring** (`scoreLeadMove` / `scoreResponseMove`).
+    Most historic bot bugs were lead heuristics leaking into responses.
+  - **Price of the trick** - a card is spent only when the lead it buys is worth
+    more than the card (`evaluateTrickValue`, `shouldStrategicPass`)
+  - "Poker First" hand organisation - preserves strong 5-card hands, with the
+    break penalty scaled by what is actually lost (`comboBreakPenalty`)
+  - **Opponent modelling** - `buildOpponentModels` replays the round's
+    `trickHistory` (maintained by RoomManager, survives trick boundaries) to
+    infer what each opponent cannot beat, and stops trusting that read once an
+    opponent shows they pass strategically
+  - **Per-bot personality** - `getBotProfile` derives stable variability,
+    patience and aggression from the bot's name; `pickScoredMove` samples near
+    the top move rather than always taking the argmax, so bots at one table do
+    not play identically. Bots with no profile are fully deterministic.
+  - Configurable difficulty (heuristic vs advanced PPO bot)
 - `Scoring.js` - Winner scoring calculation with penalty multipliers
 - `RatingSystem.js` - OpenSkill-based rating system
   - Formula: Display Rating = 1200 + (mu - 3*sigma) * 40
@@ -336,7 +359,8 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - Card value encoding: `rankIndex * 4 + suitIndex` for comparison
 - Reconnection handling: players can rejoin in-progress games
 - Bot decisions captured with reasoning for debug panel
-- Advanced bot AI uses heuristics and card counting
+- Bot AI uses retention-cost heuristics, card counting, and per-round opponent
+  modelling built from `Room.trickHistory`
 - Stats calculated at round-end and persisted to multiple tables
 
 ### Key Design Patterns

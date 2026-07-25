@@ -6,6 +6,10 @@ A review of `server/game/BotLogic.js` (2,514 lines) focused on the reported symp
 All measurements below were produced by driving `BotLogic.getBotMove()` directly against
 constructed and randomly dealt positions. Numbers are reproducible, not estimates.
 
+> **Status: implemented.** Every finding below has been addressed. See
+> [Implementation results](#10-implementation-results) at the end for the measured
+> before/after. Reproduce with `npm test` and `npm run bench` in `server/`.
+
 ---
 
 ## 1. Headline finding
@@ -292,3 +296,89 @@ Suggested restructuring, in order of value:
 
 Items 1-3 are the ones that address the reported feedback directly; item 4 is where genuinely
 human-like play comes from.
+
+---
+
+## 10. Implementation results
+
+All nine findings were implemented. `BotLogic.js` went from 2,514 to ~1,790 lines, with
+703 of those lines removed as verified-dead code.
+
+### Measured outcome
+
+One new bot seated against three copies of the old bot, 2,000 rounds, seats rotated so
+position cannot bias the result. Four identical bots score ~25% each by construction.
+
+| Configuration | Win rate | Avg points/round |
+|---|---|---|
+| Old bot (baseline) | 25.0% | 3.15 |
+| New bot, strict argmax | **38.8%** | 2.58 |
+| New bot, with per-bot profile | **36.9%** | 2.70 |
+
+The reported symptom, measured directly — answering a single of rank ≤ 9 with a K/A/2
+while holding a cheaper legal beater:
+
+| Cards in hand | Before | After |
+|---|---|---|
+| 13 | 3% | 0.3% |
+| 11 | 2% | 0.5% |
+| 9 | **59%** | **2.3%** |
+| 7 | **57%** | **1.8%** |
+
+Decision cost also fell: 0.40 ms for a free play (was 0.9 ms, and 3.4 ms on the Monte
+Carlo path), 0.04 ms for a response.
+
+### What changed, by section
+
+1. **Anti-hoarding** — moved inside the free-play branch and re-expressed through the
+   phase cost multiplier, so high cards get progressively cheaper to play as the hand
+   shrinks rather than jumping in value at a hard boundary.
+2. **Scoring currency** — `100 - move.value` replaced by a convex per-card retention
+   cost (`RANK_RETENTION_COST`, 0 for a 3 up to 320 for the 2♠), discounted by phase and
+   by combination size. This subsumed and replaced the `Save 2s`, `Save Aces`, `Save 2S`,
+   `Break Pair of 2s`, `Triple 2s`, `Quad 2s`, and `Full House 2s` rules.
+3. **Combo preservation** — flat −150 replaced by `comboBreakPenalty`, scaled by the
+   combination's preservation priority and by the rank of the card being pulled out.
+4. **Debug/live divergence** — the single-candidate fast path now runs after
+   `shouldStrategicPass` and is no longer gated on `captureReasoning`. Locked in by a
+   test asserting the two paths agree over 60 random positions.
+5. **Pass inference** — replaced with `inferFromHistory`, reading a per-round
+   `trickHistory` now maintained by `RoomManager` and surviving trick boundaries. Tracks
+   each opponent's lowest declined single as a ceiling, and stops trusting that read once
+   an opponent demonstrates they pass strategically.
+6. **Opponent modelling** — `buildOpponentModels` replays the round's history into the
+   previously unreachable model functions. Feeds `estimateControlProbability`.
+7. **Bypass paths** — the fake-probability multi-step planner and the Monte Carlo
+   sampler (whose simulated opponents ignored the pile entirely) were deleted rather than
+   repaired; neither was estimating what it claimed to.
+8. **Smaller items** — `dangerLevel` replaces the `< 5` next-seat check and scales with
+   our own hand size; move-independent terms removed; `solveEndgame` now verifies the
+   first move is genuinely unbeatable (`isUnbeatable`) before claiming a forced win.
+9. **Human-like play** — `getBotProfile` derives stable per-bot variability, patience and
+   aggression from the bot's name, and `pickScoredMove` samples from moves within a small
+   window of the best instead of always taking the argmax. Bots with no profile stay
+   deterministic so tests and the benchmark are reproducible.
+
+The profile costs about 2 percentage points of win rate against the old bot. That is the
+intended trade: the goal was bots that feel human, not bots that are maximally strong.
+
+### Verifying
+
+```bash
+cd server/
+npm test     # 14 regression tests, ~1s
+npm run bench  # self-play benchmark + leakage metrics, ~15s
+```
+
+`server/test/botHarness.js` is a dependency-free self-play harness that mirrors
+`RoomManager`'s trick flow and validates every move for legality. To A/B a future change,
+copy `BotLogic.js` aside before editing and seat the old copy against the new one.
+
+### Not done
+
+- Phase boundaries (`getGamePhase`) still key off our own hand size at 9/5 cards. The
+  cost multiplier now cross-fades the behaviour that used to step at that boundary, so
+  the sharp edge is gone, but deriving phase from cards played at the table would still
+  be more accurate.
+- `getAllValidMoves` still prunes flushes and straights to lowest/highest representatives,
+  so the bot cannot construct a middle-value flush to win a trick cheaply.

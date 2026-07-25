@@ -12,7 +12,71 @@ const FIVE_CARD_PRIORITY = {
     [HAND_TYPES.STRAIGHT_FLUSH]: 5
 };
 
+// === SCORING CURRENCY ===
+//
+// Every heuristic in this file is denominated in the same unit: points of
+// "retention cost", i.e. what it costs us to no longer hold a card.
+//
+// The curve is deliberately convex. In Big 2 the gap between an Ace and a 2 is
+// enormous while the gap between an 8 and a 9 is nearly noise, so a linear
+// rank term models the wrong shape. It also has to be wide enough to matter:
+// the previous base term was `100 - move.value`, which spanned only 51 points
+// across the whole deck and so could be overridden by any single bonus.
+const RANK_RETENTION_COST = {
+    '3': 0, '4': 2, '5': 4, '6': 7, '7': 10, '8': 14, '9': 18,
+    '10': 24, 'J': 34, 'Q': 46, 'K': 78, 'A': 138, '2': 215
+};
+
+// The 2 of Spades is the only single in the deck that cannot be beaten.
+const TWO_OF_SPADES_PREMIUM = 105;
+
+// How much of a card's retention cost still applies, by phase. Control held at
+// the very end of a hand has little option value left - it has to be spent to
+// go out, so hoarding it is its own kind of mistake.
+const PHASE_COST_MULTIPLIER = { early: 1.0, mid: 0.78, late: 0.4 };
+
+// A high card locked inside a five-card hand is not really available as
+// standalone control, so spending it as part of that hand costs less than
+// spending it alone.
+const COST_WEIGHT_BY_SIZE = { 1: 1.0, 2: 0.85, 3: 0.7, 5: 0.35 };
+
+// Value of getting one card out of our hand, before card quality is considered.
+const SHED_VALUE_PER_CARD = 45;
+
+// Base worth of winning a trick and taking the lead.
+const TRICK_BASE_VALUE = 55;
+
+/**
+ * What it costs us to give up a single card, as standalone control.
+ * @param {Object} card - { rank, suit }
+ * @returns {number}
+ */
+const cardRetentionCost = (card) => {
+    let cost = RANK_RETENTION_COST[card.rank] || 0;
+    if (card.rank === '2' && card.suit === 'S') cost += TWO_OF_SPADES_PREMIUM;
+    // Tiny suit term so ties break toward dumping the lower suit first.
+    cost += SUITS.indexOf(card.suit) * 0.5;
+    return cost;
+};
+
+/**
+ * What it costs us to play a whole move, discounted for phase and for the fact
+ * that cards inside a larger combination are not standalone control.
+ * @param {Object} move - validated hand
+ * @param {string} gamePhase - 'early' | 'mid' | 'late'
+ * @returns {number}
+ */
+const moveRetentionCost = (move, gamePhase) => {
+    const raw = move.cards.reduce((sum, c) => sum + cardRetentionCost(c), 0);
+    const sizeWeight = COST_WEIGHT_BY_SIZE[move.cards.length] || 0.5;
+    return raw * sizeWeight * (PHASE_COST_MULTIPLIER[gamePhase] || 1.0);
+};
+
 const BotLogic = {
+    // Exposed for tests and for the debug panel.
+    cardRetentionCost,
+    moveRetentionCost,
+
     /**
      * Main entry point: Get the best move for the bot
      * @param {Array} hand - Bot's current cards
@@ -51,14 +115,26 @@ const BotLogic = {
             lastPlayedByRelative: gameContext.lastPlayedByRelative || null,
             passedPlayers: gameContext.passedPlayers || [],
             passCount: gameContext.passCount || 0,
-            playedCards: gameContext.playedCards || []
+            playedCards: gameContext.playedCards || [],
+            playHistory: gameContext.playHistory || [],
+            profile: gameContext.profile || null,
+            rng: gameContext.rng || Math.random
         };
 
         // Analyze what cards are still in play (card counting)
         ctx.cardAnalysis = BotLogic.analyzePlayedCards(hand, ctx.playedCards);
 
-        // PHASE 1.2: Infer opponent weaknesses from passes
-        ctx.passInference = BotLogic.inferFromPasses(lastPlayedHand, ctx.passCount, hand, ctx.playedCards);
+        // Build a model of each opponent from the round's play history.
+        ctx.opponentModels = BotLogic.buildOpponentModels(
+            ctx.playHistory, ctx.playerCardCounts, hand, ctx.playedCards);
+
+        // Infer what opponents cannot answer.
+        //
+        // This reads the whole round's history rather than only the live pile.
+        // The previous version returned an empty inference whenever there was
+        // no hand to beat, yet every consumer sat on the free-play branch - so
+        // none of them could ever fire.
+        ctx.passInference = BotLogic.inferFromHistory(ctx.opponentModels);
 
         // Get all valid moves first (needed for organization and analysis)
         const validMoves = BotLogic.getAllValidMoves(hand);
@@ -124,12 +200,15 @@ const BotLogic = {
             return captureReasoning ? { cards: null, reasoning } : null;
         }
 
-        // Early exit: Only 1 valid move available
-        if (candidates.length === 1 && !captureReasoning) {
-            return candidates[0].cards;
-        }
-
-        // Consider strategic passing
+        // Consider strategic passing.
+        //
+        // This has to run before any single-candidate short circuit. It used to
+        // sit below one, so a bot holding exactly one legal response played it
+        // unconditionally - including spending its lone 2S to beat a 9, which is
+        // precisely what the price rule below exists to prevent. That short
+        // circuit was also gated on `!captureReasoning`, so the debug panel took
+        // the other branch and reported a pass while live play burned the card.
+        // Reasoning capture must never change the decision.
         const strategicPassResult = BotLogic.shouldStrategicPass(candidates, hand, lastPlayedHand, ctx, captureReasoning);
         const shouldPass = captureReasoning ? strategicPassResult.shouldPass : strategicPassResult;
 
@@ -146,6 +225,20 @@ const BotLogic = {
 
         if (reasoning && strategicPassResult.factors) {
             reasoning.strategicFactors.push(...strategicPassResult.factors);
+        }
+
+        // Only one legal move and we have decided not to pass.
+        if (candidates.length === 1) {
+            const only = candidates[0];
+            if (reasoning) {
+                reasoning.decision = {
+                    action: 'play',
+                    cards: only.cards.map(c => `${c.rank}${c.suit}`).join(' '),
+                    type: only.type,
+                    reason: 'Only legal move available'
+                };
+            }
+            return captureReasoning ? { cards: only.cards, reasoning } : only.cards;
         }
 
         // Apply strategic selection
@@ -420,103 +513,6 @@ const BotLogic = {
     },
 
     /**
-     * Evaluate position advantage based on turn order and who played last
-     * @param {Object} ctx - Game context
-     * @returns {Object} - { isLastToAct, positionAdvantage, canPlayFreely }
-     */
-    evaluatePositionAdvantage: (ctx) => {
-        const { passedPlayers, lastPlayedByRelative } = ctx;
-
-        // Check if we're last to act (all other players have passed)
-        const isLastToAct = passedPlayers && passedPlayers.length === 3;
-
-        // Calculate position advantage score
-        let positionAdvantage = 0;
-
-        if (isLastToAct) {
-            // Being last is powerful - we know everyone else passed
-            positionAdvantage = 150;
-        } else if (lastPlayedByRelative !== null) {
-            // Calculate how many players act after us
-            // If lastPlayedByRelative = 1 (next player), then next player goes after us
-            // If lastPlayedByRelative = 3 (previous player), they just played, we're first
-
-            if (lastPlayedByRelative === 3) {
-                // Previous player just played, we're first to respond (weak position)
-                positionAdvantage = -30;
-            } else if (lastPlayedByRelative === 1) {
-                // Next player played, we're last or second-to-last (strong position)
-                positionAdvantage = 50;
-            } else {
-                // Across player played, we're in middle position
-                positionAdvantage = 0;
-            }
-        }
-
-        return {
-            isLastToAct,
-            positionAdvantage,
-            canPlayFreely: isLastToAct // Can play more aggressively if last
-        };
-    },
-
-    /**
-     * Evaluate if we have strong follow-up plays after taking the lead
-     * @param {Object} handOrganization - Organized hand structure
-     * @param {Array} hand - Current cards in hand
-     * @returns {boolean} true if we have strong follow-up
-     */
-    hasStrongFollowUp: (handOrganization, hand) => {
-        // Strong follow-up indicators:
-        // 1. We have 5-card hands ready to play
-        if (handOrganization.fiveCardHands.length > 0) return true;
-
-        // 2. We have multiple pairs (can control the game)
-        if (handOrganization.pairs.length >= 2) return true;
-
-        // 3. We have multiple control cards (2s or As)
-        if (handOrganization.control.length >= 2) return true;
-
-        // 4. We're close to winning (few cards left)
-        if (hand.length <= 3) return true;
-
-        return false;
-    },
-
-    /**
-     * PHASE 1.3: Calculate flexibility score for cards in a move
-     * Cards that appear in more combos are more flexible and should be preserved
-     * @param {Array} moveCards - Cards in the proposed move
-     * @param {Array} hand - Current hand
-     * @param {Array} allMoves - All possible valid moves
-     * @returns {number} - Flexibility score (lower = more rigid, higher = more flexible)
-     */
-    calculateCardFlexibility: (moveCards, hand, allMoves) => {
-        let totalFlexibility = 0;
-
-        // For each card in the move, count how many different combos it appears in
-        moveCards.forEach(moveCard => {
-            let comboCount = 0;
-
-            // Count how many moves include this card
-            allMoves.forEach(move => {
-                const cardInMove = move.cards.some(c =>
-                    c.rank === moveCard.rank && c.suit === moveCard.suit
-                );
-                if (cardInMove) comboCount++;
-            });
-
-            // Add to total flexibility
-            // Cards in many combos = high flexibility (we want to keep these)
-            // Cards in few combos = low flexibility (we can play these)
-            totalFlexibility += comboCount;
-        });
-
-        // Average flexibility per card
-        return totalFlexibility / moveCards.length;
-    },
-
-    /**
      * Check if we can win in one trick (play all remaining cards)
      * @param {Array} hand - Current cards in hand
      * @param {Object|null} lastPlayedHand - The hand to beat
@@ -602,396 +598,6 @@ const BotLogic = {
     },
 
     /**
-     * PHASE 2.2: Plan a winning sequence (2-move lookahead)
-     * @param {Array} candidates - Candidate moves
-     * @param {Array} hand - Current hand
-     * @param {Object} handOrganization - Hand organization
-     * @returns {Object} - { move: Object, sequenceScore: number, plan: string }
-     */
-    plan2MoveSequence: (candidates, hand, handOrganization) => {
-        let bestSequence = null;
-        let bestScore = -Infinity;
-
-        for (const move of candidates) {
-            const followUp = BotLogic.evaluateFollowUp(move, hand, handOrganization);
-
-            // Calculate sequence score
-            let sequenceScore = followUp.followUpScore;
-
-            // Bonus if this leads to likely win
-            if (followUp.canLikelyWin) {
-                sequenceScore += 200;
-            }
-
-            // Penalty for moves that leave us with no good options
-            if (followUp.followUpMoves < 3 && hand.length > 5) {
-                sequenceScore -= 100;
-            }
-
-            if (sequenceScore > bestScore) {
-                bestScore = sequenceScore;
-                bestSequence = {
-                    move,
-                    sequenceScore,
-                    followUpScore: followUp.followUpScore,
-                    canLikelyWin: followUp.canLikelyWin,
-                    plan: `Play ${move.type}, ${hand.length - move.cards.length} cards remain, ${followUp.followUpMoves} follow-up moves`
-                };
-            }
-        }
-
-        return bestSequence;
-    },
-
-    /**
-     * PHASE 3.2: Multi-step sequence planning (3-5 moves lookahead)
-     * Uses recursive search with pruning to find optimal sequences
-     * @param {Array} hand - Current hand
-     * @param {Object|null} lastPlayedHand - Hand to beat (null if free play)
-     * @param {number} depth - How many moves to look ahead (3-5)
-     * @param {Object} ctx - Game context
-     * @returns {Object} - { sequence: Array<Object>, totalScore: number, winProbability: number }
-     */
-    planMultiMoveSequence: (hand, lastPlayedHand, depth, ctx) => {
-        // Only use for hands with 6-10 cards (too expensive for larger hands, too simple for smaller)
-        if (hand.length > 10 || hand.length <= 5 || depth <= 0) {
-            return null;
-        }
-
-        const cache = new Map();
-
-        // Node budget stands in for the alpha-beta pruning this used to claim: this
-        // is a single-agent maximisation, so there is no opponent bound to cut on
-        // and the old `beta <= alpha` test could never fire (beta stayed +Infinity
-        // down every path). Branching 8 wide at depth 4 is ~4k nodes, and each node
-        // calls getAllValidMoves plus organizeHand, so an explicit ceiling is what
-        // actually bounds the work.
-        const MAX_NODES = 1500;
-        let nodesVisited = 0;
-
-        const recursivePlan = (currentHand, currentDepth) => {
-            // Terminal conditions
-            if (currentHand.length === 0) {
-                return { sequence: [], score: 10000, winProbability: 1.0 };
-            }
-
-            if (currentDepth === 0 || nodesVisited >= MAX_NODES) {
-                // Evaluate terminal position
-                const terminalScore = BotLogic.evaluateTerminalPosition(currentHand, ctx);
-                return { sequence: [], score: terminalScore, winProbability: terminalScore / 1000 };
-            }
-
-            // Check cache
-            const cacheKey = currentHand.map(c => `${c.rank}${c.suit}`).sort().join(',') + `:${currentDepth}`;
-            if (cache.has(cacheKey)) {
-                return cache.get(cacheKey);
-            }
-
-            nodesVisited++;
-
-            // Get all valid moves (assuming free play for simplicity in lookahead)
-            const allMoves = BotLogic.getAllValidMoves(currentHand);
-
-            // Prune to top candidates (limit branching factor)
-            const candidateLimit = currentDepth >= 3 ? 8 : 12;
-            const candidates = BotLogic.selectTopCandidates(allMoves, currentHand, candidateLimit);
-
-            let bestPlan = null;
-            let bestScore = -Infinity;
-
-            for (const move of candidates) {
-                // Simulate move
-                const remainingHand = currentHand.filter(card =>
-                    !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
-                );
-
-                // Immediate value of this move
-                const immediateValue = BotLogic.evaluateMoveValue(move, currentHand, ctx);
-
-                // Recursive call
-                const futureResult = recursivePlan(remainingHand, currentDepth - 1);
-
-                // Total score with decay (future moves are less certain)
-                const decayFactor = 0.85;
-                const totalScore = immediateValue + (futureResult.score * decayFactor);
-
-                if (totalScore > bestScore) {
-                    bestScore = totalScore;
-                    bestPlan = {
-                        sequence: [move, ...futureResult.sequence],
-                        score: totalScore,
-                        winProbability: remainingHand.length === 0 ? 1.0 : futureResult.winProbability * 0.9
-                    };
-                }
-
-                if (nodesVisited >= MAX_NODES) {
-                    break;
-                }
-            }
-
-            cache.set(cacheKey, bestPlan);
-            return bestPlan || { sequence: [], score: 0, winProbability: 0 };
-        };
-
-        return recursivePlan(hand, Math.min(depth, 4));
-    },
-
-    /**
-     * PHASE 3.2: Select top candidates for multi-move planning (pruning)
-     * @param {Array} allMoves - All valid moves
-     * @param {Array} hand - Current hand
-     * @param {number} limit - Max candidates to return
-     * @returns {Array} - Top candidates
-     */
-    selectTopCandidates: (allMoves, hand, limit) => {
-        // Score each move quickly
-        const scored = allMoves.map(move => {
-            let score = 0;
-
-            // Prefer shedding more cards
-            score += move.cards.length * 20;
-
-            // Prefer low value cards
-            score += (100 - move.value);
-
-            // Prefer 5-card hands
-            if (FIVE_CARD_PRIORITY[move.type]) {
-                score += 100;
-            }
-
-            // Prefer moves that empty hand
-            if (move.cards.length === hand.length) {
-                score += 1000;
-            }
-
-            return { move, score };
-        });
-
-        // Sort and return top N
-        scored.sort((a, b) => b.score - a.score);
-        return scored.slice(0, limit).map(s => s.move);
-    },
-
-    /**
-     * PHASE 3.2: Evaluate terminal position (leaf node in search tree)
-     * @param {Array} hand - Remaining hand
-     * @param {Object} ctx - Game context
-     * @returns {number} - Score
-     */
-    evaluateTerminalPosition: (hand, ctx) => {
-        if (hand.length === 0) return 10000;
-
-        let score = 0;
-
-        // Fewer cards = better
-        score += (13 - hand.length) * 100;
-
-        // OPTIMIZATION: Calculate valid moves once and pass to organizeHand
-        const validMoves = BotLogic.getAllValidMoves(hand);
-
-        // Analyze remaining cards
-        const org = BotLogic.organizeHand(hand, validMoves);
-
-        // Penalize if cards don't form good combos
-        score += validMoves.length * 10;
-
-        // Bonus if all cards form one combo
-        const allAsCombo = Big2Rules.validateHand(hand);
-        if (allAsCombo) {
-            score += 500;
-        }
-
-        // Bonus for control cards
-        score += org.control.length * 50;
-
-        return score;
-    },
-
-    /**
-     * PHASE 3.2: Evaluate immediate value of a move (for multi-move planning)
-     * @param {Object} move - Move to evaluate
-     * @param {Array} hand - Current hand
-     * @param {Object} ctx - Game context
-     * @returns {number} - Value score
-     */
-    evaluateMoveValue: (move, hand, ctx) => {
-        let value = 0;
-
-        // Shedding value
-        value += move.cards.length * 30;
-
-        // Low card value
-        const avgValue = move.cards.reduce((sum, c) => sum + c.value, 0) / move.cards.length;
-        value += (52 - avgValue);
-
-        // 5-card bonus
-        if (FIVE_CARD_PRIORITY[move.type]) {
-            value += 80;
-        }
-
-        // Win bonus
-        if (move.cards.length === hand.length) {
-            value += 5000;
-        }
-
-        return value;
-    },
-
-    /**
-     * PHASE 3.3: Monte Carlo simulation for move evaluation
-     * Runs random simulations to estimate win probability
-     * @param {Object} move - Move to evaluate
-     * @param {Array} hand - Current hand
-     * @param {Object} ctx - Game context
-     * @param {number} numSimulations - Number of simulations to run (default: 50)
-     * @returns {Object} - { winRate: number, avgPlacement: number, confidence: number }
-     */
-    monteCarloSimulation: (move, hand, ctx, numSimulations = 50) => {
-        const { playerCardCounts, playedCards } = ctx;
-
-        let wins = 0;
-        let totalPlacement = 0;
-
-        for (let i = 0; i < numSimulations; i++) {
-            // Simulate game from this position
-            const result = BotLogic.simulateGame(move, hand, playerCardCounts, playedCards);
-
-            if (result.placement === 1) wins++;
-            totalPlacement += result.placement;
-        }
-
-        return {
-            winRate: wins / numSimulations,
-            avgPlacement: totalPlacement / numSimulations,
-            confidence: Math.min(1.0, numSimulations / 100) // More sims = higher confidence
-        };
-    },
-
-    /**
-     * PHASE 3.3: Simulate a single game from current position
-     * @param {Object} initialMove - Our first move
-     * @param {Array} ourHand - Our current hand
-     * @param {Array} opponentCardCounts - Opponent card counts [next, across, previous]
-     * @param {Array} playedCards - Cards already played
-     * @returns {Object} - { placement: number (1-4), cardsRemaining: number }
-     */
-    simulateGame: (initialMove, ourHand, opponentCardCounts, playedCards) => {
-        // Simulate our hand after initial move
-        let ourSimHand = ourHand.filter(card =>
-            !initialMove.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
-        );
-
-        // Distribute unknown cards to opponents
-        const unknownCards = BotLogic.getUnknownCards(ourHand, playedCards);
-        const opponentHands = BotLogic.distributeCardsToOpponents(unknownCards, opponentCardCounts);
-
-        // Simulate game until someone wins.
-        //
-        // Each iteration sheds at least one card from our hand when we have a legal
-        // move, so the simulation cannot run longer than our starting hand size --
-        // the old cap of 50 was ~4x more iterations than reachable, and every extra
-        // iteration costs four getAllValidMoves calls. Cap it at the hand size with
-        // a small allowance for turns where we have no move.
-        let round = 0;
-        const maxRounds = ourSimHand.length + 5;
-
-        while (round < maxRounds && ourSimHand.length > 0) {
-            // Simulate opponent plays (simplified)
-            for (let i = 0; i < 3; i++) {
-                if (opponentHands[i].length > 0) {
-                    // Opponent plays random valid move or passes
-                    const opponentMoves = BotLogic.getAllValidMoves(opponentHands[i]);
-                    if (opponentMoves.length > 0 && Math.random() < 0.6) {
-                        // Play random move (60% chance)
-                        const randomMove = opponentMoves[Math.floor(Math.random() * opponentMoves.length)];
-                        opponentHands[i] = opponentHands[i].filter(card =>
-                            !randomMove.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
-                        );
-
-                        // Check if opponent won
-                        if (opponentHands[i].length === 0) {
-                            // Count how many finished before us
-                            const finishedBefore = opponentHands.filter(h => h.length === 0).length;
-                            return { placement: finishedBefore + 2, cardsRemaining: ourSimHand.length };
-                        }
-                    }
-                }
-            }
-
-            // Our turn - play simplistically
-            const ourMoves = BotLogic.getAllValidMoves(ourSimHand);
-            if (ourMoves.length > 0) {
-                // Play lowest value move
-                const lowMove = ourMoves.reduce((best, curr) =>
-                    curr.value < best.value ? curr : best
-                );
-                ourSimHand = ourSimHand.filter(card =>
-                    !lowMove.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
-                );
-
-                if (ourSimHand.length === 0) {
-                    // We won! Count how many finished before us
-                    const finishedBefore = opponentHands.filter(h => h.length === 0).length;
-                    return { placement: finishedBefore + 1, cardsRemaining: 0 };
-                }
-            }
-
-            round++;
-        }
-
-        // Timeout - estimate placement by card count
-        const allHands = [ourSimHand, ...opponentHands];
-        allHands.sort((a, b) => a.length - b.length);
-        const ourIndex = allHands.findIndex(h => h === ourSimHand);
-
-        return { placement: ourIndex + 1, cardsRemaining: ourSimHand.length };
-    },
-
-    /**
-     * PHASE 3.3: Get unknown cards (not in our hand, not played)
-     * @param {Array} ourHand - Our hand
-     * @param {Array} playedCards - Played cards
-     * @returns {Array} - Unknown cards
-     */
-    getUnknownCards: (ourHand, playedCards) => {
-        const allCards = [];
-        for (const rank of RANKS) {
-            for (const suit of SUITS) {
-                const card = { rank, suit, value: RANKS.indexOf(rank) * 4 + SUITS.indexOf(suit) };
-                const inOurHand = ourHand.some(c => c.rank === rank && c.suit === suit);
-                const wasPlayed = playedCards.some(c => c.rank === rank && c.suit === suit);
-                if (!inOurHand && !wasPlayed) {
-                    allCards.push(card);
-                }
-            }
-        }
-        return allCards;
-    },
-
-    /**
-     * PHASE 3.3: Distribute unknown cards to opponents
-     * @param {Array} unknownCards - Cards to distribute
-     * @param {Array} opponentCardCounts - [next, across, previous]
-     * @returns {Array} - [hand1, hand2, hand3]
-     */
-    distributeCardsToOpponents: (unknownCards, opponentCardCounts) => {
-        // Shuffle unknown cards
-        const shuffled = [...unknownCards].sort(() => Math.random() - 0.5);
-
-        const hands = [[], [], []];
-        let cardIndex = 0;
-
-        // Distribute according to card counts
-        for (let i = 0; i < 3; i++) {
-            const count = opponentCardCounts[i];
-            hands[i] = shuffled.slice(cardIndex, cardIndex + count);
-            cardIndex += count;
-        }
-
-        return hands;
-    },
-
-    /**
      * PHASE 2.3: Endgame solver for hands with ≤5 cards
      * Attempts to find guaranteed winning sequence
      * @param {Array} hand - Current hand (must be ≤5 cards)
@@ -999,6 +605,61 @@ const BotLogic = {
      * @param {Object} ctx - Game context
      * @returns {Object|null} - { move, guaranteedWin: boolean } or null if no guaranteed win
      */
+    /**
+     * Can any card still unaccounted for beat this move?
+     *
+     * Conservative: anything not in our hand and not yet played is treated as
+     * being in an opponent's hand, so a true result really is forced.
+     * @param {Object} move - validated hand
+     * @param {Array} hand - our cards
+     * @param {Array} playedCards - cards already played this round
+     * @returns {boolean}
+     */
+    isUnbeatable: (move, hand, playedCards = []) => {
+        const seen = new Set([
+            ...hand.map(c => `${c.rank}${c.suit}`),
+            ...playedCards.map(c => `${c.rank}${c.suit}`)
+        ]);
+
+        const outstanding = [];
+        for (const rank of RANKS) {
+            for (const suit of SUITS) {
+                if (!seen.has(`${rank}${suit}`)) {
+                    outstanding.push({ rank, suit, value: RANKS.indexOf(rank) * 4 + SUITS.indexOf(suit) });
+                }
+            }
+        }
+        if (outstanding.length === 0) return true;
+
+        const byRank = {};
+        outstanding.forEach(c => {
+            if (!byRank[c.rank]) byRank[c.rank] = [];
+            byRank[c.rank].push(c);
+        });
+
+        if (move.type === HAND_TYPES.SINGLE) {
+            return !outstanding.some(c => c.value > move.value);
+        }
+
+        if (move.type === HAND_TYPES.PAIR || move.type === HAND_TYPES.TRIPLE) {
+            const need = move.cards.length;
+            return !Object.values(byRank).some(cards =>
+                cards.length >= need && cards.some(c => c.value > move.value));
+        }
+
+        // Five-card hands: a straight flush only loses to a higher straight
+        // flush; quads lose to those plus a higher quad. Anything weaker can be
+        // beaten by shapes that are impractical to enumerate here, so treat it
+        // as beatable rather than risk a false "forced win".
+        if (move.type === HAND_TYPES.STRAIGHT_FLUSH || move.type === HAND_TYPES.QUADS) {
+            const strongerMoves = BotLogic.getAllValidMoves(outstanding)
+                .filter(m => m.cards.length === 5 && Big2Rules.canBeat(m, move));
+            return strongerMoves.length === 0;
+        }
+
+        return false;
+    },
+
     solveEndgame: (hand, lastPlayedHand, ctx) => {
         if (hand.length > 5) return null;
 
@@ -1014,52 +675,35 @@ const BotLogic = {
 
         if (candidates.length === 0) return null;
 
-        // Try to find a guaranteed winning sequence
+        // Try to find a genuinely forced win.
+        //
+        // The two-move win only works if nobody can take the lead away in
+        // between: we play `move`, everyone is forced to pass, we lead again
+        // and play every remaining card. The second play does not need to be
+        // unbeatable - emptying the hand ends the round either way - but the
+        // FIRST one does. The previous version checked the second play instead
+        // of the first, and additionally called any leftover pair a guaranteed
+        // win, so most of its "guaranteed" claims were unfounded.
         for (const move of candidates) {
             const remainingCards = hand.filter(card =>
                 !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
             );
 
-            // If this empties our hand, we win!
+            // If this empties our hand, we win outright.
             if (remainingCards.length === 0) {
                 return { move, guaranteedWin: true, reason: 'Empties hand - instant win' };
             }
 
-            // If remaining cards can all be played as one hand
+            // Everything else has to survive a round of opponents.
+            if (!BotLogic.isUnbeatable(move, hand, ctx.playedCards)) continue;
+
             const remainingAsMove = Big2Rules.validateHand(remainingCards);
             if (remainingAsMove) {
-                // We can play all remaining cards next turn
-                // This guarantees win if:
-                // 1. We'll have free play (everyone passes on our current move)
-                // 2. Or remaining hand is so strong no one can beat it
-
-                const isUnbeatable =
-                    remainingAsMove.type === HAND_TYPES.STRAIGHT_FLUSH ||
-                    (remainingAsMove.type === HAND_TYPES.QUADS) ||
-                    (remainingAsMove.cards.some(c => c.rank === '2' && c.suit === 'S'));
-
-                if (isUnbeatable || remainingCards.length <= 2) {
-                    return {
-                        move,
-                        guaranteedWin: true,
-                        reason: `2-move win: Play ${move.type}, then play ${remainingAsMove.type}`
-                    };
-                }
-            }
-
-            // Check if remaining cards give us total control
-            // (all high cards that opponents can't beat)
-            if (remainingCards.length <= 2) {
-                const allHigh = remainingCards.every(c =>
-                    ['A', '2'].includes(c.rank)
-                );
-                if (allHigh) {
-                    return {
-                        move,
-                        guaranteedWin: true,
-                        reason: 'Remaining cards are all control (A/2)'
-                    };
-                }
+                return {
+                    move,
+                    guaranteedWin: true,
+                    reason: `Forced 2-move win: ${move.type} cannot be beaten, then ${remainingAsMove.type} plays out`
+                };
             }
         }
 
@@ -1103,242 +747,380 @@ const BotLogic = {
     },
 
     /**
-     * Determine if we should pass even though we can play
-     * Implements "Don't Waste the 2s" and "Price" rules
-     * Enhanced with Strategic Yielding logic
+     * How urgently we need to stop an opponent going out.
+     * 0 = no pressure, 3 = the next player wins unless we block.
+     * The next player matters most because they act immediately after us.
+     */
+    dangerLevel: (hand, ctx) => {
+        const counts = ctx.playerCardCounts;
+        const nextOpp = counts[0];
+        const minOpp = Math.min(...counts);
+
+        let level = 0;
+        if (nextOpp <= 1) level = 3;
+        else if (nextOpp <= 3) level = 2;
+        else if (nextOpp <= 5) level = 1;
+
+        if (minOpp <= 2) level = Math.max(level, 2);
+        else if (minOpp <= 4) level = Math.max(level, 1);
+
+        // If we are as close to going out as they are, racing beats blocking.
+        if (hand.length <= minOpp) level = Math.max(0, level - 1);
+
+        return level;
+    },
+
+    /**
+     * What winning the current trick is worth to us.
+     *
+     * This is the "price of the trick" the bot pays retention cost against: a
+     * card is worth spending only when the lead it buys is worth more than the
+     * card. The old code expressed one hard-coded instance of this idea (never
+     * spend a 2 on a 3-9 single); this generalises it to every card.
+     */
+    evaluateTrickValue: (hand, ctx, gamePhase) => {
+        let value = TRICK_BASE_VALUE;
+
+        const org = ctx.handOrganization;
+        if (org) {
+            // The lead is worth more when we have cheap cards waiting to go and
+            // strong shapes to run.
+            value += Math.min(3, org.trash.length) * 18;
+            value += Math.min(2, org.fiveCardHands.length) * 35;
+        }
+
+        // Denying the lead to someone about to go out is worth far more than
+        // the cards it costs.
+        const danger = BotLogic.dangerLevel(hand, ctx);
+        value += danger * danger * 45;
+
+        if (gamePhase === 'late') value += 90;
+        else if (gamePhase === 'mid') value += 30;
+
+        return value;
+    },
+
+    /**
+     * Cost of pulling cards out of combinations we were saving.
+     *
+     * Replaces a flat -150 "Breaks Organized Hand" penalty. The flat version
+     * landed disproportionately on low cards (they sit inside straights far
+     * more often than high cards do) and so actively pushed the bot toward
+     * spending its high cards. Scaling by what is actually lost fixes that:
+     * pulling the 3 out of a straight is cheap, pulling its Ace is not.
+     */
+    comboBreakPenalty: (move, handOrganization, gamePhase) => {
+        if (!handOrganization) return 0;
+        let penalty = 0;
+        const inMove = (c) => move.cards.some(mc => mc.rank === c.rank && mc.suit === c.suit);
+
+        for (const combo of handOrganization.fiveCardHands) {
+            const pulled = combo.cards.filter(inMove);
+            // Untouched, or we are playing the combo itself - nothing is lost.
+            if (pulled.length === 0 || pulled.length === combo.cards.length) continue;
+
+            const priority = FIVE_CARD_PRIORITY[combo.type] || 1;
+            const highestPulled = Math.max(...pulled.map(c => RANKS.indexOf(c.rank)));
+            penalty += (18 + priority * 10) * (0.5 + highestPulled / RANKS.length);
+        }
+
+        for (const pair of handOrganization.pairs) {
+            const used = pair.cards.filter(inMove).length;
+            if (used === 1) {
+                penalty += 20 + (RANK_RETENTION_COST[pair.rank] || 0) * 0.25;
+            }
+        }
+
+        for (const triple of (handOrganization.triples || [])) {
+            const used = triple.cards.filter(inMove).length;
+            if (used > 0 && used < 3) {
+                penalty += 25 + (RANK_RETENTION_COST[triple.rank] || 0) * 0.3;
+            }
+        }
+
+        // Shapes matter less once we are just trying to empty our hand.
+        return penalty * (gamePhase === 'late' ? 0.35 : 1);
+    },
+
+    /**
+     * Score a move played as a LEAD (free play).
+     */
+    scoreLeadMove: (move, hand, ctx, gamePhase, captureReasoning = false) => {
+        const factors = captureReasoning ? [] : null;
+        const isWin = move.cards.length === hand.length;
+        if (isWin) {
+            return { move, score: 1e6, factors: captureReasoning ? [{ factor: 'Plays out - wins the round', points: 1e6 }] : null };
+        }
+
+        const shed = move.cards.length * SHED_VALUE_PER_CARD;
+        const cost = moveRetentionCost(move, gamePhase);
+        const broken = BotLogic.comboBreakPenalty(move, ctx.handOrganization, gamePhase);
+
+        let score = shed - cost - broken;
+        if (factors) {
+            factors.push({ factor: `Sheds ${move.cards.length}`, points: shed });
+            factors.push({ factor: 'Card retention cost', points: -Math.round(cost) });
+            if (broken) factors.push({ factor: 'Breaks a saved combination', points: -Math.round(broken) });
+        }
+
+        // Five-card hands are the cheapest way to unload volume and the hardest
+        // shape for opponents to answer.
+        if (FIVE_CARD_PRIORITY[move.type]) {
+            score += 60;
+            if (factors) factors.push({ factor: 'Leads a five-card hand', points: 60 });
+        } else if (move.type === HAND_TYPES.PAIR || move.type === HAND_TYPES.TRIPLE) {
+            score += 25;
+            if (factors) factors.push({ factor: 'Leads a pair/triple', points: 25 });
+        }
+
+        // Prefer leads we can follow up on.
+        if (hand.length > 5) {
+            const followUp = BotLogic.evaluateFollowUp(move, hand, ctx.handOrganization);
+            const bonus = Math.min(90, followUp.followUpScore / 4);
+            score += bonus;
+            if (factors) factors.push({ factor: 'Follow-up strength', points: Math.round(bonus) });
+            if (followUp.followUpMoves < 3 && hand.length > 7) {
+                score -= 60;
+                if (factors) factors.push({ factor: 'Leaves few options', points: -60 });
+            }
+        }
+
+        // Under pressure, lead something they cannot answer rather than
+        // something cheap. Expressed through hold probability so it does not
+        // need to hard-code which ranks count as "high".
+        const danger = BotLogic.dangerLevel(hand, ctx);
+        if (danger >= 2) {
+            const holdProb = BotLogic.estimateControlProbability(move, hand, ctx);
+            const bonus = danger * 55 * holdProb * (ctx.profile ? ctx.profile.aggression : 1);
+            score += bonus;
+            if (factors) factors.push({ factor: `Blocking lead (danger ${danger})`, points: Math.round(bonus) });
+        }
+
+        // Opponents who have shown they cannot answer a shape are worth probing.
+        const weakness = ctx.passInference;
+        if (weakness && weakness.confidence > 0) {
+            if (weakness.opponentsWeakInSingles && move.type === HAND_TYPES.SINGLE) {
+                const bonus = Math.round(weakness.confidence * 70);
+                score += bonus;
+                if (factors) factors.push({ factor: 'Opponents weak in singles', points: bonus });
+            }
+            if (weakness.opponentsWeakInPairs && move.type === HAND_TYPES.PAIR) {
+                const bonus = Math.round(weakness.confidence * 60);
+                score += bonus;
+                if (factors) factors.push({ factor: 'Opponents weak in pairs', points: bonus });
+            }
+            if (weakness.opponentsWeakInFiveCards && FIVE_CARD_PRIORITY[move.type]) {
+                score -= 45;
+                if (factors) factors.push({ factor: 'Hold five-card hand - opponents cannot answer it', points: -45 });
+            }
+        }
+
+        return { move, score, factors };
+    },
+
+    /**
+     * Score a move played as a RESPONSE to a live pile.
+     *
+     * The decisive term is retention cost versus the value of the trick. This
+     * is what stops the bot answering a 7 with a King while holding an 8: the
+     * King costs ~78 to give up and the 8 costs ~14, a gap far larger than any
+     * bonus in this function.
+     */
+    scoreResponseMove: (move, hand, ctx, gamePhase, trickValue, captureReasoning = false) => {
+        const factors = captureReasoning ? [] : null;
+        const isWin = move.cards.length === hand.length;
+        if (isWin) {
+            return { move, score: 1e6, factors: captureReasoning ? [{ factor: 'Plays out - wins the round', points: 1e6 }] : null };
+        }
+
+        const shed = move.cards.length * SHED_VALUE_PER_CARD;
+        const cost = moveRetentionCost(move, gamePhase);
+        const broken = BotLogic.comboBreakPenalty(move, ctx.handOrganization, gamePhase);
+
+        let score = shed - cost - broken;
+        if (factors) {
+            factors.push({ factor: `Sheds ${move.cards.length}`, points: shed });
+            factors.push({ factor: 'Card retention cost', points: -Math.round(cost) });
+            if (broken) factors.push({ factor: 'Breaks a saved combination', points: -Math.round(broken) });
+        }
+
+        // What we stand to gain if this play holds up and we take the lead.
+        const holdProb = BotLogic.estimateControlProbability(move, hand, ctx);
+        const controlGain = trickValue * holdProb;
+        score += controlGain;
+        if (factors) {
+            factors.push({ factor: `Trick value x ${(holdProb * 100).toFixed(0)}% hold`, points: Math.round(controlGain) });
+        }
+
+        // With an opponent about to go out, taking the trick matters more than
+        // the card it costs.
+        const danger = BotLogic.dangerLevel(hand, ctx);
+        if (danger >= 2) {
+            const bonus = danger * 45 * holdProb * (ctx.profile ? ctx.profile.aggression : 1);
+            score += bonus;
+            if (factors) factors.push({ factor: `Must not concede (danger ${danger})`, points: Math.round(bonus) });
+        }
+
+        return { move, score, factors };
+    },
+
+    /**
+     * Determine if we should pass even though we can play.
+     *
+     * Generalises the old "don't waste a 2 on a 3-9 single" rule: pass whenever
+     * no legal response is worth its retention cost, measured against what the
+     * trick is actually worth to us right now.
      */
     shouldStrategicPass: (candidates, hand, lastPlayedHand, ctx, captureReasoning = false) => {
-        const { playerCardCounts, passCount, lastPlayedByRelative } = ctx;
         const factors = captureReasoning ? [] : null;
+        const result = (shouldPass, reason = null) =>
+            captureReasoning ? { shouldPass, factors, reason } : shouldPass;
 
-        const result = (shouldPass, reason = null) => {
-            if (captureReasoning) {
-                return { shouldPass, factors, reason };
-            }
-            return shouldPass;
-        };
+        // Nothing to pass on.
+        if (!lastPlayedHand) return result(false);
 
-        // Can't pass on free play (no hand to beat)
-        if (!lastPlayedHand) {
+        // Never pass up the round.
+        if (candidates.some(m => m.cards.length === hand.length)) {
+            if (factors) factors.push({ factor: 'Winning move available - never pass', points: 0 });
             return result(false);
         }
 
-        // --- Emergency Override: Next player has 1 card ---
-        if (playerCardCounts[0] === 1) {
-            if (factors) factors.push('Emergency: Next player has 1 card - MUST PLAY');
-            return result(false, "Must try to stop next player (1 card left)");
+        // The next player is one card from going out; anything is better than
+        // handing them the lead.
+        if (ctx.playerCardCounts[0] <= 1) {
+            if (factors) factors.push({ factor: 'Next player has 1 card - must contest', points: 0 });
+            return result(false, 'Must try to stop the next player');
         }
 
-        // Always play if we can win right now
-        const winningMove = candidates.find(m => m.cards.length === hand.length);
-        if (winningMove) {
-             if (factors) factors.push('Winning move available - never pass');
-             return result(false);
-        }
+        const gamePhase = BotLogic.getGamePhase(hand.length);
+        const trickValue = BotLogic.evaluateTrickValue(hand, ctx, gamePhase);
 
-        const bestCandidate = candidates.reduce((best, curr) =>
-            curr.value < best.value ? curr : best
-        );
+        // Score every legal response and keep the results for selectBestMove,
+        // which would otherwise repeat the same work.
+        const scored = candidates.map(m =>
+            BotLogic.scoreResponseMove(m, hand, ctx, gamePhase, trickValue, captureReasoning));
+        scored.sort((a, b) => b.score - a.score);
+        ctx._scoredResponses = scored;
+        ctx._trickValue = trickValue;
 
-        // "Don't Waste the 2s" - The "Price" of a trick
-        if (lastPlayedHand.type === HAND_TYPES.SINGLE) {
-            const lowestBeater = bestCandidate.cards[0];
-            const lastRank = lastPlayedHand.cards[0].rank;
-            const beaterRank = lowestBeater.rank;
+        const best = scored[0];
 
-            // "If an opponent plays a 9, and your only higher single is a 2, PASS."
-            // Rule: Opponent played < 10 (3-9), and we need a 2.
-            const isLowCard = ['3','4','5','6','7','8','9'].includes(lastRank);
+        // Down to a handful of cards, sitting out a trick is usually worse than
+        // any card it saves - we need the tempo to go out.
+        if (hand.length <= 4 || gamePhase === 'late') return result(false);
 
-            if (isLowCard && beaterRank === '2') {
-                // Check if we have multiple 2s. If we have spare, maybe okay.
-                // But heuristic says "Trading a 2 for a 9 is a terrible trade."
-                const twosInHand = hand.filter(c => c.rank === '2').length;
-                if (twosInHand < 2 && hand.length > 3) {
-                     if (factors) factors.push(`Price Rule: Don't waste last 2 on a ${lastRank}`);
-                     return result(true, "Price of trick too high (wasting 2)");
-                }
+        // A small negative band rather than zero, so the bot does not become
+        // passive over marginal trades. A patient bot demands a better price.
+        const PASS_THRESHOLD = -12 * (ctx.profile ? ctx.profile.patience : 1);
+        if (best.score < PASS_THRESHOLD) {
+            const cheapest = best.move.cards.map(c => `${c.rank}${c.suit}`).join(' ');
+            if (factors) {
+                factors.push({
+                    factor: `Cheapest response (${cheapest}) costs more than the trick is worth`,
+                    points: Math.round(best.score)
+                });
             }
-
-            // Similar logic for Aces if beating very low cards?
-            // "You need that 2 to beat an Ace or King later."
-        }
-
-        // "Save the 2 of Spades"
-        // "Never play it unless guaranteeing a win... or must stop opponent"
-        if (bestCandidate.cards.some(c => c.rank === '2' && c.suit === 'S')) {
-            // Check if "Must stop opponent"
-            const minOpponentCards = Math.min(...playerCardCounts);
-            const isEmergency = minOpponentCards <= 3;
-            const isWin = hand.length === bestCandidate.cards.length;
-
-            if (!isEmergency && !isWin) {
-                // Try to find a move that doesn't use 2S
-                const noTwoSMove = candidates.find(m => !m.cards.some(c => c.rank === '2' && c.suit === 'S'));
-                if (!noTwoSMove) {
-                    // Only have 2S. Pass.
-                    if (factors) factors.push('Save the 2 of Spades (Nuclear Option)');
-                    return result(true, "Saving 2 of Spades");
-                }
-            }
-        }
-
-        // Defensive: "Freeze the Winner" logic in passing?
-        // No, passing is passive. Freezing is active (playing high).
-
-        // --- PRIORITY 2: Strategic Yielding ---
-        // "Don't win every trick, win the right ones"
-        // Yield control if opponent played high card and we have weak follow-up
-
-        const bestResponse = candidates.reduce((best, curr) =>
-            curr.value < best.value ? curr : best
-        );
-
-        // Check if opponent played a high card
-        const opponentPlayedHigh =
-            lastPlayedHand.cards[0].rank === '2' ||
-            lastPlayedHand.cards[0].rank === 'A' ||
-            FIVE_CARD_PRIORITY[lastPlayedHand.type];
-
-        // Check if we'd respond with mid-tier card (7-Q)
-        const weHaveMidTier =
-            bestResponse.type === HAND_TYPES.SINGLE &&
-            ['7','8','9','10','J','Q'].includes(bestResponse.cards[0].rank);
-
-        // Evaluate follow-up strength
-        const hasWeakFollowUp = !BotLogic.hasStrongFollowUp(ctx.handOrganization, hand);
-
-        // Strategic yield: Let opponent burn their high card
-        if (opponentPlayedHigh && weHaveMidTier && hasWeakFollowUp && hand.length > 5) {
-            if (factors) factors.push('Strategic Yield: Let opponent burn high card');
-            return result(true, "Yielding control - opponent played high, we have weak follow-up");
+            return result(true, `Price of the trick too high (best response scores ${Math.round(best.score)})`);
         }
 
         return result(false);
     },
 
     /**
-     * Analyze hand composition to determine strategic strengths
-     * Returns an object describing what hand types we're strong/weak in
+     * Choose among the top-scoring moves.
+     *
+     * With no profile this is a plain argmax, so tests and the benchmark stay
+     * deterministic. Given a profile it samples from moves within a small
+     * window of the best, which is what stops four bots at one table playing
+     * like one bot.
      */
-    analyzeHandComposition: (hand) => {
-        // Reuse analyze logic or simplified version
-        const allMoves = BotLogic.getAllValidMoves(hand);
+    pickScoredMove: (scoredMoves, ctx) => {
+        const profile = ctx.profile;
+        if (!profile || !profile.variability) return scoredMoves[0];
 
-        const movesByType = {};
-        Object.values(HAND_TYPES).forEach(t => movesByType[t] = []);
+        const best = scoredMoves[0].score;
+        // Never gamble on a move that is meaningfully worse, and never on a
+        // forced or winning play.
+        if (best >= 1e6) return scoredMoves[0];
 
-        allMoves.forEach(m => {
-            if (movesByType[m.type]) {
-                movesByType[m.type].push(m);
-            }
-        });
+        const window = 30 * profile.variability;
+        const pool = scoredMoves.filter(sm => best - sm.score <= window);
+        if (pool.length <= 1) return scoredMoves[0];
 
-        return {
-            movesByType,
-            totalMoves: allMoves.length
-        };
+        const temperature = Math.max(1, window / 2);
+        const weights = pool.map(sm => Math.exp((sm.score - best) / temperature));
+        const total = weights.reduce((a, b) => a + b, 0);
+        const rng = ctx.rng || Math.random;
+
+        let r = rng() * total;
+        for (let i = 0; i < pool.length; i++) {
+            r -= weights[i];
+            if (r <= 0) return pool[i];
+        }
+        return pool[0];
     },
 
     /**
-     * Select the best move using strategic considerations
-     * Implements "Play Low, or Play Long" and "Freeze the Winner"
-     * Enhanced with Game Phase Strategy, Anti-Hoarding, Lead Strength, and One-Trick Win Detection
+     * Select the best move using strategic considerations.
      */
     selectBestMove: (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}, captureReasoning = false) => {
-        const { playerCardCounts, handOrganization, passInference, allValidMoves } = ctx;
-        const nextPlayerCards = playerCardCounts[0];
-
-        // "Freeze the Winner" Check
-        const nextPlayerLow = nextPlayerCards < 5;
-
-        // Define common variables for heuristics
-        const minOpponentCards = Math.min(...playerCardCounts);
-
-        // PHASE 1.1: Evaluate position advantage
-        const positionInfo = BotLogic.evaluatePositionAdvantage(ctx);
-
-        // PHASE 1.2: Get opponent weakness inference (default if not available)
-        const opponentWeakness = passInference || { opponentsLikelyWeak: false, confidence: 0 };
-
-        // --- PRIORITY 1: Determine Game Phase ---
         const gamePhase = BotLogic.getGamePhase(hand.length);
 
-        // --- PRIORITY 5: Check for One-Trick Win ---
+        const finish = (move, scoredMoves, primaryReason) => {
+            if (!captureReasoning) return move;
+            return { move, scoredMoves, primaryReason };
+        };
+
+        // Win outright if we can.
         const winCheck = BotLogic.canWinInOneTrick(hand, lastPlayedHand);
-        if (winCheck.canWin && captureReasoning) {
-            return {
-                move: winCheck.move,
-                scoredMoves: [{ move: winCheck.move, score: 999999, factors: [{ factor: 'ONE-TRICK WIN!', points: 999999 }] }],
-                primaryReason: 'Can win the entire game this turn!'
-            };
-        } else if (winCheck.canWin) {
-            return winCheck.move;
+        if (winCheck.canWin) {
+            return finish(
+                winCheck.move,
+                [{ move: winCheck.move, score: 1e6, factors: [{ factor: 'ONE-TRICK WIN!', points: 1e6 }] }],
+                'Can play every remaining card this turn'
+            );
         }
 
-        // PHASE 2.3: Use endgame solver for hands with ≤5 cards
+        // Emergency: the next player goes out unless we take this trick away.
+        // Worth overriding the cost model outright.
+        if (ctx.playerCardCounts[0] === 1) {
+            const multi = candidates.filter(m => m.type !== HAND_TYPES.SINGLE);
+            const pool = (!lastPlayedHand && multi.length) ? multi : candidates;
+            const pick = (!lastPlayedHand && multi.length)
+                ? pool.reduce((best, m) => (m.value < best.value ? m : best))   // cheapest shape they must beat
+                : pool.reduce((best, m) => (m.value > best.value ? m : best));  // highest card available
+            return finish(
+                pick,
+                [{ move: pick, score: 5e4, factors: [{ factor: 'EMERGENCY: next player has 1 card', points: 5e4 }] }],
+                'Next player has one card - blocking'
+            );
+        }
+
+        // Endgame solver takes over once the hand is small enough to read out.
         if (hand.length <= 5) {
-            const endgameSolution = BotLogic.solveEndgame(hand, lastPlayedHand, ctx);
-            if (endgameSolution) {
-                if (captureReasoning) {
-                    const score = endgameSolution.guaranteedWin ? 999000 : 800;
-                    return {
-                        move: endgameSolution.move,
-                        scoredMoves: [{
-                            move: endgameSolution.move,
-                            score,
-                            factors: [{
-                                factor: endgameSolution.guaranteedWin ? 'ENDGAME SOLVER: Guaranteed Win!' : 'Endgame Solver: Optimal',
-                                points: score
-                            }]
-                        }],
-                        primaryReason: endgameSolution.reason || 'Endgame optimal play'
-                    };
-                }
-                return endgameSolution.move;
+            const endgame = BotLogic.solveEndgame(hand, lastPlayedHand, ctx);
+            if (endgame) {
+                const score = endgame.guaranteedWin ? 999000 : 800;
+                return finish(
+                    endgame.move,
+                    [{
+                        move: endgame.move,
+                        score,
+                        factors: [{ factor: endgame.guaranteedWin ? 'ENDGAME: forced win' : 'Endgame: optimal', points: score }]
+                    }],
+                    endgame.reason || 'Endgame optimal play'
+                );
             }
         }
 
-        // PHASE 3.2: Use multi-step planning for mid-game (6-10 cards, free play)
-        if (!lastPlayedHand && hand.length >= 6 && hand.length <= 10 && gamePhase === 'mid') {
-            const multiStepPlan = BotLogic.planMultiMoveSequence(hand, lastPlayedHand, 3, ctx);
-            if (multiStepPlan && multiStepPlan.winProbability > 0.7) {
-                // High win probability sequence found
-                const firstMove = multiStepPlan.sequence[0];
-                if (captureReasoning) {
-                    return {
-                        move: firstMove,
-                        scoredMoves: [{
-                            move: firstMove,
-                            score: 950,
-                            factors: [{
-                                factor: `Multi-Step Plan: ${multiStepPlan.winProbability.toFixed(0)}% win chance`,
-                                points: 950
-                            }]
-                        }],
-                        primaryReason: `3-move sequence with ${(multiStepPlan.winProbability * 100).toFixed(0)}% win probability`
-                    };
-                }
-                return firstMove;
-            }
-        }
-
-        // OPTIMIZATION: Pre-filter candidates if too many
-        // Scoring is expensive, so limit to top candidates by value
+        // Scoring is the expensive part, so cap how many candidates reach it.
+        // Keep both ends of the range: the cheapest moves for shedding and the
+        // strongest for forcing a pass.
         let candidatesToScore = candidates;
         if (candidates.length > 30) {
-            // Sort by value (lower = better for shedding)
             const sorted = [...candidates].sort((a, b) => a.value - b.value);
-
-            // Take top 15 lowest + top 15 highest (to cover both shed and force-pass strategies)
-            candidatesToScore = [
-                ...sorted.slice(0, 15),  // 15 lowest
-                ...sorted.slice(-15)     // 15 highest
-            ];
-
-            // Remove duplicates (in case of small candidate sets)
             const seen = new Set();
-            candidatesToScore = candidatesToScore.filter(m => {
+            candidatesToScore = [...sorted.slice(0, 15), ...sorted.slice(-15)].filter(m => {
                 const key = m.cards.map(c => `${c.rank}${c.suit}`).join(',');
                 if (seen.has(key)) return false;
                 seen.add(key);
@@ -1346,495 +1128,40 @@ const BotLogic = {
             });
         }
 
-        // Priority Scoring
-        const scoredMoves = candidatesToScore.map(move => {
-            let score = 0;
-            const factors = captureReasoning ? [] : null;
-            const isWin = move.cards.length === hand.length;
-
-            // Special Case: Next player has 1 card
-            if (playerCardCounts[0] === 1) {
-                // 1. Free Play Scenario
-                if (!lastPlayedHand) {
-                    // Priority 1: Play ANY Multi-card hand (Pair, Triple, 5-card)
-                    if (move.type !== HAND_TYPES.SINGLE) {
-                        // Massive score to ensure it beats any single
-                        // Base 50000.
-                        // Prefer lower multi-card hands? Or any?
-                        // User said "prioritize playing any multi-card hand".
-                        // Let's use standard shedding logic (inverted value) within this tier.
-                        score = 50000 + (100 - move.value);
-                        if (factors) factors.push({ factor: 'EMERGENCY: Play Multi-Card Hand (Free Play)', points: 50000 });
-                        return { move, score, factors };
-                    }
-
-                    // Priority 2: Play Highest Single (if no multi-card hand available/chosen)
-                    if (move.type === HAND_TYPES.SINGLE) {
-                        // Score lower than Multi-card (20000 range) but higher than normal
-                        // Value * 100 to prioritize rank
-                        score = 20000 + (move.value * 100);
-                        if (factors) factors.push({ factor: 'EMERGENCY: Play Highest Single (Free Play)', points: 20000 });
-                        return { move, score, factors };
-                    }
-                }
-
-                // 2. Responding to Single
-                else if (lastPlayedHand.type === HAND_TYPES.SINGLE && move.type === HAND_TYPES.SINGLE) {
-                    // MUST play Highest Single
-                    score = 20000 + (move.value * 100);
-                    if (factors) factors.push({ factor: 'EMERGENCY: Play Highest Single (Response)', points: 20000 });
-                    return { move, score, factors };
-                }
+        let scoredMoves;
+        if (lastPlayedHand) {
+            // shouldStrategicPass already scored these; reuse unless the
+            // candidate set was trimmed differently.
+            if (ctx._scoredResponses && ctx._scoredResponses.length === candidates.length) {
+                scoredMoves = ctx._scoredResponses;
+            } else {
+                const trickValue = ctx._trickValue != null
+                    ? ctx._trickValue
+                    : BotLogic.evaluateTrickValue(hand, ctx, gamePhase);
+                scoredMoves = candidatesToScore.map(m =>
+                    BotLogic.scoreResponseMove(m, hand, ctx, gamePhase, trickValue, captureReasoning));
+                scoredMoves.sort((a, b) => b.score - a.score);
             }
+        } else {
+            scoredMoves = candidatesToScore.map(m =>
+                BotLogic.scoreLeadMove(m, hand, ctx, gamePhase, captureReasoning));
+            scoredMoves.sort((a, b) => b.score - a.score);
+        }
 
-            // Base score: prefer lower value (standard shedding)
-            // Invert value so lower = higher score
-            // Max value is around 60 (Straight Flush A-2-3-4-5).
-            score += (100 - move.value);
-
-            // PHASE 1.1: Apply position advantage
-            if (positionInfo.isLastToAct && lastPlayedHand) {
-                // Being last to act is powerful - be more aggressive
-                score += positionInfo.positionAdvantage;
-                if (factors) factors.push({ factor: 'Last to Act - Aggressive Play', points: positionInfo.positionAdvantage });
-
-                // Can play slightly higher cards more confidently
-                if (move.type === HAND_TYPES.SINGLE && move.cards[0].rank !== '2') {
-                    score += 30;
-                    if (factors) factors.push({ factor: 'Position Confidence Boost', points: 30 });
-                }
-            } else if (positionInfo.positionAdvantage !== 0) {
-                // Apply general position modifier
-                score += positionInfo.positionAdvantage;
-                const posLabel = positionInfo.positionAdvantage > 0 ? 'Good Position' : 'Weak Position';
-                if (factors) factors.push({ factor: posLabel, points: positionInfo.positionAdvantage });
-            }
-
-            // PHASE 1.3: Calculate and apply flexibility scoring
-            if (allValidMoves && !lastPlayedHand && gamePhase === 'early') {
-                // On free plays in early game, prefer playing rigid cards (low flexibility)
-                const flexibility = BotLogic.calculateCardFlexibility(move.cards, hand, allValidMoves);
-
-                // Lower flexibility = better (play rigid cards first)
-                // Flexibility typically ranges from 1 (only in 1 combo) to 20+ (in many combos)
-                const flexibilityPenalty = Math.min(50, flexibility * 5);
-                score -= flexibilityPenalty;
-                if (factors) factors.push({ factor: `Flexibility (${flexibility.toFixed(1)})`, points: -flexibilityPenalty });
-            }
-
-            // PHASE 2.2: Evaluate follow-up strength (2-move lookahead)
-            if (!lastPlayedHand && hand.length > 5 && !isWin) {
-                // On free plays with more than 5 cards, consider follow-up strength
-                const followUp = BotLogic.evaluateFollowUp(move, hand, handOrganization);
-
-                // Bonus for good follow-up positions
-                const followUpBonus = Math.min(100, followUp.followUpScore / 3);
-                score += followUpBonus;
-                if (factors) factors.push({ factor: `Follow-Up Strength`, points: followUpBonus });
-
-                // Big bonus if this leads to likely win
-                if (followUp.canLikelyWin) {
-                    score += 120;
-                    if (factors) factors.push({ factor: 'Path to Victory', points: 120 });
-                }
-
-                // Penalty if this leaves us with very few options
-                if (followUp.followUpMoves < 3 && hand.length > 7) {
-                    score -= 80;
-                    if (factors) factors.push({ factor: 'Weak Follow-Up Options', points: -80 });
-                }
-            }
-
-            // PHASE 3.1: Add Expected Value component
-            // Calculate EV for critical decisions (late game or close matches)
-            if (gamePhase === 'late' || (gamePhase === 'mid' && hand.length <= 8)) {
-                const ev = BotLogic.calculateExpectedValue(move, hand, lastPlayedHand, ctx);
-                const evBonus = Math.floor(ev / 5); // Scale down to fit with other scoring
-                score += evBonus;
-                if (factors) factors.push({ factor: `Expected Value`, points: evBonus });
-            }
-
-            // PHASE 3.3: Monte Carlo sampling for uncertain positions (optional, expensive)
-            // Only use on free plays in mid-game when decision is unclear
-            if (!lastPlayedHand && gamePhase === 'mid' && hand.length >= 7 && hand.length <= 9) {
-                // Only run MC for top candidates to save time
-                // This would be determined by existing score at this point
-                if (score > 200 || isWin) { // Promising candidate
-                    // Run minimal simulations (20 for speed)
-                    const mcResult = BotLogic.monteCarloSimulation(move, hand, ctx, 20);
-                    const mcBonus = Math.floor(mcResult.winRate * 150);
-                    score += mcBonus;
-                    if (factors) factors.push({ factor: `Monte Carlo (${(mcResult.winRate * 100).toFixed(0)}% win)`, points: mcBonus });
-                }
-            }
-
-            // --- PRIORITY 1: Game Phase Strategy ---
-            if (gamePhase === 'early') {
-                // Early game: Shed trash, avoid using control cards
-                if (move.type === HAND_TYPES.SINGLE && ['3','4','5','6'].includes(move.cards[0].rank)) {
-                    score += 100;
-                    if (factors) factors.push({ factor: 'Early Game: Dump Trash', points: 100 });
-                }
-
-                // Avoid fights - don't use control cards (A, 2) unless winning
-                // Check all cards in the move, not just the first
-                const hasTwos = move.cards.some(c => c.rank === '2');
-                const hasAces = move.cards.some(c => c.rank === 'A');
-
-                if (hasTwos && !isWin) {
-                    // Extra penalty for using 2s in early game
-                    const numTwos = move.cards.filter(c => c.rank === '2').length;
-                    const penalty = -150 * numTwos;
-                    score += penalty;
-                    if (factors) factors.push({
-                        factor: `Early Game: Save 2s (${numTwos}x)`,
-                        points: penalty
-                    });
-                }
-
-                if (hasAces && !isWin && !hasTwos) {
-                    // Moderate penalty for using Aces in early game (if not already penalized for 2s)
-                    score -= 100;
-                    if (factors) factors.push({ factor: 'Early Game: Save Aces', points: -100 });
-                }
-            }
-
-            if (gamePhase === 'mid') {
-                // Mid-game: Assert control if we have dominance
-                if (BotLogic.hasStrongFollowUp(handOrganization, hand)) {
-                    if (!lastPlayedHand) {
-                        score += 80;
-                        if (factors) factors.push({ factor: 'Mid-Game: Assert Control', points: 80 });
-                    }
-                }
-
-                // --- PRIORITY 3: Anti-Hoarding Logic ---
-                // Shed high singles to avoid hoarding
-                if (move.type === HAND_TYPES.SINGLE && ['K', 'A'].includes(move.cards[0].rank)) {
-                    score += 60;
-                    if (factors) factors.push({ factor: 'Mid-Game: Shed High Singles (Anti-Hoard)', points: 60 });
-                }
-
-                // Reduce protection of high pairs in mid-game
-                if (move.type === HAND_TYPES.PAIR && ['K', 'A'].includes(move.cards[0].rank)) {
-                    score += 40;
-                    if (factors) factors.push({ factor: 'Mid-Game: Play High Pairs (Anti-Hoard)', points: 40 });
-                }
-            }
-
-            if (gamePhase === 'late') {
-                // Late game: Maximum aggression - prevent opponents from going out
-                // Calculate if we can empty hand in sequence
-                if (hand.length <= 5) {
-                    // Bonus for any move that reduces hand size
-                    score += 100;
-                    if (factors) factors.push({ factor: 'Late Game: Aggressive Shedding', points: 100 });
-                }
-            }
-
-            // --- Leading Strategy (Free Play) ---
-            if (!lastPlayedHand) {
-                // PHASE 1.2: If opponents are weak in singles, aggressively lead with singles
-                if (opponentWeakness.opponentsWeakInSingles && move.type === HAND_TYPES.SINGLE) {
-                    const bonus = Math.floor(opponentWeakness.confidence * 100);
-                    score += bonus;
-                    if (factors) factors.push({ factor: 'Opponents Weak in Singles - Exploit', points: bonus });
-                }
-
-                // PHASE 1.2: If opponents weak in pairs, lead with pairs
-                if (opponentWeakness.opponentsWeakInPairs && move.type === HAND_TYPES.PAIR) {
-                    const bonus = Math.floor(opponentWeakness.confidence * 80);
-                    score += bonus;
-                    if (factors) factors.push({ factor: 'Opponents Weak in Pairs - Exploit', points: bonus });
-                }
-
-                // PHASE 1.2: If opponents weak in 5-cards, prefer other plays
-                if (opponentWeakness.opponentsWeakInFiveCards && FIVE_CARD_PRIORITY[move.type]) {
-                    score -= 60;
-                    if (factors) factors.push({ factor: 'Save 5-Card - Opponents Weak', points: -60 });
-                }
-
-                // --- PRIORITY 4: Lead Strength Evaluation ---
-                // Only take lead if we have strong follow-up (except in late game)
-                // PHASE 1.2: But if opponents are likely weak, we can lead more freely
-                if (gamePhase !== 'late' && !BotLogic.hasStrongFollowUp(handOrganization, hand)) {
-                    // We have weak follow-up, penalize taking lead
-                    // But reduce penalty if opponents are weak
-                    const penalty = opponentWeakness.opponentsLikelyWeak
-                        ? -60 // Reduced penalty
-                        : -120; // Normal penalty
-                    score += penalty;
-                    const label = opponentWeakness.opponentsLikelyWeak
-                        ? 'Weak Follow-Up (Reduced - Opponents Weak)'
-                        : 'Weak Follow-Up: Avoid Leading';
-                    if (factors) factors.push({ factor: label, points: penalty });
-                }
-
-                // Priority A: 5-Card Hands
-                if (FIVE_CARD_PRIORITY[move.type]) {
-                    score += 200; // Big bonus
-                    if (factors) factors.push({ factor: 'Priority A: 5-Card Hand', points: 200 });
-
-                    // Check if this specific move is in our "Organized" plan
-                    const isOrganized = handOrganization.fiveCardHands.some(h =>
-                        h.type === move.type && h.value === move.value
-                    );
-                    if (isOrganized) {
-                        score += 50; // Stick to plan
-                        if (factors) factors.push({ factor: 'Follows Hand Organization', points: 50 });
-                    }
-                }
-
-                // Priority B: Low Pairs/Triples
-                else if (move.type === HAND_TYPES.PAIR || move.type === HAND_TYPES.TRIPLE) {
-                    score += 100;
-                    if (factors) factors.push({ factor: 'Priority B: Pair/Triple', points: 100 });
-
-                    // Prefer low ones
-                    if (move.value < 20) {
-                        score += 20;
-                        if (factors) factors.push({ factor: 'Low Pair/Triple', points: 20 });
-                    }
-                }
-
-                // Priority C: Low Singles
-                else if (move.type === HAND_TYPES.SINGLE) {
-                    // "Dump the trash first" (Singles 3-6)
-                    if (['3','4','5','6'].includes(move.cards[0].rank)) {
-                        score += 80;
-                        if (factors) factors.push({ factor: 'Priority C: Trash Single', points: 80 });
-                    }
-                }
-
-                // Exception: "Running the Board" - High cards
-                // If next player is low, we SHOULD play high (Defensive Heuristic overrides Leading Strategy)
-                if (nextPlayerLow) {
-                     // "Play High immediately. Do not play a low single..."
-                     if (move.type === HAND_TYPES.SINGLE) {
-                         if (move.value < 40) { // < King
-                             score -= 200; // Penalize low singles
-                             if (factors) factors.push({ factor: 'Freeze: Avoid Low Single', points: -200 });
-                         } else {
-                             score += 150; // Boost high singles
-                             if (factors) factors.push({ factor: 'Freeze: Play High Single', points: 150 });
-                         }
-                     }
-                     // Prefer Pairs/5-cards to force pass
-                     if (move.type !== HAND_TYPES.SINGLE) {
-                         score += 50;
-                     }
-                }
-            }
-
-            // --- Beating Strategy ---
-            else {
-                // "Freeze the Winner" Overrides
-                if (nextPlayerLow) {
-                    // "Do not play a low single... They likely have a single junk card"
-                    if (move.type === HAND_TYPES.SINGLE && move.value < 40) { // < King
-                         score -= 200;
-                         if (factors) factors.push({ factor: 'Freeze: Avoid Low Single', points: -200 });
-                    }
-
-                    // "Force the Pass. Play a high card..."
-                    if (move.cards[0].rank === 'K' || move.cards[0].rank === 'A') {
-                        score += 100;
-                        if (factors) factors.push({ factor: 'Freeze: Force Pass with High Card', points: 100 });
-                    }
-                }
-
-                // "Mid-Range" Rule: If Jack, play Queen/King ("cheap" shedding)
-                // Naturally handled by "lowest winning card" logic, but let's boost "cheap" wins
-                const valueGap = move.value - lastPlayedHand.value;
-                if (valueGap < 4) { // Very close value
-                    score += 20;
-                    if (factors) factors.push({ factor: 'Cheap Shedding (Mid-Range)', points: 20 });
-                }
-            }
-
-            // --- General Heuristics ---
-
-            // Penalize breaking 5-card hands from organization
-            // If this move uses a card that belongs to an organized 5-card hand, and this move is NOT that hand
-            const usesReservedCard = move.cards.some(c =>
-                handOrganization.fiveCardHands.some(h =>
-                    h.cards.some(hc => hc.rank === c.rank && hc.suit === c.suit)
-                )
-            );
-
-            // But only if we are not playing that 5-card hand right now
-            const isTheFiveCardHand = handOrganization.fiveCardHands.some(h =>
-                h.type === move.type && h.value === move.value
-            );
-
-            if (usesReservedCard && !isTheFiveCardHand) {
-                // Breaking a flush/straight/etc.
-                score -= 150;
-                if (factors) factors.push({ factor: 'Breaks Organized Hand', points: -150 });
-            }
-
-            // Rule 3: Top-Heavy Pair Protection
-            // Don't break pairs of A, K, Q to beat a single card
-            // BUT: Anti-hoarding overrides this in mid-game
-            if (move.type === HAND_TYPES.SINGLE && !isWin) {
-                const rank = move.cards[0].rank;
-                if (['A', 'K', 'Q'].includes(rank)) {
-                    // Check if this card comes from an organized Pair
-                    const isFromPair = handOrganization.pairs.some(p =>
-                        p.cards.some(pc => pc.rank === rank && pc.suit === move.cards[0].suit)
-                    );
-
-                    if (isFromPair) {
-                        // In mid-game, reduce penalty (anti-hoarding)
-                        const penalty = gamePhase === 'mid' ? -50 : -100;
-                        score += penalty;
-                        if (factors) factors.push({
-                            factor: gamePhase === 'mid' ? 'Break High Pair (Reduced - Mid Game)' : 'Break High Pair Protection',
-                            points: penalty
-                        });
-                    }
-                }
-            }
-
-            // Rule 4: The "2" Breaker Rule
-            // Only split a pair of 2s if desperate
-            if (move.type === HAND_TYPES.SINGLE && move.cards[0].rank === '2') {
-                const isFromPairOfTwos = handOrganization.pairs.some(p => p.rank === '2');
-
-                if (isFromPairOfTwos) {
-                    // Check if desperate:
-                    // 1. We are winning (handled by isWin check in 'score' bonuses?) -> Actually need explicit check here
-                    // 2. Next player low on cards (Danger mode) -> maybe valid then?
-                    // Rule says "regain control right now to play a 5-card hand or end the game"
-
-                    const isDesperate = isWin || (nextPlayerLow && minOpponentCards <= 2);
-
-                    if (!isDesperate) {
-                        score -= 300; // Major penalty for breaking Pair of 2s unnecessarily
-                        if (factors) factors.push({ factor: 'Break Pair of 2s (Not Desperate)', points: -300 });
-                    }
-                }
-            }
-
-            // Rule 4.5: Avoid Playing Triple 2s and Breaking Quads
-            if (move.type === HAND_TYPES.TRIPLE && move.cards[0].rank === '2' && !isWin) {
-                // Count how many 2s we have in total
-                const totalTwos = hand.filter(c => c.rank === '2').length;
-
-                if (totalTwos === 4) {
-                    // Breaking quad 2s to play triple 2s is extremely wasteful!
-                    // Quads are nearly unbeatable, triple 2s can be beaten by other triples with higher suit
-                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
-
-                    if (!isDesperate) {
-                        score -= 500; // Massive penalty - similar to wasting 2S
-                        if (factors) factors.push({
-                            factor: 'Breaking Quad 2s (Save for Quads!)',
-                            points: -500
-                        });
-                    }
-                } else if (totalTwos === 3) {
-                    // Playing triple 2s in early/mid game when not desperate
-                    const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
-
-                    if (!isDesperate && gamePhase !== 'late') {
-                        score -= 200; // Significant penalty
-                        if (factors) factors.push({
-                            factor: 'Playing Triple 2s (Early/Mid Game)',
-                            points: -200
-                        });
-                    }
-                }
-            }
-
-            // Rule 5: Avoid Wasting 2s in Full Houses
-            // Full houses should use lower cards when possible
-            if (move.type === HAND_TYPES.FULL_HOUSE && !isWin) {
-                const twosInMove = move.cards.filter(c => c.rank === '2');
-
-                if (twosInMove.length > 0) {
-                    // Determine if 2s are in the triple or pair part
-                    // In a full house, the middle card (index 2) is always part of the triple
-                    const sortedMove = [...move.cards].sort((a, b) => {
-                        const aVal = RANKS.indexOf(a.rank) * 4 + SUITS.indexOf(a.suit);
-                        const bVal = RANKS.indexOf(b.rank) * 4 + SUITS.indexOf(b.suit);
-                        return aVal - bVal;
-                    });
-                    const tripleRank = sortedMove[2].rank;
-
-                    // Check if 2s are in the pair (not triple)
-                    const twosInPair = twosInMove.filter(c => c.rank !== tripleRank);
-
-                    if (twosInPair.length > 0) {
-                        // Using 2s as a pair in full house is wasteful
-                        // Only acceptable in desperate situations
-                        const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
-
-                        if (!isDesperate) {
-                            // Massive penalty - this is almost as bad as breaking pair of 2s
-                            const penalty = twosInPair.length === 2 ? -400 : -250;
-                            score += penalty;
-                            if (factors) factors.push({
-                                factor: `Wasting ${twosInPair.length} 2(s) in Full House Pair`,
-                                points: penalty
-                            });
-                        }
-                    } else if (tripleRank === '2') {
-                        // Using triple 2s in full house - less problematic but still not ideal
-                        // Only penalize if not desperate
-                        const isDesperate = nextPlayerLow || ctx.playerCardCounts.some(c => c <= 2);
-                        if (!isDesperate && gamePhase !== 'late') {
-                            score -= 100;
-                            if (factors) factors.push({
-                                factor: 'Using Triple 2s in Full House (Questionable)',
-                                points: -100
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Note: Straights with 2s (A-2-3-4-5 and 2-3-4-5-6) are the HIGHEST straights
-            // and should be played strategically - no blanket penalty needed
-
-            // Note: Flushes with 2s are the HIGHEST flushes of that suit
-            // (2 is the highest rank in Big 2, so any flush containing a 2 is automatically
-            // the strongest possible flush in that suit)
-            // Early game penalty already discourages using 2s in flushes during early game
-
-            // Save 2 of Spades (Nuclear Option) - unless winning
-            if (move.cards.some(c => c.rank === '2' && c.suit === 'S') && !isWin) {
-                // Only use if "must stop opponent"
-                if (nextPlayerLow || ctx.playerCardCounts.some(c => c <= 3)) {
-                    // OK to use
-                } else {
-                    score -= 500; // Big penalty
-                    if (factors) factors.push({ factor: 'Save 2S', points: -500 });
-                }
-            }
-
-            return { move, score, factors };
-        });
-
-        // Sort by score
-        scoredMoves.sort((a, b) => b.score - a.score);
+        const chosen = BotLogic.pickScoredMove(scoredMoves, ctx);
 
         if (captureReasoning) {
             let primaryReason = 'Best score';
-            if (scoredMoves[0].factors && scoredMoves[0].factors.length > 0) {
-                 // Find max absolute point factor
-                 primaryReason = scoredMoves[0].factors.reduce((prev, curr) =>
-                     Math.abs(curr.points) > Math.abs(prev.points) ? curr : prev
-                 ).factor;
+            const chosenEntry = scoredMoves.find(sm => sm.move === chosen.move) || scoredMoves[0];
+            if (chosenEntry.factors && chosenEntry.factors.length > 0) {
+                primaryReason = chosenEntry.factors.reduce((prev, curr) =>
+                    Math.abs(curr.points) > Math.abs(prev.points) ? curr : prev
+                ).factor;
             }
-            return {
-                move: scoredMoves[0].move,
-                scoredMoves,
-                primaryReason
-            };
+            return { move: chosen.move, scoredMoves, primaryReason };
         }
 
-        return scoredMoves[0].move;
+        return chosen.move;
     },
 
     /**
@@ -1913,7 +1240,132 @@ const BotLogic = {
             passHistory: [], // What they passed on
             playHistory: [], // What they played
             aggressionScore: 0.5, // 0=passive, 1=aggressive
-            lastAction: null
+            lastAction: null,
+            // Rank index of the lowest single they declined to beat. Bounds what
+            // they can answer - unless they have shown they pass strategically.
+            minSinglePassed: null,
+            maxSinglePlayed: -1,
+            strategicPasser: false
+        };
+    },
+
+    /**
+     * Replay a round's play history into one model per opponent.
+     * @param {Array} playHistory - [{ relative: 1|2|3, action, hand }]
+     * @param {Array} playerCardCounts - [next, across, previous]
+     * @param {Array} myHand - our cards
+     * @param {Array} playedCards - all cards played this round
+     * @returns {Array} three models, indexed 0=next, 1=across, 2=previous
+     */
+    buildOpponentModels: (playHistory, playerCardCounts, myHand, playedCards) => {
+        const models = [0, 1, 2].map(i => BotLogic.createOpponentModel(i, playerCardCounts[i]));
+
+        for (const entry of playHistory || []) {
+            const idx = entry.relative - 1;
+            if (idx < 0 || idx > 2 || !entry.hand) continue;
+            BotLogic.updateOpponentModel(models[idx], entry.action, entry.hand, myHand, playedCards);
+        }
+
+        return models;
+    },
+
+    /**
+     * Read opponent weaknesses out of their models.
+     *
+     * A player who declined to beat a 9 cannot hold a higher single they were
+     * willing to spend. That read is only trustworthy until they show they are
+     * capable of passing on a card they could have beaten - after that we stop
+     * believing their passes, the same way a human would.
+     */
+    inferFromHistory: (opponentModels) => {
+        const inference = {
+            opponentsLikelyWeak: false,
+            opponentsWeakInSingles: false,
+            opponentsWeakInPairs: false,
+            opponentsWeakInFiveCards: false,
+            confidence: 0,
+            singlesCeiling: null   // rank index nobody credibly beats
+        };
+
+        if (!opponentModels || !opponentModels.length) return inference;
+
+        let singlesPassers = 0, pairPassers = 0, fivePassers = 0, trusted = 0;
+        let ceiling = null;
+
+        for (const model of opponentModels) {
+            if (model.cardCount === 0) continue;
+
+            if (model.minSinglePassed !== null && !model.strategicPasser) {
+                trusted++;
+                if (model.minSinglePassed < 9) singlesPassers++;
+                ceiling = ceiling === null ? model.minSinglePassed : Math.max(ceiling, model.minSinglePassed);
+            }
+            if (model.passHistory.some(h => h.type === HAND_TYPES.PAIR)) pairPassers++;
+            if (model.passHistory.some(h => FIVE_CARD_PRIORITY[h.type])) fivePassers++;
+        }
+
+        // Only a ceiling every live opponent has demonstrated is worth acting on.
+        const liveOpponents = opponentModels.filter(m => m.cardCount > 0).length;
+        if (trusted >= liveOpponents && liveOpponents > 0 && ceiling !== null) {
+            inference.singlesCeiling = ceiling;
+        }
+
+        if (singlesPassers >= 2) {
+            inference.opponentsWeakInSingles = true;
+            inference.opponentsLikelyWeak = true;
+            inference.confidence = Math.max(inference.confidence, singlesPassers >= 3 ? 0.8 : 0.6);
+        } else if (singlesPassers === 1) {
+            inference.confidence = Math.max(inference.confidence, 0.3);
+        }
+
+        if (pairPassers >= 2) {
+            inference.opponentsWeakInPairs = true;
+            inference.opponentsLikelyWeak = true;
+            inference.confidence = Math.max(inference.confidence, 0.6);
+        }
+
+        if (fivePassers >= 2) {
+            inference.opponentsWeakInFiveCards = true;
+            inference.confidence = Math.max(inference.confidence, 0.7);
+        }
+
+        return inference;
+    },
+
+    /**
+     * Per-bot temperament, derived from the bot's name so a given bot behaves
+     * consistently within and across games while differing from its neighbours.
+     * @param {string} name
+     * @returns {Object} { variability, patience, aggression }
+     */
+    getBotProfile: (name) => {
+        const text = String(name || '');
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            hash = (Math.imul(hash, 31) + text.charCodeAt(i)) >>> 0;
+        }
+
+        // Avalanche (murmur3 finalizer). Bots are named "Bot 1".."Bot 4", which
+        // differ in a single low-order character; without mixing, that
+        // difference never reaches the upper bytes and every bot at the table
+        // ends up with the same temperament.
+        hash ^= hash >>> 16;
+        hash = Math.imul(hash, 0x85ebca6b);
+        hash ^= hash >>> 13;
+        hash = Math.imul(hash, 0xc2b2ae35);
+        hash ^= hash >>> 16;
+        hash >>>= 0;
+
+        const spread = (offset, min, max) =>
+            min + (((hash >>> offset) & 0xff) / 255) * (max - min);
+
+        return {
+            // How far below the best-scoring move this bot will wander.
+            variability: spread(0, 0.4, 1.3),
+            // Multiplies the price a trick has to clear before it will contest.
+            patience: spread(8, 0.8, 1.25),
+            // Multiplies how hard it pushes when an opponent is running low.
+            aggression: spread(16, 0.85, 1.2)
         };
     },
 
@@ -1934,6 +1386,11 @@ const BotLogic = {
             // Update probabilities based on what they passed on
             if (hand.type === HAND_TYPES.SINGLE) {
                 const rankIndex = RANKS.indexOf(hand.cards[0].rank);
+
+                // The lowest single they have declined bounds what they can beat.
+                model.minSinglePassed = model.minSinglePassed === null
+                    ? rankIndex
+                    : Math.min(model.minSinglePassed, rankIndex);
 
                 // They likely don't have higher singles
                 // Remove cards higher than what they passed on (with 70% confidence)
@@ -1973,6 +1430,16 @@ const BotLogic = {
 
             // Update based on what they played
             if (hand.cards) {
+                if (hand.type === HAND_TYPES.SINGLE) {
+                    const rankIndex = RANKS.indexOf(hand.cards[0].rank);
+                    model.maxSinglePlayed = Math.max(model.maxSinglePlayed, rankIndex);
+                    // They passed on something lower than a card they were
+                    // holding all along - their passes no longer bound them.
+                    if (model.minSinglePassed !== null && rankIndex > model.minSinglePassed) {
+                        model.strategicPasser = true;
+                    }
+                }
+
                 // Remove played cards from possible cards
                 hand.cards.forEach(card => {
                     const cardValue = RANKS.indexOf(card.rank) * 4 + SUITS.indexOf(card.suit);
@@ -1998,112 +1465,6 @@ const BotLogic = {
             // Playing is more aggressive
             model.aggressionScore = Math.min(1, model.aggressionScore + 0.05);
         }
-    },
-
-    /**
-     * PHASE 2.1: Estimate opponent hand strength based on model
-     * @param {Object} model - Opponent model
-     * @returns {string} - Strength assessment: 'very-weak', 'weak', 'medium', 'strong', 'very-strong'
-     */
-    estimateOpponentStrength: (model) => {
-        let strengthScore = 50; // Base 50/100
-
-        // Adjust based on card count
-        if (model.cardCount <= 3) {
-            strengthScore += 30; // Very dangerous with few cards
-        } else if (model.cardCount <= 6) {
-            strengthScore += 15;
-        } else if (model.cardCount >= 11) {
-            strengthScore -= 15; // Weak if many cards
-        }
-
-        // Adjust based on probabilities
-        if (model.likelyHas2s > 0.5) strengthScore += 20;
-        if (model.likelyHasFiveCardHands > 0.5) strengthScore += 15;
-        if (model.likelyHasPairs > 0.6) strengthScore += 10;
-
-        // Adjust based on pass history
-        const recentPasses = model.passHistory.slice(-3);
-        const passedOnLowCards = recentPasses.filter(h =>
-            h.type === HAND_TYPES.SINGLE && RANKS.indexOf(h.cards[0].rank) < 7
-        ).length;
-
-        if (passedOnLowCards >= 2) {
-            strengthScore -= 25; // Weak if passing on low cards
-        }
-
-        // Convert to assessment
-        if (strengthScore >= 80) return 'very-strong';
-        if (strengthScore >= 60) return 'strong';
-        if (strengthScore >= 40) return 'medium';
-        if (strengthScore >= 20) return 'weak';
-        return 'very-weak';
-    },
-
-    /**
-     * PHASE 3.1: Calculate Expected Value (EV) of a move
-     * @param {Object} move - The move to evaluate
-     * @param {Array} hand - Current hand
-     * @param {Object|null} lastPlayedHand - Hand to beat
-     * @param {Object} ctx - Game context
-     * @returns {number} - Expected value score
-     */
-    calculateExpectedValue: (move, hand, lastPlayedHand, ctx) => {
-        const { playerCardCounts, cardAnalysis, passInference } = ctx;
-
-        let ev = 0;
-
-        // Component 1: Immediate Card Value (shedding value)
-        // Lower cards = higher value to shed
-        const sheddingValue = move.cards.reduce((sum, card) => {
-            const rankIndex = RANKS.indexOf(card.rank);
-            return sum + (13 - rankIndex) * 5; // 3 = 50pts, 2 = 5pts
-        }, 0);
-        ev += sheddingValue;
-
-        // Component 2: Control Probability × Control Value
-        const controlProb = BotLogic.estimateControlProbability(move, hand, ctx);
-        const controlValue = BotLogic.calculateControlValue(hand, move, ctx);
-        ev += controlProb * controlValue;
-
-        // Component 3: Cost of Using High Cards
-        const cardCost = move.cards.reduce((sum, card) => {
-            let cost = 0;
-            if (card.rank === '2') cost = 100; // Very high cost
-            else if (card.rank === 'A') cost = 50;
-            else if (card.rank === 'K') cost = 30;
-            return sum + cost;
-        }, 0);
-
-        // Discount cost in late game (need to use them eventually)
-        const gamePhase = BotLogic.getGamePhase(hand.length);
-        const costMultiplier = gamePhase === 'late' ? 0.3 : gamePhase === 'mid' ? 0.7 : 1.0;
-        ev -= cardCost * costMultiplier;
-
-        // Component 4: Opponent Response Probability
-        // If opponents likely can't respond, increase EV
-        if (passInference && passInference.opponentsLikelyWeak) {
-            const opponentFailProb = passInference.confidence;
-            ev += opponentFailProb * 80;
-        }
-
-        // Component 5: Win Probability Boost
-        // Moves that lead to likely wins get huge EV boost
-        if (hand.length - move.cards.length <= 3) {
-            const followUp = BotLogic.evaluateFollowUp(move, hand, ctx.handOrganization);
-            if (followUp.canLikelyWin) {
-                ev += 500;
-            }
-        }
-
-        // Component 6: Position Value
-        const positionInfo = BotLogic.evaluatePositionAdvantage(ctx);
-        if (positionInfo.isLastToAct) {
-            // Being last to act increases EV (lower risk)
-            ev += 50;
-        }
-
-        return ev;
     },
 
     /**
@@ -2136,6 +1497,16 @@ const BotLogic = {
             probability += passInference.confidence * 0.2;
         }
 
+        // Factor 2b: A single above the ceiling every opponent has demonstrated
+        // is very likely to stand up. This is the payoff for tracking passes
+        // across trick boundaries.
+        if (move.type === HAND_TYPES.SINGLE && passInference && passInference.singlesCeiling !== null
+            && passInference.singlesCeiling !== undefined) {
+            if (RANKS.indexOf(move.cards[0].rank) > passInference.singlesCeiling) {
+                probability += 0.35;
+            }
+        }
+
         // Factor 3: Card counting
         // If we have the highest outstanding card, very likely to regain control
         if (cardAnalysis && cardAnalysis.weHaveHighest) {
@@ -2150,116 +1521,6 @@ const BotLogic = {
         }
 
         return Math.min(1.0, Math.max(0.0, probability));
-    },
-
-    /**
-     * PHASE 3.1: Calculate value of having control
-     * @param {Array} hand - Current hand
-     * @param {Object} move - Move being considered
-     * @param {Object} ctx - Game context
-     * @returns {number} - Value score
-     */
-    calculateControlValue: (hand, move, ctx) => {
-        const { handOrganization } = ctx;
-
-        // Simulate remaining hand
-        const remainingCards = hand.filter(card =>
-            !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit)
-        );
-
-        if (remainingCards.length === 0) {
-            return 1000; // Winning = maximum value
-        }
-
-        let value = 0;
-
-        // Value 1: Can we play strong 5-card hands?
-        // Note: organizeHand will call getAllValidMoves internally since we don't need moves elsewhere here
-        // We could optimize this too but it's less critical than the main loops
-        const remainingOrg = BotLogic.organizeHand(remainingCards);
-        value += remainingOrg.fiveCardHands.length * 150;
-
-        // Value 2: Can we dump trash?
-        value += remainingOrg.trash.length * 30;
-
-        // Value 3: Close to winning
-        if (remainingCards.length <= 5) {
-            value += 200;
-        }
-
-        // Value 4: Have control cards remaining
-        value += remainingOrg.control.length * 40;
-
-        return value;
-    },
-
-    /**
-     * PHASE 1.2: Infer opponent card probabilities based on pass history
-     * @param {Object} lastPlayedHand - The hand that was passed on
-     * @param {number} passCount - How many players passed
-     * @param {Array} hand - Our current hand
-     * @param {Array} playedCards - Cards already played
-     * @returns {Object} - Inference about opponent hands
-     */
-    inferFromPasses: (lastPlayedHand, passCount, hand, playedCards) => {
-        if (!lastPlayedHand || passCount === 0) {
-            return { opponentsLikelyWeak: false, confidence: 0 };
-        }
-
-        const inference = {
-            opponentsLikelyWeak: false,
-            opponentsWeakInSingles: false,
-            opponentsWeakInPairs: false,
-            opponentsWeakInFiveCards: false,
-            confidence: 0,
-            unlikelyOpponentCards: []
-        };
-
-        // If multiple players passed on a low/medium card, they're likely weak in that type
-        if (passCount >= 2) {
-            if (lastPlayedHand.type === HAND_TYPES.SINGLE) {
-                const rankIndex = RANKS.indexOf(lastPlayedHand.cards[0].rank);
-
-                // If they passed on a card below Queen (rankIndex < 9), they're weak in singles
-                if (rankIndex < 9) {
-                    inference.opponentsWeakInSingles = true;
-                    inference.opponentsLikelyWeak = true;
-                    inference.confidence = 0.7;
-
-                    // They likely don't have higher singles (but account for strategic passes)
-                    for (let r = rankIndex + 1; r < RANKS.length; r++) {
-                        for (let s = 0; s < 4; s++) {
-                            const card = { rank: RANKS[r], suit: SUITS[s] };
-                            // Don't add if it's in our hand or played
-                            const inOurHand = hand.some(c => c.rank === card.rank && c.suit === card.suit);
-                            const wasPlayed = playedCards.some(c => c.rank === card.rank && c.suit === card.suit);
-                            if (!inOurHand && !wasPlayed) {
-                                inference.unlikelyOpponentCards.push(card);
-                            }
-                        }
-                    }
-                }
-            } else if (lastPlayedHand.type === HAND_TYPES.PAIR) {
-                const rankIndex = RANKS.indexOf(lastPlayedHand.cards[0].rank);
-                if (rankIndex < 8) {
-                    inference.opponentsWeakInPairs = true;
-                    inference.opponentsLikelyWeak = true;
-                    inference.confidence = 0.6;
-                }
-            } else if ([HAND_TYPES.STRAIGHT, HAND_TYPES.FLUSH, HAND_TYPES.FULL_HOUSE].includes(lastPlayedHand.type)) {
-                // If multiple players passed on a 5-card hand, they likely don't have 5-card hands
-                inference.opponentsWeakInFiveCards = true;
-                inference.confidence = 0.8;
-            }
-        }
-
-        // If all 3 opponents passed, very high confidence they're weak
-        if (passCount === 3) {
-            inference.opponentsLikelyWeak = true;
-            inference.confidence = Math.min(1.0, inference.confidence + 0.2);
-        }
-
-        return inference;
     },
 
     // Helpers
