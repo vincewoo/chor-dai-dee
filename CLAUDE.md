@@ -83,22 +83,27 @@ VITE_SERVER_URL=http://localhost:3001 npm run dev -- --port 5174
 ```
 
 ### Using .env Files
-Instead of command-line variables, you can create `.env` files:
 
-**Instance 1** - `server/.env`:
-```
-PORT=3000
-```
+**Client only.** Vite loads `.env` natively, so this works:
 
-**Instance 2** - `server/.env`:
-```
-PORT=3001
-```
-
-**Instance 2** - `client/.env`:
+`client/.env`:
 ```
 VITE_SERVER_URL=http://localhost:3001
 ```
+
+**The server does not read `.env` files.** `dotenv` is not a dependency and
+nothing loads one, so a `server/.env` is silently ignored — `PORT=3001` in it
+will leave the server on 3000. Pass server variables inline or export them:
+
+```bash
+cd server/
+PORT=3001 node index.js
+# or
+export PORT=3001
+```
+
+In production these come from `fly.toml`'s `[env]` block (non-secret) or
+`fly secrets set` (secret), not from a file.
 
 ### Database Isolation
 Each instance uses its own SQLite database:
@@ -389,6 +394,23 @@ Unsetting it is the kill switch.
 - Dynamic API URL detection (production vs development)
 - Database path: `/data/database.sqlite` in production (Docker volume), `./database.sqlite` in dev
 - Hardcoded dev URLs: client expects server at `localhost:3000`, server accepts `localhost:5173`
+
+#### Server environment variables
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | `3000` | |
+| `NODE_ENV` | — | `production` switches DB path to `/data` and tightens CORS |
+| `CLIENT_URL` | — | Allowed CORS origin in production |
+| `GOOGLE_CLIENT_ID` | — | Google OAuth |
+| `GAMELOG_ENABLED` | off | Must be exactly `"1"`. Enabled in `fly.toml`. |
+| `GAMELOG_PATH` | `/data/gamelog.sqlite` prod, `server/gamelog.sqlite` dev | |
+| `GAMELOG_EXPORT_SECRET` | — | HMAC key for pseudonymizing user ids. Needed only to export, never to record. **Never rotate it** — doing so changes every `subject` and breaks joining a player across old and new shards. |
+| `GIT_SHA` | falls back to `FLY_MACHINE_VERSION` | Recorded as `server_build` on every logged game |
+
+Set non-secret values in `fly.toml`'s `[env]`; use `fly secrets set` for
+secrets. `GAMELOG_*` are read at process start, so changing them needs a deploy
+or `fly machine restart`.
 
 ### Game Implementation Details
 - Rooms are stored in-memory (lost on server restart)

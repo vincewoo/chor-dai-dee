@@ -13,6 +13,12 @@ primary_region = 'lax'
 [env]
   CLIENT_URL = "https://big2.onlyslop.dev"
   GOOGLE_CLIENT_ID = "677189818876-r0bt1l7qbi9n2v948jt4n35f21i0rh47.apps.googleusercontent.com"
+  # Records full game histories to /data/gamelog.sqlite for offline model
+  # training: the deal, the seating, and every action, for every game. There is
+  # no per-player opt-out. Read at process start, so changing it needs a deploy
+  # or a machine restart. Must be exactly "1" -- "true" leaves recording off.
+  # See docs/GAME-STATE-HISTORY-STORE.md.
+  GAMELOG_ENABLED = "1"
 
 [http_service]
   internal_port = 3000

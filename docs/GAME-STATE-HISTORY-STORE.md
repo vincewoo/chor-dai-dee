@@ -3,11 +3,15 @@
 Status: **implemented.** This document is the design; the code follows it. See
 [Implementation](#13-implementation) for the file map and how to run the tools.
 
-**Recording is off by default.** It requires `GAMELOG_ENABLED=1`, so enabling it
-is a config change rather than a deploy. There is deliberately **no per-player
-opt-out**, so before turning it on in production the disclosure in
-[§8](#8-privacy-and-retention) has to be in place — it is the only thing
-standing between the store and a player who did not expect it.
+**Recording is ON in production.** `GAMELOG_ENABLED = "1"` is set in
+`fly.toml`, so every game played on the live server is recorded from the next
+deploy onwards. There is deliberately **no per-player opt-out**, which means the
+disclosure in [§8](#8-privacy-and-retention) is the only thing standing between
+the store and a player who did not expect it — it needs to be published.
+
+To stop recording: remove that line from `fly.toml` and deploy, or
+`fly machine restart` after unsetting it. The flag is read at process start, not
+per game.
 
 ## Goal
 
@@ -879,9 +883,9 @@ disclosed before the first game is logged, not before the first export.
 
 | Variable | Meaning |
 |---|---|
-| `GAMELOG_ENABLED` | `1` to record. Absent means every write is a no-op. |
+| `GAMELOG_ENABLED` | Must be exactly `"1"` to record; anything else, including `"true"`, is a no-op. Set in `fly.toml`. |
 | `GAMELOG_PATH` | Override the database location. Defaults to `/data/gamelog.sqlite` in production. |
-| `GAMELOG_EXPORT_SECRET` | HMAC key for pseudonymizing user ids. Required to export; never needed to record. |
+| `GAMELOG_EXPORT_SECRET` | HMAC key for pseudonymizing user ids. Required to export, never to record, so it can be deferred until you first pull data. Set once via `fly secrets set` and never rotate it: changing it changes every `subject`, so a player can no longer be joined across old and new shards. |
 | `GIT_SHA` | Recorded as `server_build`. The authoritative record of what produced a game. |
 
 ### Running the tools
