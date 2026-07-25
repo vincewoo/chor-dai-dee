@@ -131,6 +131,15 @@ function initDb() {
             full_houses_played INTEGER DEFAULT 0,
             quads_played INTEGER DEFAULT 0,
             straight_flushes_played INTEGER DEFAULT 0,
+            -- Deal strength: how good the 13 cards were before anything was
+            -- played. Stored raw rather than only as a tier so the outcome
+            -- baseline can be recalibrated later without a backfill we could
+            -- not perform. NULL on rows written before the feature existed.
+            deal_strength_raw REAL,
+            deal_tier INTEGER,
+            deal_rank INTEGER,
+            deal_baseline_version INTEGER,
+            human_opponents INTEGER,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
@@ -378,7 +387,7 @@ function initDb() {
             }
         });
 
-        // Check if round_stats table needs leads_won column (migration for existing databases)
+        // Migrations for round_stats on existing databases
         db.all("PRAGMA table_info(round_stats)", (err, columns) => {
             if (err) {
                 console.error("Error checking round_stats schema", err);
@@ -386,17 +395,26 @@ function initDb() {
             }
 
             if (columns.length > 0) {
-                const hasLeadsWon = columns.some(c => c.name === 'leads_won');
-                if (!hasLeadsWon) {
-                    console.log("Adding leads_won column to round_stats table");
-                    db.run(`ALTER TABLE round_stats ADD COLUMN leads_won INTEGER DEFAULT 0`, (err) => {
-                        if (err && !err.message.includes('duplicate column')) {
-                            console.error("Error adding leads_won to round_stats:", err.message);
-                        } else {
-                            console.log("Successfully added leads_won column to round_stats");
-                        }
-                    });
-                }
+                const addColumn = (name, ddl) => {
+                    if (!columns.some(c => c.name === name)) {
+                        db.run(`ALTER TABLE round_stats ADD COLUMN ${ddl}`, (err) => {
+                            if (err && !err.message.includes('duplicate column')) {
+                                console.error(`Error adding ${name} to round_stats:`, err.message);
+                            } else {
+                                console.log(`Successfully added ${name} column to round_stats`);
+                            }
+                        });
+                    }
+                };
+                addColumn('leads_won', 'leads_won INTEGER DEFAULT 0');
+                // Deal-strength columns default to NULL, not 0: a pre-existing
+                // row has an *unknown* deal, and 0 is a real (average) score.
+                // Every deal-strength query filters on NOT NULL for this reason.
+                addColumn('deal_strength_raw', 'deal_strength_raw REAL');
+                addColumn('deal_tier', 'deal_tier INTEGER');
+                addColumn('deal_rank', 'deal_rank INTEGER');
+                addColumn('deal_baseline_version', 'deal_baseline_version INTEGER');
+                addColumn('human_opponents', 'human_opponents INTEGER');
             }
         });
 
@@ -783,8 +801,10 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             plays_count, passes_count, leads_won,
             singles_played, pairs_played, triples_played,
             straights_played, flushes_played, full_houses_played,
-            quads_played, straight_flushes_played
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            quads_played, straight_flushes_played,
+            deal_strength_raw, deal_tier, deal_rank,
+            deal_baseline_version, human_opponents
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
@@ -797,7 +817,14 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             roundData.handTypes.FLUSH || 0,
             roundData.handTypes.FULL_HOUSE || 0,
             roundData.handTypes.QUADS || 0,
-            roundData.handTypes.STRAIGHT_FLUSH || 0
+            roundData.handTypes.STRAIGHT_FLUSH || 0,
+            // Null rather than 0 when the deal was not scored: 0 is a real
+            // (average) raw score, so coercing would fabricate data.
+            roundData.dealStrength ? roundData.dealStrength.raw : null,
+            roundData.dealStrength ? roundData.dealStrength.tier : null,
+            roundData.dealStrength ? roundData.dealStrength.rank : null,
+            roundData.dealStrength ? roundData.dealStrength.baselineVersion : null,
+            roundData.dealStrength ? roundData.dealStrength.humanOpponents : null
         ];
 
         db.run(query, params, (err) => {
@@ -1424,6 +1451,60 @@ const getTier3Stats = (userId, gameMode) => {
     });
 };
 
+/**
+ * Raw material for the deal-strength stats: how the player actually did from
+ * each tier of starting hand, split by whether there were humans at the table.
+ *
+ * The split is not decoration. A round against three bots is a different test
+ * from a round against three humans, and bot rounds are the bulk of play - so
+ * they are reported alongside rather than folded together or thrown away.
+ *
+ * Rows predating the feature have NULL deal columns and are excluded outright;
+ * they are unknown deals, not average ones.
+ */
+const getDealStrengthStats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const byTierQuery = `
+            SELECT
+                deal_tier,
+                CASE WHEN human_opponents > 0 THEN 1 ELSE 0 END as vs_humans,
+                COUNT(*) as rounds,
+                SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END) as wins,
+                AVG(round_points) as avg_points,
+                AVG(deal_strength_raw) as avg_raw
+            FROM round_stats
+            WHERE user_id = ? AND game_mode = ? AND deal_tier IS NOT NULL
+            GROUP BY deal_tier, vs_humans
+        `;
+
+        // Rank-based highlights. A "steal" is winning the round holding the
+        // weakest deal at the table; a "squander" is finishing in the bottom
+        // half holding the best one.
+        const rankQuery = `
+            SELECT
+                CASE WHEN human_opponents > 0 THEN 1 ELSE 0 END as vs_humans,
+                COUNT(*) as rounds,
+                SUM(CASE WHEN deal_rank = 4 THEN 1 ELSE 0 END) as worst_deals,
+                SUM(CASE WHEN deal_rank = 4 AND placement = 1 THEN 1 ELSE 0 END) as steals,
+                SUM(CASE WHEN deal_rank = 1 THEN 1 ELSE 0 END) as best_deals,
+                SUM(CASE WHEN deal_rank = 1 AND placement >= 3 THEN 1 ELSE 0 END) as squanders,
+                AVG(deal_strength_raw) as avg_raw,
+                AVG(deal_rank) as avg_rank
+            FROM round_stats
+            WHERE user_id = ? AND game_mode = ? AND deal_tier IS NOT NULL
+            GROUP BY vs_humans
+        `;
+
+        const run = (query) => new Promise((res, rej) => {
+            db.all(query, [userId, gameMode], (err, rows) => err ? rej(err) : res(rows || []));
+        });
+
+        Promise.all([run(byTierQuery), run(rankQuery)])
+            .then(([byTier, byRank]) => resolve({ byTier, byRank }))
+            .catch(reject);
+    });
+};
+
 // ========== GAME HISTORY / ACTIVITY FEED FUNCTIONS ==========
 
 // Create or update game history entry
@@ -1936,6 +2017,7 @@ module.exports = {
     updateBehavioralStats,
     getBehavioralStats,
     getTier3Stats,
+    getDealStrengthStats,
     savePlacementHistory,
     getPlacementHistory,
     updateVarianceScores,

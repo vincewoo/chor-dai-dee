@@ -5,6 +5,7 @@ const { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN } = requ
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
+const { rankTable, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
 const { GameTape } = require('./GameTape');
 const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
@@ -34,6 +35,10 @@ class Room {
         this.gameMode = gameMode; // Game mode: 'short' or 'standard'
         this.pointThreshold = getPointThreshold(gameMode); // Point threshold for game over
         this.roundPlayStats = {}; // Track plays/passes per round for advanced stats
+        // Deal strength per player for the current round, keyed by player id.
+        // Server-side only while the round is live: `rank` is derived from all
+        // four hands and would leak opponents' holdings. See DealStrength.js.
+        this.roundDealStrength = {};
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`; // Unique game ID for round tracking
         this.turnNumber = 0; // Track turn number within each round for decision tracking
         this.tier3DecisionTracking = {}; // Track Tier 3 decision data per player
@@ -707,6 +712,12 @@ class Room {
             player.hand = Big2Rules.sortCards(player.hand);
         }
 
+        // Score the deal before anything is played. Deliberately ahead of the
+        // dragon check below, which returns early: a dragon is by definition
+        // the strongest possible deal, and dropping those rounds would bias the
+        // top tier of the baseline.
+        this.recordDealStrength();
+
         // Check for Hong Kong Dragon rule - player with all 13 different ranks wins immediately
         for (let player of this.players) {
             if (Big2Rules.isDragon(player.hand)) {
@@ -791,6 +802,29 @@ class Room {
             startSeat: this.currentTurnIndex
         });
         this.markTurnStart();
+    }
+
+    /**
+     * Score every dealt hand and rank them against each other, for the
+     * deal-strength stats. Called once per round, immediately after the deal.
+     *
+     * Also captures how many human opponents were at the table, because a round
+     * against three bots is not the same test as a round against three humans -
+     * the stats layer reports the two separately rather than mixing them.
+     */
+    recordDealStrength() {
+        this.roundDealStrength = {};
+        const humanCount = this.players.filter(p => !p.isBot).length;
+        const scored = rankTable(this.players.map(p => p.hand));
+
+        this.players.forEach((player, seat) => {
+            this.roundDealStrength[player.id] = {
+                ...scored[seat],
+                // Opponents only, so a player's own seat never counts itself.
+                humanOpponents: humanCount - (player.isBot ? 0 : 1),
+                baselineVersion: BASELINE_VERSION
+            };
+        });
     }
 
     updateScores(roundScores) {

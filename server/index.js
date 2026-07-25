@@ -5,11 +5,19 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
+const {
+    TIERS: DEAL_TIERS,
+    BASELINE_VERSION: DEAL_BASELINE_VERSION,
+    RESIDUAL_SD_WIN,
+    RESIDUAL_SD_POINTS,
+    MIN_ROUNDS_FOR_EDGE,
+    percentileFor: percentileForRaw
+} = require('./game/DealStrength');
 const { normalizeAvatar } = require('./avatars');
 const gamelog = require('./gamelog');
 const gamelogRecorder = require('./gamelogRecorder');
@@ -841,7 +849,10 @@ io.on('connection', (socket) => {
                         plays: playStats.plays,
                         passes: playStats.passes,
                         leadsWon: playStats.leadsWon,
-                        handTypes: playStats.handTypes
+                        handTypes: playStats.handTypes,
+                        // Scored at deal time, before a card was played. Absent
+                        // for rounds already in flight when the server restarted.
+                        dealStrength: room.roundDealStrength[scoreData.id] || null
                     };
 
                     await saveRoundStats(room.gameId, user.id, room.gameMode, roundData);
@@ -2612,6 +2623,112 @@ app.get('/api/stats/:username/tier3', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+
+/**
+ * Deal strength vs. outcome: did the player do better or worse than the cards
+ * they were dealt would predict?
+ *
+ * Returns three scopes - `all`, `vsBots` (three bots at the table) and
+ * `vsHumans` (at least one human opponent). Bot rounds are the bulk of play, so
+ * they are reported rather than discarded, but kept separable so a strong
+ * player farming bots does not read as a strong player generally.
+ */
+app.get('/api/stats/:username/hand-strength', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const mode = req.query.mode || 'standard';
+
+        const user = await getUserByUsername(username);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const { byTier, byRank } = await getDealStrengthStats(user.id, mode);
+        res.json(buildHandStrengthResponse(byTier, byRank));
+    } catch (err) {
+        console.error('Error fetching hand strength stats:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+/**
+ * Shape the raw per-tier rows into the three scopes the client renders.
+ * Pure, so it is unit-testable without a database.
+ */
+function buildHandStrengthResponse(byTier, byRank) {
+    const scopes = { all: null, vsBots: null, vsHumans: null };
+    const matchers = {
+        all: () => true,
+        vsBots: row => row.vs_humans === 0,
+        vsHumans: row => row.vs_humans === 1
+    };
+
+    for (const [scope, matches] of Object.entries(matchers)) {
+        const tierRows = byTier.filter(matches);
+        const rankRows = byRank.filter(matches);
+
+        const tiers = DEAL_TIERS.map((tier, index) => {
+            const rows = tierRows.filter(r => r.deal_tier === index);
+            const rounds = rows.reduce((s, r) => s + r.rounds, 0);
+            const wins = rows.reduce((s, r) => s + r.wins, 0);
+            // Weighted so multi-row (bot + human) merges average correctly.
+            const points = rows.reduce((s, r) => s + r.avg_points * r.rounds, 0);
+            return {
+                key: tier.key,
+                label: tier.label,
+                rounds,
+                wins,
+                winRate: rounds > 0 ? wins / rounds : null,
+                avgPoints: rounds > 0 ? points / rounds : null,
+                expectedWinRate: tier.winRate,
+                expectedPoints: tier.avgPoints
+            };
+        });
+
+        const rounds = tiers.reduce((s, t) => s + t.rounds, 0);
+        const wins = tiers.reduce((s, t) => s + t.wins, 0);
+        const expectedWins = tiers.reduce((s, t) => s + t.rounds * t.expectedWinRate, 0);
+        const expectedPoints = tiers.reduce((s, t) => s + t.rounds * t.expectedPoints, 0);
+        const actualPoints = tiers.reduce((s, t) => s + (t.avgPoints || 0) * t.rounds, 0);
+        const avgRaw = rounds > 0
+            ? rankRows.reduce((s, r) => s + r.avg_raw * r.rounds, 0) / rounds
+            : null;
+
+        scopes[scope] = {
+            rounds,
+            // Deal Luck: how kind the deal has been. Pure variance, and the
+            // reason Edge is worth computing at all.
+            avgDealPercentile: avgRaw === null ? null : Math.round(percentileForRaw(avgRaw)),
+            avgDealRank: rounds > 0
+                ? rankRows.reduce((s, r) => s + r.avg_rank * r.rounds, 0) / rounds
+                : null,
+            // Edge: results minus what those deals were worth. The skill number.
+            winRateAboveExpected: rounds > 0 ? (wins - expectedWins) / rounds : null,
+            pointsSavedPerRound: rounds > 0 ? (expectedPoints - actualPoints) / rounds : null,
+            // 95% CI half-widths, from the measured residual SD per round. The
+            // per-round variance in this game is large enough that omitting
+            // these would present noise as a verdict.
+            winRateConfidence: rounds > 0 ? 1.96 * RESIDUAL_SD_WIN / Math.sqrt(rounds) : null,
+            pointsConfidence: rounds > 0 ? 1.96 * RESIDUAL_SD_POINTS / Math.sqrt(rounds) : null,
+            confidence: confidenceLevelFor(rounds),
+            steals: rankRows.reduce((s, r) => s + r.steals, 0),
+            worstDeals: rankRows.reduce((s, r) => s + r.worst_deals, 0),
+            squanders: rankRows.reduce((s, r) => s + r.squanders, 0),
+            bestDeals: rankRows.reduce((s, r) => s + r.best_deals, 0),
+            tiers
+        };
+    }
+
+    return { ...scopes, baselineVersion: DEAL_BASELINE_VERSION, minRoundsForEdge: MIN_ROUNDS_FOR_EDGE };
+}
+
+/**
+ * How much weight the Edge number deserves. Thresholds come from the measured
+ * residual SD: ~67 rounds for a +/-10pp interval, ~265 for +/-5pp.
+ */
+function confidenceLevelFor(rounds) {
+    if (rounds < MIN_ROUNDS_FOR_EDGE) return 'insufficient';
+    if (rounds < 250) return 'provisional';
+    return 'established';
+}
 
 // Get joinable rooms (rooms in-progress with bots)
 app.get('/api/rooms/joinable', (_req, res) => {
