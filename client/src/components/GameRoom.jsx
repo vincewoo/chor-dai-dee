@@ -892,7 +892,7 @@ const GameRoom = ({ user, socket }) => {
     };
 
     if (!gameState) return (
-        <div className="h-screen-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+        <div className="h-screen-safe mt-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             <img
                 src={logoImage}
                 alt="Chor Dai Dee Logo"
@@ -942,7 +942,7 @@ const GameRoom = ({ user, socket }) => {
     const useMobileV2 = !isDesktop && gameState.gameState !== 'waiting';
 
     return (
-        <div className="h-screen-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+        <div className="h-screen-safe mt-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
             {/* Game Logo - Background */}
             <img
                 src={logoImage}

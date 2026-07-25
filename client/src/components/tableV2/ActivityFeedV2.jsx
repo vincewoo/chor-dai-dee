@@ -120,7 +120,7 @@ function ActivityFeedV2({
 
     return (
         <div
-            className="relative min-h-screen-safe w-full overflow-x-hidden font-sans"
+            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
         >
             <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
@@ -128,7 +128,7 @@ function ActivityFeedV2({
             <div className="absolute pointer-events-none select-none" style={{ top: 210, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♥</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 560, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♠</div>
 
-            <div className="relative z-10 mx-auto flex min-h-screen-safe max-w-[440px] flex-col px-[22px] pb-[36px] pt-[18px]">
+            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-36 pt-safe-18">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
