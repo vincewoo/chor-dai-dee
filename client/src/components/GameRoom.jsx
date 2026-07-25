@@ -598,7 +598,13 @@ const GameRoom = ({ user, socket }) => {
                     : 300;                          // 300ms for bot-only games
 
                 const timer = setTimeout(() => {
-                    socket.emit('pass_turn', { roomId });
+                    // `auto` tells the server this pass came from the
+                    // preference, not from the player. It cannot tell
+                    // otherwise, and the randomized delay above -- chosen so
+                    // opponents cannot distinguish an auto-pass -- would
+                    // otherwise land in the middle of the plausible human
+                    // deliberation band in any timing analysis.
+                    socket.emit('pass_turn', { roomId, auto: true });
                     autoPassTriggered.current = false;
                 }, delay);
                 return () => clearTimeout(timer);

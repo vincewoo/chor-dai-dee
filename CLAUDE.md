@@ -23,14 +23,22 @@ cd server/
 node index.js        # Start server on port 3000
 ```
 
-Tests (server, no external test dependencies — uses Node's built-in runner):
+Tests (server, uses Node's built-in runner):
 ```bash
 cd server/
-npm test             # regression tests (bot logic)
+npm test             # regression tests (bot logic, game log, replay, export)
 npm run bench        # bot self-play benchmark + behavioural metrics
 ```
 
-Note: only the bot logic is currently covered by tests.
+Game log tooling (all off unless `GAMELOG_ENABLED=1`):
+```bash
+npm run gamelog:verify                              # replay every logged round
+npm run gamelog:export -- --out data/ --humans-only # JSONL training shards
+npm run gamelog:archive -- --out archive/ --dry-run # archival + retention
+```
+
+Note: bot logic and the game-history store are covered by tests; the socket
+layer and REST endpoints are not.
 
 ### Deployment (Fly.io)
 ```bash
@@ -75,22 +83,27 @@ VITE_SERVER_URL=http://localhost:3001 npm run dev -- --port 5174
 ```
 
 ### Using .env Files
-Instead of command-line variables, you can create `.env` files:
 
-**Instance 1** - `server/.env`:
-```
-PORT=3000
-```
+**Client only.** Vite loads `.env` natively, so this works:
 
-**Instance 2** - `server/.env`:
-```
-PORT=3001
-```
-
-**Instance 2** - `client/.env`:
+`client/.env`:
 ```
 VITE_SERVER_URL=http://localhost:3001
 ```
+
+**The server does not read `.env` files.** `dotenv` is not a dependency and
+nothing loads one, so a `server/.env` is silently ignored — `PORT=3001` in it
+will leave the server on 3000. Pass server variables inline or export them:
+
+```bash
+cd server/
+PORT=3001 node index.js
+# or
+export PORT=3001
+```
+
+In production these come from `fly.toml`'s `[env]` block (non-secret) or
+`fly secrets set` (secret), not from a file.
 
 ### Database Isolation
 Each instance uses its own SQLite database:
@@ -161,6 +174,11 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 #### Core Server Files
 - `index.js` - Express server with REST endpoints and Socket.io event handlers
 - `db.js` - SQLite database layer with comprehensive schema
+- `gamelog.js` - Append-only game-history store for offline ML, in its own
+  `gamelog.sqlite`. Every write is guarded so a store failure can never surface
+  to a player or abort a round.
+- `gamelogRecorder.js` - Glue between gameplay and the store; resolves seated
+  players to account ids for attribution
 
 #### Game Logic Modules (`game/`)
 - `RoomManager.js` - Room creation, player management, game state, reconnection handling
@@ -187,6 +205,16 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
     the top move rather than always taking the argmax, so bots at one table do
     not play identically. Bots with no profile are fully deterministic.
   - Configurable difficulty (heuristic vs advanced PPO bot)
+- `BotContext.js` - Builds the observation a bot reasons over. Shared by live
+  play, the self-play benchmark, and the game-log replayer so all three see
+  identical features. Takes plain seat-indexed state, never a Room.
+- `TapeCodec.js` - Game-log encodings: 52-byte deal blob, 52-bit card masks
+  (built with BigInt - JS bitwise operators truncate to 32 bits), action/source
+  /flag codes, `think_ms` clamping
+- `GameTape.js` - In-memory per-round tape buffer held by each Room
+- `Replayer.js` - Reconstructs full game state from a logged tape using the same
+  Big2Rules the server plays with, so training features cannot drift from the
+  live rules
 - `Scoring.js` - Winner scoring calculation with penalty multipliers
 - `RatingSystem.js` - OpenSkill-based rating system
   - Formula: Display Rating = 1200 + (mu - 3*sigma) * 40
@@ -239,6 +267,19 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `bot_reasoning` - Bot decision analysis (for debug panel)
 - `reconnected` - Client successfully reconnected
 - `error` - Error messages
+
+### Game History Store (ML)
+
+Separate from `database.sqlite`. Records the deal, the seating, and the ordered
+actions; every intermediate state is re-derived by replay rather than stored.
+Keyed on **seat index, not socket id** - socket ids change mid-game on
+reconnect and on bot/human swaps. See `docs/GAME-STATE-HISTORY-STORE.md`.
+
+Tables: `mlog_game`, `mlog_seat` (occupancy segments), `mlog_round` (deal +
+outcome labels), `mlog_action` (the tape).
+
+Recording requires `GAMELOG_ENABLED=1` (there is no per-player opt-out).
+Unsetting it is the kill switch.
 
 ### Database Schema
 
@@ -353,6 +394,23 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - Dynamic API URL detection (production vs development)
 - Database path: `/data/database.sqlite` in production (Docker volume), `./database.sqlite` in dev
 - Hardcoded dev URLs: client expects server at `localhost:3000`, server accepts `localhost:5173`
+
+#### Server environment variables
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | `3000` | |
+| `NODE_ENV` | — | `production` switches DB path to `/data` and tightens CORS |
+| `CLIENT_URL` | — | Allowed CORS origin in production |
+| `GOOGLE_CLIENT_ID` | — | Google OAuth |
+| `GAMELOG_ENABLED` | off | Must be exactly `"1"`. Enabled in `fly.toml`. |
+| `GAMELOG_PATH` | `/data/gamelog.sqlite` prod, `server/gamelog.sqlite` dev | |
+| `GAMELOG_EXPORT_SECRET` | — | HMAC key for pseudonymizing user ids. Needed only to export, never to record. **Never rotate it** — doing so changes every `subject` and breaks joining a player across old and new shards. |
+| `GIT_SHA` | falls back to `FLY_MACHINE_VERSION` | Recorded as `server_build` on every logged game |
+
+Set non-secret values in `fly.toml`'s `[env]`; use `fly secrets set` for
+secrets. `GAMELOG_*` are read at process start, so changing them needs a deploy
+or `fly machine restart`.
 
 ### Game Implementation Details
 - Rooms are stored in-memory (lost on server restart)

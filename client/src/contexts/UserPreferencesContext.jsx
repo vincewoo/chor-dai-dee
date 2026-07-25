@@ -193,6 +193,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
         setSoundEnabled(prev => !prev);
     };
 
+
     return (
         <UserPreferencesContext.Provider value={{
             fourColorMode,

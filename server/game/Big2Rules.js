@@ -1,6 +1,26 @@
 // server/game/Big2Rules.js
 const { SUITS, RANKS } = require('./Deck');
 
+/**
+ * Generation of the rules in force, recorded on every logged game so old games
+ * replay under the rules they were actually played with.
+ *
+ * Bump when any of these changes:
+ *   - hand validity or comparison in this file, including the A-2-3-4-5 and
+ *     2-3-4-5-6 straight special cases and the flush suit-in-`value` convention
+ *   - the Hong Kong dragon rule (isDragon, and its 39-point penalty)
+ *   - the 2-of-Spades single auto-pass rule in RoomManager.playHand
+ *   - round scoring, including the 1x/2x/3x penalty tiers in Scoring.js
+ *   - who leads: 3-of-Diamonds on round 1, previous winner thereafter
+ *
+ * That list is the contract. A change not on it does not affect replay.
+ * test/versionPins.test.js fails if the covered source changes without a bump.
+ *
+ * Changelog:
+ *   1 - as of the first logged game. Earlier history is not backfillable.
+ */
+const RULES_VERSION = 1;
+
 // Hand Types
 const HAND_TYPES = {
     SINGLE: 'SINGLE',
@@ -235,4 +255,27 @@ const Big2Rules = {
     }
 };
 
-module.exports = { Big2Rules, HAND_TYPES };
+// Ordinal encoding for the game log. Order is pinned by SCHEMA_VERSION: append
+// only, never reorder, or every logged hand_type silently changes meaning.
+const HAND_TYPE_ORDINALS = {
+    [HAND_TYPES.SINGLE]: 0,
+    [HAND_TYPES.PAIR]: 1,
+    [HAND_TYPES.TRIPLE]: 2,
+    [HAND_TYPES.STRAIGHT]: 3,
+    [HAND_TYPES.FLUSH]: 4,
+    [HAND_TYPES.FULL_HOUSE]: 5,
+    [HAND_TYPES.QUADS]: 6,
+    [HAND_TYPES.STRAIGHT_FLUSH]: 7
+};
+
+const HAND_TYPE_BY_ORDINAL = Object.fromEntries(
+    Object.entries(HAND_TYPE_ORDINALS).map(([name, ord]) => [ord, name])
+);
+
+module.exports = {
+    Big2Rules,
+    HAND_TYPES,
+    HAND_TYPE_ORDINALS,
+    HAND_TYPE_BY_ORDINAL,
+    RULES_VERSION
+};
