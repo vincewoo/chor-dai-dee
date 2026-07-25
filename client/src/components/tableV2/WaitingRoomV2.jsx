@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji } from '../../utils/avatars';
 import { GAME_MODES } from '../../constants/gameModes';
-import logoImage from '../../assets/chor-dai-dee-logo.png';
+import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile waiting room. Mirrors the "Waiting Room v2" claude.ai/design mockup.
 // All room state and socket actions live in GameRoom and arrive via props; only

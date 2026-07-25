@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
-import logoImage from '../assets/chor-dai-dee-logo.png';
+import logoImage from '../assets/chor-dai-dee-logo.webp';
 
 // In production, use same origin; in development, use localhost:3000
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');

@@ -12,7 +12,7 @@ import { useUserPreferences } from '../contexts/UserPreferencesContext';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { GAME_MODES } from '../constants/gameModes';
-import logoImage from '../assets/chor-dai-dee-logo.png';
+import logoImage from '../assets/chor-dai-dee-logo.webp';
 import Modal from './Modal';
 import VoiceChat from './VoiceChat';
 import VoiceIndicator from './VoiceIndicator';
@@ -506,33 +506,41 @@ const GameRoom = ({ user, socket }) => {
         };
     }, [socket, roomId, user?.username]);
 
+    // The server sends a fresh gameState object on every play, pass and turn
+    // change, so depending on `gameState` re-ran the auto-pass effect (and its hand
+    // search) on every opponent action. Depend on the specific fields the effect
+    // reads instead, so it only re-runs when something it cares about changes.
+    const currentTurn = gameState?.currentTurn;
+    const currentGameState = gameState?.gameState;
+    const trickWinPending = gameState?.trickWinPending;
+    const lastPlayedHand = gameState?.lastPlayedHand;
+    const gamePlayers = gameState?.players;
+    const hasOtherHumans = useMemo(
+        () => (gamePlayers || []).some(p => !p.isBot && p.id !== myPlayerId),
+        [gamePlayers, myPlayerId]
+    );
+
     // Auto-pass effect: check if we should auto-pass when it becomes our turn
     useEffect(() => {
-        if (!autoPass || !gameState || gameState.gameState !== 'playing') return;
+        if (!autoPass || currentGameState !== 'playing') return;
 
         // Don't auto-pass while a trick win is being displayed
-        if (gameState.trickWinPending) return;
+        if (trickWinPending) return;
 
-        const isMyTurn = gameState.currentTurn === myPlayerId;
-        const hasLastPlayedHand = !!gameState.lastPlayedHand;
+        const isMyTurn = currentTurn === myPlayerId;
 
         // Only auto-pass if it's our turn and there's a hand to beat
-        if (isMyTurn && hasLastPlayedHand && !autoPassTriggered.current) {
+        if (isMyTurn && lastPlayedHand && !autoPassTriggered.current) {
             // Check if we can beat the hand
-            const canBeat = canBeatWithAnyHand(myHand, gameState.lastPlayedHand);
+            const canBeat = canBeatWithAnyHand(myHand, lastPlayedHand);
 
             if (!canBeat) {
                 autoPassTriggered.current = true;
 
-                // Check if there are other human players
-                const otherHumanPlayers = gameState.players?.filter(
-                    p => !p.isBot && p.id !== myPlayerId
-                ) || [];
-
                 // Use randomized delay only when playing against humans
                 // This prevents opponents from distinguishing auto-pass from manual pass
                 // With only bots, use a short delay for better UX
-                const delay = otherHumanPlayers.length > 0
+                const delay = hasOtherHumans
                     ? 1000 + Math.random() * 2000  // 1-3 seconds for human opponents
                     : 300;                          // 300ms for bot-only games
 
@@ -548,7 +556,7 @@ const GameRoom = ({ user, socket }) => {
         if (!isMyTurn) {
             autoPassTriggered.current = false;
         }
-    }, [autoPass, gameState, myHand, myPlayerId, socket, roomId]);
+    }, [autoPass, currentTurn, currentGameState, trickWinPending, lastPlayedHand, hasOtherHumans, myHand, myPlayerId, socket, roomId]);
 
     const startGame = () => {
         socket.emit('start_game', { roomId });

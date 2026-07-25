@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import logoImage from '../../assets/chor-dai-dee-logo.png';
+import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { getAvatarEmoji } from '../../utils/avatars';
 
 // Full-screen round-over celebration with confetti and ranked results.

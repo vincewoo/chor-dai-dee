@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "google-auth-library": "^10.5.0",

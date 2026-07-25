@@ -24,6 +24,11 @@ server/database.sqlite
 server/database.sqlite3
 *.sqlite
 *.sqlite3
+# SQLite WAL sidecar files (journal_mode=WAL)
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Python
 *.pyc

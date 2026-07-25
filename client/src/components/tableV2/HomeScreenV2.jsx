@@ -1,6 +1,6 @@
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
-import logoImage from '../../assets/chor-dai-dee-logo.png';
+import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile home / lobby screen. Mirrors the "Home Screen v2" claude.ai/design
 // mockup. All connection state and actions live in Lobby and arrive via props.

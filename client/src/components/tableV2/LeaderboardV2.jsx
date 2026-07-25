@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
-import logoImage from '../../assets/chor-dai-dee-logo.png';
+import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile leaderboard (global only — no friends system server-side). Mirrors
 // the "Leaderboard v2" mockup: podium for the top 3, a scrollable rank list, and

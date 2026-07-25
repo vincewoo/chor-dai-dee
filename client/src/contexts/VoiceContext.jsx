@@ -1,8 +1,19 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import * as SimplePeerModule from 'simple-peer';
 
-// Handle both default export and named export scenarios
-const SimplePeer = SimplePeerModule.default || SimplePeerModule;
+// simple-peer pulls in the stream/buffer/process node polyfills, which is a large
+// chunk of the entry bundle for a feature most sessions never turn on. It is
+// loaded on demand instead -- joinVoiceRoom awaits it before any peer is created,
+// so createPeer can still read it synchronously.
+let SimplePeer = null;
+
+const loadSimplePeer = async () => {
+  if (!SimplePeer) {
+    const mod = await import('simple-peer');
+    // Handle both default export and named export scenarios
+    SimplePeer = mod.default || mod;
+  }
+  return SimplePeer;
+};
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -136,6 +147,13 @@ export const VoiceProvider = ({ socket, children }) => {
       return null;
     }
 
+    if (!SimplePeer) {
+      // joinVoiceRoom always awaits loadSimplePeer() before any signalling can
+      // reach us, so this should be unreachable.
+      console.error('[VoiceContext] Cannot create peer - simple-peer not loaded');
+      return null;
+    }
+
     let peer;
     try {
       peer = new SimplePeer({
@@ -222,6 +240,9 @@ export const VoiceProvider = ({ socket, children }) => {
     }
 
     try {
+      // Pull in the WebRTC peer library before we start signalling.
+      await loadSimplePeer();
+
       // Request microphone permission
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {

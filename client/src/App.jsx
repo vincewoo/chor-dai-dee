@@ -1,15 +1,30 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import io from 'socket.io-client'
 import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
-import Stats from './components/Stats';
-import Leaderboard from './components/Leaderboard';
-import ActivityFeed from './components/ActivityFeed';
-import { AvatarPickerV2 } from './components/tableV2';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
+
+// Login -> Lobby -> GameRoom is the path essentially every session takes, so those
+// stay in the entry chunk. The rest are side trips that most sessions never make;
+// splitting them keeps their weight (charts, tables, date formatting) out of the
+// bundle that gates first paint.
+const Stats = lazy(() => import('./components/Stats'));
+const Leaderboard = lazy(() => import('./components/Leaderboard'));
+const ActivityFeed = lazy(() => import('./components/ActivityFeed'));
+const AvatarPickerV2 = lazy(() =>
+  import('./components/tableV2').then(m => ({ default: m.AvatarPickerV2 }))
+);
+
+// Route-level fallback. These chunks are small and usually warm from the service
+// worker, so this is a brief flash at worst.
+const RouteFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-green-900 text-white">
+    Loading...
+  </div>
+);
 import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
 import { VoiceProvider } from './contexts/VoiceContext';
@@ -74,6 +89,7 @@ function App() {
       <SuitColorProvider>
         <VoiceProvider socket={socket}>
           <Router>
+            <Suspense fallback={<RouteFallback />}>
               <Routes>
                   <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
                   <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
@@ -84,6 +100,7 @@ function App() {
                   <Route path="/avatar" element={user ? <AvatarPickerV2 username={user.username} /> : <Navigate to="/" />} />
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>
+            </Suspense>
           </Router>
           <PWAUpdatePrompt />
         </VoiceProvider>
