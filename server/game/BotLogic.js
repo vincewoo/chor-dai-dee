@@ -1772,4 +1772,32 @@ const BotLogic = {
     }
 };
 
-module.exports = { BotLogic };
+/**
+ * Generation of the heuristic bot, recorded on every logged game so a model
+ * trained later can tell which opponent it was actually facing.
+ *
+ * Bump whenever a change to this file or to BotContext.js alters what the bot
+ * plays -- new or retuned heuristics, changed scoring constants, changed
+ * profile sampling. Not for comments or pure refactors, though
+ * test/versionPins.test.js will still ask, because it cannot tell the
+ * difference and a human can.
+ *
+ * This has moved roughly ten times already ("Rework bot heuristics around a
+ * single scoring currency", the run of fix(bot) penalty commits). Those
+ * generations are not backfillable, so 1 means "as of the first logged game",
+ * not "the first version of this bot".
+ *
+ * Changelog:
+ *   1 - as of the first logged game.
+ */
+const BOT_LOGIC_VERSION = 1;
+
+/**
+ * Which PPO checkpoint the advanced bot loads. Recorded per seat so a corpus
+ * spanning a checkpoint swap stays interpretable -- once a second checkpoint
+ * exists, games logged before it are otherwise ambiguous forever.
+ */
+const PPO_CHECKPOINT = 'modelParameters136500';
+const PPO_CHECKPOINT_GEN = 136500; // training step, a natural generation number
+
+module.exports = { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN };
