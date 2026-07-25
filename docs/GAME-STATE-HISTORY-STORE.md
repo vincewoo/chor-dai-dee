@@ -252,18 +252,11 @@ CREATE TABLE mlog_action (
     cards_mask   INTEGER NOT NULL DEFAULT 0,   -- 52-bit; 0 for any pass
     hand_type    INTEGER,                      -- HAND_TYPES ordinal; NULL for pass
     hand_value   INTEGER,
-    think_ms     INTEGER,                      -- ms from turn start to action
+    think_ms     INTEGER,                      -- ms from turn start, clamped (see below)
     source       INTEGER NOT NULL,             -- 0=human, 1=auto-pass pref, 2=bot,
                                                -- 3=server rule, 4=bot fallback (see below)
-    PRIMARY KEY (game_key, round_number, ply)
-) WITHOUT ROWID;
-
--- Optional. Bot policy internals, for distillation and for debugging regressions.
-CREATE TABLE mlog_bot_decision (
-    game_key     INTEGER NOT NULL,
-    round_number INTEGER NOT NULL,
-    ply          INTEGER NOT NULL,
-    reasoning    TEXT NOT NULL,                -- JSON: scored alternatives, factors
+    flags        INTEGER NOT NULL DEFAULT 0,   -- bit 0: think_ms was clamped
+                                               -- bit 1: a disconnect overlapped this turn
     PRIMARY KEY (game_key, round_number, ply)
 ) WITHOUT ROWID;
 
@@ -462,10 +455,35 @@ any behaviour-cloning target, because the model learns to imitate a client-side
 convenience toggle.
 
 **`think_ms`.** Not derivable, and one of the strongest available signals for
-human modelling and for detecting AFK or disconnected-and-stalling play. It
-requires a `turnStartedAt` timestamp, set in `advanceTurn()` and in
-`clearTrickState()`. Meaningless for bots (they run on a fixed 250 ms timer) —
-store `NULL`.
+human modelling. Requires a `turnStartedAt` timestamp, set wherever a seat
+acquires the turn: `advanceTurn()`, `clearTrickState()`, the trick-win branch of
+`playHand()` where the turn stays put, and `startRound()`. Meaningless for bots
+(fixed 250 ms timer) — store `NULL`.
+
+**Clamped at `THINK_MS_CEILING = 120_000`.** A disconnected human's turn stalls
+rather than auto-passing — nothing in `RoomManager` advances past them — so an
+unclamped `think_ms` records how long someone was at lunch, bounded only by the
+room cleanup timeouts of 30 minutes (multiplayer) or **24 hours**
+(single-player). Two minutes is deliberately generous: it should destroy no
+legitimate deliberation, only values nobody would train on either way.
+
+The ceiling is a lossy transform, so it is pinned to `schema_version` — changing
+it makes old and new rows incomparable and requires a bump.
+
+Clamping alone would silently blur "thought hard for two minutes" into "walked
+away", so `flags` records why:
+
+- **bit 0, clamped** — the raw value exceeded the ceiling.
+- **bit 1, disconnect overlapped** — the acting player was disconnected at any
+  point during the turn. Detected directly rather than inferred from duration:
+  snapshot a per-player disconnect counter (incremented in `markDisconnected()`)
+  at turn start, and compare at action time, also treating "already
+  disconnected when the turn began" as a hit.
+
+Both are needed. Bit 1 catches a brief drop that reconnects in 20 seconds — an
+in-range value that is still not a decision time — while bit 0 catches a slow
+human who never disconnected. Any timing model should exclude both; behavioural
+models that only care about *what* was played can keep them.
 
 **What is deliberately *not* stored:** hand sizes, whose turn it is, the passed
 set, legal-move sets, pile state, trick boundaries, and all
@@ -546,7 +564,7 @@ Per game, assuming ~10 rounds and ~50 plies per round:
 | `mlog_round` | 10 | 220 | 2.2 KB |
 | `mlog_action` | 500 | 35 | 17.5 KB |
 
-**≈20 KB per game**, or ~60 KB with `mlog_bot_decision` enabled.
+**≈20 KB per game.**
 
 | Traffic | Per day | Per year |
 |---|---|---|
@@ -614,7 +632,7 @@ through `Replayer`, and emits gzipped JSONL — one object per decision:
   "hidden": { "hands": [[...], [...], [...], [...]] },  // perfect info, all seats
   "legal": [ /* enumerated legal moves */ ],
   "action": { "type": "play", "cards": [22, 23], "hand_type": 1 },
-  "think_ms": 3200,
+  "think_ms": 3200, "think_clamped": false, "turn_disconnected": false,
   "labels": {
     "round_points": 0, "round_placement": 1,
     "game_placement": 2, "won_round": true,
@@ -668,21 +686,12 @@ line up.
 
 ## 11. Open questions
 
-1. **Bot reasoning capture.** `mlog_bot_decision` triples the corpus size and is
-   currently only produced when `debugMode` is on (`RoomManager.js:1197`).
-   Sampling it — say 5% of bot decisions — probably gives most of the
-   distillation value at a fraction of the cost. Needs a decision before the
-   table is created rather than after.
-2. **Disconnected players.** A disconnected human's turn currently stalls rather
-   than auto-passing, so their `think_ms` can be minutes. Either clamp it at
-   write time or add a `stalled` flag; otherwise the timing distribution has a
-   long tail that means "went to lunch", not "thought hard".
-3. **Abandoned games.** Rooms are reaped after 30 minutes of inactivity
+1. **Abandoned games.** Rooms are reaped after 30 minutes of inactivity
    (multiplayer) or 24 hours (single-player). Truncated games are still useful
    for round-level supervision but not for game-placement labels. The
    `end_reason` column carries the distinction; the export filter needs to
    actually respect it.
-4. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
+2. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
    players in the same room. Linking consecutive games would enable
    within-session adaptation modelling — a `previous_game_key` column on
    `mlog_game` is nearly free if it is added now rather than backfilled.
