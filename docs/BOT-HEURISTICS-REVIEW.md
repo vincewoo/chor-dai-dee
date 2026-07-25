@@ -478,3 +478,82 @@ not exotic. The gain is modest not because the situation is rare but because the
 already shedding reasonably; the rule sharpens the tail rather than changing the plan.
 
 Reproduce with the scripts described in `docs/HAND-STRENGTH-STATS.md`.
+
+## 13. Tried and rejected: table-aware game phase
+
+§ 12 exposed that `getGamePhase` keys purely on our own hand size, so a bot with 11 cards
+facing an opponent on 1 still reads as `early`. That looks like a bug. It was tested as
+one, and the naive fix is worse:
+
+| Phase definition | Points/round | Win rate |
+|---|---|---|
+| unchanged | +0.007 (0.3σ) | −0.42pp |
+| `min(own, opponents)` | −0.014 (0.4σ) | **−3.09pp** |
+| average across all four | −0.022 (0.7σ) | −0.71pp |
+| blend of own and leader | −0.012 (0.4σ) | −1.71pp |
+
+12,000 rounds × 4 seeds. Nothing reaches significance on points, and making phase track
+the leader costs three points of win rate: the bot reads "late", discounts its retention
+cost, dumps control, and loses rounds it could still have won.
+
+The conclusion is that phase is own-hand-only *by design*, not by oversight. It answers
+"how much is my control still worth to me", and our own hand is the right clock for that.
+"How close is the round to ending" is a genuinely different question, and it is answered
+by `dangerLevel` and `roundLostness` — which is why the § 12 fix was targeted rather than
+a re-plumbing of phase.
+
+For the record, the bot is not otherwise blind to the table: `dangerLevel`,
+`buildOpponentModels`, `solveEndgame`, `estimateControlProbability` and two explicit
+"next player has one card" checks all read `playerCardCounts`.
+
+## 14. Shipped from a playtest report: 2s buried in five-card hands
+
+Reported from play, not from a benchmark: bots spend 2s inside full houses and quads far
+more than a human would.
+
+It reproduced immediately. **23.5% of every 2 the bot plays is spent inside a five-card
+hand** — 23.3% with per-bot profiles, i.e. the configuration real rooms use.
+
+### Cause
+
+`COST_WEIGHT_BY_SIZE[5] = 0.35` discounts every card in a five-card hand to 35% of its
+retention cost, on the stated premise that a card "locked inside" a combination is not
+available as standalone control.
+
+That premise is false for a 2, and only for a 2. A 2 can always be pulled out and played
+as a single that cannot be beaten — the very fact `TWO_OF_SPADES_PREMIUM` encodes. The
+discount priced away an option the bot still held. The arithmetic was stark: a full house
+of `2-2-2-3-3` cost `(3 × 215) × 0.35 ≈ 226`, while a single 2 cost `215`. Dumping three
+2s cost about the same as spending one.
+
+### What ships
+
+`standaloneControlSurcharge` charges the discount back, for 2s only, and lifts once
+`roundLostness` fires — in a lost round points count cards, so dumping the combination is
+correct. Extending it to aces and below measured worse: those cards genuinely are more
+constrained inside a combination, so the existing discount is closer to right for them.
+
+Effect: **23.5% → 12.0%** of 2s burned in combinations, +0.31pp round win rate, +0.040
+round points.
+
+### Why ship a rule that costs round points
+
+Because the points cost does not survive to the level that decides a match. Full games to
+50, won by lowest cumulative score:
+
+| Sample | Variant vs its own control |
+|---|---|
+| 6,000 games | +0.82pp |
+| 18,000 games | +0.99pp |
+
+Consistent in direction across two independent runs, and neither conclusive — the control
+alone swung from +0.36pp to −0.62pp between them, which is the effect size. Game-level
+measurement cannot resolve this without far more compute than it is worth.
+
+So the benchmark is not the argument. The argument is that the code justified a discount
+with a claim that is factually wrong for this card, and the error was visible to a player
+before it was visible in any metric. Fixing a false premise is worth doing at
+benchmark-neutral; the round-win gain and the play-feel improvement come free.
+
+Worth remembering as a limit of the harness: bot-vs-bot round statistics found nothing
+here, and a human noticed it in an evening of play.

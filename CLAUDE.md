@@ -196,6 +196,15 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
     more than the card (`evaluateTrickValue`, `shouldStrategicPass`)
   - "Poker First" hand organisation - preserves strong 5-card hands, with the
     break penalty scaled by what is actually lost (`comboBreakPenalty`)
+  - **2s are never "locked" in a combination** - `standaloneControlSurcharge`
+    charges back the `COST_WEIGHT_BY_SIZE` discount for 2s, which can always be
+    pulled out and played as an unbeatable single. Without it the bot dumped 2s
+    inside full houses and quads (23.5% of all 2s played, now 12%). Lifts once
+    `roundLostness` fires. See `docs/BOT-HEURISTICS-REVIEW.md` § 14.
+  - **Phase is deliberately own-hand-only** - `getGamePhase` ignores opponents
+    on purpose; it prices *our* control to *us*. Making it track the leader was
+    measured and cost 3pp of win rate (§ 13). Round-ending risk is a separate
+    question, answered by `dangerLevel` and `roundLostness`.
   - **Penalty-tier awareness** - `roundLostness` reads opponents' card counts to
     detect a round that cannot be won; once it fires, `penaltyTierValue` prices
     ducking under the 10-card (2x) and 13-card (3x) scoring tiers. Round points

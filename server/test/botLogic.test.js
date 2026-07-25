@@ -290,3 +290,64 @@ test('a buried bot sheds volume rather than protecting its high cards', () => {
     const move = BotLogic.getBotMove(buried, null, false, ctx({ playerCardCounts: [1, 9, 10] }), false);
     assert.ok(move.length >= 5, `expected a volume play, got ${move.map(c => c.rank + c.suit).join(' ')}`);
 });
+
+// --- 2s inside combinations ------------------------------------------------
+// COST_WEIGHT_BY_SIZE discounts cards in a five-card hand on the premise that
+// they are unavailable as standalone control. A 2 is the one card for which
+// that is provably false, and the bot was dumping 2s in full houses because
+// of it.
+
+test('spending a 2 inside a five-card hand is surcharged, low cards are not', () => {
+    const h = hand('2S 2H 2C 3D 3C 5H 7S 9D JC');
+    const live = ctx({ playerCardCounts: [9, 9, 9] });
+    const fullHouseOfTwos = Big2Rules.validateHand(hand('2S 2H 2C 3D 3C'));
+
+    assert.ok(BotLogic.standaloneControlSurcharge(fullHouseOfTwos, h, live, 'early') > 0,
+        'a full house built on 2s should be charged for the 2s it spends');
+
+    // A five-card hand with no 2 in it is untouched.
+    const lowHand = hand('3D 4C 5H 6S 7D 9C JH');
+    const straight = Big2Rules.validateHand(hand('3D 4C 5H 6S 7D'));
+    assert.strictEqual(BotLogic.standaloneControlSurcharge(straight, lowHand, live, 'early'), 0);
+});
+
+test('a single 2 carries no surcharge - nothing is being discounted', () => {
+    const h = hand('2S 5H 7S 9D JC');
+    const single = Big2Rules.validateHand([card('2S')]);
+    // COST_WEIGHT_BY_SIZE[1] is 1.0, so there is no discount to charge back.
+    assert.strictEqual(
+        BotLogic.standaloneControlSurcharge(single, h, ctx({ playerCardCounts: [5, 5, 5] }), 'early'), 0);
+});
+
+test('the surcharge lifts once the round is lost', () => {
+    const h = hand('2S 2H 2C 3D 3C 5H 7S 9D JC 10C 4D');
+    const fullHouse = Big2Rules.validateHand(hand('2S 2H 2C 3D 3C'));
+
+    // Still racing: keep the 2s back.
+    assert.ok(BotLogic.standaloneControlSurcharge(fullHouse, h, ctx({ playerCardCounts: [10, 11, 11] }), 'early') > 0);
+
+    // Round is gone: points count cards, so dumping five at once is correct
+    // and the surcharge must not stand in the way.
+    assert.strictEqual(
+        BotLogic.standaloneControlSurcharge(fullHouse, h, ctx({ playerCardCounts: [1, 9, 10] }), 'early'), 0);
+});
+
+test('bots burn far fewer 2s inside five-card hands than they used to', () => {
+    // Regression guard on the reported behaviour. Was 23.5% before the
+    // surcharge; anything back near that means the rule has stopped biting.
+    const rng = makeRng(4321);
+    let inCombo = 0, alone = 0;
+    const watcher = {
+        getBotMove(...args) {
+            const move = BotLogic.getBotMove(...args);
+            if (move && move.length === 5) inCombo += move.filter(c => c.rank === '2').length;
+            else if (move && move.length) alone += move.filter(c => c.rank === '2').length;
+            return move;
+        }
+    };
+    const seats = [0, 1, 2, 3].map(() => ({ name: 'w', logic: watcher }));
+    for (let r = 0; r < 400; r++) playRound(seats, deal(rng), null);
+
+    const burned = inCombo / (inCombo + alone) * 100;
+    assert.ok(burned < 18, `${burned.toFixed(1)}% of 2s spent inside five-card hands (was 23.5%)`);
+});
