@@ -501,6 +501,7 @@ const Lobby = ({ user, socket, setUser }) => {
                     onJoinRoom={joinRoom}
                     onHowToPlay={() => setShowHowToPlay(true)}
                     onLeaderboard={() => navigate('/leaderboard')}
+                    onActivity={() => navigate('/activity')}
                     onStats={() => navigate('/stats')}
                     onEditAvatar={() => navigate('/avatar')}
                     error={error}

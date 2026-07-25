@@ -96,7 +96,7 @@ function App() {
                   <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
                   <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
                   <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
-                  <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} /> : <Navigate to="/" />} />
+                  <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} user={user} /> : <Navigate to="/" />} />
                   <Route path="/avatar" element={user ? <AvatarPickerV2 username={user.username} /> : <Navigate to="/" />} />
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>

@@ -2,6 +2,16 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
+const footerLink = {
+    background: 'none',
+    border: 'none',
+    color: 'rgba(244,245,247,.55)',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: "'Outfit',sans-serif",
+};
+
 // v2 mobile home / lobby screen. Mirrors the "Home Screen v2" claude.ai/design
 // mockup. All connection state and actions live in Lobby and arrive via props.
 function HomeScreenV2({
@@ -18,6 +28,7 @@ function HomeScreenV2({
     onJoinRoom,
     onHowToPlay,
     onLeaderboard,
+    onActivity,
     onStats,
     onEditAvatar,
     error,
@@ -135,10 +146,13 @@ function HomeScreenV2({
             </div>
 
             {/* Footer */}
-            <div className="absolute inset-x-0 z-10 flex justify-center gap-[26px]" style={{ bottom: 28 }}>
-                <button onClick={onHowToPlay} style={{ background: 'none', border: 'none', color: 'rgba(244,245,247,.55)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}>How to play</button>
-                <button onClick={onLeaderboard} style={{ background: 'none', border: 'none', color: 'rgba(244,245,247,.55)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}>Leaderboard</button>
-                <button onClick={onStats} style={{ background: 'none', border: 'none', color: 'rgba(244,245,247,.55)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}>Stats</button>
+            <div className="absolute inset-x-0 z-10 flex flex-wrap justify-center gap-x-[18px] gap-y-[6px] px-4" style={{ bottom: 28 }}>
+                <button onClick={onHowToPlay} style={footerLink}>How to play</button>
+                <button onClick={onLeaderboard} style={footerLink}>Leaderboard</button>
+                {onActivity && (
+                    <button onClick={onActivity} style={footerLink}>Activity</button>
+                )}
+                <button onClick={onStats} style={footerLink}>Stats</button>
             </div>
         </div>
     );
