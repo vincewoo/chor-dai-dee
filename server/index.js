@@ -2456,8 +2456,7 @@ app.get('/api/preferences/:userId', async (req, res) => {
             reducedMotion: preferences.reduced_motion === 1,
             // Sound defaults to on, so treat a missing column as enabled.
             soundEnabled: (preferences.sound_enabled ?? 1) === 1,
-            soundVolume: preferences.sound_volume ?? 0.6,
-            mlLoggingOptOut: (preferences.ml_logging_opt_out ?? 0) === 1
+            soundVolume: preferences.sound_volume ?? 0.6
         });
     } catch (err) {
         console.error('Error fetching preferences:', err);
@@ -2468,8 +2467,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, mlLoggingOptOut } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, mlLoggingOptOut });
+        const { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);

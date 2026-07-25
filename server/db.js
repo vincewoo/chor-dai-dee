@@ -370,10 +370,6 @@ function initDb() {
                 addColumn('reduced_motion', 'reduced_motion INTEGER DEFAULT 0');
                 addColumn('sound_enabled', 'sound_enabled INTEGER DEFAULT 1');
                 addColumn('sound_volume', 'sound_volume REAL DEFAULT 0.6');
-                // Opt out of having this player's games recorded for model
-                // training. Defaults to 0 (recorded), matching the disclosed
-                // policy; see docs/GAME-STATE-HISTORY-STORE.md.
-                addColumn('ml_logging_opt_out', 'ml_logging_opt_out INTEGER DEFAULT 0');
             }
         });
 
@@ -1319,8 +1315,7 @@ const getUserPreferences = (userId) => {
                     accent_color: 'gold',
                     reduced_motion: 0,
                     sound_enabled: 1,
-                    sound_volume: 0.6,
-                    ml_logging_opt_out: 0
+                    sound_volume: 0.6
                 });
             }
             resolve(row);
@@ -1346,12 +1341,11 @@ const updateUserPreferences = async (userId, preferences) => {
     const soundEnabledValue = toInt(pick(preferences.soundEnabled, existing.sound_enabled ?? 1));
     const rawVolume = Number(pick(preferences.soundVolume, existing.sound_volume ?? 0.6));
     const soundVolumeValue = Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : 0.6;
-    const mlOptOutValue = toInt(pick(preferences.mlLoggingOptOut, existing.ml_logging_opt_out));
 
     return new Promise((resolve, reject) => {
         const query = `INSERT INTO user_preferences
-                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, ml_logging_opt_out)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
                            auto_pass = ?,
@@ -1359,12 +1353,11 @@ const updateUserPreferences = async (userId, preferences) => {
                            accent_color = ?,
                            reduced_motion = ?,
                            sound_enabled = ?,
-                           sound_volume = ?,
-                           ml_logging_opt_out = ?`;
+                           sound_volume = ?`;
 
         const values = [
-            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, mlOptOutValue,
-            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, mlOptOutValue
+            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue,
+            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue
         ];
 
         db.run(query, values, (err) => {

@@ -10,8 +10,6 @@ const SettingsModal = ({
     show,
     onClose,
     autoPass,
-    mlLoggingOptOut,
-    toggleMlLoggingOptOut,
     toggleAutoPass,
     fourColorMode,
     toggleFourColorMode,
@@ -84,33 +82,6 @@ const SettingsModal = ({
                             </div>
                             <p className="text-gray-300 text-sm md:text-[0.85vmax]">
                                 Automatically pass when you have no cards that can beat the played hand
-                            </p>
-                        </div>
-
-                        {/* Game recording opt-out */}
-                        <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
-                            <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
-                                <label
-                                    id="ml-logging-label"
-                                    className="text-white font-semibold text-lg md:text-[1.2vmax]"
-                                >
-                                    Game Recording
-                                </label>
-                                <button
-                                    role="switch"
-                                    aria-checked={!mlLoggingOptOut}
-                                    aria-labelledby="ml-logging-label"
-                                    onClick={toggleMlLoggingOptOut}
-                                    className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500 focus-visible:outline-none
-                                        ${!mlLoggingOptOut ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
-                                >
-                                    {!mlLoggingOptOut ? 'ON' : 'OFF'}
-                                </button>
-                            </div>
-                            <p className="text-gray-300 text-sm md:text-[0.85vmax]">
-                                Allow your games, including the cards you were dealt, to be recorded
-                                and used to improve the bots. Turning this off excludes every game
-                                you play from recording.
                             </p>
                         </div>
 

@@ -172,8 +172,8 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `gamelog.js` - Append-only game-history store for offline ML, in its own
   `gamelog.sqlite`. Every write is guarded so a store failure can never surface
   to a player or abort a round.
-- `gamelogRecorder.js` - Glue between gameplay and the store, including the
-  opt-out consent check
+- `gamelogRecorder.js` - Glue between gameplay and the store; resolves seated
+  players to account ids for attribution
 
 #### Game Logic Modules (`game/`)
 - `RoomManager.js` - Room creation, player management, game state, reconnection handling
@@ -273,8 +273,8 @@ reconnect and on bot/human swaps. See `docs/GAME-STATE-HISTORY-STORE.md`.
 Tables: `mlog_game`, `mlog_seat` (occupancy segments), `mlog_round` (deal +
 outcome labels), `mlog_action` (the tape).
 
-Recording requires `GAMELOG_ENABLED=1` and is skipped entirely for any game
-containing a player who set `ml_logging_opt_out`.
+Recording requires `GAMELOG_ENABLED=1` (there is no per-player opt-out).
+Unsetting it is the kill switch.
 
 ### Database Schema
 

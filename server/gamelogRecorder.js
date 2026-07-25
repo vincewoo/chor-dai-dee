@@ -7,57 +7,48 @@
 // this codebase; RoomManager only maintains an in-memory tape).
 //
 // Every function here is safe to call unconditionally. They no-op when logging
-// is disabled, when the room opted out, or when there is nothing buffered --
-// so call sites do not need guards, and a missed edge case degrades to "not
-// logged" rather than to a crash mid-game.
+// is disabled or when there is nothing buffered -- so call sites do not need
+// guards, and a missed edge case degrades to "not logged" rather than to a
+// crash mid-game.
 
 const gamelog = require('./gamelog');
-const { getUserPreferences, getUserByUsername } = require('./db');
+const { getUserByUsername } = require('./db');
 
 /**
- * Whether this room's games may be recorded.
+ * Resolves each seated human to their account id, for seat attribution.
  *
- * If any seated human has opted out, the whole game is skipped. Partial
- * logging is not offered: a deal with one hand redacted is useless for the
- * perfect-information training this store exists to enable, so it would cost
- * the privacy without buying the data.
+ * Without this, `describeSeats` records user_id NULL for everyone and the
+ * corpus loses per-player identity entirely -- no head-to-head modelling, no
+ * rating-filtered training sets.
  *
- * Cached per room per game, because this runs on the start_game path and would
- * otherwise issue a preferences lookup per human on every game.
+ * Cached per room per game: this runs on the start_game path and would
+ * otherwise issue a lookup per human on every game.
+ *
+ * A failed lookup is not fatal. The seat is still recorded, just without an
+ * account id, so a database hiccup costs attribution for one seat rather than
+ * the whole game.
  */
-async function isLoggingAllowed(room) {
+async function resolveUserIds(room) {
     if (!gamelog.enabled) return false;
-    if (room._logAllowedFor === room.gameId) return room._logAllowed;
+    if (room._userIdsResolvedFor === room.gameId) return true;
 
-    let allowed = true;
-    try {
-        for (const player of room.players) {
-            if (player.isBot || player.isGuest) continue;
+    for (const player of room.players) {
+        if (player.isBot || player.isGuest) continue;
+        try {
             const user = await getUserByUsername(player.name);
-            if (!user) continue;
-            const prefs = await getUserPreferences(user.id);
-            if (prefs && prefs.ml_logging_opt_out) {
-                allowed = false;
-                break;
-            }
-            // Cache the id so describeSeats can attribute rows without a
-            // second lookup at round end.
-            player.userId = user.id;
+            if (user) player.userId = user.id;
+        } catch (err) {
+            console.error(`[gamelog] user lookup failed for ${player.name}:`, err.message);
         }
-    } catch (err) {
-        // Fail closed. If we cannot establish consent, we do not record.
-        console.error('[gamelog] consent check failed, not recording:', err.message);
-        allowed = false;
     }
 
-    room._logAllowedFor = room.gameId;
-    room._logAllowed = allowed;
-    return allowed;
+    room._userIdsResolvedFor = room.gameId;
+    return true;
 }
 
 /** Opens a game and its seat segments. Idempotent per gameId. */
 async function recordGameStart(room) {
-    if (!(await isLoggingAllowed(room))) return null;
+    if (!(await resolveUserIds(room))) return null;
 
     room.gameKey = await gamelog.openGame({
         gameId: room.gameId,
@@ -143,7 +134,7 @@ async function recordSeatChange(room, seat) {
 }
 
 module.exports = {
-    isLoggingAllowed,
+    resolveUserIds,
     recordGameStart,
     recordRoundEnd,
     recordGameEnd,

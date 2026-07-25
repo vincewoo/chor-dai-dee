@@ -219,6 +219,58 @@ test('exports carry no raw user ids', async () => {
     }
 });
 
+test('a human seat never exports its username, even without an account id', async () => {
+    // subject_key holds a bot's policy name (safe, and meaningful) but a
+    // human's username. If the export fell back to it when user_id is missing
+    // -- a failed lookup, a guest -- it would emit that username in plaintext.
+    // There is no opt-out, so this is one of the few remaining guarantees.
+    const { run, get } = await gamelog.openForRead();
+
+    const seeded = await persistRound('SUBJ');
+    // Two human seats: one with an account id, one without.
+    await run(
+        `UPDATE mlog_seat SET occupant = 'human', subject_key = 'alice', user_id = 4242
+          WHERE game_key = ? AND seat = 0`, [seeded.gameKey]
+    );
+    await run(
+        `UPDATE mlog_seat SET occupant = 'human', subject_key = 'bob', user_id = NULL
+          WHERE game_key = ? AND seat = 1`, [seeded.gameKey]
+    );
+
+    const outDir = path.join(tmpDir, 'subj');
+    process.argv = ['node', 'export', '--out', outDir,
+                    '--since', String(seeded.gameKey), '--limit', '1'];
+    const { main } = require('../scripts/export-training-data');
+    const originalLog = console.log;
+    console.log = () => {};
+    await main();
+    console.log = originalLog;
+
+    const records = readShards(outDir);
+    const withId = records.filter(r => r.seat === 0);
+    const withoutId = records.filter(r => r.seat === 1);
+
+    assert.ok(withId.length > 0 && withoutId.length > 0, 'fixture produced no rows for both seats');
+    for (const r of withId) assert.match(r.subject, /^h:/);
+    for (const r of withoutId) {
+        assert.strictEqual(r.subject, null, 'must be null, never the username');
+    }
+
+    const raw = JSON.stringify(records);
+    assert.ok(!raw.includes('"alice"'), 'username leaked into the export');
+    assert.ok(!raw.includes('"bob"'), 'username leaked into the export');
+
+    // Drop the fixture: it is the only game with human seats, and leaving it
+    // would make the all-bot assertions below meaningless.
+    for (const table of ['mlog_action', 'mlog_round', 'mlog_seat', 'mlog_game']) {
+        await run(`DELETE FROM ${table} WHERE game_key = ?`, [seeded.gameKey]);
+    }
+    assert.strictEqual(
+        await get('SELECT 1 FROM mlog_game WHERE game_key = ?', [seeded.gameKey]),
+        undefined
+    );
+});
+
 test('labels carry round outcomes and game placement', async () => {
     const records = readShards(path.join(tmpDir, 'out'));
     const r = records[0];

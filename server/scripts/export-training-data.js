@@ -214,8 +214,15 @@ async function main() {
 
                     // --- provenance -------------------------------------------
                     occupant: occupant.occupant,
-                    subject: occupant.user_id !== null && occupant.user_id !== undefined
-                        ? gamelog.subjectKeyFor(occupant.user_id)
+                    // Branch on occupant type, never on whether user_id
+                    // happens to be present. subject_key holds a bot's policy
+                    // name (safe, and meaningful) but a human's username, so a
+                    // fallback from a missing user_id would emit that username
+                    // in plaintext. Humans get an HMAC or nothing.
+                    subject: isHuman
+                        ? (occupant.user_id === null || occupant.user_id === undefined
+                            ? null
+                            : gamelog.subjectKeyFor(occupant.user_id))
                         : occupant.subject_key,
                     policy_gen: occupant.policy_gen,
                     policy_ref: occupant.policy_ref,

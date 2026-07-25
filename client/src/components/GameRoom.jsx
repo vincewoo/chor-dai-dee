@@ -34,7 +34,6 @@ const GameRoom = ({ user, socket }) => {
     const { fourColorMode, toggleFourColorMode } = useSuitColors();
     const {
         autoPass, toggleAutoPass,
-        mlLoggingOptOut, toggleMlLoggingOptOut,
         tableTheme, setTableTheme,
         accentColor, setAccentColor,
         reducedMotion, toggleReducedMotion,
@@ -1805,8 +1804,6 @@ const GameRoom = ({ user, socket }) => {
                 onClose={() => setShowSettings(false)}
                 autoPass={autoPass}
                 toggleAutoPass={toggleAutoPass}
-                mlLoggingOptOut={mlLoggingOptOut}
-                toggleMlLoggingOptOut={toggleMlLoggingOptOut}
                 fourColorMode={fourColorMode}
                 toggleFourColorMode={toggleFourColorMode}
                 tableTheme={tableTheme}

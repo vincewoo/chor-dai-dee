@@ -4,9 +4,10 @@ Status: **implemented.** This document is the design; the code follows it. See
 [Implementation](#13-implementation) for the file map and how to run the tools.
 
 **Recording is off by default.** It requires `GAMELOG_ENABLED=1`, so enabling it
-is a config change rather than a deploy. Before turning it on in production,
-settle the privacy posture in [§8](#8-privacy-retention-and-consent) — the
-opt-out and the toggle exist, but the disclosure is a decision, not code.
+is a config change rather than a deploy. There is deliberately **no per-player
+opt-out**, so before turning it on in production the disclosure in
+[§8](#8-privacy-and-retention) has to be in place — it is the only thing
+standing between the store and a player who did not expect it.
 
 ## Goal
 
@@ -24,7 +25,7 @@ default. Each is cheap to revisit; the section that depends on it is noted.
 |---|---|---|
 | Storage substrate | Separate `gamelog.sqlite` on the same Fly volume | [Substrate](#1-substrate) |
 | Fidelity | Deal + action log, states re-derived by replay | [Model](#2-the-central-decision-log-the-tape-not-the-state) |
-| Private hands | Record all four hands, with opt-out and retention | [Privacy](#8-privacy-retention-and-consent) |
+| Private hands | Record all four hands; no opt-out, retention enforced | [Privacy](#8-privacy-and-retention) |
 | Deliverable | Design doc, then implemented | [§13](#13-implementation) |
 
 ---
@@ -47,7 +48,7 @@ Reasons to keep it out of the existing database:
   truncate it, or drop and rebuild it as the schema evolves. Doing that to a
   file that also holds user accounts is needlessly risky.
 - **Different retention.** Accounts are permanent; raw hand histories should not
-  be (see [§8](#8-privacy-retention-and-consent)).
+  be (see [§8](#8-privacy-and-retention)).
 
 Same pragmas as `db.js` (`WAL`, `synchronous=NORMAL`, `busy_timeout=5000`) and
 the same `withTransaction` queueing helper, which should move to a small shared
@@ -686,20 +687,30 @@ so archival is a requirement rather than a nicety — see below.
 
 ---
 
-## 8. Privacy, retention, and consent
+## 8. Privacy and retention
 
-This store permanently records **what cards every real person held**, plus their
+This store records **what cards every real person held**, plus their
 per-decision timing. That is a materially different privacy posture from the
 existing aggregate stats tables, and it should be treated as such rather than
 absorbed silently.
 
-- **Opt-out.** Add `ml_logging_opt_out` to `user_preferences`. If any seated
-  human has opted out, the game is not logged at all. Partial logging is not
-  offered: a deal with one hand redacted is useless for the perfect-information
-  training this store exists to enable, so it would cost the privacy without
-  buying the data.
-- **Disclosure.** One line in the privacy policy stating that game hands and
-  timings are retained for model training, with the retention window.
+**There is no per-player opt-out.** Recording applies to every game once
+`GAMELOG_ENABLED=1`. That is a deliberate product decision, and it concentrates
+the entire privacy posture into the three controls below — there is no user-
+facing switch to fall back on, so each of them has to actually hold:
+
+- **Disclosure.** A line in the privacy policy stating that game hands and
+  timings are retained for model training, with the retention window. With no
+  opt-out this is the *only* thing standing between the store and a player who
+  did not expect it, so it should be in place before the first real game is
+  logged rather than added afterwards.
+- **Deletion must cascade.** There is no account-deletion flow today. When one
+  is added it has to reach `gamelog.sqlite`, which is a separate database that
+  no existing code path touches — `mlog_seat.user_id` is the join, and clearing
+  it leaves the trajectories intact but unattributable, which is usually the
+  right outcome. Absent an opt-out, deletion is the only lever a player has.
+- **The kill switch is `GAMELOG_ENABLED`.** Unsetting it stops recording
+  everywhere without a deploy. Worth knowing it exists before it is needed.
 - **Pseudonymization at export.** `user_id` never leaves the server. Exports
   carry `subject_key = HMAC(server_secret, user_id)` — stable across games, so
   per-player modelling still works, but not reversible from the exported corpus
@@ -843,7 +854,7 @@ should be settled before the first game is logged rather than after.
 7. Archival and retention job.
 
 Steps 1–5 are the store. Steps 6–7 can follow once real data has accumulated,
-but the retention window from [§8](#8-privacy-retention-and-consent) should be
+but the retention window from [§8](#8-privacy-and-retention) should be
 disclosed before the first game is logged, not before the first export.
 
 ---
@@ -859,7 +870,7 @@ disclosed before the first game is logged, not before the first export.
 | `server/game/GameTape.js` | In-memory per-round buffer held by `Room` |
 | `server/game/Replayer.js` | Reconstructs state from a tape via the live `Big2Rules` |
 | `server/gamelog.js` | The store: schema, writes, failure isolation, orphan sweep |
-| `server/gamelogRecorder.js` | Glue between gameplay and the store, including the consent check |
+| `server/gamelogRecorder.js` | Glue between gameplay and the store; resolves seats to account ids |
 | `server/scripts/verify-gamelog.js` | Replay-completeness sweep |
 | `server/scripts/export-training-data.js` | JSONL export with observations, legal moves, labels |
 | `server/scripts/archive-gamelog.js` | Archival and retention |
@@ -942,6 +953,8 @@ have produced a plausible-looking corpus rather than an obvious failure:
   `enumerateOptions.py`'s 1695-action index. The card encodings genuinely differ
   (`inference.py` uses a 1-based scheme with Spades at suit 4), so that wants a
   tested adapter rather than an assumption.
-- **The privacy disclosure.** The opt-out works end to end and defaults to
-  recording, per the design. Publishing the retention window is a decision to
-  make before the first real game is logged.
+- **The privacy disclosure.** There is no opt-out by design, so publishing the
+  retention window is the whole of the user-facing privacy story and needs to
+  happen before the first real game is logged.
+- **Deletion cascade.** No account-deletion flow exists to hook into yet; when
+  one is added it must clear `mlog_seat.user_id`.
