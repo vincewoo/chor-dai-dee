@@ -270,7 +270,66 @@ CREATE INDEX idx_mlog_seat_user      ON mlog_seat(user_id) WHERE user_id IS NOT 
 CREATE INDEX idx_mlog_seat_occupant  ON mlog_seat(occupant);
 ```
 
+### What the existing tables already cover
+
+`game_history` and `game_participants` cover some of this, and the new store
+should not duplicate what they do well. The gaps are why it exists:
+
+| Metadata | `game_history` / `game_participants` | New store |
+|---|---|---|
+| Short vs standard | `game_mode`, `max_points` — complete | `game_mode`, `point_threshold` |
+| Player is a bot | `is_bot`, binary only | `mlog_seat.occupant`, 4-way |
+| *Which* bot policy | **absent** | `advanced_bots` + `occupant` |
+| Bot personality | name string only, unmarked | `subject_key` |
+| Seat identity across swaps | **lost** | seat + segment |
+| Rule-set in force | **absent** | `rules_version`, `server_build` |
+
+Three of those gaps matter enough to call out:
+
+**Bot policy is not recorded anywhere today.** `useAdvancedBots` is a
+`start_game` parameter that lands in `room.settings`, and each bot carries
+`difficulty: 'easy' | 'advanced'`. Neither is persisted. A corpus that cannot
+separate heuristic-bot games from PPO-bot games is pooling two unrelated
+policies under one label, which corrupts opponent modelling and any evaluation
+that conditions on opponent strength.
+
+**Bot names are policy parameters, not labels.** `BotLogic.getBotProfile(name)`
+derives variability, patience, and aggression from the bot's name, so `Bot 2`
+and `Bot 3` at the same table play measurably differently — that is the point of
+the profile system. `subject_key` therefore stores the bot's name for the same
+reason it stores a pseudonymous key for humans: it identifies the agent whose
+behaviour is being recorded. Bots with no matching profile are fully
+deterministic, which is itself worth being able to filter on.
+
+**Seat identity survives occupancy changes.** `game_participants` is
+`UNIQUE(game_id, username)` and `replaceWithBot` names its replacement
+`Bot (OldName)` (`RoomManager.js:327`) — a different username, so a mid-game
+departure inserts a fifth participant row rather than updating the fourth.
+Nothing records that the bot inherited the human's hand and score, and the
+departed human keeps NULL placement and score forever. Seat-plus-segment makes
+the handover explicit and attributable.
+
 ### Notes on specific columns
+
+**`rules_version`.** A monotonic integer from a single `RULES_VERSION` constant,
+bumped by hand whenever any of the following changes:
+
+- hand validity or comparison (`Big2Rules`) — including the A-2-3-4-5 and
+  2-3-4-5-6 straight special cases and the flush suit-in-`value` convention;
+- the Hong Kong dragon rule (active, and its 39-point penalty);
+- the 2♠ single auto-pass rule;
+- round scoring, including the 1×/2×/3× penalty tiers (`Scoring.js`);
+- who leads (3♦ on the first round, previous winner thereafter).
+
+The list is the contract: if a change is not on it, it does not affect replay.
+Keep a changelog table in this document mapping each version to what changed,
+because a bare integer in a database three years from now is worthless without
+one.
+
+`server_build` (git sha) is the backstop. `rules_version` is a convenience index
+that a human maintains and can therefore forget to bump; the sha pins the exact
+source that produced the game and cannot be wrong. Record both — when they
+disagree, the sha wins.
 
 **`action = 2` (auto-pass).** When a single 2♠ is played the server marks all
 three opponents as passed without asking them (`RoomManager.js:856-869`). These
@@ -505,7 +564,14 @@ line up.
    for round-level supervision but not for game-placement labels. The
    `end_reason` column carries the distinction; the export filter needs to
    actually respect it.
-4. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
+4. **PPO checkpoint identity.** `occupant='bot_ppo'` says which *family* of bot
+   played, not which weights. The network currently loads a single checkpoint
+   (`server/ai/modelParameters136500`), so today the distinction is moot — but
+   the whole point of this store is to train replacements for it, and once a
+   second checkpoint exists, every game logged before that becomes ambiguous
+   retroactively. Recording the checkpoint identifier in `subject_key` from the
+   start costs nothing and cannot be backfilled later.
+5. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
    players in the same room. Linking consecutive games would enable
    within-session adaptation modelling — a `previous_game_key` column on
    `mlog_game` is nearly free if it is added now rather than backfilled.
