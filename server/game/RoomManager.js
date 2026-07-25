@@ -23,6 +23,7 @@ class Room {
         this.roundNumber = 0; // Current round number
         this.lastRoundWinnerId = null; // Winner of last round starts next
         this.playedCards = []; // Track all cards played this round for card counting
+        this.trickHistory = []; // Ordered plays/passes this round, for bot opponent modelling
         this.debugMode = false; // Enable bot reasoning capture
         this.lastBotReasoning = null; // Store the most recent bot decision reasoning
         this.playersByUsername = {}; // Map username -> player for reconnection
@@ -669,6 +670,11 @@ class Room {
         this.passes = 0;
         this.winners = [];
         this.playedCards = []; // Reset card tracking for new round
+        // Every play and pass this round, in order. Unlike lastPlayedHand and
+        // passedPlayers this survives trick boundaries, so a bot taking the
+        // lead can still see what each opponent declined to beat - the single
+        // most useful read available and previously discarded at trick end.
+        this.trickHistory = [];
         this.turnNumber = 0; // Reset turn counter for new round
         this.playOrder = 0; // Reset play order for z-index stacking
         // DON'T reset tier3DecisionTracking - accumulate across all rounds in the game
@@ -867,6 +873,9 @@ class Room {
             this.playedCards.push({ rank: card.rank, suit: card.suit, value: card.value });
         }
 
+        // Record for opponent modelling (survives trick boundaries)
+        this.trickHistory.push({ playerId, action: 'play', hand: validatedHand });
+
         // Track play stats for advanced stats
         if (this.roundPlayStats[playerId]) {
             this.roundPlayStats[playerId].plays++;
@@ -968,6 +977,9 @@ class Room {
         this.playOrder++; // Increment play order for z-index stacking
         this.playerLastPlayed[playerId] = { type: 'pass', playerId, timestamp: Date.now(), playOrder: this.playOrder };
         this.passedPlayers.add(playerId); // Mark player as passed for this round
+
+        // Record what this player declined to beat, for opponent modelling
+        this.trickHistory.push({ playerId, action: 'pass', hand: this.lastPlayedHand });
 
         // Track pass stats for advanced stats
         if (this.roundPlayStats[playerId]) {
@@ -1139,7 +1151,13 @@ class Room {
                 // Total passes this round
                 passCount: this.passes,
                 // All cards played this round (for card counting)
-                playedCards: [...this.playedCards]
+                playedCards: [...this.playedCards],
+                // Ordered play/pass history, re-indexed relative to this bot
+                // (1=next, 2=across, 3=previous) so it can model each opponent
+                playHistory: [],
+                // Per-bot temperament, so four bots at one table do not all
+                // play identically
+                profile: BotLogic.getBotProfile(currentPlayer.name)
             };
 
             // Build player info in turn order (next player first)
@@ -1150,6 +1168,17 @@ class Room {
                 if (this.passedPlayers.has(player.id)) {
                     gameContext.passedPlayers.push(i - 1); // 0=next, 1=across, 2=previous
                 }
+            }
+
+            // Re-index the round's play history relative to this bot's seat
+            for (const entry of this.trickHistory) {
+                const idx = this.players.findIndex(p => p.id === entry.playerId);
+                if (idx === -1 || idx === this.currentTurnIndex) continue;
+                gameContext.playHistory.push({
+                    relative: (idx - this.currentTurnIndex + 4) % 4, // 1=next, 2=across, 3=previous
+                    action: entry.action,
+                    hand: entry.hand
+                });
             }
 
             // Find who played last (relative position)
