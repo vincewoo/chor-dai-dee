@@ -167,18 +167,14 @@ function HomeScreenV2({
                                 const humans = (game.players || []).filter((p) => !p.isBot);
                                 const seats = game.botCount || 0;
                                 return (
-                                    <button
+                                    <div
                                         key={game.roomId}
-                                        onClick={() => onJoinActiveGame(game.roomId)}
-                                        disabled={isJoining}
-                                        aria-label={`Join room ${game.roomId}, round ${game.roundNumber}, ${seats} seat${seats === 1 ? '' : 's'} open`}
                                         className="text-left"
                                         style={{
                                             background: 'rgba(0,0,0,.34)',
                                             border: '1px solid rgba(255,255,255,.09)',
                                             borderRadius: 14,
                                             padding: '11px 12px',
-                                            cursor: isJoining ? 'default' : 'pointer',
                                             opacity: isJoining ? 0.6 : 1,
                                             ...anim(`${(0.34 + Math.min(i, 6) * 0.04).toFixed(2)}s`),
                                         }}
@@ -212,11 +208,39 @@ function HomeScreenV2({
                                                     {seats} seat{seats === 1 ? '' : 's'} open
                                                 </div>
                                             </div>
-                                            <span style={{ padding: '6px 12px', borderRadius: 10, border: `1px solid ${acc}66`, background: 'rgba(0,0,0,.35)', color: acc, fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                                Join
-                                            </span>
+                                            <div className="flex items-center gap-[6px]" style={{ flexShrink: 0 }}>
+                                                {onWatchRoom && (
+                                                    <button
+                                                        onClick={() => onWatchRoom(game.roomId)}
+                                                        disabled={isJoining}
+                                                        aria-label={`Watch room ${game.roomId}`}
+                                                        style={{
+                                                            padding: '6px 10px', borderRadius: 10,
+                                                            border: '1px solid rgba(255,255,255,.16)', background: 'rgba(0,0,0,.35)',
+                                                            color: 'rgba(244,245,247,.8)', fontWeight: 800, fontSize: 12,
+                                                            whiteSpace: 'nowrap', cursor: isJoining ? 'default' : 'pointer',
+                                                            fontFamily: "'Outfit',sans-serif",
+                                                        }}
+                                                    >
+                                                        👁
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => onJoinActiveGame(game.roomId)}
+                                                    disabled={isJoining}
+                                                    aria-label={`Join room ${game.roomId}, round ${game.roundNumber}, ${seats} seat${seats === 1 ? '' : 's'} open`}
+                                                    style={{
+                                                        padding: '6px 12px', borderRadius: 10, border: `1px solid ${acc}66`,
+                                                        background: 'rgba(0,0,0,.35)', color: acc, fontWeight: 800, fontSize: 12,
+                                                        whiteSpace: 'nowrap', cursor: isJoining ? 'default' : 'pointer',
+                                                        fontFamily: "'Outfit',sans-serif",
+                                                    }}
+                                                >
+                                                    Join
+                                                </button>
+                                            </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 );
                             })}
                         </div>

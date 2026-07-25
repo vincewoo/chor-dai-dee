@@ -658,11 +658,9 @@ const Lobby = ({ user, socket, setUser }) => {
 
                             <div className="max-h-48 overflow-y-auto space-y-2">
                                 {joinableRooms.map(room => (
-                                    <button
+                                    <div
                                         key={room.roomId}
-                                        disabled={isJoining}
-                                        className={`w-full text-left border border-gray-300 rounded p-3 hover:bg-gray-50 cursor-pointer transition ${isJoining ? 'opacity-75 cursor-not-allowed' : ''}`}
-                                        onClick={() => joinInProgressRoom(room.roomId)}
+                                        className={`w-full border border-gray-300 rounded p-3 transition ${isJoining ? 'opacity-75' : ''}`}
                                     >
                                         <div className="flex justify-between items-start mb-1">
                                             <span className="font-bold text-green-600">{room.roomId}</span>
@@ -676,7 +674,24 @@ const Lobby = ({ user, socket, setUser }) => {
                                         <div className="text-xs text-gray-500 mt-1">
                                             {room.players.filter(p => !p.isBot).map(p => p.name).join(', ')}
                                         </div>
-                                    </button>
+                                        <div className="flex gap-2 mt-2">
+                                            <button
+                                                disabled={isJoining}
+                                                onClick={() => joinInProgressRoom(room.roomId)}
+                                                className={`flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-3 py-1.5 rounded ${isJoining ? 'cursor-not-allowed' : ''}`}
+                                            >
+                                                Join
+                                            </button>
+                                            <button
+                                                disabled={isJoining}
+                                                onClick={() => watchRoom(room.roomId)}
+                                                title="Watch this game without playing"
+                                                className={`bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-bold px-3 py-1.5 rounded ${isJoining ? 'cursor-not-allowed' : ''}`}
+                                            >
+                                                👁 Watch
+                                            </button>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </>
