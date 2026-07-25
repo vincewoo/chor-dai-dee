@@ -382,3 +382,48 @@ copy `BotLogic.js` aside before editing and seat the old copy against the new on
   be more accurate.
 - `getAllValidMoves` still prunes flushes and straights to lowest/highest representatives,
   so the bot cannot construct a middle-value flush to win a trick cheaply.
+
+## 11. Tried and rejected: own-hand global strength
+
+When `DealStrength.js` was added for the stats, the obvious next question was whether the
+bot should read the same signal — know its hand is globally strong or weak and adjust for
+the trick. It was measured rather than assumed, and it does not work.
+
+Both formulations were tested, one seat running the variant against three current bots,
+seats rotating, 8,000 rounds per configuration:
+
+- **Deal-anchored** — score the 13-card deal once, use it all round.
+- **Live** — recompute control-per-card from the current hand every turn, so the signal
+  cannot go stale as the bot spends its 2s.
+
+Each fed two levers: scaling `evaluateTrickValue` by strength (strong hand → contest
+harder) and adding a shed bonus when weak (round points are cards left, so a hand that
+cannot win the race should dump volume instead).
+
+| Bias strength | Win rate vs baseline | Round points |
+|---|---|---|
+| Weak (0.2–0.6) | within ±1σ, no effect | +0.08 |
+| Moderate (1.5) | +0.5pp (0.9σ) | +0.48 |
+| Strong (3) | −3.5pp (6.4σ) | +3.31 |
+| Very strong (6) | −7.0pp (13.2σ) | +7.02 |
+
+Monotonically worse as the signal gains influence, never better, in both formulations and
+on both levers. Inverting the sign did not help either, which rules out a simple direction
+error. A control run with the patch installed but zeroed reproduced the baseline, and a
+separate check confirmed the patch really does change decisions (2.3% of them at moderate
+strength), so the null result is real rather than a no-op.
+
+The reason is redundancy, not staleness — the live variant failed the same way as the
+static one. `evaluateTrickValue` already reads `handOrganization.trash` and
+`fiveCardHands`, `dangerLevel` reads the table, and `estimateControlProbability` prices
+individual cards against what is still out. Those are the same facts deal strength
+summarises, except they are situational, and a scalar bias on top mostly just distorts
+prices the retention-cost model had already set correctly.
+
+If this is revisited, the signal worth testing is not "how strong am I" but "am I still
+in this round" — a *relative* read against opponents' card counts, on the specific
+decision of whether a round is lost and the objective should switch from winning to
+minimising cards left. That is a different quantity from deal strength and is not tested
+here.
+
+Reproduce with the scripts described in `docs/HAND-STRENGTH-STATS.md`.

@@ -1,7 +1,12 @@
 # Deal Strength vs. Outcome
 
-Design for a statistic that answers: *given the cards you were dealt, did you
-do better or worse than you should have?*
+A statistic that answers: *given the cards you were dealt, did you do better or
+worse than you should have?*
+
+**Status: implemented.** `server/game/DealStrength.js` holds the metric and the
+baseline, `GET /api/stats/:username/hand-strength` serves it, and the Stats page
+renders it as a Tier 3 card. Regenerate every constant with
+`node server/test/dealStrength.bench.js`.
 
 Every number in this document was measured, not guessed. The measurement
 scripts are described in [Reproducing the numbers](#reproducing-the-numbers).
@@ -238,10 +243,12 @@ with CI, points saved, steals, squanders, round count.
 ### Caveats worth encoding rather than hiding
 
 - **Bot tables.** A round against three bots is not a round against three
-  humans. `round_stats` already only records humans, but table composition is
-  not recorded. Either store an `opponent_humans` count or restrict Edge to
-  rounds meeting a threshold — otherwise strong players farming bots will show
-  inflated Edge.
+  humans. Rounds store `human_opponents`, and the API returns three scopes —
+  `all`, `vsBots`, `vsHumans` — which the card exposes as tabs. Bot rounds are
+  the bulk of play, so they are reported rather than discarded, but kept
+  separable so farming bots does not read as general strength. Note also that
+  the shipped baseline is *derived* from bot self-play, so it is at its most
+  accurate exactly where most rounds happen.
 - **Turn order.** The 3♦ holder leads round 1 and the previous winner leads
   after, which is worth a small amount of win rate that deal strength does not
   capture. It will average out across many rounds; it will not average out in
@@ -261,6 +268,19 @@ All figures come from `server/test/botHarness.js` self-play, the same harness
 - Deal distribution and tier shares: 200,000 random deals, seed 1.
 - Residual SD and sample-size table: same 12,000-round sample.
 
-If the recommendation here is implemented, these scripts should land as
-`server/test/dealStrength.bench.js` so the baseline can be regenerated when the
-bots or the rules change.
+These live in `server/test/dealStrength.bench.js`, which prints the percentile
+table and the tier baseline in paste-ready form. Rerun it and bump
+`BASELINE_VERSION` whenever the bots, the rules, or the formula change — the
+baseline describes what a competent player gets from a deal, so it drifts as
+the definition of "competent" does.
+
+## Should the bot use this too?
+
+No — measured, and it makes the bot worse. An own-hand strength signal was
+tested on the bot in both static (deal-anchored) and live (recomputed each turn)
+forms, against two levers, and degraded play monotonically as it gained
+influence. The existing retention-cost heuristics already read hand quality
+situationally, so a scalar bias on top only distorts them.
+
+Full numbers and the reasoning are in
+`docs/BOT-HEURISTICS-REVIEW.md` § 11.
