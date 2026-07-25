@@ -363,8 +363,50 @@ also a useful health signal that the PPO worker is failing in production.
 `gameContext` the bot reasons over — card counts, the relative re-indexing of
 `trickHistory`, the profile lookup (`RoomManager.js:1144-1193`). Change that and
 behaviour changes with `BotLogic.js` untouched and `BOT_LOGIC_VERSION` unbumped.
-Extracting the context builder into its own module would make the boundary
-explicit and hashable; short of that, `server_build` is the backstop.
+**Decision: extract it** into `server/game/BotContext.js`, as build step 1. See
+below.
+
+### Extracting the observation builder
+
+`gameContext` is the bot's observation — the features the policy sees. It
+belongs with the policy, not with room bookkeeping, and it needs to be one
+implementation for three independent reasons:
+
+1. **The exporter would otherwise be a third copy.** [§9](#9-export) emits `obs`
+   re-indexed to the acting seat exactly as `checkBotTurn` does, so a policy
+   trained on exports drops straight in as a bot. If the exporter reimplements
+   that indexing, the training data drifts from the thing it is training —
+   the same failure the replay-don't-snapshot design exists to prevent,
+   reintroduced one layer up.
+2. **It is already duplicated.** `botHarness.js:77` builds it under a comment
+   promising it matches `checkBotTurn`, which nothing verifies. `npm run bench`
+   — the measurement that decides whether a bot change was an improvement —
+   runs on that copy. The two are behaviourally equivalent today: the harness's
+   extra `&& e.hand` filter is a no-op given that `trickHistory` never stores a
+   falsy hand, and its `rng` field is a deliberate addition for reproducible
+   benchmarks (`BotLogic.js:1053` defaults to `Math.random`). But one
+   intentional divergence has already accumulated, which is how this starts.
+3. **It makes the hash boundary honest**, which was the original motivation and
+   is the least important of the three.
+
+Signature takes plain state, not a `Room` — the replayer reconstructs state and
+never builds `Room` instances:
+
+```js
+buildGameContext({ hands, seat, passedSeats, passCount,
+                   playedCards, trickHistory, lastPlayedHand, profile, rng })
+```
+
+Seat-indexed, no socket IDs, no `Room` coupling. `RoomManager` adapts at the
+call site (it already maps `playerId` to index), the harness drops its copy, and
+the exporter calls it directly. The harness's `rng` injection survives as a
+documented parameter rather than an undocumented extra field.
+
+The move is low-risk: the block reads state and returns an object, with no
+mutation, timers, async, or control flow. It also brings the first direct test
+coverage of the relative re-indexing, which currently has none despite the
+defensive `if (relative === 0) relative = 4; // Shouldn't happen` in
+`RoomManager.js:1190`.
 
 **`rules_version`.** A monotonic integer from a single `RULES_VERSION` constant,
 bumped by hand whenever any of the following changes:
@@ -640,14 +682,7 @@ line up.
    for round-level supervision but not for game-placement labels. The
    `end_reason` column carries the distinction; the export filter needs to
    actually respect it.
-4. **Scope of the bot-logic hash.** The golden-hash test covers `BotLogic.js`,
-   but `checkBotTurn`'s `gameContext` builder is part of the same behavioural
-   surface and lives inside `RoomManager.js`, which changes for unrelated
-   reasons constantly. Either extract it into its own module so it can be
-   hashed, or accept `server_build` as the only guard on that path. Worth
-   deciding before the test is written, since it determines whether a small
-   refactor belongs in step 3.
-5. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
+4. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
    players in the same room. Linking consecutive games would enable
    within-session adaptation modelling — a `previous_game_key` column on
    `mlog_game` is nearly free if it is added now rather than backfilled.
@@ -656,20 +691,23 @@ line up.
 
 ## 12. Suggested build order
 
-1. `Replayer.js` + tests, driven by synthetic tapes. Nothing else is safe to
+1. Extract `BotContext.js` and converge `RoomManager` and `botHarness` onto it.
+   A prerequisite for both the replayer and the exporter, and the one step that
+   pays for itself even if the store is never built.
+2. `Replayer.js` + tests, driven by synthetic tapes. Nothing else is safe to
    build until replay is proven, since replay is what makes the format lossless.
-2. Schema + `gamelog.js` store module, with the failure-isolation wrapper.
+3. Schema + `gamelog.js` store module, with the failure-isolation wrapper.
    Land `BOT_LOGIC_VERSION`, `RULES_VERSION`, and the golden-hash tests here,
    **before** the first game is logged — a corpus whose early rows have an
    unenforced version is a corpus you cannot trust the early rows of.
-3. Instrumentation hooks, most-contained first: `startRound` deal capture, then
+4. Instrumentation hooks, most-contained first: `startRound` deal capture, then
    `playHand`/`passTurn`, then the flush sites.
-4. The replay-completeness sweep, run over real logged games. **Run this before
+5. The replay-completeness sweep, run over real logged games. **Run this before
    writing any training code** — it is what tells you the corpus is sound while
    there is still little of it to discard.
-5. Exporter and pseudonymization.
-6. Archival and retention job.
+6. Exporter and pseudonymization.
+7. Archival and retention job.
 
-Steps 1–4 are the store. Steps 5–6 can follow once real data has accumulated,
+Steps 1–5 are the store. Steps 6–7 can follow once real data has accumulated,
 but the retention window from [§8](#8-privacy-retention-and-consent) should be
 disclosed before the first game is logged, not before the first export.
