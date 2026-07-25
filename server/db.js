@@ -244,6 +244,10 @@ function initDb() {
 
         db.run(`CREATE INDEX IF NOT EXISTS idx_decision_tracking_user
                 ON decision_tracking(user_id, game_id)`);
+        // Lets the retention sweep delete by age as an index range scan instead of
+        // a full table scan.
+        db.run(`CREATE INDEX IF NOT EXISTS idx_decision_tracking_timestamp
+                ON decision_tracking(timestamp)`);
 
         // Card Counting: Track prediction accuracy and deck awareness
         db.run(`CREATE TABLE IF NOT EXISTS card_awareness_stats (
@@ -1047,6 +1051,30 @@ const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
         (chain, chunk) => chain.then(() => insertChunk(chunk)),
         Promise.resolve()
     );
+};
+
+// Delete decision_tracking rows older than the retention window.
+//
+// decision_tracking is append-only detail behind the Tier 3 aggregates, at
+// roughly 20-90 rows per player per game. Nothing reads it back today, so without
+// a sweep it grows without bound on the Fly volume that also holds the live
+// database. Aggregates (card_awareness_stats, variance_stats, behavioral_stats)
+// are computed at game end and stored separately, so pruning the raw rows loses
+// no stat the app currently shows.
+//
+// Resolves to the number of rows removed.
+const DECISION_TRACKING_RETENTION_DAYS = 30;
+
+const pruneDecisionTracking = (retentionDays = DECISION_TRACKING_RETENTION_DAYS) => {
+    return new Promise((resolve, reject) => {
+        const query = `DELETE FROM decision_tracking
+                       WHERE timestamp < datetime('now', ?)`;
+
+        db.run(query, [`-${retentionDays} days`], function (err) {
+            if (err) return reject(err);
+            resolve(this.changes || 0);
+        });
+    });
 };
 
 // Update card awareness stats
@@ -1858,6 +1886,8 @@ module.exports = {
     // Tier 3 functions
     trackDecision,
     trackDecisionsBatch,
+    pruneDecisionTracking,
+    DECISION_TRACKING_RETENTION_DAYS,
     withTransaction,
     updateCardAwarenessStats,
     getCardAwarenessStats,

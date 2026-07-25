@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, withTransaction, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -2304,6 +2304,32 @@ const HOST = '0.0.0.0'; // Listen on all interfaces for Docker
 server.listen(PORT, HOST, () => {
     console.log(`Server running on ${HOST}:${PORT}`);
 });
+
+// Retention sweep for decision_tracking.
+//
+// Run at startup rather than only on a long timer: this server exits when idle
+// (see the autostop check below) with min_machines_running = 0, so a daily
+// interval would frequently never fire. Startup is the one moment guaranteed to
+// happen. The delay keeps it off the critical path while the first players are
+// connecting, and the interval covers machines that stay up for days.
+const DECISION_PRUNE_INTERVAL = 24 * 60 * 60 * 1000;
+
+const pruneDecisions = async () => {
+    try {
+        const removed = await pruneDecisionTracking();
+        if (removed > 0) {
+            console.log(
+                `[Cleanup] Pruned ${removed} decision_tracking row(s) older than ` +
+                `${DECISION_TRACKING_RETENTION_DAYS} days`
+            );
+        }
+    } catch (err) {
+        console.error('[Cleanup] Failed to prune decision_tracking:', err.message);
+    }
+};
+
+setTimeout(pruneDecisions, 30 * 1000).unref();
+setInterval(pruneDecisions, DECISION_PRUNE_INTERVAL).unref();
 
 // Periodic cleanup of inactive rooms
 // Runs every 5 minutes
