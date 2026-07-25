@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "bench": "node test/botBench.js"
+    "bench": "node test/botBench.js",
+    "gamelog:verify": "node scripts/verify-gamelog.js",
+    "gamelog:export": "node scripts/export-training-data.js",
+    "gamelog:archive": "node scripts/archive-gamelog.js"
   },
   "keywords": [],
   "author": "",

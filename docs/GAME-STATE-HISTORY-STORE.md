@@ -1,7 +1,12 @@
 # Game State History Store — Design
 
-Status: **proposal, not implemented.** This document is the design only; no
-schema or instrumentation has been added to the server yet.
+Status: **implemented.** This document is the design; the code follows it. See
+[Implementation](#13-implementation) for the file map and how to run the tools.
+
+**Recording is off by default.** It requires `GAMELOG_ENABLED=1`, so enabling it
+is a config change rather than a deploy. Before turning it on in production,
+settle the privacy posture in [§8](#8-privacy-retention-and-consent) — the
+opt-out and the toggle exist, but the disclosure is a decision, not code.
 
 ## Goal
 
@@ -20,7 +25,7 @@ default. Each is cheap to revisit; the section that depends on it is noted.
 | Storage substrate | Separate `gamelog.sqlite` on the same Fly volume | [Substrate](#1-substrate) |
 | Fidelity | Deal + action log, states re-derived by replay | [Model](#2-the-central-decision-log-the-tape-not-the-state) |
 | Private hands | Record all four hands, with opt-out and retention | [Privacy](#8-privacy-retention-and-consent) |
-| Deliverable | Design doc only | — |
+| Deliverable | Design doc, then implemented | [§13](#13-implementation) |
 
 ---
 
@@ -840,3 +845,103 @@ should be settled before the first game is logged rather than after.
 Steps 1–5 are the store. Steps 6–7 can follow once real data has accumulated,
 but the retention window from [§8](#8-privacy-retention-and-consent) should be
 disclosed before the first game is logged, not before the first export.
+
+---
+
+## 13. Implementation
+
+### File map
+
+| File | Role |
+|---|---|
+| `server/game/BotContext.js` | The bot's observation, shared by live play, the benchmark harness, and replay |
+| `server/game/TapeCodec.js` | Deal blob, 52-bit card masks, action/source/flag codes, `think_ms` clamp |
+| `server/game/GameTape.js` | In-memory per-round buffer held by `Room` |
+| `server/game/Replayer.js` | Reconstructs state from a tape via the live `Big2Rules` |
+| `server/gamelog.js` | The store: schema, writes, failure isolation, orphan sweep |
+| `server/gamelogRecorder.js` | Glue between gameplay and the store, including the consent check |
+| `server/scripts/verify-gamelog.js` | Replay-completeness sweep |
+| `server/scripts/export-training-data.js` | JSONL export with observations, legal moves, labels |
+| `server/scripts/archive-gamelog.js` | Archival and retention |
+
+### Configuration
+
+| Variable | Meaning |
+|---|---|
+| `GAMELOG_ENABLED` | `1` to record. Absent means every write is a no-op. |
+| `GAMELOG_PATH` | Override the database location. Defaults to `/data/gamelog.sqlite` in production. |
+| `GAMELOG_EXPORT_SECRET` | HMAC key for pseudonymizing user ids. Required to export; never needed to record. |
+| `GIT_SHA` | Recorded as `server_build`. The authoritative record of what produced a game. |
+
+### Running the tools
+
+```bash
+cd server/
+npm test                  # 106 tests, including the round trips below
+npm run gamelog:verify    # replay every logged round; exits non-zero on failure
+npm run gamelog:export -- --out data/ --humans-only
+npm run gamelog:archive -- --out archive/ --dry-run
+```
+
+### How the correctness claims are tested
+
+The design rests on replay being lossless, so that is tested by round trip
+rather than by fixture, at three levels:
+
+1. **`replayer.test.js`** plays deterministic self-play rounds, records the tape
+   the server would write, replays it, and requires the reconstruction to match
+   — including that replayed observations equal what the bot actually saw. That
+   last assertion is what makes exported training data trustworthy.
+2. **`instrumentation.test.js`** drives a real `Room` through `playHand` /
+   `passTurn` and replays the tape those hooks produced. A tape that is
+   internally consistent but disagrees with the live game passes (1) and fails
+   here.
+3. **`export.test.js`** persists real games, sweeps them, exports them, and
+   reads the shards back — asserting mainly on what must *not* appear:
+   server-generated plies, rounds that failed to replay, raw user ids.
+
+Four bugs surfaced this way and are worth knowing about, because each would
+have produced a plausible-looking corpus rather than an obvious failure:
+
+- Replay recorded 2♠ auto-passes in `trickHistory`; `RoomManager` does not, and
+  is right not to, since a forced pass answers nothing about what an opponent
+  can beat.
+- `RoomManager` was internally inconsistent — play entries pushed a clean
+  validated hand, pass entries pushed the pile still carrying `playerId`.
+- `ON CONFLICT DO NOTHING` leaves node-sqlite3's `lastID` holding a *stale*
+  rowid rather than zeroing it, so reopening a game returned another game's key.
+- The exporter ended its gzip streams without waiting for them to flush, so
+  `process.exit` could truncate the final shard.
+
+### Deviations from the design above
+
+- **`GameTape` and `gamelogRecorder`** are not in the original file plan. They
+  keep `RoomManager` free of persistence and `index.js` free of logging logic,
+  matching how `db.js` is already used.
+- **`trickHistory` now stores `seat` rather than `playerId`.** Required by the
+  replayer, which has no socket-id concept — and it fixes a live bug:
+  `reconnectPlayer` migrates eight maps to follow a changed socket id but not
+  this one, so a reconnecting player's earlier plays vanished from every bot's
+  opponent model for the rest of the round.
+- **Auto-pass needed a client change.** The client emits an identical
+  `pass_turn` with a randomized 1–3s delay chosen so opponents cannot
+  distinguish it, which meant the server could not either. It now sends
+  `auto: true`; without that, fabricated delays would land in the middle of the
+  plausible human deliberation band.
+- **`RULES_VERSION`'s fingerprint excludes `RoomManager.js`**, which hosts the
+  2♠ auto-pass and lead determination. It changes constantly for unrelated
+  reasons, and the tape records both rules explicitly rather than re-deriving
+  them.
+
+### Not done
+
+- **Nothing is scheduled.** `verify` and `archive` are CLIs. The server runs the
+  orphan sweep at boot but no periodic archival — wire that to a cron or Fly
+  machine once recording is actually on and the volume trend is known.
+- **No PPO export encoder.** [§9](#9-export) suggests a second encoder targeting
+  `enumerateOptions.py`'s 1695-action index. The card encodings genuinely differ
+  (`inference.py` uses a 1-based scheme with Spades at suit 4), so that wants a
+  tested adapter rather than an assumption.
+- **The privacy disclosure.** The opt-out works end to end and defaults to
+  recording, per the design. Publishing the retention window is a decision to
+  make before the first real game is logged.
