@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
-import { getAvatarEmoji } from '../../utils/avatars';
+import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { useAvatars } from '../../hooks/useAvatars';
 import { GAME_MODES } from '../../constants/gameModes';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -29,6 +30,9 @@ function WaitingRoomV2({
     const timers = useRef([]);
 
     useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+    // Seats show the avatar each player picked, so load them for this room.
+    useAvatars(players.map(p => p.name));
 
     const flash = (setter) => {
         setter(true);
@@ -60,6 +64,7 @@ function WaitingRoomV2({
             name: p.name,
             isYou: p.id === myPlayerId,
             animal: getAvatarEmoji(p.name),
+            tile: getAvatarTile(p.name),
             host: p.name === hostUsername,
             delay: `${(i * 0.07).toFixed(2)}s`,
         });
@@ -139,7 +144,7 @@ function WaitingRoomV2({
                         >
                             {st.filled ? (
                                 <>
-                                    <div style={{ width: 52, height: 52, borderRadius: 16, background: 'linear-gradient(145deg,#fff7e8,#ede3cd)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{st.animal}</div>
+                                    <div style={{ width: 52, height: 52, borderRadius: 16, background: st.tile, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{st.animal}</div>
                                     <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 5 }}>
                                         {st.name}{st.isYou ? ' (You)' : ''}
                                         {st.host && (

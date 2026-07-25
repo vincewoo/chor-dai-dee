@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
-import { getAvatarEmoji } from '../../utils/avatars';
+import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 
 // Full-screen round-over celebration with confetti and ranked results.
 function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGrad, soft, rm }) {
@@ -65,7 +65,7 @@ function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGr
                             }}
                         >
                             <div style={{ width: 22, textAlign: 'center', color: i === 0 ? acc : 'rgba(244,245,247,.45)', fontWeight: 800, fontSize: 15 }}>{i + 1}</div>
-                            <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(145deg,#ffffff,#dfe5ea)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
+                            <div style={{ width: 42, height: 42, borderRadius: 13, background: getAvatarTile(r.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
                                 {getAvatarEmoji(r.name)}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>

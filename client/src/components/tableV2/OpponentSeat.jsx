@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { getAvatarEmoji } from '../../utils/avatars';
+import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { isPass } from '../../theme/tableTheme';
 import VoiceIndicator from '../VoiceIndicator';
 
@@ -29,6 +29,7 @@ function OpponentSeat({
     const rightAligned = position === 'right';
     const passed = isPass(player.lastPlayed);
     const emoji = getAvatarEmoji(player.name);
+    const tile = getAvatarTile(player.name);
 
     // Position of the whole seat cluster.
     const wrapperStyle =
@@ -42,7 +43,7 @@ function OpponentSeat({
         <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{
                 width: 38, height: 38, borderRadius: 12,
-                background: 'linear-gradient(145deg,#ffffff,#dfe5ea)',
+                background: tile,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
                 animation: isTurn && !rm ? 'cddGlow 1.2s ease-in-out infinite' : 'none',
                 opacity: player.isDisconnected ? 0.5 : 1,

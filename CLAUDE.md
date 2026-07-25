@@ -241,8 +241,19 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - `GET /api/stats/:username/tier3` - Advanced analytics (Tier 3)
 
 #### Preferences
-- `GET /api/preferences/:userId` - Get user preferences
+- `GET /api/preferences/:userId` - Get user preferences (includes the chosen avatar)
 - `POST /api/preferences/:userId` - Save user preferences
+
+#### Avatars
+- `POST /api/avatar/:userId` - Save the avatar picked in the Avatar Picker.
+  Kept separate from the preferences POST so the periodic preference sync can
+  never overwrite an avatar with a stale value. The emoji is validated against
+  `server/avatars.js`.
+- `GET /api/avatars?usernames=a,b,c` - Batch lookup keyed on **username**, since
+  a username is the only identifier a client has for the other players at its
+  table. Names with no chosen avatar are omitted from the response and the
+  client falls back to a deterministic name-derived avatar (bots, guests, and
+  anyone who never opened the picker).
 
 ### Socket.io Events
 
@@ -285,7 +296,7 @@ Unsetting it is the kill switch.
 
 #### Core Tables
 - `users` - User accounts (id, username, password_hash)
-- `user_preferences` - Settings (four_color_mode, auto_pass)
+- `user_preferences` - Settings (four_color_mode, auto_pass, table theme, sound, avatar_animal/avatar_tile)
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
 - `stats_standard` - Standard game mode statistics
@@ -339,6 +350,12 @@ Unsetting it is the kill switch.
   - 2-color mode: Red (Hearts/Diamonds), Black (Spades/Clubs)
   - 4-color mode: Red (Hearts), Blue (Diamonds), Black (Spades), Green (Clubs)
 - **Auto-Pass:** Automatically pass when no valid moves available
+- **Avatars:** Emoji animal on a coloured tile, picked in the v2 Avatar Picker.
+  Stored on the account so every player at the table sees the same avatar; the
+  choice is mirrored into localStorage for instant render and for guests, who
+  have no account to attach it to. `client/src/utils/avatars.js` holds the
+  registry of looked-up avatars and `useAvatars()` (in `hooks/useAvatars.js`)
+  loads the names a component renders.
 - **Settings Panel:** In-game gear icon for preferences
   - Toggle four-color deck
   - Toggle auto-pass

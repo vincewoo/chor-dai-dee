@@ -370,6 +370,11 @@ function initDb() {
                 addColumn('reduced_motion', 'reduced_motion INTEGER DEFAULT 0');
                 addColumn('sound_enabled', 'sound_enabled INTEGER DEFAULT 1');
                 addColumn('sound_volume', 'sound_volume REAL DEFAULT 0.6');
+                // Avatar chosen in the Avatar Picker. NULL means "never chose
+                // one", which is what tells clients to fall back to the
+                // deterministic name-derived avatar.
+                addColumn('avatar_animal', 'avatar_animal TEXT');
+                addColumn('avatar_tile', 'avatar_tile INTEGER');
             }
         });
 
@@ -1315,7 +1320,9 @@ const getUserPreferences = (userId) => {
                     accent_color: 'gold',
                     reduced_motion: 0,
                     sound_enabled: 1,
-                    sound_volume: 0.6
+                    sound_volume: 0.6,
+                    avatar_animal: null,
+                    avatar_tile: null
                 });
             }
             resolve(row);
@@ -1341,11 +1348,16 @@ const updateUserPreferences = async (userId, preferences) => {
     const soundEnabledValue = toInt(pick(preferences.soundEnabled, existing.sound_enabled ?? 1));
     const rawVolume = Number(pick(preferences.soundVolume, existing.sound_volume ?? 0.6));
     const soundVolumeValue = Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : 0.6;
+    // Avatar stays NULL until the player picks one; callers validate the emoji
+    // against the picker's set before it gets here.
+    const avatarAnimalValue = pick(preferences.avatarAnimal, existing.avatar_animal ?? null) ?? null;
+    const rawTile = pick(preferences.avatarTile, existing.avatar_tile);
+    const avatarTileValue = Number.isInteger(rawTile) ? rawTile : null;
 
     return new Promise((resolve, reject) => {
         const query = `INSERT INTO user_preferences
-                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                           (user_id, four_color_mode, auto_pass, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, avatar_animal, avatar_tile)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
                            auto_pass = ?,
@@ -1353,17 +1365,45 @@ const updateUserPreferences = async (userId, preferences) => {
                            accent_color = ?,
                            reduced_motion = ?,
                            sound_enabled = ?,
-                           sound_volume = ?`;
+                           sound_volume = ?,
+                           avatar_animal = ?,
+                           avatar_tile = ?`;
 
         const values = [
-            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue,
-            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue
+            userId, fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue,
+            fourColorValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue
         ];
 
         db.run(query, values, (err) => {
             if (err) return reject(err);
             resolve();
         });
+    });
+};
+
+// Look up the chosen avatars for a set of usernames. Everyone at a table needs
+// to render everyone else's avatar, and the only identifier a client has for
+// another player is their name, so this is keyed on username rather than id.
+// Names with no chosen avatar are simply absent from the result — clients fall
+// back to the deterministic name-derived avatar for those (bots included).
+const getAvatarsByUsernames = (usernames) => {
+    const names = (usernames || []).filter(n => typeof n === 'string' && n.length > 0);
+    if (names.length === 0) return Promise.resolve([]);
+
+    const placeholders = names.map(() => '?').join(',');
+    return new Promise((resolve, reject) => {
+        db.all(
+            `SELECT u.username, p.avatar_animal, p.avatar_tile
+             FROM users u
+             JOIN user_preferences p ON p.user_id = u.id
+             WHERE u.username IN (${placeholders})
+               AND p.avatar_animal IS NOT NULL`,
+            names,
+            (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            }
+        );
     });
 };
 
@@ -1902,6 +1942,7 @@ module.exports = {
     // User preferences
     getUserPreferences,
     updateUserPreferences,
+    getAvatarsByUsernames,
     // Leaderboard
     getLeaderboard,
     getPlayerRank,

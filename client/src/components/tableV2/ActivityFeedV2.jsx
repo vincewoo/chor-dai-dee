@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { useAvatars } from '../../hooks/useAvatars';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile activity feed. Same shell language as LeaderboardV2 (surface wash,
@@ -77,6 +78,9 @@ function ActivityFeedV2({
     const [nowTs] = useState(() => Date.now());
 
     const anim = (d) => (rm ? undefined : d);
+
+    // Winners and expanded standings both render avatars for these names.
+    useAvatars(games.flatMap((g) => (g.participants || []).map((p) => p.username)));
 
     const pill = (on) => ({
         flex: 1,

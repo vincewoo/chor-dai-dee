@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import PileCardGlyph from './PileCardGlyph';
-import { getAvatarEmoji } from '../../utils/avatars';
+import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { describeHand } from '../../theme/tableTheme';
 
 // Bottom sheet showing every play/pass this round, grouped by trick (latest first).
@@ -58,7 +58,7 @@ function RoundLogSheet({ open, log, acc, fourColor, rm, onClose }) {
                                             </div>
                                         )}
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 14, padding: '8px 12px' }}>
-                                            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(145deg,#ffffff,#dfe5ea)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                                            <div style={{ width: 32, height: 32, borderRadius: 10, background: getAvatarTile(e.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
                                                 {getAvatarEmoji(e.name)}
                                             </div>
                                             <div style={{ flex: 1, minWidth: 0 }}>

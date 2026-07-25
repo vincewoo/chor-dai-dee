@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { useAvatars } from '../../hooks/useAvatars';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile leaderboard (global only — no friends system server-side). Mirrors
@@ -14,6 +15,7 @@ function LeaderboardV2({ data = [], mode, onSetMode, user, loading, error, onBac
         () => data.map((p, i) => ({ ...p, rank: i + 1 })),
         [data]
     );
+    useAvatars(ranked.map((p) => p.username));
     const top3 = ranked.slice(0, 3);
     const rest = ranked.slice(3);
     const me = ranked.find((p) => user && p.username === user.username);

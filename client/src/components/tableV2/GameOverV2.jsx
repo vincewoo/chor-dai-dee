@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { useAvatars } from '../../hooks/useAvatars';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; rating deltas are
@@ -8,6 +9,9 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 // passed as children (all wiring stays in GameRoom).
 function GameOverV2({ gameOver, myName, children }) {
     const { acc, accGrad, soft, rm } = useTableTheme();
+    // Standings show each player's chosen avatar; avatarsVersion re-runs the
+    // memo below once the lookup lands.
+    const avatarsVersion = useAvatars((gameOver?.scores || []).map(s => s.name));
 
     const rows = useMemo(() => {
         const scores = (gameOver?.scores || []).slice().sort((a, b) => a.cumulativeScore - b.cumulativeScore);
@@ -23,7 +27,10 @@ function GameOverV2({ gameOver, myName, children }) {
             total: s.cumulativeScore,
             delay: `${(0.35 + i * 0.09).toFixed(2)}s`,
         }));
-    }, [gameOver, myName]);
+        // avatarsVersion isn't read here, but it changes when a looked-up
+        // avatar lands and must invalidate the cached rows.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [gameOver, myName, avatarsVersion]);
 
     const you = rows.find(r => r.isYou);
     const winnerRow = rows[0];
