@@ -200,7 +200,10 @@ CREATE TABLE mlog_game (
     started_at      INTEGER NOT NULL,          -- epoch ms
     ended_at        INTEGER,
     end_reason      TEXT CHECK(end_reason IN
-                       ('threshold','dragon','abandoned','partial')),
+                       ('threshold','dragon','abandoned')),
+    abandon_reason  TEXT CHECK(abandon_reason IN            -- NULL unless abandoned
+                       ('all_bots','single_player_timeout',
+                        'multiplayer_timeout','orphaned_restart')),
     total_rounds    INTEGER NOT NULL DEFAULT 0,
     winner_seat     INTEGER
 );
@@ -308,6 +311,70 @@ departed human keeps NULL placement and score forever. Seat-plus-segment makes
 the handover explicit and attributable.
 
 ### Notes on specific columns
+
+**`end_reason` / `abandon_reason` — truncated games.** Abandoned games are kept,
+not discarded, because abandonment truncates a *game*, not a *round*. Rounds
+flush atomically at `handleRoundOver`, so a game abandoned during round 7 still
+carries six rounds with valid deals, complete action sequences, and correct
+round-level outcomes — indistinguishable in quality from a completed game for
+anything that learns per-decision or per-round.
+
+What survives, by granularity:
+
+| Granularity | Abandoned game |
+|---|---|
+| Completed rounds | Fully usable |
+| In-flight round (`mlog_round.end_reason='partial'`) | Actions valid for imitation; no reward target |
+| Game-level labels | Lost — placement, winner, terminal score |
+
+The proportions decide it: a standard game is ~10 rounds and ~500 decisions
+against a single game-placement scalar. Discarding abandoned games to protect
+that scalar throws away the decisions carrying most of the signal.
+
+**The real hazard is selection bias, not the missing labels.** Games are not
+abandoned at random — players leave when losing, tilting, or bored in a
+one-sided game — so abandoned games are enriched for bad positions, especially
+in their final rounds. A value function fitted on round rewards pooled across
+both classes will misprice positions. Behaviour cloning is more robust, since
+conditioning on state absorbs much of it, but losing players genuinely do play
+differently (dumping high cards), so the learned policy still shifts.
+
+`abandon_reason` records which cleanup rule fired, which maps directly onto how
+biased the sample is:
+
+- `all_bots` — no humans, so no behavioural bias.
+- `single_player_timeout` (24 h) — almost certainly a closed tab; mild.
+- `multiplayer_timeout` (30 min) — someone walked out mid-game; the strongest
+  bias, and the class to reweight or exclude first.
+- `orphaned_restart` — the process died. Deploys are independent of game state,
+  making these an essentially unbiased random sample and the one class of
+  truncated game that can be pooled freely.
+
+Two things have to exist for this to be recorded at all:
+
+1. **Cleanup must write a close-out.** `cleanupInactiveRooms()` currently only
+   frees memory and makes no database call (`index.js:2642`), which is why
+   `'abandoned'` has never once been written to `game_history` despite being in
+   its CHECK constraint and queried by the activity feed (`index.js:2137`).
+   Every abandoned game since launch is still marked `'in_progress'`. The new
+   store must not inherit that.
+2. **A startup orphan sweep.** If the process dies, nothing writes anything. On
+   boot, mark every `mlog_game` with a NULL `ended_at` as
+   `end_reason='abandoned', abandon_reason='orphaned_restart'`. Without it,
+   killed games stay indistinguishable from live ones forever.
+
+**Measure this before building.** The existing `game_history` table already
+answers how much it matters — and since nothing ever writes `'abandoned'`, the
+`in_progress` count *is* the historical abandoned count, give or take the handful
+genuinely live at query time:
+
+```sql
+SELECT status, COUNT(*) FROM game_history GROUP BY status;
+```
+
+If abandonment is a large fraction — plausible for a casual web game where most
+sessions are one human against bots — then discarding is not an option and the
+reweighting question is the only one that matters.
 
 **`policy_gen` / `policy_ref` — bot logic generation.** Which *generation* of bot
 logic produced a trajectory, so a model trained later can filter or condition on
@@ -516,7 +583,8 @@ channel: `checkBotTurn` calls the same `playHand`/`passTurn`
 | Flush round | `handleRoundOver()`, `index.js:762` | One transaction: round row + all plies |
 | Flush dragon | `handleDragonWin()`, `index.js:627` | Deal only; `end_reason='dragon'`, zero plies |
 | Close game | game-over branch of `handleRoundOver()` | Finalize `mlog_game` |
-| Flush partial | `cleanupInactiveRooms()`, `RoomManager.js:1607` | Persist the in-flight round as `'partial'` |
+| Flush partial | `cleanupInactiveRooms()`, `RoomManager.js:1607` | Persist the in-flight round as `'partial'`, finalize the game row with `abandon_reason` |
+| Orphan sweep | server boot, before accepting connections | Close out games left with NULL `ended_at` as `'orphaned_restart'` |
 
 ### Buffer in memory, flush per round
 
@@ -657,6 +725,14 @@ Three deliberate choices here:
   points-to-go all depend on the future of the game and on how you choose to
   discount. They belong to the training run, not to the store.
 
+Game-level labels are `null` for abandoned games, and round-level labels are
+`null` for the truncated final round — so the exporter must emit
+`end_reason`/`abandon_reason` alongside them. A consumer that drops rows on a
+null `game_placement` silently discards every abandoned game, which is the
+outcome [§5](#notes-on-specific-columns) argues against; one that ignores
+`abandon_reason` pools a biased sample. Both failures are quiet, so the export
+schema should make the fields hard to miss rather than optional.
+
 Optionally emit a second encoder targeting `server/ai/enumerateOptions.py`'s
 1695-action index, so exported human trajectories can seed or fine-tune the
 existing PPO network directly. The card encodings differ — `inference.py`
@@ -686,12 +762,7 @@ line up.
 
 ## 11. Open questions
 
-1. **Abandoned games.** Rooms are reaped after 30 minutes of inactivity
-   (multiplayer) or 24 hours (single-player). Truncated games are still useful
-   for round-level supervision but not for game-placement labels. The
-   `end_reason` column carries the distinction; the export filter needs to
-   actually respect it.
-2. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
+1. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
    players in the same room. Linking consecutive games would enable
    within-session adaptation modelling — a `previous_game_key` column on
    `mlog_game` is nearly free if it is added now rather than backfilled.
