@@ -33,6 +33,7 @@ function HomeScreenV2({
     onActivity,
     onStats,
     onEditAvatar,
+    onLogout,
     error,
     spectateOffer,
     onWatchRoom,
@@ -274,6 +275,13 @@ function HomeScreenV2({
                     <button onClick={onActivity} style={footerLink}>Activity</button>
                 )}
                 <button onClick={onStats} style={footerLink}>Stats</button>
+                {onLogout && (
+                    // Guests have no account to leave, so this is their route to
+                    // one; registered players use it to switch accounts.
+                    <button onClick={onLogout} style={footerLink}>
+                        {isGuest ? 'Sign in' : 'Log out'}
+                    </button>
+                )}
             </div>
         </div>
     );

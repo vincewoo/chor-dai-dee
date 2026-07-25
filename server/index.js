@@ -2215,12 +2215,31 @@ async function verifyGoogleToken(idToken) {
     return ticket.getPayload();
 }
 
-// Helper function to generate username suggestion from Google profile
-function generateUsername(email, name) {
+// Helper function to generate username suggestion from Google profile.
+// The result is pre-validated against the same rules /api/auth/google/register
+// enforces (3-20 chars, [a-zA-Z0-9_], not taken) so the suggestion the user is
+// shown can actually be submitted. Google display names routinely sanitize down
+// to something too short ("Al", "J.D." -> "JD") or collide with an existing
+// account, and an invalid suggestion turns into a dead end on the signup form.
+async function generateUsername(email, name) {
     // Try name first, then email prefix
     let base = name ? name.replace(/\s+/g, '') : email.split('@')[0];
     base = base.replace(/[^a-zA-Z0-9_]/g, '').substring(0, 15);
-    return base || 'Player';
+
+    // Pad short bases rather than emitting one the register endpoint will reject.
+    if (base.length < 3) base = base ? `${base}Player` : 'Player';
+
+    if (await isUsernameAvailable(base)) return base;
+
+    // Taken - append a numeric suffix, keeping the whole thing within 20 chars.
+    for (let i = 0; i < 50; i++) {
+        const suffix = String(Math.floor(1000 + Math.random() * 9000));
+        const candidate = `${base.substring(0, 20 - suffix.length)}${suffix}`;
+        if (await isUsernameAvailable(candidate)) return candidate;
+    }
+
+    // Fall back to the raw base and let the user edit it on the form.
+    return base;
 }
 
 // Google OAuth Login/Register endpoint
@@ -2254,7 +2273,7 @@ app.post('/api/auth/google', async (req, res) => {
 
         // New Google user - need to choose between create or link
         // Generate a username suggestion from email or name
-        const suggestedUsername = generateUsername(email, name);
+        const suggestedUsername = await generateUsername(email, name);
 
         return res.json({
             success: false,
@@ -2313,6 +2332,13 @@ app.post('/api/auth/google/register', async (req, res) => {
 
     } catch (err) {
         console.error('Google registration error:', err);
+        // The availability check above is not atomic with the insert, so a
+        // collision can still surface here as a UNIQUE constraint failure.
+        // Report it as the actionable "pick another name" rather than a generic
+        // failure the user can't do anything about.
+        if (/UNIQUE constraint failed/i.test(err.message || '')) {
+            return res.status(400).json({ error: 'Username already taken' });
+        }
         res.status(400).json({ error: 'Registration failed' });
     }
 });
