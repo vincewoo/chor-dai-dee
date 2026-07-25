@@ -146,6 +146,11 @@ const Lobby = ({ user, socket, setUser }) => {
     }, [roomLobbyData, voiceContext, user.username]);
 
     const handleLogout = () => {
+        // Drop the mic/peer connections before the identity goes away, otherwise
+        // the WebRTC session outlives the user it was opened for.
+        if (voiceContext?.voiceEnabled) {
+            voiceContext.leaveVoiceRoom();
+        }
         setUser(null);
         navigate('/');
     };
@@ -521,6 +526,7 @@ const Lobby = ({ user, socket, setUser }) => {
                     onActivity={() => navigate('/activity')}
                     onStats={() => navigate('/stats')}
                     onEditAvatar={() => navigate('/avatar')}
+                    onLogout={handleLogout}
                     error={error}
                     spectateOffer={spectateOffer}
                     onWatchRoom={watchRoom}

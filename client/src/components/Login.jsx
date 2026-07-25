@@ -105,12 +105,25 @@ const Login = ({ setUser }) => {
     const handleGoogleRegister = async (e) => {
         e.preventDefault();
         setError('');
+
+        // Validate client-side first so the user gets a specific message instead
+        // of a generic server rejection.
+        const name = suggestedUsername.trim();
+        if (name.length < 3 || name.length > 20) {
+            setError('Username must be 3-20 characters');
+            return;
+        }
+        if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+            setError('Username can only contain letters, numbers, and underscores');
+            return;
+        }
+
         setIsLoading(true);
 
         try {
             const res = await axios.post(`${API_BASE}/api/auth/google/register`, {
                 idToken: googleIdToken,
-                username: suggestedUsername
+                username: name
             });
 
             if (res.data.success) {
