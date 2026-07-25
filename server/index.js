@@ -2706,6 +2706,28 @@ setInterval(pruneDecisions, DECISION_PRUNE_INTERVAL).unref();
 // Periodic cleanup and autostop check
 // Runs every 1 minute
 const CHECK_INTERVAL = 60 * 1000;
+
+// How long the server must stay *continuously* idle before it exits.
+//
+// Exiting on the first idle tick made scale-to-zero far too eager: a player
+// who closed the tab for two minutes, or a lull between games, cost everyone a
+// cold start on the next request. Fly restarts the machine on demand
+// (auto_start_machines), so the only thing a longer window costs is machine
+// time; the only thing a shorter one buys is a slightly smaller bill.
+//
+// Any connected socket or any live room resets the clock, so this is 6 hours
+// of nobody touching the server at all -- not 6 hours since the last game.
+const DEFAULT_IDLE_SHUTDOWN_MINUTES = 6 * 60;
+const parsedIdleMinutes = Number(process.env.IDLE_SHUTDOWN_MINUTES);
+const IDLE_SHUTDOWN_MINUTES = Number.isFinite(parsedIdleMinutes) && parsedIdleMinutes > 0
+    ? parsedIdleMinutes
+    : DEFAULT_IDLE_SHUTDOWN_MINUTES;
+const IDLE_SHUTDOWN_MS = IDLE_SHUTDOWN_MINUTES * 60 * 1000;
+
+// Start the clock at boot so a machine that nobody ever connects to still
+// winds down instead of running forever.
+let idleSince = Date.now();
+
 setInterval(() => {
     const reaped = roomManager.cleanupInactiveRooms();
     if (reaped.length > 0) {
@@ -2723,19 +2745,34 @@ setInterval(() => {
     }
 
     // Autostop check
-    // Logic: If there are no active rooms AND no connected clients, stop the server.
-    // This allows Fly.io to scale down to zero when idle.
+    // Logic: if there have been no active rooms AND no connected clients for
+    // IDLE_SHUTDOWN_MS, stop the server. This allows Fly.io to scale down to
+    // zero when idle, without punishing short gaps between players.
     const activeRooms = roomManager.rooms.size;
     const connectedClients = io.engine.clientsCount;
 
-    // Only log strictly if verbose logging is enabled or if we are about to stop, to avoid spamming logs
-    if (activeRooms === 0 && connectedClients === 0) {
-        console.log(`[Autostop] No active rooms (${activeRooms}) and no connections (${connectedClients}). Shutting down server...`);
+    if (activeRooms > 0 || connectedClients > 0) {
+        idleSince = null;
+        return;
+    }
+
+    if (idleSince === null) {
+        idleSince = Date.now();
+    }
+
+    const idleMs = Date.now() - idleSince;
+    if (idleMs >= IDLE_SHUTDOWN_MS) {
+        const idleMinutes = Math.round(idleMs / 60000);
+        console.log(`[Autostop] Idle for ${idleMinutes} minute(s) (threshold ${IDLE_SHUTDOWN_MINUTES}). Shutting down server...`);
         process.exit(0);
     }
 }, CHECK_INTERVAL);
 
-console.log(`[Cleanup] Automatic room cleanup and autostop enabled (every ${CHECK_INTERVAL / 60000} minutes)`);
+console.log(
+    `[Cleanup] Automatic room cleanup and autostop enabled ` +
+    `(check every ${CHECK_INTERVAL / 60000} minute(s), shut down after ` +
+    `${IDLE_SHUTDOWN_MINUTES} idle minute(s))`
+);
 
 // Error handlers to catch crashes
 process.on('uncaughtException', (error) => {

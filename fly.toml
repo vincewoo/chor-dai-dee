@@ -19,6 +19,11 @@ primary_region = 'lax'
   # or a machine restart. Must be exactly "1" -- "true" leaves recording off.
   # See docs/GAME-STATE-HISTORY-STORE.md.
   GAMELOG_ENABLED = "1"
+  # The server exits itself once it has been continuously idle -- no rooms and
+  # no sockets -- for this many minutes, and Fly starts it again on the next
+  # request (auto_start_machines). This is the knob that controls scale-to-zero,
+  # not auto_stop_machines below. 360 = 6 hours.
+  IDLE_SHUTDOWN_MINUTES = "360"
 
 [http_service]
   internal_port = 3000
