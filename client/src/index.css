@@ -11,15 +11,74 @@
   }
 }
 
+/* Pin the app shell to the viewport. Without an unbroken height chain from
+   html down to #root, a child using 100dvh can still be outgrown by the
+   document, which is what let the standalone PWA scroll past the table.
+   Scrolling moves into #root so screens that need it still scroll, but the
+   document itself never does (no rubber-band behind the fixed game table). */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;
+  /* In a standalone PWA with viewport-fit=cover the web view spans the full
+     screen, so 100dvh includes the status bar and home indicator. Fall back to
+     the dynamic viewport when the insets are 0 (browser tabs, Android). */
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 
 .min-h-screen-safe {
   min-height: 100vh;
   min-height: 100dvh;
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
+
+/* Legacy/desktop screens size themselves with Tailwind's min-h-screen (100vh).
+   Inside the #root scroller that overflows by the safe-area insets, so retarget
+   it at the same inset-aware height the v2 screens use. */
+.min-h-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+/* Safe-area helpers. These are plain CSS rather than Tailwind arbitrary values
+   (mt-[env(...)], pb-[calc(...+env(...))]) because Tailwind v4 silently drops
+   arbitrary values containing a bare env(), producing no rule at all. Each
+   helper adds the inset on top of the screen's existing base padding. */
+.mt-safe {
+  margin-top: env(safe-area-inset-top);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Scrollable v2 screens: base padding + the inset, so content clears the
+   status bar and home indicator rather than hiding underneath them. */
+.pt-safe-16 { padding-top: calc(4rem + env(safe-area-inset-top)); } /* Tailwind pt-16 */
+.pt-safe-18 { padding-top: calc(18px + env(safe-area-inset-top)); }
+.pb-safe-6 { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+.pb-safe-36 { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
+.pb-safe-88 { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+.pb-safe-92 { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+.pb-safe-104 { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
 
 /* Custom scrollbar styles */
 .scrollbar-thin::-webkit-scrollbar {

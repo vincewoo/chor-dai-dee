@@ -52,7 +52,7 @@ function HomeScreenV2({
 
     return (
         <div
-            className="relative min-h-screen-safe w-full overflow-x-hidden font-sans"
+            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
         >
             <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
@@ -64,7 +64,7 @@ function HomeScreenV2({
             <div className="absolute pointer-events-none select-none" style={{ top: 480, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♥</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 700, left: -30, fontSize: 150, lineHeight: 1, color: 'rgba(255,255,255,.028)', transform: 'rotate(8deg)' }}>♦</div>
 
-            <div className="relative z-10 mx-auto flex min-h-screen-safe max-w-[440px] flex-col px-[22px] pb-[88px] pt-16">
+            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-88 pt-safe-16">
                 {/* Hero */}
                 <div className="flex flex-col items-center gap-[10px]">
                     <img

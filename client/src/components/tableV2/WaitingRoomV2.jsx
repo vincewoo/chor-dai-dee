@@ -87,7 +87,7 @@ function WaitingRoomV2({
             <div className="absolute pointer-events-none select-none" style={{ top: 120, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 460, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♥</div>
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[18px] pb-6 pt-[18px]">
+            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[18px] pb-safe-6 pt-[18px]">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">

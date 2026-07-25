@@ -70,7 +70,7 @@ function GameOverV2({ gameOver, myName, children }) {
                 />
             ))}
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-6 pt-[52px]">
+            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-6 pt-[52px]">
                 {/* Winner hero */}
                 <div className="flex flex-col items-center gap-2">
                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 800, letterSpacing: 2.5, ...anim({ animation: 'cddToast .4s ease-out both' }) }}>

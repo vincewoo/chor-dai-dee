@@ -161,7 +161,7 @@ function GameTableMobile(props) {
 
             {/* Bottom controls + hand. Spectators get the watched seat's hand
                 face-up and no controls at all. */}
-            <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, zIndex: 30 }}>
+            <div style={{ position: 'absolute', bottom: 'calc(10px + env(safe-area-inset-bottom))', left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, zIndex: 30 }}>
                 {isSpectator ? (
                     <SpectatorHandV2
                         sortedHand={sortedHand}
