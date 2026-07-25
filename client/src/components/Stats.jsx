@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ArchetypeDialog from './ArchetypeDialog';
+import { StatsV2 } from './tableV2';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
@@ -18,6 +19,7 @@ const Stats = ({ user }) => {
     const [error, setError] = useState('');
     const [showArchetypeDialog, setShowArchetypeDialog] = useState(false);
     const [selectedArchetype, setSelectedArchetype] = useState(null);
+    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
     const navigate = useNavigate();
 
     // Use URL username if provided, otherwise use logged-in user's username
@@ -34,6 +36,14 @@ const Stats = ({ user }) => {
             fetchStats();
         }
     }, [mode, viewingUsername]);
+
+    // Track viewport to gate the v2 mobile stats screen (matches the 768px
+    // breakpoint used by the lobby, leaderboard and activity feed).
+    useEffect(() => {
+        const onResize = () => setIsDesktop(window.innerWidth >= 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     const fetchStats = async () => {
         setLoading(true);
@@ -71,6 +81,29 @@ const Stats = ({ user }) => {
     if (!user) {
         navigate('/');
         return null;
+    }
+
+    // v2 mobile stats screen (narrow viewports). Desktop keeps the layout below.
+    if (!isDesktop) {
+        return (
+            <StatsV2
+                username={viewingUsername}
+                isSelf={!urlUsername || urlUsername === user.username}
+                isGuest={!!user.isGuest}
+                mode={mode}
+                onSetMode={setMode}
+                stats={stats}
+                headToHead={headToHead}
+                tier3={tier3Stats}
+                rank={playerRank}
+                loading={loading}
+                error={error}
+                onBack={() => navigate('/lobby')}
+                onViewMyStats={() => navigate(`/stats?mode=${mode}`)}
+                onOpponentClick={(name) => navigate(`/stats/${name}?mode=${mode}`)}
+                onCreateAccount={() => navigate('/')}
+            />
+        );
     }
 
     // Show message for guest users
