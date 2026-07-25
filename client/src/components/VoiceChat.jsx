@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useVoice } from '../contexts/VoiceContext';
 import { AnimatePresence, motion } from 'framer-motion';
+import useVoiceParticipants from '../hooks/useVoiceParticipants';
 
 const VoiceChat = ({
   roomId,
@@ -15,6 +16,7 @@ const VoiceChat = ({
     isVoiceConnected,
     isMuted,
     isDeafened,
+    forcedMute,
     peers,
     audioLevels,
     permissionError,
@@ -25,6 +27,9 @@ const VoiceChat = ({
     toggleDeafen,
     setPlayerVolume
   } = useVoice();
+
+  // Everyone we're peered with, including spectators who hold no seat
+  const voiceParticipants = useVoiceParticipants(players, peers, username);
 
   // Store stable callback refs to avoid infinite loops
   const callbacksRef = useRef({});
@@ -63,6 +68,7 @@ const VoiceChat = ({
         isVoiceConnected,
         isMuted,
         isDeafened,
+        forcedMute,
         peers,
         playerVolumes,
         permissionError,
@@ -78,6 +84,7 @@ const VoiceChat = ({
     isVoiceConnected,
     isMuted,
     isDeafened,
+    forcedMute,
     JSON.stringify(peers),
     JSON.stringify(playerVolumes),
     permissionError
@@ -248,11 +255,13 @@ const VoiceChat = ({
           >
             <h3 className="text-white font-semibold mb-3">Volume Controls</h3>
             <div className="space-y-2">
-              {players
-                .filter(p => p.name !== username && peers.includes(p.name))
+              {voiceParticipants
                 .map(player => (
                   <div key={player.id} className="flex items-center gap-3">
-                    <span className="text-gray-300 w-24 text-sm">{player.name}</span>
+                    <span className="text-gray-300 w-24 text-sm truncate">
+                      {player.isSpectator && <span title="Spectator">👁 </span>}
+                      {player.name}
+                    </span>
                     <input
                       type="range"
                       min="0"

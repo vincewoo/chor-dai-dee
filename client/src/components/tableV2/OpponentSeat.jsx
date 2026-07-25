@@ -22,7 +22,7 @@ function CountGlyph({ count, acc, align = 'left' }) {
 // One opponent seat badge. `position` controls layout ('top' | 'left' | 'right').
 function OpponentSeat({
     player, position, isTurn, infoOn, acc, rm,
-    onPlayerClick, isClickable, voiceLevel = 0,
+    onPlayerClick, isClickable, voiceLevel = 0, hint = null,
 }) {
     if (!player) return null;
 
@@ -65,6 +65,11 @@ function OpponentSeat({
                 )}
             </div>
             <CountGlyph count={player.cardCount} acc={acc} align={rightAligned ? 'right' : 'left'} />
+            {hint && (
+                <div style={{ color: acc, fontSize: 9, fontWeight: 700, letterSpacing: 0.5, marginTop: 1 }}>
+                    {hint}
+                </div>
+            )}
         </div>
     );
 

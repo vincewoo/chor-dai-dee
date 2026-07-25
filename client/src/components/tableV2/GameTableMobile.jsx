@@ -9,6 +9,7 @@ import CenterPile from './CenterPile';
 import StatusBanner from './StatusBanner';
 import ControlsRow from './ControlsRow';
 import MobileHandV2 from './MobileHandV2';
+import SpectatorHandV2 from './SpectatorHandV2';
 import RoundLogSheet from './RoundLogSheet';
 import RoundCelebration from './RoundCelebration';
 import VoiceControlBubble from '../VoiceControlBubble';
@@ -26,6 +27,7 @@ function GameTableMobile(props) {
         sensors, handleDragStart, handleDragEnd,
         handContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd,
         containerWidth, voiceState, voiceAudioLevels,
+        isSpectator, viewerIndex, onSelectSeat, onOpenSpectators,
     } = props;
 
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
@@ -34,7 +36,8 @@ function GameTableMobile(props) {
     const [logOpen, setLogOpen] = useState(false);
 
     const players = gameState.players || [];
-    const myIndex = players.findIndex(p => p.id === myPlayerId);
+    // viewerIndex is computed once in GameRoom and shared with CenterPile's
+    // fly-in math, so seat rotation can't drift between the two.
 
     const seatTop = getRelativePlayer(2);
     const seatLeft = getRelativePlayer(3);
@@ -54,8 +57,8 @@ function GameTableMobile(props) {
         ? players.find(p => p.id === gameState.trickWinner)?.name
         : null;
 
-    const canPlay = isMyTurn && selectedCards.length > 0 && !trickWinPending && !isSubmitting;
-    const canPass = isMyTurn && !!lastPlayedHand && !trickWinPending && !isSubmitting;
+    const canPlay = !isSpectator && isMyTurn && selectedCards.length > 0 && !trickWinPending && !isSubmitting;
+    const canPass = !isSpectator && isMyTurn && !!lastPlayedHand && !trickWinPending && !isSubmitting;
     const playLabel = canPlay ? `Play ${selectedCards.length}` : 'Play';
 
     const rootStyle = useMemo(() => ({
@@ -80,6 +83,10 @@ function GameTableMobile(props) {
                 isGuest={user?.isGuest}
                 onCreateAccount={onCreateAccount}
                 acc={acc}
+                spectatorCount={gameState.spectators?.length || 0}
+                onOpenSpectators={
+                    (gameState.spectators?.length > 0 || isSpectator) ? onOpenSpectators : undefined
+                }
                 voiceControl={(
                     <VoiceControlBubble
                         username={user?.username}
@@ -87,6 +94,7 @@ function GameTableMobile(props) {
                         isVoiceConnected={voiceState?.isVoiceConnected || false}
                         isMuted={voiceState?.isMuted || false}
                         isDeafened={voiceState?.isDeafened || false}
+                        forcedMute={voiceState?.forcedMute || false}
                         audioLevel={voiceAudioLevels?.[user?.username] || 0}
                         onToggleVoice={voiceState?.handleVoiceToggle}
                         onToggleMute={voiceState?.toggleMute}
@@ -115,8 +123,11 @@ function GameTableMobile(props) {
                     infoOn={infoOn}
                     acc={acc}
                     rm={rm}
-                    onPlayerClick={handlePlayerClick}
-                    isClickable={canKickPlayer(player)}
+                    // Spectators tap a seat to sit in it; hosts tap to kick. The
+                    // two roles are mutually exclusive, so one handler serves both.
+                    onPlayerClick={isSpectator ? onSelectSeat : handlePlayerClick}
+                    isClickable={isSpectator ? !!player : canKickPlayer(player)}
+                    hint={isSpectator ? 'Tap to view' : null}
                     voiceLevel={voiceAudioLevels?.[player?.name] || 0}
                 />
             ))}
@@ -125,7 +136,7 @@ function GameTableMobile(props) {
                 pilePlays={pileTrickPlays}
                 lastPlayedHand={lastPlayedHand}
                 players={players}
-                myIndex={myIndex}
+                viewerIndex={viewerIndex}
                 fourColor={fourColorMode}
                 accGrad={accGrad}
                 soft={soft}
@@ -137,8 +148,8 @@ function GameTableMobile(props) {
             />
 
             <StatusBanner
-                isMyTurn={isMyTurn && !trickWinPending}
-                mustBeat={mustBeat}
+                isMyTurn={!isSpectator && isMyTurn && !trickWinPending}
+                mustBeat={!isSpectator && mustBeat}
                 trickWinPending={trickWinPending}
                 trickWinnerName={trickWinner}
                 currentPlayerName={currentPlayer?.name}
@@ -148,8 +159,18 @@ function GameTableMobile(props) {
                 rm={rm}
             />
 
-            {/* Bottom controls + hand */}
+            {/* Bottom controls + hand. Spectators get the watched seat's hand
+                face-up and no controls at all. */}
             <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, zIndex: 30 }}>
+                {isSpectator ? (
+                    <SpectatorHandV2
+                        sortedHand={sortedHand}
+                        containerWidth={containerWidth}
+                        acc={acc}
+                        fourColor={fourColorMode}
+                        ownerName={getRelativePlayer(0)?.name}
+                    />
+                ) : (<>
                 <ControlsRow
                     playerHand={myHand}
                     lastPlayedHand={lastPlayedHand}
@@ -183,6 +204,7 @@ function GameTableMobile(props) {
                     acc={acc}
                     fourColor={fourColorMode}
                 />
+                </>)}
             </div>
 
 

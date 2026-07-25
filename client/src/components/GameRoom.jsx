@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import useSpectator from '../hooks/useSpectator';
 import Card from './Card';
 import CardCountIndicator from './CardCountIndicator';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -14,6 +15,7 @@ import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortabl
 import { GAME_MODES } from '../constants/gameModes';
 import logoImage from '../assets/chor-dai-dee-logo.png';
 import Modal from './Modal';
+import SpectatorPanel from './SpectatorPanel';
 import VoiceChat from './VoiceChat';
 import VoiceIndicator from './VoiceIndicator';
 import VoiceControlBubble from './VoiceControlBubble';
@@ -127,12 +129,25 @@ const GameRoom = ({ user, socket }) => {
     const [showKickConfirm, setShowKickConfirm] = useState(false); // Kick confirmation modal
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showMobileScoreboard, setShowMobileScoreboard] = useState(false); // Mobile scoreboard overlay
+    const [showSpectators, setShowSpectators] = useState(false); // Spectator roster panel
     const [voiceState, setVoiceState] = useState(null); // Voice state from VoiceChat component
 
     // Post-game state for rematch/lobby flow
     const [readyStatus, setReadyStatus] = useState(null); // { ready: [], notReady: [], host: 'username', allReady: bool }
     const [isReady, setIsReady] = useState(false); // Whether current player clicked Ready
     const [isSubmitting, setIsSubmitting] = useState(false); // Prevent double-submission of plays/passes
+
+    // Spectator mode: read-only viewing with every hand face-up.
+    const handleSpectateClosed = useCallback((reason) => {
+        setNotification(reason || 'This game has ended');
+        navigate('/lobby');
+    }, [navigate]);
+
+    const {
+        spectateModeRef, isSpectator,
+        spectatorHands, spectatorSeatId, setSpectatorSeatId,
+        emitSpectateJoin, leaveSpectate,
+    } = useSpectator(socket, roomId, handleSpectateClosed);
 
     // Sound effects driven by game state transitions
     useGameSounds({ gameState, roundResult, gameOver, myPlayerId });
@@ -148,18 +163,31 @@ const GameRoom = ({ user, socket }) => {
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
 
+    // The hand rendered in the bottom area. Players see their own; spectators see
+    // the hand of whichever seat they're watching (seat 0, or their picked seat).
+    const playersList = gameState?.players;
+    const bottomHandSource = useMemo(() => {
+        if (!isSpectator) return myHand;
+        const players = playersList || [];
+        if (!players.length) return [];
+        const picked = spectatorSeatId ? players.findIndex(p => p.id === spectatorSeatId) : -1;
+        const seat = players[picked !== -1 ? picked : 0];
+        return spectatorHands[seat?.id] || [];
+    }, [isSpectator, myHand, playersList, spectatorSeatId, spectatorHands]);
+
     // Sorted hand based on current sort mode
     const sortedHand = useMemo(() => {
-        // Use custom order if in custom mode
-        if (isCustomOrder && customHandOrder) {
+        // Custom drag order only applies to your own hand - reordering a hand you
+        // don't own is meaningless, and the spectator hand isn't draggable.
+        if (!isSpectator && isCustomOrder && customHandOrder) {
             return customHandOrder;
         }
         // Otherwise apply current sort mode
         if (sortMode === 'suit') {
-            return sortBySuit(myHand);
+            return sortBySuit(bottomHandSource);
         }
-        return sortByRank(myHand);
-    }, [myHand, sortMode, isCustomOrder, customHandOrder]);
+        return sortByRank(bottomHandSource);
+    }, [bottomHandSource, isSpectator, sortMode, isCustomOrder, customHandOrder]);
 
     // Calculate card dimensions and overlap dynamically
     // Mobile: Cards scale to fill container width with natural overlap
@@ -240,8 +268,14 @@ const GameRoom = ({ user, socket }) => {
     }, [sortedHand.length, containerWidth, isDesktop]);
 
     useEffect(() => {
-        // Join room first (handles reconnection if needed), then request state
-        socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
+        // Spectators must never emit join_room - that would seat them (or bounce
+        // them as 'Room full') and would evict them from any room they're watching.
+        if (spectateModeRef.current) {
+            emitSpectateJoin(user);
+        } else {
+            // Join room first (handles reconnection if needed), then request state
+            socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
+        }
 
         // Set a timeout to detect if room doesn't exist (server restarted)
         const roomLoadTimeout = setTimeout(() => {
@@ -271,6 +305,15 @@ const GameRoom = ({ user, socket }) => {
         };
 
         socket.on('reconnected', handleReconnect);
+
+        // Server confirmed we're watching (fresh navigate, reconnect, or the
+        // post-hard-refresh get_room_state fallback that re-identifies us by name).
+        const handleSpectatingRoom = ({ gameState: specGameState }) => {
+            wasReconnected = true;
+            setGameState(specGameState);
+            clearTimeout(roomLoadTimeout);
+        };
+        socket.on('spectating_room', handleSpectatingRoom);
 
         // Also handle the case where we're already in the room (fast refresh)
         socket.on('joined_room', ({ roomId: joinedRoomId, playerId }) => {
@@ -442,6 +485,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('host_changed');
             socket.off('player_left');
             socket.off('voice:user-count');
+            socket.off('spectating_room', handleSpectatingRoom);
         };
     }, [socket, navigate]);
 
@@ -453,8 +497,13 @@ const GameRoom = ({ user, socket }) => {
 
         const handleConnect = () => {
             console.log('Socket connected, requesting room state...');
-            // Re-join room and request fresh state after reconnection
-            socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
+            // Re-join room and request fresh state after reconnection. Spectators
+            // repeat spectate_room instead, which re-binds their new socket id.
+            if (spectateModeRef.current) {
+                emitSpectateJoin(user);
+            } else {
+                socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
+            }
         };
 
         socket.on('disconnect', handleDisconnect);
@@ -479,7 +528,11 @@ const GameRoom = ({ user, socket }) => {
                     // Socket thinks it's connected, but iOS may have silently killed it
                     // Request fresh room state to ensure we're in sync
                     console.log('Refreshing room state after visibility change...');
-                    socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
+                    if (spectateModeRef.current) {
+                        emitSpectateJoin(user);
+                    } else {
+                        socket.emit('join_room', { roomId, username: user?.username, isGuest: user?.isGuest });
+                    }
                 }
             }
         };
@@ -778,7 +831,12 @@ const GameRoom = ({ user, socket }) => {
     };
 
     const leaveRoom = () => {
-        socket.emit('leave_room', { roomId });
+        // Spectators were never seated, so leave_room doesn't apply to them.
+        if (isSpectator) {
+            leaveSpectate();
+        } else {
+            socket.emit('leave_room', { roomId });
+        }
         voiceContext.leaveVoiceRoom();
         navigate('/lobby');
     };
@@ -837,19 +895,34 @@ const GameRoom = ({ user, socket }) => {
     );
 
     const myIndex = gameState?.players ? gameState.players.findIndex(p => p.id === myPlayerId) : -1;
-    const isMyTurn = gameState.currentTurn === myPlayerId;
+    const isMyTurn = !isSpectator && gameState.currentTurn === myPlayerId;
+
+    // The seat the table is oriented around. Players see their own seat at the
+    // bottom; spectators see the seat they picked (mobile) or seat 0 by default.
+    // Single source of truth - CenterPile's fly-in math consumes this too, so the
+    // two rotations can't drift.
+    const seatCount = gameState?.players?.length || 0;
+    let viewerIndex = myIndex;
+    if (isSpectator) {
+        const picked = spectatorSeatId
+            ? gameState.players.findIndex(p => p.id === spectatorSeatId)
+            : -1;
+        viewerIndex = picked !== -1 ? picked : 0;
+    }
 
     // Helper to get relative player positions (Bottom=0, Right=1, Top=2, Left=3)
     const getRelativePlayer = (offset) => {
-        if (!gameState) return null;
-        if (myIndex === -1) return gameState.players[offset]; // Spectator view
-        const idx = (myIndex + offset) % 4;
-        return gameState.players[idx];
+        if (!seatCount) return null;
+        const base = viewerIndex === -1 ? 0 : viewerIndex;
+        return gameState.players[(base + offset) % seatCount];
     };
 
     // Check if current user is host
     const hostPlayer = gameState?.players?.find(p => p.name === gameState.hostUsername);
-    const isHost = hostPlayer?.id === myPlayerId;
+    const isHost = !isSpectator && hostPlayer?.id === myPlayerId;
+
+    // Whose hand the bottom area is showing (labelled for spectators).
+    const bottomSeatPlayer = getRelativePlayer(0);
 
     // Helper to determine if a player can be kicked
     const canKickPlayer = (player) => {
@@ -909,6 +982,15 @@ const GameRoom = ({ user, socket }) => {
                         >
                             ⚙️ Settings
                         </button>
+                        {(gameState.spectators?.length > 0 || isSpectator) && (
+                            <button
+                                onClick={() => setShowSpectators(true)}
+                                className="text-xs md:text-[0.7vmax] px-2 py-0.5 rounded bg-blue-700 text-blue-100 hover:bg-blue-600"
+                                title="Spectators"
+                            >
+                                👁 {gameState.spectators?.length || 0} watching
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
@@ -997,6 +1079,28 @@ const GameRoom = ({ user, socket }) => {
                         const humanPlayers = gameState?.players?.filter(p => !p.isBot) || [];
                         const hasMultipleHumans = humanPlayers.length >= 2;
                         const isHost = user?.username === gameState?.hostUsername;
+
+                        // Spectators have no seat, so no Ready/Rematch/host controls.
+                        // They can keep watching a rematch or head back to the lobby.
+                        if (isSpectator) {
+                            return (
+                                <div className="flex flex-col gap-3 items-center">
+                                    <button
+                                        onClick={() => {
+                                            leaveSpectate();
+                                            voiceContext.leaveVoiceRoom();
+                                            navigate('/lobby');
+                                        }}
+                                        className="bg-green-600 px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition transform hover:scale-105"
+                                    >
+                                        Back to Lobby
+                                    </button>
+                                    <div className="text-xs text-gray-400 mt-1">
+                                        👁 Watching — stay to see a rematch
+                                    </div>
+                                </div>
+                            );
+                        }
 
                         if (!hasMultipleHumans) {
                             // Solo game - just show back to lobby
@@ -1358,6 +1462,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(2))}
                 voiceAudioLevels={voiceAudioLevels}
+                cards={isSpectator ? spectatorHands[getRelativePlayer(2)?.id] : null}
             />
 
             {/* Left Player (Offset 3) */}
@@ -1367,6 +1472,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(3))}
                 voiceAudioLevels={voiceAudioLevels}
+                cards={isSpectator ? spectatorHands[getRelativePlayer(3)?.id] : null}
             />
 
             {/* Right Player (Offset 1) */}
@@ -1376,6 +1482,7 @@ const GameRoom = ({ user, socket }) => {
                 onPlayerClick={handlePlayerClick}
                 isClickable={canKickPlayer(getRelativePlayer(1))}
                 voiceAudioLevels={voiceAudioLevels}
+                cards={isSpectator ? spectatorHands[getRelativePlayer(1)?.id] : null}
             />
 
             {/* All played cards - rendered together for proper z-index stacking */}
@@ -1411,7 +1518,9 @@ const GameRoom = ({ user, socket }) => {
                 position="bottom"
                 isCurrentTurn={isPlayersTurn(getRelativePlayer(0))}
                 playerName={getRelativePlayer(0)?.name}
-                isMe={true}
+                // For a spectator the bottom seat is someone else, so it must
+                // read "<name>'s Turn", never "Your Turn!".
+                isMe={getRelativePlayer(0)?.id === myPlayerId}
                 trickWinPending={gameState.trickWinPending}
                 isDesktop={isDesktop}
             />
@@ -1420,7 +1529,7 @@ const GameRoom = ({ user, socket }) => {
             <div className="absolute bottom-[0.5vh] left-1/2 -translate-x-1/2 flex flex-col items-center w-full md:w-[90vw] px-0 md:px-0">
                 {/* Hand Helper Buttons - Mobile only, full width */}
                 <div className="md:hidden w-full mb-1">
-                    {gameState.gameState === 'playing' && (
+                    {gameState.gameState === 'playing' && !isSpectator && (
                         <HandHelper
                             playerHand={myHand}
                             lastPlayedHand={gameState.lastPlayedHand}
@@ -1433,7 +1542,7 @@ const GameRoom = ({ user, socket }) => {
 
                 {/* Hand Helper Buttons - Desktop only */}
                 <div className="hidden md:flex items-center gap-[1vmax] mb-[0.75vmax]">
-                    {gameState.gameState === 'playing' && (
+                    {gameState.gameState === 'playing' && !isSpectator && (
                         <HandHelper
                             playerHand={myHand}
                             lastPlayedHand={gameState.lastPlayedHand}
@@ -1446,7 +1555,7 @@ const GameRoom = ({ user, socket }) => {
 
                 {/* Controls Row with Avatar (Mobile) */}
                 <div className="relative flex items-start justify-center gap-2 md:gap-[1vmax] mb-1 md:mb-[0.75vmax] w-full">
-                    <div className="flex items-center gap-2 flex-wrap justify-center md:gap-[1vmax]">
+                    <div className={`flex items-center gap-2 flex-wrap justify-center md:gap-[1vmax] ${isSpectator ? 'hidden' : ''}`}>
                         <button
                             onClick={playCards}
                             disabled={!isMyTurn || selectedCards.length === 0 || gameState.trickWinPending}
@@ -1496,6 +1605,7 @@ const GameRoom = ({ user, socket }) => {
                             isVoiceConnected={voiceState?.isVoiceConnected || false}
                             isMuted={voiceState?.isMuted || false}
                             isDeafened={voiceState?.isDeafened || false}
+                            forcedMute={voiceState?.forcedMute || false}
                             audioLevel={voiceAudioLevels[user?.username] || 0}
                             onToggleVoice={voiceState?.handleVoiceToggle}
                             onToggleMute={voiceState?.toggleMute}
@@ -1509,10 +1619,44 @@ const GameRoom = ({ user, socket }) => {
                     </div>
                 </div>
 
+                {/* Spectator caption: the bottom fan belongs to a player, not us */}
+                {isSpectator && bottomSeatPlayer && (
+                    <div className="mb-1 md:mb-[0.4vmax] text-center">
+                        <span className="bg-black/50 text-white px-3 py-1 md:px-[0.8vmax] md:py-[0.2vmax] rounded-full text-xs md:text-[0.8vmax] font-semibold">
+                            👁 Watching · {bottomSeatPlayer.name}&apos;s hand
+                        </span>
+                    </div>
+                )}
+
                 {/* My Hand and Avatar Row - Desktop layout */}
                 <div className="flex items-end gap-[1vmax] w-full md:w-auto overflow-visible">
                     {/* Cards - wrapper needs w-full to expand DndContext */}
                     <div className="w-full md:w-auto">
+                        {isSpectator ? (
+                            // Read-only fan: no dnd-kit, no selection, no click affordance.
+                            <div
+                                className="flex justify-center w-full"
+                                style={{ minHeight: cardDimensions.cardHeight ? `${cardDimensions.cardHeight}px` : undefined }}
+                            >
+                                {sortedHand.map((card, index) => (
+                                    <div
+                                        key={`${card.rank}-${card.suit}`}
+                                        style={{ marginLeft: index === 0 ? 0 : cardDimensions.margin }}
+                                    >
+                                        <Card
+                                            rank={card.rank}
+                                            suit={card.suit}
+                                            selected={false}
+                                            readOnly
+                                            index={index}
+                                            dynamicWidth={cardDimensions.useVmax ? null : cardDimensions.cardWidth}
+                                            dynamicHeight={cardDimensions.useVmax ? null : cardDimensions.cardHeight}
+                                            isDesktop={isDesktop}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
                         <DndContext
                             sensors={sensors}
                             collisionDetection={closestCenter}
@@ -1553,10 +1697,11 @@ const GameRoom = ({ user, socket }) => {
                                 </div>
                             </SortableContext>
                         </DndContext>
+                        )}
                     </div>
 
-                    {/* Avatar - Right side (Desktop only) */}
-                    <div className="hidden md:flex flex-col items-center mb-[0.5vmax]">
+                    {/* Avatar - Right side (Desktop only). Spectators have no seat. */}
+                    <div className={`${isSpectator ? 'hidden' : 'hidden md:flex'} flex-col items-center mb-[0.5vmax]`}>
                         <div className="relative">
                             <div className={`w-[4vmax] h-[4vmax] rounded-full flex items-center justify-center text-[1.2vmax] font-bold border-4 shadow-lg
                                 ${voiceAudioLevels && voiceAudioLevels[user?.username] > 0.05
@@ -1621,8 +1766,23 @@ const GameRoom = ({ user, socket }) => {
                     containerWidth={containerWidth}
                     voiceState={voiceState}
                     voiceAudioLevels={voiceAudioLevels}
+                    isSpectator={isSpectator}
+                    viewerIndex={viewerIndex}
+                    onSelectSeat={(player) => setSpectatorSeatId(player?.id ?? null)}
+                    onOpenSpectators={() => setShowSpectators(true)}
                 />
             )}
+
+            {/* Spectator roster + host mute controls (both breakpoints) */}
+            <SpectatorPanel
+                show={showSpectators}
+                onClose={() => setShowSpectators(false)}
+                spectators={gameState?.spectators || []}
+                mutedAll={gameState?.spectatorsMutedAll}
+                isHost={isHost}
+                onMuteAll={(muted) => socket.emit('mute_all_spectators', { roomId, muted })}
+                onMuteOne={(username, muted) => socket.emit('mute_spectator', { roomId, username, muted })}
+            />
 
             {/* Settings Modal */}
             <SettingsModal

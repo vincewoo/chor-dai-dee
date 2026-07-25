@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import useVoiceParticipants from '../hooks/useVoiceParticipants';
 
 const VoiceControlModal = ({
   isOpen,
@@ -7,6 +8,7 @@ const VoiceControlModal = ({
   isVoiceConnected,
   isMuted,
   isDeafened,
+  forcedMute = false,
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -16,6 +18,9 @@ const VoiceControlModal = ({
   playerVolumes = {},
   username
 }) => {
+  // Includes spectators, who are peers without a seat
+  const voiceParticipants = useVoiceParticipants(players, peers, username);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -92,11 +97,15 @@ const VoiceControlModal = ({
                   {/* Mute button */}
                   <button
                     onClick={onToggleMute}
+                    disabled={forcedMute}
+                    title={forcedMute ? 'The host has muted spectators' : undefined}
                     className={`
                       flex-1 py-2 px-3 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 text-sm
-                      ${isMuted
-                        ? 'bg-red-600 hover:bg-red-700 text-white'
-                        : 'bg-gray-600 hover:bg-gray-500 text-white'
+                      ${forcedMute
+                        ? 'bg-red-900 text-red-200 cursor-not-allowed'
+                        : isMuted
+                          ? 'bg-red-600 hover:bg-red-700 text-white'
+                          : 'bg-gray-600 hover:bg-gray-500 text-white'
                       }
                     `}
                   >
@@ -117,7 +126,7 @@ const VoiceControlModal = ({
                         />
                       )}
                     </svg>
-                    {isMuted ? 'Unmute' : 'Mute'}
+                    {forcedMute ? 'Muted by host' : isMuted ? 'Unmute' : 'Mute'}
                   </button>
 
                   {/* Deafen button */}
@@ -157,8 +166,7 @@ const VoiceControlModal = ({
                   <div className="border-t border-gray-700 pt-3">
                     <h3 className="text-white font-medium text-sm mb-2">Player Volumes</h3>
                     <div className="space-y-3 max-h-40 overflow-y-auto">
-                      {players
-                        .filter(p => p.name !== username && peers.includes(p.name))
+                      {voiceParticipants
                         .map(player => {
                           // playerVolumes stores values as 0-1 decimals, convert to 0-100 for display
                           const volumePercent = Math.round((playerVolumes[player.name] ?? 1) * 100);
@@ -166,6 +174,7 @@ const VoiceControlModal = ({
                             <div key={player.id} className="flex flex-col gap-1">
                               <div className="flex items-center justify-between">
                                 <span className="text-gray-300 text-xs truncate">
+                                  {player.isSpectator && <span title="Spectator">👁 </span>}
                                   {player.name}
                                 </span>
                                 <span className="text-gray-400 text-xs tabular-nums">

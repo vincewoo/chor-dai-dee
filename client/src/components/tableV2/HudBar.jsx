@@ -2,7 +2,7 @@ import logoImage from '../../assets/chor-dai-dee-logo.png';
 import { GAME_MODES } from '../../constants/gameModes';
 
 // Top HUD bar: logo + room/round on the left, Info toggle + gear on the right.
-function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, onOpenSettings, isGuest, onCreateAccount, acc, voiceControl }) {
+function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, onOpenSettings, isGuest, onCreateAccount, acc, voiceControl, spectatorCount = 0, onOpenSpectators }) {
     const modeName = gameMode ? (GAME_MODES[gameMode.toUpperCase()]?.name || 'Standard Game') : '';
     const subtitle = [modeName, roundNumber > 0 ? `Round ${roundNumber}` : null].filter(Boolean).join(' · ');
 
@@ -31,6 +31,20 @@ function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, onOpenSet
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                 {voiceControl}
+                {onOpenSpectators && (
+                    <button
+                        onClick={onOpenSpectators}
+                        aria-label={`${spectatorCount} watching`}
+                        style={{
+                            height: 32, padding: '0 10px', borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,.14)', background: 'rgba(0,0,0,.38)',
+                            color: '#f4f5f7', fontFamily: "'Outfit',sans-serif",
+                            fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                        }}
+                    >
+                        👁 {spectatorCount}
+                    </button>
+                )}
                 <button
                     onClick={onToggleInfo}
                     aria-pressed={infoOn}

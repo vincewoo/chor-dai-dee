@@ -38,6 +38,7 @@ const VoiceControlBubble = ({
   isVoiceConnected,
   isMuted,
   isDeafened,
+  forcedMute = false,
   audioLevel = 0,
   onToggleVoice,
   onToggleMute,
@@ -164,6 +165,7 @@ const VoiceControlBubble = ({
         isVoiceConnected={isVoiceConnected}
         isMuted={isMuted}
         isDeafened={isDeafened}
+        forcedMute={forcedMute}
         onToggleVoice={onToggleVoice}
         onToggleMute={onToggleMute}
         onToggleDeafen={onToggleDeafen}
