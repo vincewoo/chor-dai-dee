@@ -51,6 +51,12 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.6;
     });
 
+    // Opt out of having your games recorded for model training. Defaults to
+    // false (recorded), matching the disclosed policy.
+    const [mlLoggingOptOut, setMlLoggingOptOut] = useState(() => {
+        return localStorage.getItem('mlLoggingOptOut') === 'true';
+    });
+
     const [reducedMotion, setReducedMotion] = useState(() => {
         const saved = localStorage.getItem('reducedMotion');
         if (saved === 'true') return true;
@@ -92,6 +98,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         if (data.soundEnabled !== undefined) {
                             setSoundEnabled(data.soundEnabled);
                         }
+                        if (data.mlLoggingOptOut !== undefined) {
+                            setMlLoggingOptOut(data.mlLoggingOptOut);
+                        }
                         if (data.soundVolume !== undefined) {
                             setSoundVolume(data.soundVolume);
                         }
@@ -112,6 +121,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         }
                         if (data.soundEnabled !== undefined) {
                             localStorage.setItem('soundEnabled', data.soundEnabled);
+                        }
+                        if (data.mlLoggingOptOut !== undefined) {
+                            localStorage.setItem('mlLoggingOptOut', data.mlLoggingOptOut);
                         }
                         if (data.soundVolume !== undefined) {
                             localStorage.setItem('soundVolume', data.soundVolume);
@@ -143,7 +155,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
+                        body: JSON.stringify({ fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, mlLoggingOptOut }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -159,9 +171,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
         localStorage.setItem('tableTheme', tableTheme);
         localStorage.setItem('accentColor', accentColor);
         localStorage.setItem('reducedMotion', reducedMotion);
+        localStorage.setItem('mlLoggingOptOut', mlLoggingOptOut);
         localStorage.setItem('soundEnabled', soundEnabled);
         localStorage.setItem('soundVolume', soundVolume);
-    }, [fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
+    }, [fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, mlLoggingOptOut, user?.id, isLoading]);
 
     // Mirror sound settings into the audio engine, which keeps its own state so
     // that playSound() callers don't have to thread preferences through props.
@@ -193,6 +206,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
         setSoundEnabled(prev => !prev);
     };
 
+    const toggleMlLoggingOptOut = () => {
+        setMlLoggingOptOut(prev => !prev);
+    };
+
     return (
         <UserPreferencesContext.Provider value={{
             fourColorMode,
@@ -203,11 +220,13 @@ export const UserPreferencesProvider = ({ children, user }) => {
             reducedMotion,
             soundEnabled,
             soundVolume,
+            mlLoggingOptOut,
             toggleFourColorMode,
             toggleAutoPass,
             toggleVoiceChat,
             toggleReducedMotion,
             toggleSound,
+            toggleMlLoggingOptOut,
             setAutoPass,
             setTableTheme,
             setAccentColor,

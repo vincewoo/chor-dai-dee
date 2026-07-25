@@ -10,6 +10,8 @@ const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
+const gamelog = require('./gamelog');
+const gamelogRecorder = require('./gamelogRecorder');
 
 const app = express();
 
@@ -253,6 +255,9 @@ io.on('connection', (socket) => {
                 } else {
                     // Game in progress - replace with bot
                     const replacement = existingRoom.replaceWithBot(existingPlayer.id);
+                    if (replacement) {
+                        gamelogRecorder.recordSeatChange(existingRoom, existingRoom.seatOf(replacement.botPlayer.id));
+                    }
                     socket.leave(existingRoomId);
 
                     if (replacement) {
@@ -414,6 +419,9 @@ io.on('connection', (socket) => {
         if (finalTargetRoom && (finalTargetRoom.gameState === 'playing' || finalTargetRoom.gameState === 'round_over') && finalTargetRoom.hasReplacableBots()) {
             console.log(`Room ${targetRoomId} is in-progress. Attempting to replace a bot with ${username}`);
             const replaceResult = finalTargetRoom.replaceBot(player);
+            if (replaceResult && replaceResult.success) {
+                gamelogRecorder.recordSeatChange(finalTargetRoom, finalTargetRoom.seatOf(replaceResult.humanPlayer.id));
+            }
 
             if (replaceResult.error) {
                 socket.emit('error', replaceResult.error);
@@ -703,6 +711,24 @@ io.on('connection', (socket) => {
             console.error("Failed to save game history for dragon win:", e);
         }
 
+        // startRound() buffered the deal before returning early, so the dragon
+        // hand itself is preserved -- a ~1-in-millions datum that explains an
+        // otherwise inexplicable game outcome.
+        await gamelogRecorder.recordRoundEnd(room, {
+            endReason: 'dragon',
+            winnerSeat: room.seatOf(dragonWinner.id),
+            cardsLeft: room.players.map(p => (p.hand ? p.hand.length : 0)),
+            roundPoints: room.players.map(p => {
+                const score = dragonScores.find(s => s.id === p.id);
+                return score ? score.roundPoints : 0;
+            }),
+            scoreAfter: room.players.map(p => room.cumulativeScores[p.id] || 0)
+        });
+        await gamelogRecorder.recordGameEnd(room, {
+            endReason: 'dragon',
+            winnerSeat: room.seatOf(dragonWinner.id)
+        });
+
         // Handle rating updates similar to game_over (fetch stats, calculate new ratings, update DB)
         // Exclude guests and mid-game joiners from rating calculations (treat as bots)
         const playersWithStats = await Promise.all(room.players.map(async (p) => {
@@ -824,6 +850,20 @@ io.on('connection', (socket) => {
             }
         }).catch(e => console.error("Round stats transaction failed:", e));
 
+        // Flush this round's tape. Rounds are the unit of persistence: they
+        // complete atomically, so a game abandoned later still leaves every
+        // finished round intact and fully usable.
+        await gamelogRecorder.recordRoundEnd(room, {
+            endReason: 'normal',
+            winnerSeat: room.seatOf(roundWinner.id),
+            cardsLeft: room.players.map(p => (p.hand ? p.hand.length : 0)),
+            roundPoints: room.players.map(p => {
+                const score = roundScores.find(s => s.id === p.id);
+                return score ? score.roundPoints : 0;
+            }),
+            scoreAfter: room.players.map(p => room.cumulativeScores[p.id] || 0)
+        });
+
         const sanitizedRoundWinner = {
             id: roundWinner.id,
             name: roundWinner.name,
@@ -918,6 +958,11 @@ io.on('connection', (socket) => {
             } catch (e) {
                 console.error("Failed to save game history on completion:", e);
             }
+
+            await gamelogRecorder.recordGameEnd(room, {
+                endReason: 'threshold',
+                winnerSeat: room.seatOf(gameWinner.id)
+            });
 
             // 1. Fetch current ratings for all humans (mode-specific)
             // We need to fetch stats to get current mu/sigma
@@ -1463,6 +1508,10 @@ io.on('connection', (socket) => {
                 console.error("Failed to save game history on start:", e);
             }
 
+            // Open the ML game log for this game. Guarded internally: a failure
+            // here must never stop a game from starting.
+            await gamelogRecorder.recordGameStart(room);
+
             // Check if dragon was dealt (Hong Kong variation)
             if (room.gameState === 'dragon_win' && room.dragonWinner) {
                 // Send hands first so players can see the dragon
@@ -1563,13 +1612,17 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('pass_turn', ({ roomId }) => {
+    socket.on('pass_turn', ({ roomId, auto }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
             if (room.isSpectator(socket.id)) {
                 return socket.emit('error', 'Spectators cannot pass');
             }
-            const result = room.passTurn(socket.id);
+            // `auto` marks a pass the client's auto-pass preference made on the
+            // player's behalf. The server cannot otherwise tell: auto-pass emits
+            // an identical event, with a randomized 1-3s delay deliberately
+            // chosen so opponents cannot distinguish it either.
+            const result = room.passTurn(socket.id, { auto: Boolean(auto) });
             if (result.error) {
                 socket.emit('error', result.error);
             } else {
@@ -1694,6 +1747,9 @@ io.on('connection', (socket) => {
         } else {
             // During active game, replace the player with an Advanced Bot
             const replacement = room.replaceWithBot(socket.id);
+            if (replacement) {
+                gamelogRecorder.recordSeatChange(room, room.seatOf(replacement.botPlayer.id));
+            }
             socket.leave(roomId);
 
             if (replacement) {
@@ -2400,7 +2456,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
             reducedMotion: preferences.reduced_motion === 1,
             // Sound defaults to on, so treat a missing column as enabled.
             soundEnabled: (preferences.sound_enabled ?? 1) === 1,
-            soundVolume: preferences.sound_volume ?? 0.6
+            soundVolume: preferences.sound_volume ?? 0.6,
+            mlLoggingOptOut: (preferences.ml_logging_opt_out ?? 0) === 1
         });
     } catch (err) {
         console.error('Error fetching preferences:', err);
@@ -2411,8 +2468,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
+        const { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, mlLoggingOptOut } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, mlLoggingOptOut });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);
@@ -2607,6 +2664,18 @@ server.listen(PORT, HOST, () => {
     console.log(`Server running on ${HOST}:${PORT}`);
 });
 
+// Close out games left open by a process death, before any new game can start.
+//
+// Rooms live in memory only, so a restart silently destroys every game in
+// progress. Without this sweep those rows keep a NULL ended_at forever and are
+// indistinguishable from live games -- the exact state game_history is in
+// today, where nothing has ever written 'abandoned' and every abandoned game
+// since launch still reads 'in_progress'.
+//
+// Safe at this moment specifically: no game in this database can legitimately
+// be in progress when the process has only just started.
+gamelog.sweepOrphans();
+
 // Retention sweep for decision_tracking.
 //
 // Run at startup rather than only on a long timer: this server exits when idle
@@ -2639,9 +2708,19 @@ setInterval(pruneDecisions, DECISION_PRUNE_INTERVAL).unref();
 // Runs every 1 minute
 const CHECK_INTERVAL = 60 * 1000;
 setInterval(() => {
-    const deletedCount = roomManager.cleanupInactiveRooms();
-    if (deletedCount > 0) {
-        console.log(`[Cleanup] Removed ${deletedCount} inactive room(s)`);
+    const reaped = roomManager.cleanupInactiveRooms();
+    if (reaped.length > 0) {
+        console.log(`[Cleanup] Removed ${reaped.length} inactive room(s)`);
+    }
+    // Persist whatever those rooms had in flight before it is lost with them.
+    // Without this, every abandoned game would be invisible to the corpus --
+    // which is exactly the state game_history is in, where nothing has ever
+    // written 'abandoned'.
+    for (const { room, abandonReason } of reaped) {
+        if (abandonReason) {
+            gamelogRecorder.recordAbandon(room, abandonReason)
+                .catch(e => console.error('[gamelog] abandon flush failed:', e.message));
+        }
     }
 
     // Autostop check

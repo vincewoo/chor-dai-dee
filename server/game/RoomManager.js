@@ -1,11 +1,13 @@
 // server/game/RoomManager.js
 const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
-const { BotLogic } = require('./BotLogic');
+const { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN } = require('./BotLogic');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
 const { buildGameContext } = require('./BotContext');
+const { GameTape } = require('./GameTape');
+const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
 
 class Room {
     constructor(roomId, gameMode = 'short') {
@@ -58,6 +60,53 @@ class Room {
         this.trickWinGeneration = 0; // Generation counter for trick win timeouts
         this.isBotThinking = false; // Flag to prevent multiple bot turn calculations
         this.roundTransitionInProgress = false; // Flag to prevent multiple next_round calls
+
+        // ---- Game-log recording ----
+        // Pure in-memory buffer. RoomManager stays free of persistence; index.js
+        // drains this and owns every gamelog call, matching how db.js is used.
+        this.tape = new GameTape();
+        this.gameKey = null;          // surrogate key assigned by the store
+        this.previousGameId = null;   // set before gameId is regenerated, to link chains
+        this.chainKind = null;        // 'rematch' | 'lobby_restart'
+
+        // Turn timing for think_ms. Reset wherever a seat acquires the turn.
+        this.turnStartedAt = Date.now();
+        this.turnDisconnectBaseline = 0;
+        this.turnStartedDisconnected = false;
+        this.botFallbackActive = false; // advanced bot errored; heuristic answered this ply
+    }
+
+    /**
+     * Marks the moment the current seat acquired the turn.
+     *
+     * think_ms is measured from here, and the disconnect baseline is snapshotted
+     * here so a drop during the turn can be detected directly rather than
+     * inferred from a suspiciously long duration.
+     */
+    markTurnStart() {
+        this.turnStartedAt = Date.now();
+        const player = this.players[this.currentTurnIndex];
+        this.turnDisconnectBaseline = player ? (player.disconnectCount || 0) : 0;
+        this.turnStartedDisconnected = Boolean(player && player.isDisconnected);
+    }
+
+    /**
+     * think_ms and flags for the acting player.
+     *
+     * Bots get null rather than 0: they run on a fixed 250 ms timer, so any
+     * number would be a property of the server, not of a decision. Zero would
+     * be a real trainable value; null means "not applicable".
+     */
+    turnTiming(player) {
+        if (!player || player.isBot) return { thinkMs: null, flags: 0 };
+
+        const { thinkMs, clamped } = clampThinkMs(Date.now() - this.turnStartedAt);
+        let flags = clamped ? FLAG.THINK_CLAMPED : 0;
+
+        const dropped = (player.disconnectCount || 0) !== this.turnDisconnectBaseline;
+        if (this.turnStartedDisconnected || dropped) flags |= FLAG.TURN_DISCONNECTED;
+
+        return { thinkMs, flags };
     }
 
     addPlayer(player) {
@@ -171,6 +220,10 @@ class Room {
         const player = this.players.find(p => p.id === socketId);
         if (player && !player.isBot) {
             player.isDisconnected = true;
+            // Monotonic, so a turn can detect a drop-and-reconnect that resolved
+            // before the player acted. isDisconnected alone would read false by
+            // then and the turn would look like ordinary slow thinking.
+            player.disconnectCount = (player.disconnectCount || 0) + 1;
             return player;
         }
         return null;
@@ -660,6 +713,20 @@ class Room {
                 // Dragon detected! This player wins the entire game immediately
                 this.dragonWinner = player;
                 this.gameState = 'dragon_win';
+                // Record the deal anyway. A 13-distinct-rank hand is a genuine
+                // ~1-in-millions datum, it explains an otherwise inexplicable
+                // game outcome, and omitting it would bias the deal
+                // distribution in the corpus.
+                this.tape.beginRound({
+                    roundNumber: this.roundNumber,
+                    hands: this.players.map(p => p.hand),
+                    startSeat: this.players.indexOf(player)
+                });
+                this.tape.endRound({
+                    endReason: 'dragon',
+                    winnerSeat: this.players.indexOf(player),
+                    cardsLeft: this.players.map(p => p.hand.length)
+                });
                 return; // Exit early, don't set up normal round
             }
         }
@@ -715,6 +782,15 @@ class Room {
             const winnerIndex = this.players.findIndex(p => p.id === this.lastRoundWinnerId);
             this.currentTurnIndex = winnerIndex >= 0 ? winnerIndex : 0;
         }
+
+        // Record the deal now that the opening seat is known. Everything else
+        // about this round is re-derivable from the deal plus the plies below.
+        this.tape.beginRound({
+            roundNumber: this.roundNumber,
+            hands: this.players.map(p => p.hand),
+            startSeat: this.currentTurnIndex
+        });
+        this.markTurnStart();
     }
 
     updateScores(roundScores) {
@@ -841,6 +917,17 @@ class Room {
         }
 
         // Move is valid
+        const timing = this.turnTiming(player);
+        this.tape.recordPlay({
+            seat: playerIndex,
+            validated: validatedHand,
+            thinkMs: timing.thinkMs,
+            flags: timing.flags,
+            source: player.isBot
+                ? (this.botFallbackActive ? SOURCE.BOT_FALLBACK : SOURCE.BOT)
+                : SOURCE.HUMAN
+        });
+
         player.hand = newPlayerHand; // Update hand
         this.lastPlayedHand = { ...validatedHand, playerId };
         console.log(`Play accepted: ${player.name} played ${validatedHand.type}(value=${validatedHand.value}, cards=[${validatedHand.cards?.map(c => `${c.rank}${c.suit}(${c.value})`).join(', ')}])`);
@@ -856,11 +943,19 @@ class Room {
 
         if (isSingleBig2) {
             // Auto-pass all other players since Big 2 (2 of Spades) cannot be beaten as a single
-            this.players.forEach(p => {
+            this.players.forEach((p, idx) => {
                 if (p.id !== playerId) {
                     this.passedPlayers.add(p.id);
                     this.playOrder++;
                     this.playerLastPlayed[p.id] = { type: 'pass', playerId: p.id, timestamp: Date.now(), playOrder: this.playOrder };
+                    // Recorded explicitly rather than left for replay to
+                    // re-derive: this is a house rule that may change, and old
+                    // tapes must keep replaying as they were played. The
+                    // distinct action code also keeps these out of any pass
+                    // policy - nobody chose them.
+                    this.tape.recordPass({
+                        seat: idx, thinkMs: null, source: SOURCE.SERVER_RULE, auto: true
+                    });
                 }
             });
             this.passes = 3; // All other players passed
@@ -952,7 +1047,10 @@ class Room {
             // This allows clients to see the Big 2 play and all the auto-passes before clearing
             this.trickWinPending = true;
             this.trickWinner = playerId;
-            // Turn stays with the current player (they won the trick)
+            // Turn stays with the current player (they won the trick), but it is
+            // a new turn, so think_ms restarts from here rather than measuring
+            // back to whenever they last acquired the turn.
+            this.markTurnStart();
             return { success: true, wonTrick: true, trickWinDelay: true };
         }
 
@@ -960,7 +1058,7 @@ class Room {
         return { success: true };
     }
 
-    passTurn(playerId) {
+    passTurn(playerId, { auto = false } = {}) {
         if (this.gameState !== 'playing') return { error: 'Game not active' };
 
         // Block all passes during trick win delays
@@ -978,6 +1076,21 @@ class Room {
         this.updateActivity();
 
         // Record that this player passed
+        const passingPlayer = this.players[playerIndex];
+        const passTiming = this.turnTiming(passingPlayer);
+        this.tape.recordPass({
+            seat: playerIndex,
+            // An auto-pass carries a deliberately randomized 1-3s client delay
+            // (so opponents cannot distinguish it), which would otherwise land
+            // in the middle of the plausible human deliberation band and
+            // silently poison any timing model. It is not a think time.
+            thinkMs: auto ? null : passTiming.thinkMs,
+            flags: passTiming.flags,
+            source: passingPlayer.isBot
+                ? (this.botFallbackActive ? SOURCE.BOT_FALLBACK : SOURCE.BOT)
+                : (auto ? SOURCE.AUTO_PASS_PREF : SOURCE.HUMAN)
+        });
+
         this.playOrder++; // Increment play order for z-index stacking
         this.playerLastPlayed[playerId] = { type: 'pass', playerId, timestamp: Date.now(), playOrder: this.playOrder };
         this.passedPlayers.add(playerId); // Mark player as passed for this round
@@ -1059,6 +1172,7 @@ class Room {
             this.trickWinner = lastPlayerId;
             // Set turn to the player who won the trick
             this.currentTurnIndex = this.players.findIndex(p => p.id === lastPlayerId);
+            this.markTurnStart();
             return { success: true, trickWon: true, trickWinDelay: true };
         } else {
             this.advanceTurn();
@@ -1077,6 +1191,7 @@ class Room {
             this.passedPlayers.has(this.players[this.currentTurnIndex]?.id) &&
             attempts < 4
         );
+        this.markTurnStart();
     }
 
     // Register a timeout and track it to prevent race conditions
@@ -1124,6 +1239,11 @@ class Room {
         this.trickWinner = null;
         this.trickWinGeneration++; // Increment generation after clearing
 
+        // The turn only becomes actionable now: nobody may play while
+        // trickWinPending. Without this reset the 1.5s display delay would be
+        // baked into the think_ms of every play that follows a won trick.
+        this.markTurnStart();
+
         // Clear the timeout from our tracking
         this.clearTimeout('trickWin');
 
@@ -1145,6 +1265,9 @@ class Room {
         if (currentPlayer && currentPlayer.isBot && this.gameState === 'playing') {
             // Set flag to indicate bot is calculating/playing
             this.isBotThinking = true;
+            // Cleared per turn; the catch path below sets it for the one ply
+            // the heuristic answered on the advanced bot's behalf.
+            this.botFallbackActive = false;
 
             // Determine if first turn of the entire game (round 1 only)
             const everyoneFull = this.players.every(p => p.hand.length === 13);
@@ -1243,7 +1366,13 @@ class Room {
                     // Reset flag on error
                     this.isBotThinking = false;
 
-                    // Fallback to basic bot
+                    // Fallback to basic bot. Tagged so the log does not
+                    // attribute this ply to the PPO policy: the seat's declared
+                    // policy is not what actually answered here, and a corpus
+                    // that mislabels these teaches the wrong opponent model.
+                    // A non-trivial count of these also signals that the PPO
+                    // worker is failing in production.
+                    this.botFallbackActive = true;
                     const result = BotLogic.getBotMove(currentPlayer.hand, this.lastPlayedHand, isFirstTurn, gameContext, this.debugMode);
                     const move = this.debugMode ? result.cards : result;
                     const reasoning = this.debugMode ? result.reasoning : null;
@@ -1305,6 +1434,49 @@ class Room {
             spectators: this.getSpectatorList(),
             spectatorsMutedAll: this.spectatorsMutedAll
         };
+    }
+
+    /**
+     * Describes each seat for the game log.
+     *
+     * `occupant` comes from settings.useAdvancedBots, never from
+     * player.difficulty. difficulty is decorative at decision time -
+     * checkBotTurn branches on the room-wide setting and never reads it, while
+     * replaceWithBot hardcodes 'advanced'. Reading difficulty would label a
+     * replacement bot in a heuristic room as PPO.
+     */
+    describeSeats(fromRound = this.roundNumber) {
+        const usingPpo = Boolean(this.settings.useAdvancedBots);
+        return this.players.map((p, seat) => {
+            if (p.isBot) {
+                return {
+                    seat,
+                    fromRound,
+                    occupant: usingPpo ? 'bot_ppo' : 'bot_heuristic',
+                    // The bot's name is a policy parameter, not a label:
+                    // getBotProfile derives temperament from it, so two bots at
+                    // one table play measurably differently.
+                    subjectKey: usingPpo ? PPO_CHECKPOINT : p.name,
+                    policyGen: usingPpo ? PPO_CHECKPOINT_GEN : BOT_LOGIC_VERSION,
+                    policyRef: usingPpo ? PPO_CHECKPOINT : null
+                };
+            }
+            return {
+                seat,
+                fromRound,
+                occupant: p.isGuest ? 'guest' : 'human',
+                subjectKey: p.isGuest ? null : p.name,
+                userId: p.userId ?? null,
+                ratingMu: p.rating_mu ?? null,
+                ratingSigma: p.rating_sigma ?? null,
+                joinedMidGame: Boolean(p.joinedMidGame)
+            };
+        });
+    }
+
+    /** Seat index for a socket id, or -1. */
+    seatOf(playerId) {
+        return this.players.findIndex(p => p.id === playerId);
     }
 
     getPlayerHand(playerId) {
@@ -1387,6 +1559,13 @@ class Room {
             p.hand = [];
         });
 
+        // Stash the outgoing id before it is overwritten, so the next game in
+        // this room can link back to it. A lobby restart is a weaker link than
+        // a rematch: the roster can change while the room sits in 'waiting'.
+        this.previousGameId = this.gameId;
+        this.chainKind = 'lobby_restart';
+        this.gameKey = null;
+
         // Generate new game ID for next game
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
@@ -1428,6 +1607,12 @@ class Room {
         this.players.forEach(p => {
             p.hand = [];
         });
+
+        // Stash the outgoing id before overwriting it. A rematch is the stronger
+        // chain link: these players explicitly chose to face each other again.
+        this.previousGameId = this.gameId;
+        this.chainKind = 'rematch';
+        this.gameKey = null;
 
         // Generate new game ID
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -1599,11 +1784,15 @@ class RoomManager {
             const inactiveDuration = room.getInactiveDuration();
             let shouldDelete = false;
             let reason = '';
+            // Null unless a game was actually in progress: a waiting room or an
+            // already-finished game was not abandoned mid-play.
+            let abandonReason = null;
 
             // Rule 1: All bots - delete immediately
             if (room.hasOnlyBots()) {
                 shouldDelete = true;
                 reason = 'all bots';
+                abandonReason = 'all_bots';
             }
             // Rule 2: Finished games - delete after 5 minutes
             else if (room.gameState === 'finished' && inactiveDuration > FINISHED_GAME_TIMEOUT) {
@@ -1619,15 +1808,17 @@ class RoomManager {
             else if (room.isSinglePlayer() && inactiveDuration > SINGLE_PLAYER_TIMEOUT) {
                 shouldDelete = true;
                 reason = 'single-player timeout (24h)';
+                abandonReason = 'single_player_timeout';
             }
             // Rule 5: Multiplayer games - delete after 30 minutes
             else if (!room.isSinglePlayer() && (room.gameState === 'playing' || room.gameState === 'round_over') && inactiveDuration > MULTIPLAYER_TIMEOUT) {
                 shouldDelete = true;
                 reason = 'multiplayer timeout (30min)';
+                abandonReason = 'multiplayer_timeout';
             }
 
             if (shouldDelete) {
-                roomsToDelete.push({ roomId, reason, room });
+                roomsToDelete.push({ roomId, reason, room, abandonReason });
             }
         }
 
@@ -1637,7 +1828,12 @@ class RoomManager {
             console.log(`[Cleanup] Deleted room ${roomId}: ${reason} (inactive for ${Math.round(room.getInactiveDuration() / 60000)}min)`);
         }
 
-        return roomsToDelete.length;
+        // Returns the reaped rooms rather than a count so the caller can flush
+        // their in-flight state before it is lost. abandonReason distinguishes
+        // an all-bot room (no behavioural bias) from a human walking out
+        // mid-game (the strongest bias), which is what makes abandoned games
+        // reweightable rather than merely discardable.
+        return roomsToDelete;
     }
 }
 
