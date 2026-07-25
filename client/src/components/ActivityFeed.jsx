@@ -1,30 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import ScoreDialog from './ScoreDialog';
+import { ActivityFeedV2 } from './tableV2';
 
-const ActivityFeed = ({ serverUrl }) => {
+const ActivityFeed = ({ serverUrl, user }) => {
     const [games, setGames] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState(null);
     const [filters, setFilters] = useState({
         status: 'completed',
         gameMode: 'all'
     });
-    const [currentPage, setCurrentPage] = useState(1);
+    // `append` distinguishes the two paging idioms: desktop swaps pages in place,
+    // the v2 mobile feed appends via "Load more".
+    const [page, setPage] = useState({ number: 1, append: false });
     const [totalPages, setTotalPages] = useState(1);
     const [selectedGame, setSelectedGame] = useState(null);
+    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
     const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchActivityFeed();
-    }, [filters, currentPage]);
+    const currentPage = page.number;
 
-    const fetchActivityFeed = async () => {
-        setLoading(true);
+    // Track viewport to gate the v2 mobile feed (matches the 768px breakpoint
+    // used by the lobby and game room).
+    useEffect(() => {
+        const onResize = () => setIsDesktop(window.innerWidth >= 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+
+    const fetchActivityFeed = useCallback(async () => {
+        if (page.append) {
+            setLoadingMore(true);
+        } else {
+            setLoading(true);
+        }
         try {
             const params = new URLSearchParams({
-                page: currentPage,
+                page: page.number,
                 limit: 20,
                 status: filters.status,
                 ...(filters.gameMode !== 'all' && { gameMode: filters.gameMode })
@@ -34,7 +49,8 @@ const ActivityFeed = ({ serverUrl }) => {
             if (!response.ok) throw new Error('Failed to fetch activity feed');
 
             const data = await response.json();
-            setGames(data.games || []);
+            const fetched = data.games || [];
+            setGames(prev => (page.append ? [...prev, ...fetched] : fetched));
             setTotalPages(data.pagination?.totalPages || 1);
             setError(null);
         } catch (err) {
@@ -42,7 +58,18 @@ const ActivityFeed = ({ serverUrl }) => {
             setError('Failed to load activity feed');
         } finally {
             setLoading(false);
+            setLoadingMore(false);
         }
+    }, [serverUrl, filters, page]);
+
+    useEffect(() => {
+        fetchActivityFeed();
+    }, [fetchActivityFeed]);
+
+    // Filter changes always restart at page 1 with a fresh list.
+    const applyFilters = (next) => {
+        setFilters(next);
+        setPage({ number: 1, append: false });
     };
 
     const formatDuration = (seconds) => {
@@ -166,6 +193,25 @@ const ActivityFeed = ({ serverUrl }) => {
         );
     };
 
+    // v2 mobile activity feed (narrow viewports). Desktop keeps the layout below.
+    if (!isDesktop) {
+        return (
+            <ActivityFeedV2
+                games={games}
+                filters={filters}
+                onSetFilters={applyFilters}
+                loading={loading}
+                loadingMore={loadingMore}
+                error={error}
+                hasMore={currentPage < totalPages}
+                onLoadMore={() => setPage({ number: currentPage + 1, append: true })}
+                onRetry={fetchActivityFeed}
+                onBack={() => navigate('/lobby')}
+                username={user?.username}
+            />
+        );
+    }
+
     return (
         <div className="min-h-screen bg-gray-900 text-white p-4">
             <div className="max-w-4xl mx-auto">
@@ -189,8 +235,7 @@ const ActivityFeed = ({ serverUrl }) => {
                         <div className="flex flex-wrap gap-2">
                             <button
                                 onClick={() => {
-                                    setFilters({ ...filters, status: 'completed' });
-                                    setCurrentPage(1);
+                                    applyFilters({ ...filters, status: 'completed' });
                                 }}
                                 className={`px-4 py-2 rounded-full font-medium transition-all transform hover:scale-105 ${
                                     filters.status === 'completed'
@@ -202,8 +247,7 @@ const ActivityFeed = ({ serverUrl }) => {
                             </button>
                             <button
                                 onClick={() => {
-                                    setFilters({ ...filters, status: 'all' });
-                                    setCurrentPage(1);
+                                    applyFilters({ ...filters, status: 'all' });
                                 }}
                                 className={`px-4 py-2 rounded-full font-medium transition-all transform hover:scale-105 ${
                                     filters.status === 'all'
@@ -215,8 +259,7 @@ const ActivityFeed = ({ serverUrl }) => {
                             </button>
                             <button
                                 onClick={() => {
-                                    setFilters({ ...filters, status: 'abandoned' });
-                                    setCurrentPage(1);
+                                    applyFilters({ ...filters, status: 'abandoned' });
                                 }}
                                 className={`px-4 py-2 rounded-full font-medium transition-all transform hover:scale-105 ${
                                     filters.status === 'abandoned'
@@ -235,8 +278,7 @@ const ActivityFeed = ({ serverUrl }) => {
                         <div className="flex flex-wrap gap-2">
                             <button
                                 onClick={() => {
-                                    setFilters({ ...filters, gameMode: 'all' });
-                                    setCurrentPage(1);
+                                    applyFilters({ ...filters, gameMode: 'all' });
                                 }}
                                 className={`px-4 py-2 rounded-full font-medium transition-all transform hover:scale-105 ${
                                     filters.gameMode === 'all'
@@ -248,8 +290,7 @@ const ActivityFeed = ({ serverUrl }) => {
                             </button>
                             <button
                                 onClick={() => {
-                                    setFilters({ ...filters, gameMode: 'short' });
-                                    setCurrentPage(1);
+                                    applyFilters({ ...filters, gameMode: 'short' });
                                 }}
                                 className={`px-4 py-2 rounded-full font-medium transition-all transform hover:scale-105 ${
                                     filters.gameMode === 'short'
@@ -262,8 +303,7 @@ const ActivityFeed = ({ serverUrl }) => {
                             </button>
                             <button
                                 onClick={() => {
-                                    setFilters({ ...filters, gameMode: 'standard' });
-                                    setCurrentPage(1);
+                                    applyFilters({ ...filters, gameMode: 'standard' });
                                 }}
                                 className={`px-4 py-2 rounded-full font-medium transition-all transform hover:scale-105 ${
                                     filters.gameMode === 'standard'
@@ -307,7 +347,7 @@ const ActivityFeed = ({ serverUrl }) => {
                         {totalPages > 1 && (
                             <div className="flex items-center justify-center gap-4 mt-8">
                                 <button
-                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                    onClick={() => setPage({ number: Math.max(1, currentPage - 1), append: false })}
                                     disabled={currentPage === 1}
                                     className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
@@ -317,7 +357,7 @@ const ActivityFeed = ({ serverUrl }) => {
                                     Page {currentPage} of {totalPages}
                                 </span>
                                 <button
-                                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                                    onClick={() => setPage({ number: Math.min(totalPages, currentPage + 1), append: false })}
                                     disabled={currentPage === totalPages}
                                     className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
