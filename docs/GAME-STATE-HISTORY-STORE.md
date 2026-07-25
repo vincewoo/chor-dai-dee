@@ -215,6 +215,8 @@ CREATE TABLE mlog_seat (
     occupant        TEXT    NOT NULL CHECK(occupant IN
                        ('human','guest','bot_heuristic','bot_ppo')),
     subject_key     TEXT,                      -- pseudonymous human id, or bot profile name
+    policy_gen      INTEGER,                   -- bot logic generation; NULL for humans
+    policy_ref      TEXT,                      -- legible policy id, e.g. 'modelParameters136500'
     user_id         INTEGER,                   -- NULL for bots/guests; never exported raw
     rating_mu       REAL,                      -- rating at game start, for quality filtering
     rating_sigma    REAL,
@@ -251,7 +253,8 @@ CREATE TABLE mlog_action (
     hand_type    INTEGER,                      -- HAND_TYPES ordinal; NULL for pass
     hand_value   INTEGER,
     think_ms     INTEGER,                      -- ms from turn start to action
-    source       INTEGER NOT NULL,             -- 0=human, 1=auto-pass pref, 2=bot, 3=server rule
+    source       INTEGER NOT NULL,             -- 0=human, 1=auto-pass pref, 2=bot,
+                                               -- 3=server rule, 4=bot fallback (see below)
     PRIMARY KEY (game_key, round_number, ply)
 ) WITHOUT ROWID;
 
@@ -280,6 +283,8 @@ should not duplicate what they do well. The gaps are why it exists:
 | Short vs standard | `game_mode`, `max_points` — complete | `game_mode`, `point_threshold` |
 | Player is a bot | `is_bot`, binary only | `mlog_seat.occupant`, 4-way |
 | *Which* bot policy | **absent** | `advanced_bots` + `occupant` |
+| Bot logic generation | **absent** | `policy_gen`, `policy_ref` |
+| Per-ply policy fallback | **absent** | `mlog_action.source = 4` |
 | Bot personality | name string only, unmarked | `subject_key` |
 | Seat identity across swaps | **lost** | seat + segment |
 | Rule-set in force | **absent** | `rules_version`, `server_build` |
@@ -311,6 +316,56 @@ the handover explicit and attributable.
 
 ### Notes on specific columns
 
+**`policy_gen` / `policy_ref` — bot logic generation.** Which *generation* of bot
+logic produced a trajectory, so a model trained later can filter or condition on
+it. `occupant` says which family of policy played; these say which version of it.
+
+- `bot_heuristic` → `policy_gen` is `BOT_LOGIC_VERSION`, a new monotonic
+  constant in `BotLogic.js`; `policy_ref` is NULL.
+- `bot_ppo` → `policy_gen` is the checkpoint's training step (`136500` today);
+  `policy_ref` is the checkpoint filename (`'modelParameters136500'`).
+
+Ordering is meaningful **only within a family** — heuristic generation 7 and PPO
+generation 136500 are not comparable. Any query that filters on `policy_gen`
+must also filter on `occupant`.
+
+This matters more for the heuristic bot than for the PPO weights, which is the
+opposite of what you might expect. The checkpoint has never changed. `BotLogic.js`
+has ~14 commits, at least ten of them explicitly behavioural — "Rework bot
+heuristics around a single scoring currency", several `fix(bot):` commits
+adding and then removing penalties for wasting 2s. That is roughly ten
+generations of materially different opponents already, and games played against
+them are indistinguishable in the current data. **Pre-store history cannot be
+backfilled**: start the constant at 1, note in its changelog that it means "as of
+the first logged game", and do not try to reconstruct what came before.
+
+Three implementation notes, each a way this gets recorded wrongly:
+
+**Do not read `player.difficulty` to label the policy.** It is decorative at
+decision time. `checkBotTurn` branches on the room-wide
+`settings.useAdvancedBots` (`RoomManager.js:1250`) and never consults
+`difficulty`. `replaceWithBot` hardcodes `difficulty: 'advanced'`
+(`RoomManager.js:330`), so a bot replacing a departed human in a heuristic room
+is labelled "advanced" while actually running the heuristic policy. Read
+`settings.useAdvancedBots`. The inconsistency in the game code is arguably worth
+fixing on its own, but the log must not depend on that happening first.
+
+**Policy is not stable within a seat.** If `getAdvancedBotMove` rejects, the
+catch block silently falls back to `BotLogic.getBotMove` **for that ply only**
+(`RoomManager.js:1265`) and the game continues on the PPO policy afterwards. A
+seat-level `policy_gen` would quietly mislabel those plies as PPO decisions when
+a different policy produced them. Hence `source = 4` on the action row: the seat
+carries the intended policy, the ply records when something else actually
+answered. Fallbacks should be rare, so a non-trivial count of `source = 4` is
+also a useful health signal that the PPO worker is failing in production.
+
+**`BotLogic.js` is not the whole behavioural surface.** `checkBotTurn` builds the
+`gameContext` the bot reasons over — card counts, the relative re-indexing of
+`trickHistory`, the profile lookup (`RoomManager.js:1144-1193`). Change that and
+behaviour changes with `BotLogic.js` untouched and `BOT_LOGIC_VERSION` unbumped.
+Extracting the context builder into its own module would make the boundary
+explicit and hashable; short of that, `server_build` is the backstop.
+
 **`rules_version`.** A monotonic integer from a single `RULES_VERSION` constant,
 bumped by hand whenever any of the following changes:
 
@@ -330,6 +385,27 @@ one.
 that a human maintains and can therefore forget to bump; the sha pins the exact
 source that produced the game and cannot be wrong. Record both — when they
 disagree, the sha wins.
+
+**Keeping the version constants honest.** `RULES_VERSION` and
+`BOT_LOGIC_VERSION` share a failure mode: they are hand-maintained, so they will
+eventually be forgotten on a commit that changes behaviour, and the corpus will
+silently attribute two different policies to one generation. That is worse than
+having no version at all, because it looks trustworthy.
+
+The fix is a golden-hash test, in the existing `server/test/` suite. Pin the
+SHA-256 of `BotLogic.js` (and of `Big2Rules.js` + `Scoring.js` for
+`RULES_VERSION`) in the test file. When the source changes the test fails with:
+
+> `BotLogic.js` changed. If behaviour changed, bump `BOT_LOGIC_VERSION`.
+> Re-pin the hash either way.
+
+Human judgment stays in the loop — only a person can say whether an edit was
+behavioural — but the *prompt* becomes automatic and impossible to skip, which
+is the part that fails in practice. It is the same shape as a snapshot test.
+
+The known wart: hashing whole files means comment-only edits also trip it,
+costing a one-line re-pin. Hashing only behaviour-bearing code would need real
+parsing, and that is not worth building to avoid an occasional trivial diff.
 
 **`action = 2` (auto-pass).** When a single 2♠ is played the server marks all
 three opponents as passed without asking them (`RoomManager.js:856-869`). These
@@ -564,13 +640,13 @@ line up.
    for round-level supervision but not for game-placement labels. The
    `end_reason` column carries the distinction; the export filter needs to
    actually respect it.
-4. **PPO checkpoint identity.** `occupant='bot_ppo'` says which *family* of bot
-   played, not which weights. The network currently loads a single checkpoint
-   (`server/ai/modelParameters136500`), so today the distinction is moot — but
-   the whole point of this store is to train replacements for it, and once a
-   second checkpoint exists, every game logged before that becomes ambiguous
-   retroactively. Recording the checkpoint identifier in `subject_key` from the
-   start costs nothing and cannot be backfilled later.
+4. **Scope of the bot-logic hash.** The golden-hash test covers `BotLogic.js`,
+   but `checkBotTurn`'s `gameContext` builder is part of the same behavioural
+   surface and lives inside `RoomManager.js`, which changes for unrelated
+   reasons constantly. Either extract it into its own module so it can be
+   hashed, or accept `server_build` as the only guard on that path. Worth
+   deciding before the test is written, since it determines whether a small
+   refactor belongs in step 3.
 5. **Rematch chains.** `startRematch()` mints a new `gameId` but keeps the same
    players in the same room. Linking consecutive games would enable
    within-session adaptation modelling — a `previous_game_key` column on
@@ -583,6 +659,9 @@ line up.
 1. `Replayer.js` + tests, driven by synthetic tapes. Nothing else is safe to
    build until replay is proven, since replay is what makes the format lossless.
 2. Schema + `gamelog.js` store module, with the failure-isolation wrapper.
+   Land `BOT_LOGIC_VERSION`, `RULES_VERSION`, and the golden-hash tests here,
+   **before** the first game is logged — a corpus whose early rows have an
+   unenforced version is a corpus you cannot trust the early rows of.
 3. Instrumentation hooks, most-contained first: `startRound` deal capture, then
    `playHand`/`passTurn`, then the flush sites.
 4. The replay-completeness sweep, run over real logged games. **Run this before
