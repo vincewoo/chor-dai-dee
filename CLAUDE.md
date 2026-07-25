@@ -196,6 +196,11 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
     more than the card (`evaluateTrickValue`, `shouldStrategicPass`)
   - "Poker First" hand organisation - preserves strong 5-card hands, with the
     break penalty scaled by what is actually lost (`comboBreakPenalty`)
+  - **Penalty-tier awareness** - `roundLostness` reads opponents' card counts to
+    detect a round that cannot be won; once it fires, `penaltyTierValue` prices
+    ducking under the 10-card (2x) and 13-card (3x) scoring tiers. Round points
+    count *cards, not ranks*, so in a lost round retention cost is pricing an
+    asset that no longer exists. Worth -0.069 round points per round (3.2 sigma).
   - **Opponent modelling** - `buildOpponentModels` replays the round's
     `trickHistory` (maintained by RoomManager, survives trick boundaries) to
     infer what each opponent cannot beat, and stops trusting that read once an
@@ -230,7 +235,8 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
   - `rank` is derived from all four hands and must never reach a client
     mid-round - it leaks opponents' holdings.
   - Bots do **not** use it: feeding own-hand strength into bot scoring was
-    measured and made play worse. See `docs/BOT-HEURISTICS-REVIEW.md` § 11.
+    measured and made play worse. A *relative* signal (`BotLogic.roundLostness`)
+    did work and shipped instead. See `docs/BOT-HEURISTICS-REVIEW.md` §§ 11-12.
 - `DecisionAnalyzer.js` - Advanced analytics engine for Tier 3 stats
   - Hand strength calculation
   - Decision quality evaluation (optimal/suboptimal/risky)

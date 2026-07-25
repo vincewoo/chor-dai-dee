@@ -420,10 +420,61 @@ individual cards against what is still out. Those are the same facts deal streng
 summarises, except they are situational, and a scalar bias on top mostly just distorts
 prices the retention-cost model had already set correctly.
 
-If this is revisited, the signal worth testing is not "how strong am I" but "am I still
-in this round" — a *relative* read against opponents' card counts, on the specific
-decision of whether a round is lost and the objective should switch from winning to
-minimising cards left. That is a different quantity from deal strength and is not tested
-here.
+What *did* work was the follow-up in § 12: not "how strong am I" but "am I still in this
+round".
+
+## 12. Shipped: penalty-tier awareness in a lost round
+
+The successor to § 11, and the contrast is instructive. Deal strength failed because it
+was an absolute property of our own cards, duplicating what the retention model already
+knew. This signal is *relative* — it reads opponents' card counts — and it targets a
+specific decision the bot was getting wrong.
+
+### The gap
+
+`getGamePhase` keys purely on our own hand size, so a bot holding 11 cards while an
+opponent sits on 1 still reads as `early` and pays a full `PHASE_COST_MULTIPLIER` of 1.0.
+It hoards its 2s for a round that is already over.
+
+Worse, that hoarding is measuring the wrong thing entirely. **Round points count cards,
+not ranks.** A held 2 and a held 3 are both worth exactly one point. Once a round is
+unwinnable, retention cost — which prices high cards as expensive to give up — is pricing
+an asset that has stopped existing.
+
+And the scoring tiers make it sharper still: 10–12 cards doubles the penalty, 13 triples
+it. Going from 10 cards to 9 turns 20 points into 9.
+
+### What was measured
+
+Three levers, gated on `roundLostness`, one seat against three current bots, seats
+rotating, 12,000 rounds × 4 seeds:
+
+| Lever | Points/round vs control | Win rate |
+|---|---|---|
+| Refund retention cost | −0.04 | **−1.3pp** — bad trade |
+| Flat shed bonus | −0.02 | −0.1pp |
+| **Penalty-tier crossing** | **−0.07** | −0.24pp |
+
+Only the tier lever paid. Refunding retention cost wholesale cost more than a point of
+win rate for almost no points gain — the bot needs its control cards even in a losing
+round, because taking the lead is how it gets to dump.
+
+The shipped rule reproduces the benchmark: **−0.069 points per round (3.2σ), improving on
+all four seeds**, with rounds ending at 10+ cards down 0.35pp — the mechanism the rule
+targets, moving in the direction it was designed to move.
+
+### Why it is priced at 1×
+
+The bonus is `pointsSaved × SHED_VALUE_PER_CARD`, which values a penalty point at exactly
+what the bot already pays to shed a card. Raising the multiplier keeps gaining, but
+barely — 0.065 at 1×, 0.088 at 5× — and it does so by overweighting a rule that is
+already correctly priced. Per § 9, a new rule earns its place by being denominated in the
+existing currency, not by being handed a magnitude that wins a benchmark.
+
+### Note on the state's frequency
+
+`roundLostness > 0` on 37% of scored decisions and `> 0.5` on 13% — the state is common,
+not exotic. The gain is modest not because the situation is rare but because the bot was
+already shedding reasonably; the rule sharpens the tail rather than changing the plan.
 
 Reproduce with the scripts described in `docs/HAND-STRENGTH-STATS.md`.

@@ -225,3 +225,68 @@ test('bots still win tricks - the price rule has not made them passive', () => {
     const avgPerPlayer = totalCardsLeft / (rounds * 4);
     assert.ok(avgPerPlayer < 5, `average cards left ${avgPerPlayer.toFixed(2)} suggests bots are stalling`);
 });
+
+// --- Penalty-tier awareness ------------------------------------------------
+// Round points count cards, not ranks, and the 10-card (2x) and 13-card (3x)
+// boundaries make the cards straddling them worth several times face value.
+// The rule only applies in rounds we cannot win, so the gate matters as much
+// as the bonus.
+
+test('penalty multiplier matches the round scoring tiers', () => {
+    // Must agree with Scoring.js: 1-9 = 1x, 10-12 = 2x, 13 = 3x.
+    for (const size of [0, 1, 5, 9]) assert.strictEqual(BotLogic.penaltyMultiplier(size), 1, `size ${size}`);
+    for (const size of [10, 11, 12]) assert.strictEqual(BotLogic.penaltyMultiplier(size), 2, `size ${size}`);
+    assert.strictEqual(BotLogic.penaltyMultiplier(13), 3);
+});
+
+test('roundLostness is zero while we are still racing', () => {
+    const h = hand('3D 4C 5H 6S 7D');
+    // Everyone even.
+    assert.strictEqual(BotLogic.roundLostness(h, ctx({ playerCardCounts: [5, 5, 5] })), 0);
+    // We are ahead.
+    assert.strictEqual(BotLogic.roundLostness(h, ctx({ playerCardCounts: [9, 9, 9] })), 0);
+    // Opponents are far from out, so being behind does not matter yet.
+    const big = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC KH');
+    assert.strictEqual(BotLogic.roundLostness(big, ctx({ playerCardCounts: [11, 12, 13] })), 0);
+});
+
+test('roundLostness rises as we fall behind a player who is nearly out', () => {
+    const big = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC KH');
+    const nearlyLost = BotLogic.roundLostness(big, ctx({ playerCardCounts: [1, 8, 9] }));
+    const partly = BotLogic.roundLostness(big, ctx({ playerCardCounts: [5, 8, 9] }));
+    assert.ok(nearlyLost > partly, `${nearlyLost} should exceed ${partly}`);
+    assert.ok(nearlyLost > 0.9, `an 11-card hand against an opponent on 1 is lost: ${nearlyLost}`);
+    assert.ok(nearlyLost <= 1 && partly >= 0, 'must stay within 0..1');
+});
+
+test('penalty tier value only pays for actually crossing a boundary', () => {
+    const lostCtx = ctx({ playerCardCounts: [1, 8, 9] });
+    const ten = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC');   // 10 cards, at the 2x tier
+    const single = Big2Rules.validateHand([card('3D')]);
+
+    // 10 -> 9 escapes the 2x multiplier and is worth real points.
+    assert.ok(BotLogic.penaltyTierValue(single, ten, lostCtx) > 0);
+
+    // The same play from 9 cards crosses nothing.
+    const nine = hand('3D 4C 5H 6S 7D 8C 9H 10S JD');
+    assert.strictEqual(BotLogic.penaltyTierValue(single, nine, lostCtx), 0);
+});
+
+test('penalty tier value is gated on the round being lost', () => {
+    const ten = hand('3D 4C 5H 6S 7D 8C 9H 10S JD QC');
+    const single = Big2Rules.validateHand([card('3D')]);
+
+    // Identical crossing, but the round is still live - no bonus, so the bot
+    // is never tempted to dump a hand to duck a penalty it may not pay.
+    assert.strictEqual(BotLogic.penaltyTierValue(single, ten, ctx({ playerCardCounts: [10, 11, 12] })), 0);
+    assert.ok(BotLogic.penaltyTierValue(single, ten, ctx({ playerCardCounts: [1, 8, 9] })) > 0);
+});
+
+test('a buried bot sheds volume rather than protecting its high cards', () => {
+    // 11 cards against an opponent on one: the round is gone, so the only
+    // thing that matters is getting under 10 cards. Leading a five-card hand
+    // does that; leading a single 3 does not.
+    const buried = hand('3D 4D 5D 6D 7D 8C 9H 10S JC QH 2S');
+    const move = BotLogic.getBotMove(buried, null, false, ctx({ playerCardCounts: [1, 9, 10] }), false);
+    assert.ok(move.length >= 5, `expected a volume play, got ${move.map(c => c.rank + c.suit).join(' ')}`);
+});

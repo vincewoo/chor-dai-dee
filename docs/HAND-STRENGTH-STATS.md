@@ -276,11 +276,16 @@ the definition of "competent" does.
 
 ## Should the bot use this too?
 
-No — measured, and it makes the bot worse. An own-hand strength signal was
-tested on the bot in both static (deal-anchored) and live (recomputed each turn)
+Not this metric — measured, and it makes the bot worse. An own-hand strength
+signal was tested in both static (deal-anchored) and live (recomputed each turn)
 forms, against two levers, and degraded play monotonically as it gained
 influence. The existing retention-cost heuristics already read hand quality
 situationally, so a scalar bias on top only distorts them.
 
-Full numbers and the reasoning are in
-`docs/BOT-HEURISTICS-REVIEW.md` § 11.
+A *relative* signal did work, and shipped: `roundLostness` reads opponents' card
+counts to detect a round that cannot be won, at which point the bot values
+ducking under the 10-card (2×) and 13-card (3×) penalty tiers. Worth −0.069
+round points per round at 3.2σ. The difference is that deal strength duplicated
+what the bot already knew about its own cards, while this reads the table.
+
+Both results, with numbers, are in `docs/BOT-HEURISTICS-REVIEW.md` §§ 11–12.
