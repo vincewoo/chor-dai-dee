@@ -11,7 +11,10 @@ export const areCardPropsEqual = (prevProps, nextProps) => {
         prevProps.forceTraditionalColors === nextProps.forceTraditionalColors &&
         prevProps.dynamicWidth === nextProps.dynamicWidth &&
         prevProps.dynamicHeight === nextProps.dynamicHeight &&
-        prevProps.isDesktop === nextProps.isDesktop
+        prevProps.isDesktop === nextProps.isDesktop &&
+        // Must be compared: without it a card memoized as interactive would stay
+        // clickable after flipping to read-only (spectator view).
+        prevProps.readOnly === nextProps.readOnly
         // We intentionally ignore onClick to allow memoization even if the handler identity changes
         // This is safe because the action (toggle selection) depends only on the card's identity
     );

@@ -20,7 +20,7 @@ const CenterPile = memo(function CenterPile({
     pilePlays,      // oldest→newest non-pass entries of current trick (<=5)
     lastPlayedHand, // authoritative top play from gameState
     players,
-    myIndex,
+    viewerIndex,
     fourColor,
     accGrad,
     soft,
@@ -65,7 +65,9 @@ const CenterPile = memo(function CenterPile({
                             const back = topIndex - idx; // 0 = top
                             const isTop = back === 0;
                             const o = OFF[back] || OFF[4];
-                            const relOffset = myIndex === -1 ? 2 : (players.findIndex(p => p.id === play.playerId) - myIndex + 4) % 4;
+                            // Fly-in direction is relative to the seat the viewer
+                            // occupies (own seat, or the watched seat when spectating).
+                            const relOffset = viewerIndex === -1 ? 2 : (players.findIndex(p => p.id === play.playerId) - viewerIndex + 4) % 4;
                             const flyName = FLY[relOffset] || 'cddFlyDown';
                             const cards = play.cards || [];
                             return (

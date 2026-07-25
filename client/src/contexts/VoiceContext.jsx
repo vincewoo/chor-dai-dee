@@ -43,6 +43,9 @@ export const VoiceProvider = ({ socket, children }) => {
   const [audioLevels, setAudioLevels] = useState({});
   const [permissionError, setPermissionError] = useState(false);
   const [playerVolumes, setPlayerVolumes] = useState({});
+  // Host-applied mute (spectators). Soft: we disable our own mic track and lock
+  // the button. Media is P2P, so this holds for a cooperating client only.
+  const [forcedMute, setForcedMute] = useState(false);
 
   // Refs
   const localStreamRef = useRef(null);
@@ -350,6 +353,7 @@ export const VoiceProvider = ({ socket, children }) => {
 
   // Toggle mute
   const toggleMute = useCallback(() => {
+    if (forcedMute) return; // Host has muted us; the control is locked
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
@@ -358,6 +362,27 @@ export const VoiceProvider = ({ socket, children }) => {
         socket?.emit('voice:mute', { muted: !audioTrack.enabled });
       }
     }
+  }, [socket, forcedMute]);
+
+  // Host mute/unmute pushed from the server.
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleForceMute = ({ muted }) => {
+      setForcedMute(muted);
+      const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+      if (audioTrack) {
+        // On unmute, leave the mic off and let the user opt back in - being
+        // un-muted by the host shouldn't surprise them by going live instantly.
+        audioTrack.enabled = false;
+        setIsMuted(true);
+      } else if (muted) {
+        setIsMuted(true);
+      }
+    };
+
+    socket.on('voice:force-muted', handleForceMute);
+    return () => socket.off('voice:force-muted', handleForceMute);
   }, [socket]);
 
   // Toggle deafen
@@ -492,6 +517,7 @@ export const VoiceProvider = ({ socket, children }) => {
     isVoiceConnected,
     isMuted,
     isDeafened,
+    forcedMute,
     currentRoomId,
     peers: Object.keys(peers),
     audioLevels,

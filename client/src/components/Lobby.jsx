@@ -13,6 +13,8 @@ const Lobby = ({ user, socket, setUser }) => {
     const [error, setError] = useState('');
     const [reconnecting, setReconnecting] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
+    // Room id we can offer to watch after a join was refused for being full
+    const [spectateOffer, setSpectateOffer] = useState(null);
     const [connected, setConnected] = useState(socket.connected);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
@@ -184,7 +186,14 @@ const Lobby = ({ user, socket, setUser }) => {
     const joinRoom = () => {
         if (!roomId || isJoining) return;
         setIsJoining(true);
+        setSpectateOffer(null);
         socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, isGuest: user.isGuest });
+    };
+
+    // Watch a game we couldn't join. The server is the authority on whether we
+    // actually end up spectating; this just carries the intent to GameRoom.
+    const watchRoom = (targetRoomId) => {
+        navigate(`/game/${targetRoomId}`, { state: { spectate: true } });
     };
 
     const joinInProgressRoom = (targetRoomId) => {
@@ -276,6 +285,11 @@ const Lobby = ({ user, socket, setUser }) => {
             setIsJoining(false);
         });
 
+        // A full room is a dead end for joining, but it's the ideal room to watch.
+        socket.on('join_failed', ({ roomId: failedRoomId, canSpectate }) => {
+            setSpectateOffer(canSpectate ? failedRoomId : null);
+        });
+
         // Attempt reconnection on mount if already connected. This drives an
         // external system (the socket) — the setState inside is a legitimate
         // sync from that external source.
@@ -297,6 +311,7 @@ const Lobby = ({ user, socket, setUser }) => {
             socket.off('joined_room');
             socket.off('reconnected');
             socket.off('error');
+            socket.off('join_failed');
             clearInterval(interval);
         };
     }, [socket, navigate, user?.username]);
@@ -507,6 +522,8 @@ const Lobby = ({ user, socket, setUser }) => {
                     onStats={() => navigate('/stats')}
                     onEditAvatar={() => navigate('/avatar')}
                     error={error}
+                    spectateOffer={spectateOffer}
+                    onWatchRoom={watchRoom}
                 />
                 <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
             </>
@@ -666,6 +683,19 @@ const Lobby = ({ user, socket, setUser }) => {
                     )}
                 </div>
                 {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
+                {spectateOffer && (
+                    <div className="mt-3 flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                        <span className="text-sm text-blue-900">
+                            Room <span className="font-bold">{spectateOffer}</span> is full — you can watch instead.
+                        </span>
+                        <button
+                            onClick={() => watchRoom(spectateOffer)}
+                            className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg"
+                        >
+                            👁 Watch
+                        </button>
+                    </div>
+                )}
 
                 {/* Recent Games Activity Snippet */}
                 {recentGames.length > 0 && (

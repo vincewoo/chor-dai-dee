@@ -34,6 +34,8 @@ function HomeScreenV2({
     onStats,
     onEditAvatar,
     error,
+    spectateOffer,
+    onWatchRoom,
 }) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const codeReady = (code || '').trim().length >= 4;
@@ -223,6 +225,20 @@ function HomeScreenV2({
 
                 {error && (
                     <div style={{ marginTop: 12, textAlign: 'center', color: '#ff8f70', fontSize: 13, fontWeight: 600 }}>{error}</div>
+                )}
+
+                {spectateOffer && (
+                    <button
+                        onClick={() => onWatchRoom(spectateOffer)}
+                        style={{
+                            marginTop: 12, width: '100%', padding: '12px 16px', borderRadius: 14,
+                            background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.16)',
+                            color: '#f4f5f7', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                            fontFamily: "'Outfit',sans-serif",
+                        }}
+                    >
+                        👁 Watch {spectateOffer} instead
+                    </button>
                 )}
             </div>
 

@@ -99,7 +99,7 @@ const FaceCard = ({ rank }) => {
     );
 };
 
-const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', forceTraditionalColors = false, dynamicWidth = null, dynamicHeight = null, isDesktop }) => {
+const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', forceTraditionalColors = false, dynamicWidth = null, dynamicHeight = null, isDesktop, readOnly = false }) => {
     const { suitColors: contextSuitColors } = useSuitColors();
 
     // Use traditional red-black colors if forced, otherwise use context colors
@@ -169,14 +169,15 @@ const Card = ({ rank, suit, selected, onClick, isBack, index, size = 'normal', f
 
     return (
         <motion.div
-            className={`${sizeClass} bg-white rounded-xl border-2 shadow-md md:m-[0.25vmax] relative cursor-pointer select-none overflow-hidden
-                ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : 'border-gray-300 hover:-translate-y-[0.5vmax]'}`}
+            className={`${sizeClass} bg-white rounded-xl border-2 shadow-md md:m-[0.25vmax] relative select-none overflow-hidden
+                ${readOnly ? 'cursor-default' : 'cursor-pointer'}
+                ${selected ? 'border-yellow-400 -translate-y-[1vmax] ring-2 ring-yellow-400' : `border-gray-300 ${readOnly ? '' : 'hover:-translate-y-[0.5vmax]'}`}`}
             style={dynamicStyle}
-            onClick={onClick}
+            onClick={readOnly ? undefined : onClick}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            whileTap={{ scale: 0.95 }}
+            whileTap={readOnly ? undefined : { scale: 0.95 }}
         >
             {/* Top-left corner */}
             <div

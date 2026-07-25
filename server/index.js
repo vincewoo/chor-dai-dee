@@ -87,6 +87,60 @@ const createUserLookup = () => {
 // Voice Chat WebRTC Signaling - Global voice rooms tracker
 const voiceRooms = {}; // Track voice participants by room
 
+// ============ Spectator Helpers ============
+
+// The ONLY place hands are sent to spectators. Every emit here is addressed to an
+// individual spectator socket drawn from room.spectators - a collection that
+// structurally cannot contain a seated player (addSpectator rejects seated
+// usernames, and join_room drops the spectator entry when a username takes a seat).
+// It never uses io.to(roomId) or socket.broadcast, so seated players cannot receive
+// this event. Keep it that way: this function is the entire hand-leak boundary.
+function emitSpectatorHands(room, roomId) {
+    if (!room || room.spectators.size === 0) return;
+    if (room.gameState === 'waiting') return;
+
+    const hands = room.getAllHands();
+    for (const spec of room.spectators.values()) {
+        // Executable invariant: never send to a socket that holds a seat.
+        if (room.players.some(p => p.id === spec.socketId)) {
+            console.error(`BUG: spectator ${spec.username} shares a socket with a seated player in ${roomId}; skipping hand emit`);
+            continue;
+        }
+        io.to(spec.socketId).emit('spectator_hands', { hands });
+    }
+}
+
+// Bounce every spectator out of a room that is about to be deleted. A room with no
+// humans playing isn't worth keeping alive just because someone is watching.
+function evictSpectators(room, roomId, reason) {
+    if (!room || room.spectators.size === 0) return;
+    for (const spec of room.spectators.values()) {
+        io.to(spec.socketId).emit('spectator_room_closed', { reason });
+        if (spec.socket) {
+            spec.socket.leave(roomId);
+            delete spec.socket.spectatingRoomId;
+            delete spec.socket.spectatorUsername;
+        }
+    }
+    room.spectators.clear();
+}
+
+// Drop a username's spectator seat in every room. Called when that username takes a
+// real seat somewhere, so nobody is ever both a player and a spectator.
+function dropSpectatorEverywhere(username, socket) {
+    for (const [rid, room] of roomManager.rooms) {
+        if (room.spectators.has(username)) {
+            room.removeSpectator(username);
+            if (socket) socket.leave(rid);
+            io.to(rid).emit('room_update', room.getGameState());
+        }
+    }
+    if (socket) {
+        delete socket.spectatingRoomId;
+        delete socket.spectatorUsername;
+    }
+}
+
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id} from ${socket.handshake.headers['user-agent']?.substring(0, 50)}`);
 
@@ -108,6 +162,10 @@ io.on('connection', (socket) => {
             socket.emit('error', 'You must be signed in to join a room.');
             return;
         }
+
+        // Taking a seat always ends any spectating. Nobody is both a player and a
+        // spectator - that would break the hand-emit invariant in emitSpectatorHands.
+        dropSpectatorEverywhere(username, socket);
 
         // Fetch user stats to get rating
         // Skip database lookup for guest users
@@ -188,6 +246,7 @@ io.on('connection', (socket) => {
 
                     // Delete room if empty
                     if (existingRoom.players.length === 0) {
+                        evictSpectators(existingRoom, existingRoomId, 'The game ended');
                         roomManager.deleteRoom(existingRoomId);
                         console.log(`Room ${existingRoomId} deleted (empty after ${username} left)`);
                     }
@@ -202,6 +261,7 @@ io.on('connection', (socket) => {
                         // Check if room now has only bots
                         if (existingRoom.hasOnlyBots()) {
                             console.log(`Room ${existingRoomId} now has only bots, deleting room`);
+                            evictSpectators(existingRoom, existingRoomId, 'All players left');
                             roomManager.deleteRoom(existingRoomId);
                         } else {
                             // Notify others in the old room
@@ -419,6 +479,13 @@ io.on('connection', (socket) => {
 
         if (result.error) {
             socket.emit('error', result.error);
+            // Structured failure so the client can offer "Watch instead" without
+            // string-matching the error text.
+            socket.emit('join_failed', {
+                roomId: targetRoomId,
+                reason: result.error === 'Room full' ? 'full' : 'other',
+                canSpectate: result.error === 'Room full'
+            });
         } else {
             socket.join(targetRoomId);
             const room = result.room;
@@ -427,6 +494,134 @@ io.on('connection', (socket) => {
             io.to(targetRoomId).emit('room_update', room.getGameState());
             socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
         }
+    });
+
+    // Join a room as a read-only spectator. Deliberately a separate handler from
+    // join_room: that separateness is what keeps spectating clear of join_room's
+    // auto-leave logic, so watching one game never evicts you from another.
+    socket.on('spectate_room', ({ roomId, username, isGuest }) => {
+        console.log(`spectate_room: roomId=${roomId}, username=${username}`);
+
+        if (!username || typeof username !== 'string' || !username.trim()) {
+            socket.emit('error', 'You must be signed in to watch a game.');
+            return;
+        }
+
+        const room = roomManager.getRoom(roomId);
+        if (!room) {
+            socket.emit('error', 'Room not found');
+            return;
+        }
+
+        const result = room.addSpectator({ username, socketId: socket.id, socket, isGuest });
+        if (result.error) {
+            socket.emit('error', result.error);
+            return;
+        }
+
+        // If this username was watching from another socket (e.g. a second tab),
+        // retire the stale one so it stops receiving hands.
+        if (result.previousSocketId && result.previousSocketId !== socket.id) {
+            io.to(result.previousSocketId).emit('spectator_room_closed', { reason: 'Opened in another tab' });
+        }
+
+        socket.join(roomId);
+        socket.spectatingRoomId = roomId;
+        socket.spectatorUsername = username;
+
+        socket.emit('spectating_room', { roomId, gameState: room.getGameState() });
+        emitSpectatorHands(room, roomId);
+
+        // Carry any host mute across the reconnect
+        if (room.isSpectatorMuted(username)) {
+            socket.emit('voice:force-muted', { muted: true });
+        }
+
+        // Replay terminal-state screens so a spectator joining mid-pause sees them
+        if (room.gameState === 'round_over' && room.lastRoundResults) {
+            socket.emit('round_over', room.lastRoundResults);
+        }
+        if (room.gameState === 'finished' && room.lastGameResults) {
+            socket.emit(room.lastGameResults.isDragonWin ? 'dragon_win' : 'game_over', room.lastGameResults);
+        }
+
+        // Let the players see the updated spectator roster
+        io.to(roomId).emit('room_update', room.getGameState());
+    });
+
+    // ---- Host mute controls for spectators ----
+    //
+    // This is a SOFT mute: the server tells the spectator's client to disable its
+    // mic track and locks the button. Media is P2P (the server only relays
+    // signaling), so a modified client could bypass it. Enforcing it hard would
+    // mean tearing down the peer connection, which - because WebRTC peers are
+    // bidirectional - would also stop the spectator hearing the game. Soft mute
+    // is the deliberate choice; the UI must not claim more than it delivers.
+
+    // Push a spectator's effective mute to their client and refresh the roster.
+    const applySpectatorMute = (room, roomId, spec) => {
+        const effective = room.spectatorsMutedAll || spec.forcedMute;
+        io.to(spec.socketId).emit('voice:force-muted', { muted: effective });
+    };
+
+    const broadcastMuteState = (room, roomId) => {
+        io.to(roomId).emit('spectator_mute_state', {
+            spectatorsMutedAll: room.spectatorsMutedAll,
+            spectators: room.getSpectatorList()
+        });
+        io.to(roomId).emit('room_update', room.getGameState());
+    };
+
+    // Shared host validation, mirroring the kick_player ordering.
+    const requireHost = (roomId) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room) { socket.emit('error', 'Room not found'); return null; }
+        const requester = room.players.find(p => p.id === socket.id);
+        if (!requester) { socket.emit('error', 'You are not in this room'); return null; }
+        if (requester.name !== room.hostUsername) {
+            socket.emit('error', 'Only the host can mute spectators');
+            return null;
+        }
+        return room;
+    };
+
+    socket.on('mute_all_spectators', ({ roomId, muted }) => {
+        const room = requireHost(roomId);
+        if (!room) return;
+
+        room.spectatorsMutedAll = !!muted;
+        for (const spec of room.spectators.values()) {
+            applySpectatorMute(room, roomId, spec);
+        }
+        broadcastMuteState(room, roomId);
+        console.log(`Room ${roomId}: spectators ${muted ? 'muted' : 'unmuted'} by host`);
+    });
+
+    socket.on('mute_spectator', ({ roomId, username, muted }) => {
+        const room = requireHost(roomId);
+        if (!room) return;
+
+        const spec = room.spectators.get(username);
+        if (!spec) return socket.emit('error', 'Spectator not found');
+
+        spec.forcedMute = !!muted;
+        applySpectatorMute(room, roomId, spec);
+        broadcastMuteState(room, roomId);
+        console.log(`Room ${roomId}: spectator ${username} ${muted ? 'muted' : 'unmuted'} by host`);
+    });
+
+    socket.on('leave_spectate', ({ roomId }) => {
+        const targetRoomId = roomId || socket.spectatingRoomId;
+        const room = targetRoomId ? roomManager.getRoom(targetRoomId) : null;
+        const username = socket.spectatorUsername;
+
+        if (room && username) {
+            room.removeSpectator(username);
+            io.to(targetRoomId).emit('room_update', room.getGameState());
+        }
+        if (targetRoomId) socket.leave(targetRoomId);
+        delete socket.spectatingRoomId;
+        delete socket.spectatorUsername;
     });
 
     const handleDragonWin = async (room, roomId, dragonWinner) => {
@@ -1012,6 +1207,7 @@ io.on('connection', (socket) => {
                     io.to(p.id).emit('hand_update', p.hand);
                 }
             });
+            emitSpectatorHands(room, roomId);
             // Handle dragon win
             handleDragonWin(room, roomId, room.dragonWinner);
             return;
@@ -1031,6 +1227,7 @@ io.on('connection', (socket) => {
                 io.to(p.id).emit('hand_update', p.hand);
             }
         });
+        emitSpectatorHands(room, roomId);
 
         // Check if first player is bot
         processBotTurns(room, roomId);
@@ -1059,6 +1256,8 @@ io.on('connection', (socket) => {
                 }
             } else {
                 io.to(roomId).emit('game_update', room.getGameState());
+                // A bot just played, so spectators need the refreshed hands
+                emitSpectatorHands(room, roomId);
                 // Emit bot reasoning if debug mode is enabled
                 if (room.debugMode && result.reasoning) {
                     io.to(roomId).emit('bot_reasoning', result.reasoning);
@@ -1091,6 +1290,38 @@ io.on('connection', (socket) => {
     socket.on('get_room_state', ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
+            // Resolve the caller. Previously this handler served state to any socket
+            // that knew a room ID and let it drive bot turns; both are now gated.
+            const isPlayer = room.players.some(p => p.id === socket.id);
+            const spectator = room.getSpectatorBySocketId(socket.id)
+                // A spectator that hard-refreshed arrives with a new socket id, so
+                // fall back to the username stashed on the socket.
+                || (socket.spectatorUsername ? room.spectators.get(socket.spectatorUsername) : null);
+
+            if (!isPlayer && !spectator) return;
+
+            if (spectator) {
+                // Re-bind the socket in case this is a post-refresh reconnect
+                if (spectator.socketId !== socket.id) {
+                    spectator.socketId = socket.id;
+                    spectator.socket = socket;
+                }
+                socket.join(roomId);
+                socket.spectatingRoomId = roomId;
+                socket.spectatorUsername = spectator.username;
+
+                socket.emit('spectating_room', { roomId, gameState: room.getGameState() });
+                emitSpectatorHands(room, roomId);
+
+                if (room.gameState === 'round_over' && room.lastRoundResults) {
+                    socket.emit('round_over', room.lastRoundResults);
+                }
+                if (room.gameState === 'finished' && room.lastGameResults) {
+                    socket.emit(room.lastGameResults.isDragonWin ? 'dragon_win' : 'game_over', room.lastGameResults);
+                }
+                return;
+            }
+
             socket.emit('room_update', room.getGameState());
             // Also send hand if game is in progress or round is over
             if (room.gameState === 'playing' || room.gameState === 'round_over') {
@@ -1240,6 +1471,7 @@ io.on('connection', (socket) => {
                         io.to(p.id).emit('hand_update', p.hand);
                     }
                 });
+                emitSpectatorHands(room, roomId);
                 // Handle dragon win
                 handleDragonWin(room, roomId, room.dragonWinner);
                 return;
@@ -1263,6 +1495,12 @@ io.on('connection', (socket) => {
     socket.on('play_card', ({ roomId, cards }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
+            // Reject spectators explicitly. playHand() would already fail them with
+            // 'Not your turn', but the error branch below emits an empty hand_update
+            // that would clobber the spectator's client state.
+            if (room.isSpectator(socket.id)) {
+                return socket.emit('error', 'Spectators cannot play');
+            }
             const result = room.playHand(socket.id, cards);
             if (result.error) {
                 socket.emit('error', result.error);
@@ -1271,6 +1509,7 @@ io.on('connection', (socket) => {
             } else {
                 io.to(roomId).emit('game_update', room.getGameState());
                 socket.emit('hand_update', room.getPlayerHand(socket.id));
+                emitSpectatorHands(room, roomId);
 
                 if (result.roundOver) {
                     // Add delay to show final winning card before round ends
@@ -1315,6 +1554,9 @@ io.on('connection', (socket) => {
 
     socket.on('next_round', ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
+        if (room && room.isSpectator(socket.id)) {
+            return socket.emit('error', 'Spectators cannot advance the round');
+        }
         if (room && room.gameState === 'round_over' && !room.roundTransitionInProgress) {
             room.roundTransitionInProgress = true;
             handleNextRound(room, roomId);
@@ -1324,6 +1566,9 @@ io.on('connection', (socket) => {
     socket.on('pass_turn', ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
+            if (room.isSpectator(socket.id)) {
+                return socket.emit('error', 'Spectators cannot pass');
+            }
             const result = room.passTurn(socket.id);
             if (result.error) {
                 socket.emit('error', result.error);
@@ -1358,6 +1603,11 @@ io.on('connection', (socket) => {
     socket.on('toggle_debug', ({ roomId, enabled }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
+            // Require a seat. Previously any socket that knew a room ID could flip
+            // debug mode on and make the room broadcast bot reasoning.
+            if (!room.players.some(p => p.id === socket.id)) {
+                return socket.emit('error', 'You are not in this room');
+            }
             room.setDebugMode(enabled);
             io.to(roomId).emit('game_update', room.getGameState());
             console.log(`Debug mode ${enabled ? 'enabled' : 'disabled'} for room ${roomId}`);
@@ -1437,6 +1687,7 @@ io.on('connection', (socket) => {
 
             // If room is empty, delete it
             if (room.players.length === 0) {
+                evictSpectators(room, roomId, 'All players left');
                 roomManager.deleteRoom(roomId);
                 console.log(`Room ${roomId} deleted (empty)`);
             }
@@ -1451,6 +1702,7 @@ io.on('connection', (socket) => {
                 // Check if the room now has only bots - if so, delete it
                 if (room.hasOnlyBots()) {
                     console.log(`Room ${roomId} now has only bots, deleting room`);
+                    evictSpectators(room, roomId, 'All players left');
                     roomManager.deleteRoom(roomId);
                     return;
                 }
@@ -1573,6 +1825,7 @@ io.on('connection', (socket) => {
                     io.to(p.id).emit('hand_update', p.hand);
                 }
             });
+            emitSpectatorHands(room, roomId);
             handleDragonWin(room, roomId, room.dragonWinner);
             return;
         }
@@ -1584,6 +1837,7 @@ io.on('connection', (socket) => {
                 io.to(p.id).emit('hand_update', p.hand);
             }
         });
+        emitSpectatorHands(room, roomId);
 
         console.log(`Rematch started in room ${roomId}`);
         processBotTurns(room, roomId);
@@ -1665,6 +1919,7 @@ io.on('connection', (socket) => {
             console.log(`Room ${roomId}: Only 1 human left, game cancelled`);
         } else if (result.remainingHumans === 0) {
             // No humans left, delete room
+            evictSpectators(room, roomId, 'All players left');
             roomManager.deleteRoom(roomId);
             console.log(`Room ${roomId} deleted (no humans left)`);
         } else {
@@ -1704,6 +1959,13 @@ io.on('connection', (socket) => {
         socket.emit('voice:room-state', {
             users: existingUsers  // Send who was already in the room
         });
+
+        // Re-apply a host mute on (re)joining voice, so toggling voice off and back
+        // on isn't a way to clear it.
+        const gameRoom = roomManager.getRoom(roomId);
+        if (gameRoom && gameRoom.isSpectatorMuted(username)) {
+            socket.emit('voice:force-muted', { muted: true });
+        }
 
         // Notify others in room that user joined voice
         socket.to(roomId).emit('voice:user-joined', { userId: username });
@@ -1778,6 +2040,20 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', (reason) => {
         console.log(`User disconnected: ${socket.id}, reason: ${reason}`);
+
+        // Clean up spectator seat. Never delete the room here - the players remain.
+        if (socket.spectatingRoomId && socket.spectatorUsername) {
+            const specRoom = roomManager.getRoom(socket.spectatingRoomId);
+            if (specRoom) {
+                const spec = specRoom.spectators.get(socket.spectatorUsername);
+                // Only remove if this socket still owns the seat; a newer socket for
+                // the same username (reconnect/second tab) must not be evicted here.
+                if (spec && spec.socketId === socket.id) {
+                    specRoom.removeSpectator(socket.spectatorUsername);
+                    io.to(socket.spectatingRoomId).emit('room_update', specRoom.getGameState());
+                }
+            }
+        }
 
         // Clean up voice chat if user was in voice
         if (socket.voiceRoomId && socket.voiceUsername) {

@@ -42,6 +42,12 @@ class Room {
         this.lastRoundResults = null; // Store round results for reconnection handling
         this.lastGameResults = null; // Store game over results for reconnection handling
 
+        // Spectators watch the game read-only. Keyed by username (not socket id) so a
+        // spectator survives a reconnect without the socket-id migration that players
+        // need in reconnectPlayer() - spectators own no game state to migrate.
+        this.spectators = new Map(); // username -> { username, socketId, socket, isGuest, forcedMute }
+        this.spectatorsMutedAll = false; // Host toggle: mute every spectator's mic
+
         // Post-game state for rematch/lobby flow
         this.postGameReadyPlayers = new Set(); // Players who clicked "Ready" after game ends
 
@@ -176,6 +182,81 @@ class Room {
             return player;
         }
         return null;
+    }
+
+    // ============ Spectator Methods ============
+
+    // Add (or refresh) a spectator. Upserts by username so repeated spectate_room
+    // emits (socket reconnect, double-fire) are idempotent, and so a reconnecting
+    // spectator keeps any host-applied mute.
+    addSpectator({ username, socketId, socket, isGuest }) {
+        if (!username) return { error: 'Missing username' };
+
+        // Can't spectate a room you're seated in. A disconnected player still holds
+        // their seat, but letting them watch while disconnected is harmless and
+        // useful, so only block currently-connected players.
+        const seated = this.playersByUsername[username];
+        if (seated && !seated.isDisconnected) {
+            return { error: 'You are already playing in this room' };
+        }
+
+        const existing = this.spectators.get(username);
+        this.spectators.set(username, {
+            username,
+            socketId,
+            socket,
+            isGuest: isGuest || false,
+            // Preserve mute across reconnect so toggling the connection isn't a bypass
+            forcedMute: existing ? existing.forcedMute : false
+        });
+
+        this.updateActivity();
+        return { success: true, previousSocketId: existing ? existing.socketId : null };
+    }
+
+    removeSpectator(username) {
+        return this.spectators.delete(username);
+    }
+
+    getSpectatorBySocketId(socketId) {
+        for (const spec of this.spectators.values()) {
+            if (spec.socketId === socketId) return spec;
+        }
+        return null;
+    }
+
+    isSpectator(socketId) {
+        return this.getSpectatorBySocketId(socketId) !== null;
+    }
+
+    // Public roster - safe to broadcast, contains no hand data.
+    getSpectatorList() {
+        return Array.from(this.spectators.values()).map(s => ({
+            username: s.username,
+            isGuest: s.isGuest,
+            forcedMute: s.forcedMute || false
+        }));
+    }
+
+    // Every player's hand, keyed by player id so clients can join against
+    // getGameState().players[].id. ONLY for delivery to spectators.
+    getAllHands() {
+        const hands = {};
+        for (const p of this.players) {
+            hands[p.id] = p.hand || [];
+        }
+        return hands;
+    }
+
+    // A spectator's effective mute state (global toggle OR individual mute).
+    isSpectatorMuted(username) {
+        const spec = this.spectators.get(username);
+        if (!spec) return false;
+        return this.spectatorsMutedAll || spec.forcedMute;
+    }
+
+    shouldPreserveForSpectators() {
+        return this.spectators.size > 0;
     }
 
     // Kick a player from the room (host only)
@@ -1207,7 +1288,11 @@ class Room {
             pointThreshold: this.pointThreshold,
             isPrivate: this.isPrivate,
             trickWinPending: this.trickWinPending || false,
-            trickWinner: this.trickWinner
+            trickWinner: this.trickWinner,
+            // Public spectator roster (usernames + mute flags only - never hands).
+            // Hands reach spectators exclusively via the spectator_hands event.
+            spectators: this.getSpectatorList(),
+            spectatorsMutedAll: this.spectatorsMutedAll
         };
     }
 
