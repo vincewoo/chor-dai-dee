@@ -5,6 +5,7 @@ const { BotLogic } = require('./BotLogic');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
+const { buildGameContext } = require('./BotContext');
 
 class Room {
     constructor(roomId, gameMode = 'short') {
@@ -873,8 +874,11 @@ class Room {
             this.playedCards.push({ rank: card.rank, suit: card.suit, value: card.value });
         }
 
-        // Record for opponent modelling (survives trick boundaries)
-        this.trickHistory.push({ playerId, action: 'play', hand: validatedHand });
+        // Record for opponent modelling (survives trick boundaries). Keyed by
+        // seat, not player id: socket ids change on reconnect and are not
+        // migrated here, which previously made a reconnecting player's earlier
+        // plays vanish from every bot's opponent model for the rest of the round.
+        this.trickHistory.push({ seat: playerIndex, action: 'play', hand: validatedHand });
 
         // Track play stats for advanced stats
         if (this.roundPlayStats[playerId]) {
@@ -979,7 +983,7 @@ class Room {
         this.passedPlayers.add(playerId); // Mark player as passed for this round
 
         // Record what this player declined to beat, for opponent modelling
-        this.trickHistory.push({ playerId, action: 'pass', hand: this.lastPlayedHand });
+        this.trickHistory.push({ seat: playerIndex, action: 'pass', hand: this.lastPlayedHand });
 
         // Track pass stats for advanced stats
         if (this.roundPlayStats[playerId]) {
@@ -1140,57 +1144,29 @@ class Room {
             const everyoneFull = this.players.every(p => p.hand.length === 13);
             const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
-            // Build game context for strategic decisions
-            const gameContext = {
-                // Card counts in turn order starting from next player
-                playerCardCounts: [],
-                // Index of the player who played last (relative: 1=next, 2=across, 3=previous)
-                lastPlayedByRelative: null,
-                // Which players have passed this round
-                passedPlayers: [],
-                // Total passes this round
+            // Build the bot's observation. Shared with the self-play harness and
+            // the game-log replayer so all three see identical features - see
+            // BotContext.js.
+            const lastPlayerIdx = this.lastPlayedHand && this.lastPlayedHand.playerId
+                ? this.players.findIndex(p => p.id === this.lastPlayedHand.playerId)
+                : -1;
+
+            const gameContext = buildGameContext({
+                hands: this.players.map(p => p.hand),
+                seat: this.currentTurnIndex,
+                passedSeats: this.players.reduce((seats, p, idx) => {
+                    if (this.passedPlayers.has(p.id)) seats.push(idx);
+                    return seats;
+                }, []),
                 passCount: this.passes,
-                // All cards played this round (for card counting)
-                playedCards: [...this.playedCards],
-                // Ordered play/pass history, re-indexed relative to this bot
-                // (1=next, 2=across, 3=previous) so it can model each opponent
-                playHistory: [],
+                playedCards: this.playedCards,
+                trickHistory: this.trickHistory,
+                lastPlayedHand: this.lastPlayedHand,
+                lastPlayedSeat: lastPlayerIdx === -1 ? undefined : lastPlayerIdx,
                 // Per-bot temperament, so four bots at one table do not all
                 // play identically
                 profile: BotLogic.getBotProfile(currentPlayer.name)
-            };
-
-            // Build player info in turn order (next player first)
-            for (let i = 1; i <= 3; i++) {
-                const idx = (this.currentTurnIndex + i) % 4;
-                const player = this.players[idx];
-                gameContext.playerCardCounts.push(player.hand ? player.hand.length : 0);
-                if (this.passedPlayers.has(player.id)) {
-                    gameContext.passedPlayers.push(i - 1); // 0=next, 1=across, 2=previous
-                }
-            }
-
-            // Re-index the round's play history relative to this bot's seat
-            for (const entry of this.trickHistory) {
-                const idx = this.players.findIndex(p => p.id === entry.playerId);
-                if (idx === -1 || idx === this.currentTurnIndex) continue;
-                gameContext.playHistory.push({
-                    relative: (idx - this.currentTurnIndex + 4) % 4, // 1=next, 2=across, 3=previous
-                    action: entry.action,
-                    hand: entry.hand
-                });
-            }
-
-            // Find who played last (relative position)
-            if (this.lastPlayedHand && this.lastPlayedHand.playerId) {
-                const lastPlayerIdx = this.players.findIndex(p => p.id === this.lastPlayedHand.playerId);
-                if (lastPlayerIdx !== -1) {
-                    // Calculate relative position (1-3, where 1=next player, 3=previous player)
-                    let relative = (lastPlayerIdx - this.currentTurnIndex + 4) % 4;
-                    if (relative === 0) relative = 4; // Shouldn't happen, but just in case
-                    gameContext.lastPlayedByRelative = relative;
-                }
-            }
+            });
 
             const handleBotMove = (move, reasoning) => {
                 // Store reasoning if in debug mode

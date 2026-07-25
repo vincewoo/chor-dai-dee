@@ -13,6 +13,7 @@
 const { Big2Rules } = require('../game/Big2Rules');
 const { SUITS, RANKS } = require('../game/Deck');
 const { calculateRoundScores } = require('../game/Scoring');
+const { buildGameContext } = require('../game/BotContext');
 
 /** Deterministic PRNG (mulberry32) so benchmark runs are reproducible. */
 function makeRng(seed) {
@@ -74,29 +75,19 @@ function playRound(seats, hands, startingSeat = null) {
 
         const isFirstTurn = isOpeningRound && playedCards.length === 0;
 
-        // Build gameContext exactly as RoomManager.checkBotTurn does.
-        const gameContext = {
-            playerCardCounts: [],
-            lastPlayedByRelative: null,
-            passedPlayers: [],
+        // Shared with RoomManager.checkBotTurn - see BotContext.js. This used to
+        // be a hand-maintained copy under a comment promising it matched.
+        const gameContext = buildGameContext({
+            hands,
+            seat: turn,
+            passedSeats,
             passCount: consecutivePasses,
-            playedCards: [...playedCards],
-            playHistory: trickHistory
-                .filter(e => e.seat !== turn && e.hand)
-                .map(e => ({ relative: (e.seat - turn + 4) % 4, action: e.action, hand: e.hand })),
+            playedCards,
+            trickHistory,
+            lastPlayedHand,
             profile: seats[turn].profile || null,
             rng: seats[turn].rng || undefined
-        };
-        for (let i = 1; i <= 3; i++) {
-            const idx = (turn + i) % 4;
-            gameContext.playerCardCounts.push(hands[idx].length);
-            if (passedSeats.has(idx)) gameContext.passedPlayers.push(i - 1);
-        }
-        if (lastPlayedHand) {
-            let relative = (lastPlayedHand.seat - turn + 4) % 4;
-            if (relative === 0) relative = 4;
-            gameContext.lastPlayedByRelative = relative;
-        }
+        });
 
         const logic = seats[turn].logic;
         const move = logic.getBotMove(hands[turn], lastPlayedHand, isFirstTurn, gameContext, false);
