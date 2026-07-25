@@ -499,6 +499,8 @@ const Lobby = ({ user, socket, setUser }) => {
                     onCodeChange={setRoomId}
                     onCreateRoom={createRoom}
                     onJoinRoom={joinRoom}
+                    activeGames={joinableRooms}
+                    onJoinActiveGame={joinInProgressRoom}
                     onHowToPlay={() => setShowHowToPlay(true)}
                     onLeaderboard={() => navigate('/leaderboard')}
                     onActivity={() => navigate('/activity')}
