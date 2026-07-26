@@ -741,7 +741,11 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const optimal = awareness?.optimal_decisions || 0;
     const suboptimal = awareness?.suboptimal_decisions || 0;
     const optimalRate = pct(optimal, totalDecisions);
-    const lateAccuracy = ratio(awareness?.late_game_accuracy);
+    // Null when no late-round decisions have been taken yet, which is not the
+    // same as having scored zero on them.
+    const lateAccuracyRaw = awareness?.late_game_accuracy;
+    const lateAccuracyKnown = lateAccuracyRaw !== null && lateAccuracyRaw !== undefined;
+    const lateAccuracy = ratio(lateAccuracyRaw);
     const riskyTotal = (awareness?.risky_plays_successful || 0) + (awareness?.risky_plays_failed || 0);
     const riskyRate = pct(awareness?.risky_plays_successful || 0, riskyTotal);
 
@@ -772,7 +776,9 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
                             <Meter label="Optimal rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} rm={rm} />
-                            <Meter label="Late game accuracy" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Positional advantage in the final stages of a round." rm={rm} />
+                            {lateAccuracyKnown && (
+                                <Meter label="Late game accuracy" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Share of your decisions after 60% of the deck is gone that were rated optimal." rm={rm} />
+                            )}
                             {riskyTotal > 0 && (
                                 <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} risky play${riskyTotal === 1 ? '' : 's'} attempted.`} rm={rm} />
                             )}
@@ -845,7 +851,7 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         <div className="mt-3 flex flex-col gap-3">
                             <Meter label="Aggression" value={ratio(behavioral.aggression_score)} color={parseFloat(ratio(behavioral.aggression_score)) > 70 ? BAD : parseFloat(ratio(behavioral.aggression_score)) < 40 ? '#7fb2ff' : acc} rm={rm} />
                             <Meter label="Risk" value={ratio(behavioral.risk_score)} color={parseFloat(ratio(behavioral.risk_score)) > 60 ? '#ffab6b' : acc} rm={rm} />
-                            <Meter label="Adaptability" value={ratio(behavioral.adaptability_score)} color={parseFloat(ratio(behavioral.adaptability_score)) > 70 ? GOOD : acc} rm={rm} />
+                            <Meter label="Adaptability" value={ratio(behavioral.adaptability_score)} color={parseFloat(ratio(behavioral.adaptability_score)) > 70 ? GOOD : acc} note="Recent placements against your earlier ones — above 50% means improving." rm={rm} />
                         </div>
 
                         <div className="mt-3 grid grid-cols-2 gap-2">

@@ -268,10 +268,36 @@ function initDb() {
             suboptimal_decisions INTEGER DEFAULT 0,
             risky_plays_successful INTEGER DEFAULT 0,
             risky_plays_failed INTEGER DEFAULT 0,
+            -- Superseded by the two counters below. Kept so old rows still
+            -- read, but no longer written: a stored running mean cannot be
+            -- corrected after the fact, whereas counts can.
             late_game_accuracy REAL DEFAULT 0.0,
+            late_game_decisions INTEGER DEFAULT 0,
+            late_game_optimal INTEGER DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id),
             UNIQUE(user_id, game_mode)
         )`);
+
+        // Migration for card_awareness_stats on existing databases
+        db.all("PRAGMA table_info(card_awareness_stats)", (err, columns) => {
+            if (err) {
+                console.error("Error checking card_awareness_stats schema", err);
+                return;
+            }
+            if (columns.length > 0) {
+                const addColumn = (name, ddl) => {
+                    if (!columns.some(c => c.name === name)) {
+                        db.run(`ALTER TABLE card_awareness_stats ADD COLUMN ${ddl}`, (err) => {
+                            if (err && !err.message.includes('duplicate column')) {
+                                console.error(`Error adding ${name} to card_awareness_stats:`, err.message);
+                            }
+                        });
+                    }
+                };
+                addColumn('late_game_decisions', 'late_game_decisions INTEGER DEFAULT 0');
+                addColumn('late_game_optimal', 'late_game_optimal INTEGER DEFAULT 0');
+            }
+        });
 
         // Variance & Consistency: Track performance patterns over time
         db.run(`CREATE TABLE IF NOT EXISTS variance_stats (
@@ -1062,7 +1088,10 @@ const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
             params.push(
                 gameId,
                 userId,
-                roundNumber,
+                // Each decision carries the round it was taken in. Stamping
+                // them all with the caller's round number filed every decision
+                // in the game under the last round played.
+                d.round || roundNumber,
                 d.turn,
                 d.action,
                 d.handSize || 0,
@@ -1109,34 +1138,43 @@ const pruneDecisionTracking = (retentionDays = DECISION_TRACKING_RETENTION_DAYS)
     });
 };
 
-// Update card awareness stats
-const updateCardAwarenessStats = (userId, gameMode, isOptimal, isRisky, riskSucceeded, lateGameAccuracy) => {
+// Add one game's worth of decision counts to a player's card awareness totals.
+//
+// Takes a summary from DecisionAnalyzer.summarizeDecisions, i.e. actual counts
+// of decisions. This used to take booleans and increment total_decisions by
+// exactly 1 per game, so "total_decisions" was a count of games and
+// "optimal_decisions" a count of games in which more than half the moves
+// happened to be rated optimal.
+//
+// Late-game accuracy is stored as its two counts rather than as a running
+// mean, so it stays a plain ratio of things that actually happened.
+const updateCardAwarenessStats = (userId, gameMode, summary) => {
     return new Promise((resolve, reject) => {
-        // Insert or update
+        const total = summary?.total || 0;
+        if (total === 0) return resolve();
+
+        const optimal = summary.optimal || 0;
+        const suboptimal = summary.suboptimal || 0;
+        const riskySuccess = summary.riskySucceeded || 0;
+        const riskyFail = summary.riskyFailed || 0;
+        const lateTotal = summary.lateTotal || 0;
+        const lateOptimal = summary.lateOptimal || 0;
+
         const query = `INSERT INTO card_awareness_stats
-            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_accuracy)
-            VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, game_mode) DO UPDATE SET
-                total_decisions = total_decisions + 1,
+                total_decisions = total_decisions + ?,
                 optimal_decisions = optimal_decisions + ?,
                 suboptimal_decisions = suboptimal_decisions + ?,
                 risky_plays_successful = risky_plays_successful + ?,
                 risky_plays_failed = risky_plays_failed + ?,
-                -- Inside DO UPDATE, a bare column name is the value BEFORE this
-                -- statement, so the running mean has to weight by the old count
-                -- and divide by the new one. Using (total_decisions - 1) and
-                -- total_decisions meant the second write multiplied the whole
-                -- history by zero and every later one under-weighted it.
-                late_game_accuracy = (late_game_accuracy * total_decisions + ?) / (total_decisions + 1)`;
-
-        const optimalVal = isOptimal ? 1 : 0;
-        const suboptimalVal = !isOptimal ? 1 : 0;
-        const riskySuccess = (isRisky && riskSucceeded) ? 1 : 0;
-        const riskyFail = (isRisky && !riskSucceeded) ? 1 : 0;
+                late_game_decisions = late_game_decisions + ?,
+                late_game_optimal = late_game_optimal + ?`;
 
         db.run(query, [
-            userId, gameMode, optimalVal, suboptimalVal, riskySuccess, riskyFail, lateGameAccuracy,
-            optimalVal, suboptimalVal, riskySuccess, riskyFail, lateGameAccuracy
+            userId, gameMode, total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal,
+            total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal
         ], (err) => {
             if (err) reject(err);
             else resolve();
@@ -1144,13 +1182,25 @@ const updateCardAwarenessStats = (userId, gameMode, isOptimal, isRisky, riskSucc
     });
 };
 
-// Get card awareness stats
+// Get card awareness stats.
+//
+// late_game_accuracy is derived from the counts rather than read from the
+// legacy column, and is null when the player has taken no late-game decisions
+// - which is not the same as having scored zero on them.
 const getCardAwarenessStats = (userId, gameMode) => {
     return new Promise((resolve, reject) => {
         const query = `SELECT * FROM card_awareness_stats WHERE user_id = ? AND game_mode = ?`;
         db.get(query, [userId, gameMode], (err, row) => {
-            if (err) reject(err);
-            else resolve(row || null);
+            if (err) return reject(err);
+            if (!row) return resolve(null);
+
+            const lateDecisions = row.late_game_decisions || 0;
+            resolve({
+                ...row,
+                late_game_accuracy: lateDecisions > 0
+                    ? (row.late_game_optimal || 0) / lateDecisions
+                    : null
+            });
         });
     });
 };
@@ -1216,44 +1266,95 @@ const getVarianceStats = (userId, gameMode) => {
     });
 };
 
-// Update behavioral classification with optional early/late game phase data
+// Update behavioral classification with optional early/late game phase data.
+//
+// The stored scores are an exponential moving average, but the archetype used
+// to be derived from the incoming raw scores instead - so the label could
+// contradict the three meters shown directly beneath it. Blend first, then
+// classify the blended values, so the label always describes the bars.
 const updateBehavioralStats = (userId, gameMode, aggressionScore, riskScore, adaptabilityScore, earlyGameAggression = null, lateGameRisk = null) => {
+    const SMOOTHING = 0.8; // weight kept on history
+
     return new Promise((resolve, reject) => {
-        // Determine archetype based on scores
-        let archetype = 'Balanced';
-        if (aggressionScore > 0.7 && riskScore > 0.6) {
-            archetype = 'Aggressive';
-        } else if (aggressionScore < 0.4 && riskScore < 0.4) {
-            archetype = 'Conservative';
-        } else if (adaptabilityScore > 0.75) {
-            archetype = 'Adaptive';
-        }
+        db.get(`SELECT * FROM behavioral_stats WHERE user_id = ? AND game_mode = ?`, [userId, gameMode], (err, row) => {
+            if (err) return reject(err);
 
-        // Determine early/late game styles
-        // Use phase-specific data if available, otherwise use overall scores
-        const earlyAggressionScore = earlyGameAggression !== null ? earlyGameAggression : aggressionScore;
-        const lateRiskScore = lateGameRisk !== null ? lateGameRisk : riskScore;
+            const blend = (previous, incoming) => (
+                row && previous !== null && previous !== undefined
+                    ? previous * SMOOTHING + incoming * (1 - SMOOTHING)
+                    : incoming
+            );
 
-        const earlyStyle = earlyAggressionScore > 0.6 ? 'Aggressive' : earlyAggressionScore < 0.4 ? 'Passive' : 'Neutral';
-        const lateStyle = lateRiskScore > 0.6 ? 'Risky' : lateRiskScore < 0.4 ? 'Safe' : 'Neutral';
+            const aggression = blend(row?.aggression_score, aggressionScore);
+            const risk = blend(row?.risk_score, riskScore);
+            const adaptability = blend(row?.adaptability_score, adaptabilityScore);
 
-        const query = `INSERT INTO behavioral_stats
-            (user_id, game_mode, aggression_score, risk_score, adaptability_score, player_archetype, early_game_style, late_game_style)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, game_mode) DO UPDATE SET
-                aggression_score = (aggression_score * 0.8 + ? * 0.2),
-                risk_score = (risk_score * 0.8 + ? * 0.2),
-                adaptability_score = (adaptability_score * 0.8 + ? * 0.2),
-                player_archetype = ?,
-                early_game_style = ?,
-                late_game_style = ?`;
+            // Determine archetype from the values that will actually be stored
+            let archetype = 'Balanced';
+            if (aggression > 0.7 && risk > 0.6) {
+                archetype = 'Aggressive';
+            } else if (aggression < 0.4 && risk < 0.4) {
+                archetype = 'Conservative';
+            } else if (adaptability > 0.75) {
+                archetype = 'Adaptive';
+            }
 
-        db.run(query, [
-            userId, gameMode, aggressionScore, riskScore, adaptabilityScore, archetype, earlyStyle, lateStyle,
-            aggressionScore, riskScore, adaptabilityScore, archetype, earlyStyle, lateStyle
-        ], (err) => {
+            // Determine early/late game styles
+            // Use phase-specific data if available, otherwise use overall scores
+            const earlyAggressionScore = earlyGameAggression !== null ? earlyGameAggression : aggression;
+            const lateRiskScore = lateGameRisk !== null ? lateGameRisk : risk;
+
+            const earlyStyle = earlyAggressionScore > 0.6 ? 'Aggressive' : earlyAggressionScore < 0.4 ? 'Passive' : 'Neutral';
+            const lateStyle = lateRiskScore > 0.6 ? 'Risky' : lateRiskScore < 0.4 ? 'Safe' : 'Neutral';
+
+            const query = `INSERT INTO behavioral_stats
+                (user_id, game_mode, aggression_score, risk_score, adaptability_score, player_archetype, early_game_style, late_game_style)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, game_mode) DO UPDATE SET
+                    aggression_score = ?,
+                    risk_score = ?,
+                    adaptability_score = ?,
+                    player_archetype = ?,
+                    early_game_style = ?,
+                    late_game_style = ?`;
+
+            db.run(query, [
+                userId, gameMode, aggression, risk, adaptability, archetype, earlyStyle, lateStyle,
+                aggression, risk, adaptability, archetype, earlyStyle, lateStyle
+            ], (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    });
+};
+
+/**
+ * One game's round_stats rolled up for a single player.
+ *
+ * Behavioural scores describe how someone played *this* game and are then
+ * smoothed by updateBehavioralStats; feeding them lifetime totals (as the
+ * game-end path used to) meant averaging an average, and the result could
+ * never move. The deal columns support the lucky-vs-skilled split, and are
+ * null when the game predates deal scoring.
+ */
+const getGameRoundSummary = (userId, gameId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const query = `
+            SELECT
+                COUNT(*) as rounds,
+                COALESCE(SUM(plays_count), 0) as plays,
+                COALESCE(SUM(passes_count), 0) as passes,
+                COALESCE(SUM(leads_won), 0) as leads_won,
+                AVG(CASE WHEN deal_tier IS NOT NULL THEN deal_rank END) as avg_deal_rank,
+                AVG(CASE WHEN deal_tier IS NOT NULL THEN deal_strength_raw END) as avg_deal_raw
+            FROM round_stats
+            WHERE user_id = ? AND game_id = ? AND game_mode = ?
+        `;
+
+        db.get(query, [userId, gameId, gameMode], (err, row) => {
             if (err) reject(err);
-            else resolve();
+            else resolve(row || { rounds: 0, plays: 0, passes: 0, leads_won: 0, avg_deal_rank: null, avg_deal_raw: null });
         });
     });
 };
@@ -2032,6 +2133,7 @@ module.exports = {
     getBehavioralStats,
     getTier3Stats,
     getDealStrengthStats,
+    getGameRoundSummary,
     savePlacementHistory,
     getPlacementHistory,
     updateVarianceScores,

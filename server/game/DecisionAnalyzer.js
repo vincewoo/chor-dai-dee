@@ -234,24 +234,72 @@ class DecisionAnalyzer {
     }
 
     /**
-     * Calculate late-game accuracy based on cards remaining and decision quality
-     * @param {number} cardsInHand - Number of cards in hand
-     * @param {number} totalCardsPlayed - Total cards played in the round
-     * @returns {number} - Accuracy score (0-1)
+     * Roll a game's tracked decisions up into the counts the stats tables
+     * store. Every figure here is per DECISION - the aggregates used to be
+     * incremented once per game, which made "247 decisions" mean "247 games".
+     *
+     * @param {Array} decisions - Decision records from Room.tier3DecisionTracking
+     * @returns {Object} - Counts, all integers
      */
-    static calculateLateGameAccuracy(cardsInHand, totalCardsPlayed) {
-        // Late game is when > 60% of deck has been played
-        const deckSize = 52;
-        const playProgress = totalCardsPlayed / deckSize;
+    static summarizeDecisions(decisions) {
+        const summary = {
+            total: 0,
+            optimal: 0,
+            suboptimal: 0,
+            plays: 0,
+            passes: 0,
+            riskySucceeded: 0,
+            riskyFailed: 0,
+            lateTotal: 0,
+            lateOptimal: 0
+        };
 
-        if (playProgress < 0.6) {
-            return 0.5; // Neutral in early/mid game
+        for (const d of decisions || []) {
+            summary.total++;
+            if (d.quality === 'optimal') summary.optimal++;
+            else summary.suboptimal++;
+
+            if (d.action === 'play') summary.plays++;
+            else if (d.action === 'pass') summary.passes++;
+
+            // Risky plays resolve when the trick they were made into resolves.
+            // An unresolved one (the round ended first) is counted as neither.
+            if (d.riskOutcome === 'success') summary.riskySucceeded++;
+            else if (d.riskOutcome === 'failed') summary.riskyFailed++;
+
+            if (this.isLateGameDecision(d)) {
+                summary.lateTotal++;
+                if (d.quality === 'optimal') summary.lateOptimal++;
+            }
         }
 
-        // In late game, fewer cards = better position
-        const lateGameScore = Math.max(0, 1 - (cardsInHand / 13));
-        return lateGameScore;
+        return summary;
     }
+
+    /**
+     * Late game is when more than 60% of the deck has been played. Each
+     * decision records the deck remaining at the moment it was taken, so this
+     * is a property of the decision rather than of the game's final state.
+     */
+    static isLateGameDecision(decision) {
+        return this.roundProgress(decision) > 0.6;
+    }
+
+    /** Mirror of isLateGameDecision: the opening 40% of a round. */
+    static isEarlyGameDecision(decision) {
+        return this.roundProgress(decision) < 0.4;
+    }
+
+    /** Fraction of the deck already played when a decision was taken. */
+    static roundProgress(decision) {
+        const deckSize = 52;
+        const cardsInDeck = typeof decision.cardsInDeck === 'number' ? decision.cardsInDeck : deckSize;
+        return (deckSize - cardsInDeck) / deckSize;
+    }
+
+    // Late-game accuracy is lateOptimal / lateTotal. It is stored as those two
+    // counts and divided on read (db.getCardAwarenessStats) rather than kept as
+    // a running mean, so it stays a ratio of things that actually happened.
 
     /**
      * Calculate aggression score based on play patterns
@@ -273,16 +321,22 @@ class DecisionAnalyzer {
 
     /**
      * Calculate risk score based on risky play frequency
+     *
+     * All three arguments must be counted over the same population. Callers
+     * used to divide per-game risky counters by a lifetime count of plays,
+     * which pinned riskyPlayRate near zero and made the score a function of
+     * the success rate alone.
+     *
      * @param {number} riskyPlaysSuccessful - Number of successful risky plays
      * @param {number} riskyPlaysFailed - Number of failed risky plays
-     * @param {number} totalPlays - Total plays made
+     * @param {number} totalDecisions - Decisions taken over the same period
      * @returns {number} - Risk score (0-1)
      */
-    static calculateRiskScore(riskyPlaysSuccessful, riskyPlaysFailed, totalPlays) {
-        if (totalPlays === 0) return 0.5;
+    static calculateRiskScore(riskyPlaysSuccessful, riskyPlaysFailed, totalDecisions) {
+        if (totalDecisions === 0) return 0.5;
 
         const totalRiskyPlays = riskyPlaysSuccessful + riskyPlaysFailed;
-        const riskyPlayRate = totalRiskyPlays / totalPlays;
+        const riskyPlayRate = Math.min(1, totalRiskyPlays / totalDecisions);
 
         // Risk score combines frequency of risky plays and success rate
         const successRate = totalRiskyPlays > 0 ? riskyPlaysSuccessful / totalRiskyPlays : 0.5;
@@ -291,40 +345,61 @@ class DecisionAnalyzer {
     }
 
     /**
-     * Calculate adaptability based on performance variance across games
-     * @param {Array} placements - Array of placement finishes [1,2,3,4]
-     * @returns {number} - Adaptability score (0-1)
+     * Adaptability: is the player's recent form improving on their earlier
+     * form? This used to be 1 - stdDev/1.5 over the placement history, which
+     * is the same number updateVarianceScores already stores as
+     * consistency_rating - two meters showing one measurement. Consistency is
+     * the spread; adaptability is the trend.
+     *
+     * @param {Array} placements - Placement finishes, NEWEST FIRST (the order
+     *                             getPlacementHistory returns). Order matters
+     *                             here, unlike the variance calculation it
+     *                             replaces.
+     * @returns {number} - Adaptability score (0-1), 0.5 when flat or unknown
      */
     static calculateAdaptabilityScore(placements) {
-        if (placements.length < 3) return 0.5; // Not enough data
+        if (!placements || placements.length < 6) return 0.5; // Not enough data
 
-        // Calculate variance
-        const avg = placements.reduce((a, b) => a + b, 0) / placements.length;
-        const variance = placements.reduce((sum, p) => sum + Math.pow(p - avg, 2), 0) / placements.length;
-        const stdDev = Math.sqrt(variance);
+        // Split the window in half: most recent games against what came before.
+        const half = Math.floor(placements.length / 2);
+        const recent = placements.slice(0, half);
+        const earlier = placements.slice(half);
 
-        // Lower variance = more consistent = more adaptable
-        // stdDev ranges from 0 (perfect consistency) to ~1.5 (high variance)
-        const adaptability = Math.max(0, 1 - (stdDev / 1.5));
+        const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
-        return adaptability;
+        // Lower placement is better, so an improving player has a positive
+        // delta. One whole placement of improvement saturates the scale.
+        const delta = mean(earlier) - mean(recent);
+        return Math.max(0, Math.min(1, 0.5 + delta / 2));
     }
 
     /**
-     * Determine if a win was "lucky" vs "skilled"
-     * @param {number} cardsRemainingAvg - Average cards remaining for other players
+     * Determine if a win was "lucky" vs "skilled".
+     *
+     * Luck in Big 2 is the cards you are dealt, and DealStrength already
+     * measures exactly that: deal_rank is where a player's hand ranked among
+     * the four dealt at the table, 1 (best) to 4 (worst). The previous version
+     * took "average cards remaining for other players" but was handed their
+     * cumulative game scores, which at game end sit at the 50/100 threshold -
+     * so its > 8 test was always true and lucky/skilled collapsed into the
+     * optimal-rate test alone.
+     *
+     * A win only counts as lucky on evidence of favourable cards. With no deal
+     * data (rounds recorded before the feature, or an unscored game) the win is
+     * credited as skilled rather than guessed at.
+     *
+     * @param {number|null} avgDealRank - Mean deal rank across the game's rounds
      * @param {number} playerOptimalRate - Player's optimal decision rate
      * @returns {boolean} - True if win appears lucky
      */
-    static isLuckyWin(cardsRemainingAvg, playerOptimalRate) {
-        // Lucky win indicators:
-        // - Other players had many cards left (> 8 avg)
-        // - Player's decision quality was low (< 50% optimal)
+    static isLuckyWin(avgDealRank, playerOptimalRate) {
+        if (avgDealRank === null || avgDealRank === undefined) return false;
 
-        const highCardRemainder = cardsRemainingAvg > 8;
+        // 2.5 is the mean rank at a four-player table.
+        const favourableCards = avgDealRank < 2.5;
         const lowSkillPlay = playerOptimalRate < 0.5;
 
-        return highCardRemainder && lowSkillPlay;
+        return favourableCards && lowSkillPlay;
     }
 }
 

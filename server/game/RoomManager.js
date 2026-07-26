@@ -46,6 +46,11 @@ class Room {
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`; // Unique game ID for round tracking
         this.turnNumber = 0; // Track turn number within each round for decision tracking
         this.tier3DecisionTracking = {}; // Track Tier 3 decision data per player
+        // Risky plays awaiting an outcome, keyed by player id. A risky play
+        // succeeded if nobody beat it before the trick resolved. Holds
+        // references into tier3DecisionTracking, so resolving one writes
+        // through to the decision record itself.
+        this.pendingRiskyDecisions = {};
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
@@ -693,6 +698,12 @@ class Room {
             // starting" signal a room gets -- both startRematch() and the lobby
             // restart come back through here.
             this.roundsWonByName = {};
+            // Decisions accumulate across the rounds of one game and are
+            // flushed at game end. Nothing cleared them between games, so a
+            // rematch re-counted the previous game's decisions and re-inserted
+            // them under the new game id.
+            this.tier3DecisionTracking = {};
+            this.pendingRiskyDecisions = {};
         }
 
         this.roundNumber++;
@@ -765,6 +776,9 @@ class Room {
         this.turnNumber = 0; // Reset turn counter for new round
         this.playOrder = 0; // Reset play order for z-index stacking
         // DON'T reset tier3DecisionTracking - accumulate across all rounds in the game
+
+        // A new deal starts no trick, so nothing can still be pending.
+        this.pendingRiskyDecisions = {};
 
         // Initialize round play stats for advanced stats tracking
         this.roundPlayStats = {};
@@ -971,6 +985,13 @@ class Room {
         });
 
         player.hand = newPlayerHand; // Update hand
+
+        // This play beats whatever was on the pile, so if its owner was
+        // sitting on an unresolved risky play, it just failed.
+        if (this.lastPlayedHand && this.lastPlayedHand.playerId !== playerId) {
+            this.resolveRiskyDecision(this.lastPlayedHand.playerId, 'failed');
+        }
+
         this.lastPlayedHand = { ...validatedHand, playerId };
         console.log(`Play accepted: ${player.name} played ${validatedHand.type}(value=${validatedHand.value}, cards=[${validatedHand.cards?.map(c => `${c.rank}${c.suit}(${c.value})`).join(', ')}])`);
         // Record this player's played hand (visible until round ends)
@@ -1046,23 +1067,29 @@ class Room {
                 };
             }
 
-            this.tier3DecisionTracking[playerId].decisions.push({
+            const record = {
                 round: this.roundNumber,
                 turn: this.turnNumber,
                 action: 'play',
                 quality: decision.quality,
                 isRisky: decision.isRisky,
+                // Filled in when the trick resolves: 'success' if nobody beat
+                // this play, 'failed' if somebody did. Stays null if the round
+                // ended first, and an unresolved play counts as neither.
+                riskOutcome: null,
                 handSize: player.hand.length,
                 cardsInDeck: cardsInDeck,
                 handStrength: handStrength,
                 pileStrength: pileStrength
-            });
+            };
+            this.tier3DecisionTracking[playerId].decisions.push(record);
 
             if (decision.quality === 'optimal') {
                 this.tier3DecisionTracking[playerId].optimalPlays++;
             }
             if (decision.isRisky) {
                 this.tier3DecisionTracking[playerId].riskyPlays++;
+                this.pendingRiskyDecisions[playerId] = record;
             }
         }
 
@@ -1070,6 +1097,10 @@ class Room {
 
         // Check if player finished round
         if (player.hand.length === 0) {
+            // The play that empties a hand ends the round: nothing can beat it.
+            this.resolveRiskyDecision(playerId, 'success');
+            this.clearPendingRiskyDecisions();
+
             this.winners.push(player);
             this.roundsWonByName[player.name] = (this.roundsWonByName[player.name] || 0) + 1;
             this.gameState = 'round_over';
@@ -1086,6 +1117,10 @@ class Room {
                 this.roundPlayStats[playerId].leadsWon++;
             }
 
+            // Unbeatable as a single, so the trick is already resolved.
+            this.resolveRiskyDecision(playerId, 'success');
+            this.clearPendingRiskyDecisions();
+
             // Don't clear state immediately - set pending flag for delayed clear
             // This allows clients to see the Big 2 play and all the auto-passes before clearing
             this.trickWinPending = true;
@@ -1099,6 +1134,28 @@ class Room {
 
         this.advanceTurn();
         return { success: true };
+    }
+
+    /**
+     * Settle a player's outstanding risky play. Writes through to the decision
+     * record held in tier3DecisionTracking, which is what the game-end
+     * aggregation reads. A no-op when the player has nothing pending, so it is
+     * safe to call at every trick boundary.
+     */
+    resolveRiskyDecision(playerId, outcome) {
+        const pending = this.pendingRiskyDecisions[playerId];
+        if (!pending) return;
+        pending.riskOutcome = outcome;
+        delete this.pendingRiskyDecisions[playerId];
+    }
+
+    /**
+     * Drop anything still pending at a trick boundary. Those plays were neither
+     * beaten nor victorious (the round ended around them), and are counted as
+     * neither rather than guessed at.
+     */
+    clearPendingRiskyDecisions() {
+        this.pendingRiskyDecisions = {};
     }
 
     passTurn(playerId, { auto = false } = {}) {
@@ -1182,6 +1239,7 @@ class Room {
                 action: 'pass',
                 quality: decision.quality,
                 isRisky: decision.isRisky,
+                riskOutcome: null,
                 handSize: player.hand.length,
                 cardsInDeck: cardsInDeck,
                 handStrength: handStrength,
@@ -1208,6 +1266,10 @@ class Room {
             if (this.roundPlayStats[lastPlayerId]) {
                 this.roundPlayStats[lastPlayerId].leadsWon++;
             }
+
+            // Nobody beat the pile, so its owner's risky play paid off.
+            this.resolveRiskyDecision(lastPlayerId, 'success');
+            this.clearPendingRiskyDecisions();
 
             // Don't clear state immediately - set pending flag for delayed clear
             // This allows clients to see all the passes and the winning hand before clearing

@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -1105,49 +1105,40 @@ io.on('connection', (socket) => {
                                             console.error("Failed to track decisions:", err);
                                         }
 
-                                        // Get round aggregates for this player
-                                        const roundAggregates = await getRoundAggregates(user.id, room.gameMode);
-
-                                        // 1. Card Awareness Stats
-                                        const totalDecisions = tier3Data.decisions.length;
-                                        const optimalCount = tier3Data.optimalPlays || 0;
-                                        const isOptimal = optimalCount > (totalDecisions / 2);
-                                        const riskyCount = tier3Data.riskyPlays || 0;
-                                        const isRisky = riskyCount > 0;
-
-                                        // Determine risky play success (risky plays that led to good placement)
-                                        const riskSucceeded = isRisky && playerPlacement.placement <= 2;
-
-                                        // Calculate late game accuracy
-                                        const lateGameAccuracy = DecisionAnalyzer.calculateLateGameAccuracy(
-                                            room.cumulativeScores[p.id] || 0,
-                                            52 // Full deck
+                                        // This game's rounds, for the behavioural
+                                        // scores and the deal-luck read below.
+                                        const gameSummary = await getGameRoundSummary(
+                                            user.id,
+                                            room.gameId,
+                                            room.gameMode
                                         );
+
+                                        // 1. Card Awareness Stats -- real per-decision
+                                        // counts, not one increment per game.
+                                        const decisionSummary = DecisionAnalyzer.summarizeDecisions(tier3Data.decisions);
+                                        const totalDecisions = decisionSummary.total;
+                                        const optimalRate = totalDecisions > 0
+                                            ? decisionSummary.optimal / totalDecisions
+                                            : 0;
 
                                         await updateCardAwarenessStats(
                                             user.id,
                                             room.gameMode,
-                                            isOptimal,
-                                            isRisky,
-                                            riskSucceeded,
-                                            lateGameAccuracy
+                                            decisionSummary
                                         );
 
                                         // 2. Variance Stats (Streaks and Lucky/Skilled wins)
                                         const isWinner = p.id === gameWinner.id;
 
-                                        // Determine if win was lucky vs skilled
+                                        // Luck is the cards you were dealt, which
+                                        // DealStrength measures directly. Rank 1 is
+                                        // the best hand at the table, 4 the worst.
                                         let isLucky = false;
                                         if (isWinner) {
-                                            // Calculate avg cards remaining for other players
-                                            const otherPlayers = room.players.filter(pl => pl.id !== p.id);
-                                            const avgCardsRemaining = otherPlayers.reduce((sum, pl) => {
-                                                const playerScore = room.cumulativeScores[pl.id] || 0;
-                                                return sum + playerScore;
-                                            }, 0) / otherPlayers.length;
-
-                                            const optimalRate = optimalCount / totalDecisions;
-                                            isLucky = DecisionAnalyzer.isLuckyWin(avgCardsRemaining, optimalRate);
+                                            isLucky = DecisionAnalyzer.isLuckyWin(
+                                                gameSummary.avg_deal_rank,
+                                                optimalRate
+                                            );
                                         }
 
                                         await updateVarianceStats(
@@ -1171,40 +1162,46 @@ io.on('connection', (socket) => {
                                         await updateVarianceScores(user.id, room.gameMode);
 
                                         // 5. Behavioral Stats
-                                        const totalPlays = roundAggregates?.total_plays || 0;
-                                        const totalPasses = roundAggregates?.total_passes || 0;
-                                        const leadsWon = roundAggregates?.leads_won || 0;
-
+                                        //
+                                        // Scored on THIS game and then smoothed by
+                                        // updateBehavioralStats. Feeding in lifetime
+                                        // totals, as this used to, averaged an
+                                        // average and could never move.
                                         const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
-                                            totalPlays,
-                                            totalPasses,
-                                            leadsWon
+                                            gameSummary.plays || 0,
+                                            gameSummary.passes || 0,
+                                            gameSummary.leads_won || 0
                                         );
 
-                                        // Get existing card awareness stats for risk score calculation
-                                        const existingAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
-                                        const riskySuccessful = existingAwareness?.risky_plays_successful || 0;
-                                        const riskyFailed = existingAwareness?.risky_plays_failed || 0;
-
+                                        // Risky plays and the decisions they are a
+                                        // fraction of have to come from the same
+                                        // population, so both are read back off the
+                                        // row just updated.
+                                        const lifetimeAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
                                         const riskScore = DecisionAnalyzer.calculateRiskScore(
-                                            riskySuccessful,
-                                            riskyFailed,
-                                            totalPlays
+                                            lifetimeAwareness?.risky_plays_successful || 0,
+                                            lifetimeAwareness?.risky_plays_failed || 0,
+                                            lifetimeAwareness?.total_decisions || 0
                                         );
 
                                         // Get placement history for adaptability calculation
                                         const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
                                         const adaptabilityScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
 
-                                        // Calculate early/late game phase-specific behaviors
-                                        // Early game = decisions in first 40% of turns
-                                        // Late game = decisions in last 30% of turns
-                                        const totalTurns = tier3Data.decisions.length;
-                                        const earlyGameCutoff = Math.floor(totalTurns * 0.4);
-                                        const lateGameStart = Math.floor(totalTurns * 0.7);
-
-                                        const earlyDecisions = tier3Data.decisions.slice(0, earlyGameCutoff);
-                                        const lateDecisions = tier3Data.decisions.slice(lateGameStart);
+                                        // Calculate early/late game phase-specific behaviors.
+                                        //
+                                        // Phase is a property of the round, read from
+                                        // the deck remaining when each decision was
+                                        // taken. Slicing the game's decision list by
+                                        // index instead - as this used to - made
+                                        // "early game" mean the first rounds of the
+                                        // match rather than the opening of each round.
+                                        const earlyDecisions = tier3Data.decisions.filter(
+                                            d => DecisionAnalyzer.isEarlyGameDecision(d)
+                                        );
+                                        const lateDecisions = tier3Data.decisions.filter(
+                                            d => DecisionAnalyzer.isLateGameDecision(d)
+                                        );
 
                                         // Calculate early game aggression (play rate in early game)
                                         const earlyPlays = earlyDecisions.filter(d => d.action === 'play').length;
