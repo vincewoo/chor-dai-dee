@@ -865,7 +865,11 @@ io.on('connection', (socket) => {
         // that would otherwise each pay their own commit.
         await withTransaction(async () => {
             for (const scoreData of roundScoresWithPlacements) {
-                if (scoreData.isBot || scoreData.isGuest) continue;
+                // Mid-game joiners are excluded from game-level stats and
+                // ratings, so their rounds must not land in round_stats either
+                // -- otherwise the two sources disagree about how much they
+                // played. Guests have nothing to attach stats to at all.
+                if (scoreData.isBot || scoreData.isGuest || scoreData.joinedMidGame) continue;
                 try {
                     const user = await lookupUser(scoreData.name);
                     if (!user) continue;
@@ -874,6 +878,7 @@ io.on('connection', (socket) => {
                         plays: 0,
                         passes: 0,
                         leadsWon: 0,
+                        tricksContested: 0,
                         handTypes: {}
                     };
 
@@ -892,6 +897,7 @@ io.on('connection', (socket) => {
                         plays: playStats.plays,
                         passes: playStats.passes,
                         leadsWon: playStats.leadsWon,
+                        leadAttempts: playStats.tricksContested || 0,
                         handTypes: playStats.handTypes,
                         // Scored at deal time, before a card was played. Absent
                         // for rounds already in flight when the server restarted.
@@ -1237,7 +1243,10 @@ io.on('connection', (socket) => {
                 }
 
                 // 4. Update head-to-head stats for all registered human player pairs (exclude guests)
-                const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest);
+                // Same exclusions as the game-level stats above: a mid-game
+                // joiner did not play the whole game, so the result is not a
+                // head-to-head record against them.
+                const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest && !p.joinedMidGame);
                 for (let i = 0; i < humanPlayers.length; i++) {
                     for (let j = i + 1; j < humanPlayers.length; j++) {
                         try {

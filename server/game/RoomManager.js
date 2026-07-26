@@ -57,6 +57,7 @@ class Room {
         this.createdAt = Date.now(); // Track when room was created
         this.trickWinPending = false; // Flag to indicate a trick win is pending (delay before clearing)
         this.trickWinner = null; // The player who won the current trick
+        this.trickIndex = 0; // Tricks resolved this round, for tricks-contested counting
         this.lastRoundResults = null; // Store round results for reconnection handling
         this.lastGameResults = null; // Store game over results for reconnection handling
 
@@ -779,6 +780,7 @@ class Room {
 
         // A new deal starts no trick, so nothing can still be pending.
         this.pendingRiskyDecisions = {};
+        this.trickIndex = 0;
 
         // Initialize round play stats for advanced stats tracking
         this.roundPlayStats = {};
@@ -787,6 +789,12 @@ class Room {
                 plays: 0,
                 passes: 0,
                 leadsWon: 0, // Count of times player won control of table
+                // Tricks this player played into at least once -- the
+                // denominator leadsWon is a share of. Counting every play
+                // instead would ask "how often does a card win the trick",
+                // which is a different (and much smaller) number.
+                tricksContested: 0,
+                lastTrickCounted: -1,
                 handTypes: {
                     SINGLE: 0,
                     PAIR: 0,
@@ -1040,8 +1048,15 @@ class Room {
 
         // Track play stats for advanced stats
         if (this.roundPlayStats[playerId]) {
-            this.roundPlayStats[playerId].plays++;
-            this.roundPlayStats[playerId].handTypes[validatedHand.type]++;
+            const stats = this.roundPlayStats[playerId];
+            stats.plays++;
+            stats.handTypes[validatedHand.type]++;
+
+            // Once per trick, however many times the player plays into it.
+            if (stats.lastTrickCounted !== this.trickIndex) {
+                stats.tricksContested++;
+                stats.lastTrickCounted = this.trickIndex;
+            }
         }
 
         // Track Tier 3 decision quality (for human players only)
@@ -1120,6 +1135,7 @@ class Room {
             // Unbeatable as a single, so the trick is already resolved.
             this.resolveRiskyDecision(playerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.trickIndex++;
 
             // Don't clear state immediately - set pending flag for delayed clear
             // This allows clients to see the Big 2 play and all the auto-passes before clearing
@@ -1270,6 +1286,7 @@ class Room {
             // Nobody beat the pile, so its owner's risky play paid off.
             this.resolveRiskyDecision(lastPlayerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.trickIndex++;
 
             // Don't clear state immediately - set pending flag for delayed clear
             // This allows clients to see all the passes and the winning hand before clearing

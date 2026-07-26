@@ -45,7 +45,11 @@ const fingerprint = (relPaths) => crypto
 // unrelated reasons, and `source`/`action` on the tape record those two rules
 // explicitly rather than relying on replay to re-derive them.
 const RULES_FILES = ['game/Big2Rules.js', 'game/Scoring.js', 'game/Deck.js'];
-const RULES_PIN = '33a83047302d0de5927ad80aadcdf6185d44e95fb6b96ad7bad923bd915ad8ef';
+// Re-pinned when calculateRoundScores began passing isGuest/joinedMidGame
+// through to the persistence layer. No scoring behaviour changed -- the points,
+// card counts and multipliers are computed exactly as before -- so
+// RULES_VERSION stays where it is.
+const RULES_PIN = '679109ebc4aa29579533a88cb687fe067d6b66b6c8724f9ad8870212e056a5a2';
 
 // --- Bot logic -------------------------------------------------------------
 // BotLogic.js is the heuristics; BotContext.js is the observation they run on.

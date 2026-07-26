@@ -5,6 +5,10 @@
  * Losers get points equal to their card count (higher = worse).
  * Penalty multiplier: 2x for 10-12 cards, 3x for 13 cards.
  * Winner gets 0 points for the round.
+ *
+ * isGuest and joinedMidGame ride along because the persistence layer filters
+ * on them. They used to be dropped here, so the round-stats guard that reads
+ * `scoreData.isGuest` was checking a field that was never set.
  */
 const calculateRoundScores = (winner, players) => {
     const scores = [];
@@ -15,6 +19,8 @@ const calculateRoundScores = (winner, players) => {
                 id: p.id,
                 name: p.name,
                 isBot: p.isBot,
+                isGuest: !!p.isGuest,
+                joinedMidGame: !!p.joinedMidGame,
                 roundPoints: 0,
                 cardsLeft: 0,
                 isRoundWinner: true
@@ -30,6 +36,8 @@ const calculateRoundScores = (winner, players) => {
                 id: p.id,
                 name: p.name,
                 isBot: p.isBot,
+                isGuest: !!p.isGuest,
+                joinedMidGame: !!p.joinedMidGame,
                 roundPoints,
                 cardsLeft: count,
                 isRoundWinner: false

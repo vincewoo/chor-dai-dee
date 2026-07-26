@@ -123,6 +123,9 @@ function initDb() {
             plays_count INTEGER DEFAULT 0,
             passes_count INTEGER DEFAULT 0,
             leads_won INTEGER DEFAULT 0,
+            -- Tricks the player played into at least once. leads_won is a
+            -- share of these; it used to be reported as a share of every play.
+            lead_attempts INTEGER DEFAULT 0,
             singles_played INTEGER DEFAULT 0,
             pairs_played INTEGER DEFAULT 0,
             triples_played INTEGER DEFAULT 0,
@@ -433,6 +436,7 @@ function initDb() {
                     }
                 };
                 addColumn('leads_won', 'leads_won INTEGER DEFAULT 0');
+                addColumn('lead_attempts', 'lead_attempts INTEGER DEFAULT 0');
                 // Deal-strength columns default to NULL, not 0: a pre-existing
                 // row has an *unknown* deal, and 0 is a real (average) score.
                 // Every deal-strength query filters on NOT NULL for this reason.
@@ -824,18 +828,19 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
         const query = `INSERT INTO round_stats (
             game_id, user_id, game_mode, round_number, placement,
             cards_remaining, penalty_multiplier, round_points, cumulative_score,
-            plays_count, passes_count, leads_won,
+            plays_count, passes_count, leads_won, lead_attempts,
             singles_played, pairs_played, triples_played,
             straights_played, flushes_played, full_houses_played,
             quads_played, straight_flushes_played,
             deal_strength_raw, deal_tier, deal_rank,
             deal_baseline_version, human_opponents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
             roundData.cardsLeft, roundData.penaltyMultiplier, roundData.roundPoints,
-            roundData.cumulativeScore, roundData.plays, roundData.passes, roundData.leadsWon || 0,
+            roundData.cumulativeScore, roundData.plays, roundData.passes,
+            roundData.leadsWon || 0, roundData.leadAttempts || 0,
             roundData.handTypes.SINGLE || 0,
             roundData.handTypes.PAIR || 0,
             roundData.handTypes.TRIPLE || 0,
@@ -875,6 +880,7 @@ const getRoundAggregates = (userId, gameMode) => {
                 SUM(plays_count) as total_plays,
                 SUM(passes_count) as total_passes,
                 SUM(leads_won) as leads_won,
+                SUM(lead_attempts) as lead_attempts,
                 AVG(CAST(plays_count AS REAL) / NULLIF(plays_count + passes_count, 0)) as play_rate,
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x,
                 SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x,
@@ -948,6 +954,7 @@ const updateAggregateStats = (username, gameMode, placement, gameId) => {
                     SUM(passes_count) as total_passes,
                     COUNT(*) as total_rounds,
                     SUM(leads_won) as leads_won,
+                    SUM(lead_attempts) as lead_attempts,
                     SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x,
                     SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x
                 FROM round_stats
@@ -980,7 +987,10 @@ const updateAggregateStats = (username, gameMode, placement, gameId) => {
                     gameStats?.total_passes || 0,
                     gameStats?.total_rounds || 0,
                     gameStats?.leads_won || 0,
-                    gameStats?.total_plays || 0, // lead_attempts = total plays
+                    // Tricks contested, recorded per round. This used to be
+                    // total_plays, which made "Lead attempts" a duplicate of
+                    // "Plays" and the success rate a share of every card played.
+                    gameStats?.lead_attempts || 0,
                     gameStats?.penalty_2x || 0,
                     gameStats?.penalty_3x || 0,
                     user.id
