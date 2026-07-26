@@ -1,5 +1,6 @@
 // server/db.js
 const sqlite3 = require('sqlite3').verbose();
+const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
 const bcrypt = require('bcrypt');
 const path = require('path');
 
@@ -1562,61 +1563,50 @@ const getVarianceStats = (userId, gameMode) => {
     });
 };
 
-// Update behavioral classification with optional early/late game phase data.
+// Update behavioral classification.
 //
 // The stored scores are an exponential moving average, but the archetype used
 // to be derived from the incoming raw scores instead - so the label could
-// contradict the three meters shown directly beneath it. Blend first, then
-// classify the blended values, so the label always describes the bars.
-const updateBehavioralStats = (userId, gameMode, aggressionScore, riskScore, adaptabilityScore, earlyGameAggression = null, lateGameRisk = null) => {
+// contradict the meters shown directly beneath it. Blend first, then classify
+// the blended values, so the label always describes the bars.
+//
+// early_game_style / late_game_style are no longer written. The late one could
+// not vary: late in a round players play whatever they legally can, so its
+// input sat at a median of 1.000 and the tile read the same for everyone. The
+// early one is now the aggression axis itself, so a separate label restated it.
+const updateBehavioralStats = (userId, gameMode, aggressionScore, riskScore, formScore) => {
     const SMOOTHING = 0.8; // weight kept on history
 
     return new Promise((resolve, reject) => {
         db.get(`SELECT * FROM behavioral_stats WHERE user_id = ? AND game_mode = ?`, [userId, gameMode], (err, row) => {
             if (err) return reject(err);
 
-            const blend = (previous, incoming) => (
-                row && previous !== null && previous !== undefined
-                    ? previous * SMOOTHING + incoming * (1 - SMOOTHING)
-                    : incoming
-            );
+            const blend = (previous, incoming) => {
+                // A NaN that reached the column would otherwise survive every
+                // future blend, since NaN * 0.8 + x * 0.2 is NaN.
+                const usable = Number.isFinite(previous);
+                const value = Number.isFinite(incoming) ? incoming : 0.5;
+                return row && usable ? previous * SMOOTHING + value * (1 - SMOOTHING) : value;
+            };
 
             const aggression = blend(row?.aggression_score, aggressionScore);
             const risk = blend(row?.risk_score, riskScore);
-            const adaptability = blend(row?.adaptability_score, adaptabilityScore);
+            const form = blend(row?.adaptability_score, formScore);
 
-            // Determine archetype from the values that will actually be stored
-            let archetype = 'Balanced';
-            if (aggression > 0.7 && risk > 0.6) {
-                archetype = 'Aggressive';
-            } else if (aggression < 0.4 && risk < 0.4) {
-                archetype = 'Conservative';
-            } else if (adaptability > 0.75) {
-                archetype = 'Adaptive';
-            }
-
-            // Determine early/late game styles
-            // Use phase-specific data if available, otherwise use overall scores
-            const earlyAggressionScore = earlyGameAggression !== null ? earlyGameAggression : aggression;
-            const lateRiskScore = lateGameRisk !== null ? lateGameRisk : risk;
-
-            const earlyStyle = earlyAggressionScore > 0.6 ? 'Aggressive' : earlyAggressionScore < 0.4 ? 'Passive' : 'Neutral';
-            const lateStyle = lateRiskScore > 0.6 ? 'Risky' : lateRiskScore < 0.4 ? 'Safe' : 'Neutral';
+            const archetype = DecisionAnalyzer.classifyArchetype(aggression, risk);
 
             const query = `INSERT INTO behavioral_stats
-                (user_id, game_mode, aggression_score, risk_score, adaptability_score, player_archetype, early_game_style, late_game_style)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, game_mode, aggression_score, risk_score, adaptability_score, player_archetype)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, game_mode) DO UPDATE SET
                     aggression_score = ?,
                     risk_score = ?,
                     adaptability_score = ?,
-                    player_archetype = ?,
-                    early_game_style = ?,
-                    late_game_style = ?`;
+                    player_archetype = ?`;
 
             db.run(query, [
-                userId, gameMode, aggression, risk, adaptability, archetype, earlyStyle, lateStyle,
-                aggression, risk, adaptability, archetype, earlyStyle, lateStyle
+                userId, gameMode, aggression, risk, form, archetype,
+                aggression, risk, form, archetype
             ], (err) => {
                 if (err) reject(err);
                 else resolve();

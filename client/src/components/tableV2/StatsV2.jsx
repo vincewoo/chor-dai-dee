@@ -25,7 +25,7 @@ const ARCHETYPE_COLORS = {
     Aggressive: BAD,
     Conservative: '#7fb2ff',
     Balanced: GOOD,
-    Adaptive: '#a48fff',
+    Opportunist: '#a48fff',
 };
 
 const TABS = [
@@ -1021,14 +1021,27 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         </button>
 
                         <div className="mt-3 flex flex-col gap-3">
-                            <Meter label="Aggression" value={ratio(behavioral.aggression_score)} color={parseFloat(ratio(behavioral.aggression_score)) > 70 ? BAD : parseFloat(ratio(behavioral.aggression_score)) < 40 ? '#7fb2ff' : acc} rm={rm} />
-                            <Meter label="Risk" value={ratio(behavioral.risk_score)} color={parseFloat(ratio(behavioral.risk_score)) > 60 ? '#ffab6b' : acc} rm={rm} />
-                            <Meter label="Adaptability" value={ratio(behavioral.adaptability_score)} color={parseFloat(ratio(behavioral.adaptability_score)) > 70 ? GOOD : acc} note="Recent placements against your earlier ones — above 50% means improving." rm={rm} />
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                            <Tile label="Early game" value={behavioral.early_game_style || 'Neutral'} />
-                            <Tile label="Late game" value={behavioral.late_game_style || 'Neutral'} />
+                            <Meter
+                                label="Engagement"
+                                value={ratio(behavioral.aggression_score)}
+                                color={parseFloat(ratio(behavioral.aggression_score)) > 85 ? BAD : parseFloat(ratio(behavioral.aggression_score)) < 68 ? '#7fb2ff' : acc}
+                                note="How often you play rather than hold back, early in a round. Typical is around 77%."
+                                rm={rm}
+                            />
+                            <Meter
+                                label="Commitment"
+                                value={ratio(behavioral.risk_score)}
+                                color={parseFloat(ratio(behavioral.risk_score)) > 26 ? '#ffab6b' : acc}
+                                note="Share of your plays that gamble a valuable card on holding the trick. Typical is around 20%."
+                                rm={rm}
+                            />
+                            <Meter
+                                label="Form"
+                                value={ratio(behavioral.adaptability_score)}
+                                color={parseFloat(ratio(behavioral.adaptability_score)) > 70 ? GOOD : acc}
+                                note="Recent placements against your earlier ones — above 50% means improving. Not part of your archetype."
+                                rm={rm}
+                            />
                         </div>
 
                         <div className="mt-3 flex flex-wrap gap-2">

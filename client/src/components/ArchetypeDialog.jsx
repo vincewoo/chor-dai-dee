@@ -55,23 +55,26 @@ export const archetypeDescriptions = {
         ],
         strategy: 'Your versatility is your strength. Continue reading the game flow and adjusting your tactics accordingly.'
     },
-    'Adaptive': {
-        title: 'Adaptive Player',
+    // Replaced 'Adaptive', which claimed to detect opponent reading. Nothing
+    // in the data measured that; this quadrant - holds back early, commits
+    // hard when it does engage - is something the two axes actually separate.
+    'Opportunist': {
+        title: 'Opportunist',
         color: 'text-purple-600',
-        description: 'You dynamically adjust your strategy based on opponents and game state.',
+        description: 'You let cheap tricks go by, then commit hard to the ones you decide to take.',
         strengths: [
-            'Highly unpredictable',
-            'Excellent at reading opponents',
-            'Can counter any play style',
-            'Thrives in complex situations'
+            'Rarely wastes a high card on a trick worth little',
+            'Keeps control cards for the moments that decide a round',
+            'Hard to bait into an early exchange',
+            'Gets full value from a strong hand'
         ],
         improvements: [
-            'May overthink simple situations',
-            'Can confuse allies in team variants',
-            'Sometimes changes strategy too frequently',
-            'Requires high mental energy to maintain'
+            'Passing up cheap tricks hands opponents free tempo',
+            'Can be left holding big cards when a round ends early',
+            'Waiting for the perfect spot sometimes means never acting',
+            'Opponents who shed fast can finish before your moment comes'
         ],
-        strategy: 'Your ability to shift strategies keeps opponents guessing. Use this unpredictability to maintain a psychological edge.'
+        strategy: 'Your instinct for when a trick matters is the strength here. Watch for rounds that end before your spot arrives — sometimes the cheap trick is the one worth taking.'
     }
 };
 
