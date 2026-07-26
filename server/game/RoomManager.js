@@ -7,6 +7,7 @@ const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
 const { rankTable, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
+const { evaluateMove } = require('./MoveQuality');
 const { GameTape } = require('./GameTape');
 const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
 
@@ -992,6 +993,17 @@ class Room {
                 : SOURCE.HUMAN
         });
 
+        // Grade the decision BEFORE anything is mutated. The hand, the pile,
+        // the played cards and the trick history all change below, and a move
+        // has to be judged against the position it was made in.
+        const moveQuality = player.isBot
+            ? null
+            : this.gradeDecision(playerIndex, {
+                action: 'play',
+                cards: validatedHand.cards,
+                isFirstTurn: isFirstTurnOfGame
+            });
+
         player.hand = newPlayerHand; // Update hand
 
         // This play beats whatever was on the pile, so if its owner was
@@ -1060,50 +1072,14 @@ class Room {
         }
 
         // Track Tier 3 decision quality (for human players only)
-        if (!player.isBot) {
-            const handValues = player.hand.map(c => c.value);
-            const cardsInDeck = 52 - this.playedCards.length;
-            const handStrength = DecisionAnalyzer.calculateHandStrength(handValues);
-            const pileStrength = DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand);
-
-            const decision = DecisionAnalyzer.evaluateDecision({
-                action: 'play',
-                hand: handValues,
-                pile: this.lastPlayedHand,
-                cardsInDeck,
-                playedCards: this.playedCards
+        if (!player.isBot && moveQuality) {
+            const record = this.recordDecision(playerId, 'play', moveQuality, {
+                handSize: player.hand.length,
+                handStrength: DecisionAnalyzer.calculateHandStrength(player.hand.map(c => c.value)),
+                pileStrength: DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand)
             });
 
-            if (!this.tier3DecisionTracking[playerId]) {
-                this.tier3DecisionTracking[playerId] = {
-                    decisions: [],
-                    riskyPlays: 0,
-                    optimalPlays: 0
-                };
-            }
-
-            const record = {
-                round: this.roundNumber,
-                turn: this.turnNumber,
-                action: 'play',
-                quality: decision.quality,
-                isRisky: decision.isRisky,
-                // Filled in when the trick resolves: 'success' if nobody beat
-                // this play, 'failed' if somebody did. Stays null if the round
-                // ended first, and an unresolved play counts as neither.
-                riskOutcome: null,
-                handSize: player.hand.length,
-                cardsInDeck: cardsInDeck,
-                handStrength: handStrength,
-                pileStrength: pileStrength
-            };
-            this.tier3DecisionTracking[playerId].decisions.push(record);
-
-            if (decision.quality === 'optimal') {
-                this.tier3DecisionTracking[playerId].optimalPlays++;
-            }
-            if (decision.isRisky) {
-                this.tier3DecisionTracking[playerId].riskyPlays++;
+            if (moveQuality.isRisky) {
                 this.pendingRiskyDecisions[playerId] = record;
             }
         }
@@ -1153,6 +1129,103 @@ class Room {
     }
 
     /**
+     * The observation for a seat about to act, in the shape BotContext defines.
+     * Used both to drive live bot play and to grade human decisions, so a
+     * player is measured against exactly the position a bot would have faced.
+     */
+    buildSeatContext(seat, profile = null) {
+        const lastPlayerIdx = this.lastPlayedHand && this.lastPlayedHand.playerId
+            ? this.players.findIndex(p => p.id === this.lastPlayedHand.playerId)
+            : -1;
+
+        return buildGameContext({
+            hands: this.players.map(p => p.hand),
+            seat,
+            passedSeats: this.players.reduce((seats, p, idx) => {
+                if (this.passedPlayers.has(p.id)) seats.push(idx);
+                return seats;
+            }, []),
+            passCount: this.passes,
+            playedCards: this.playedCards,
+            trickHistory: this.trickHistory,
+            lastPlayedHand: this.lastPlayedHand,
+            lastPlayedSeat: lastPlayerIdx === -1 ? undefined : lastPlayerIdx,
+            profile
+        });
+    }
+
+    /**
+     * Grade a human decision against the bot's evaluation of the position.
+     *
+     * MUST be called before the move is applied - the hand, pile, played cards
+     * and trick history all move on, and a decision is only meaningful against
+     * the position it was taken in.
+     *
+     * Stats must never cost a player their turn, so any failure here degrades
+     * to an ungraded decision rather than propagating.
+     */
+    gradeDecision(seat, { action, cards = null, isFirstTurn = false }) {
+        try {
+            return evaluateMove({
+                hand: this.players[seat].hand,
+                lastPlayedHand: this.lastPlayedHand,
+                isFirstTurn,
+                // Profile-free: the yardstick has to be the same for everyone.
+                gameContext: this.buildSeatContext(seat, null),
+                action,
+                cards
+            });
+        } catch (err) {
+            console.error('Move quality evaluation failed:', err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Append a graded decision to the player's game-long tape and keep the
+     * running counters in step. Returns the record so callers can hold a
+     * reference to it - the risky-play resolution writes through to it later.
+     */
+    recordDecision(playerId, action, quality, { handSize, handStrength, pileStrength }) {
+        if (!this.tier3DecisionTracking[playerId]) {
+            this.tier3DecisionTracking[playerId] = {
+                decisions: [],
+                riskyPlays: 0,
+                optimalPlays: 0
+            };
+        }
+
+        const record = {
+            round: this.roundNumber,
+            turn: this.turnNumber,
+            action,
+            // Null when the decision carried no choice, and excluded from every
+            // accuracy figure rather than counted as a free success.
+            quality: quality.quality,
+            scored: quality.scored,
+            forced: quality.forced,
+            lossFraction: quality.lossFraction,
+            rank: quality.rank,
+            optionCount: quality.optionCount,
+            isRisky: quality.isRisky,
+            // Filled in when the trick resolves: 'success' if nobody beat this
+            // play, 'failed' if somebody did. Stays null if the round ended
+            // first, and an unresolved play counts as neither.
+            riskOutcome: null,
+            handSize,
+            cardsInDeck: 52 - this.playedCards.length,
+            handStrength,
+            pileStrength
+        };
+
+        this.tier3DecisionTracking[playerId].decisions.push(record);
+        if (quality.quality === 'optimal') this.tier3DecisionTracking[playerId].optimalPlays++;
+        if (quality.isRisky) this.tier3DecisionTracking[playerId].riskyPlays++;
+
+        return record;
+    }
+
+    /**
      * Settle a player's outstanding risky play. Writes through to the decision
      * record held in tier3DecisionTracking, which is what the game-end
      * aggregation reads. A no-op when the player has nothing pending, so it is
@@ -1191,6 +1264,12 @@ class Room {
         // Update activity timestamp
         this.updateActivity();
 
+        // Graded before passedPlayers and trickHistory record this pass, so the
+        // observation is the one the decision was actually taken against.
+        const passQuality = this.players[playerIndex].isBot
+            ? null
+            : this.gradeDecision(playerIndex, { action: 'pass' });
+
         // Record that this player passed
         const passingPlayer = this.players[playerIndex];
         const passTiming = this.turnTiming(passingPlayer);
@@ -1227,44 +1306,12 @@ class Room {
 
         // Track Tier 3 decision quality (for human players only)
         const player = this.players[playerIndex];
-        if (!player.isBot) {
-            const handValues = player.hand.map(c => c.value);
-            const cardsInDeck = 52 - this.playedCards.length;
-            const handStrength = DecisionAnalyzer.calculateHandStrength(handValues);
-            const pileStrength = DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand);
-
-            const decision = DecisionAnalyzer.evaluateDecision({
-                action: 'pass',
-                hand: handValues,
-                pile: this.lastPlayedHand,
-                cardsInDeck,
-                playedCards: this.playedCards
-            });
-
-            if (!this.tier3DecisionTracking[playerId]) {
-                this.tier3DecisionTracking[playerId] = {
-                    decisions: [],
-                    riskyPlays: 0,
-                    optimalPlays: 0
-                };
-            }
-
-            this.tier3DecisionTracking[playerId].decisions.push({
-                round: this.roundNumber,
-                turn: this.turnNumber,
-                action: 'pass',
-                quality: decision.quality,
-                isRisky: decision.isRisky,
-                riskOutcome: null,
+        if (!player.isBot && passQuality) {
+            this.recordDecision(playerId, 'pass', passQuality, {
                 handSize: player.hand.length,
-                cardsInDeck: cardsInDeck,
-                handStrength: handStrength,
-                pileStrength: pileStrength
+                handStrength: DecisionAnalyzer.calculateHandStrength(player.hand.map(c => c.value)),
+                pileStrength: DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand)
             });
-
-            if (decision.quality === 'optimal') {
-                this.tier3DecisionTracking[playerId].optimalPlays++;
-            }
         }
 
         this.turnNumber++;
@@ -1395,29 +1442,16 @@ class Room {
             const everyoneFull = this.players.every(p => p.hand.length === 13);
             const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
-            // Build the bot's observation. Shared with the self-play harness and
-            // the game-log replayer so all three see identical features - see
-            // BotContext.js.
-            const lastPlayerIdx = this.lastPlayedHand && this.lastPlayedHand.playerId
-                ? this.players.findIndex(p => p.id === this.lastPlayedHand.playerId)
-                : -1;
-
-            const gameContext = buildGameContext({
-                hands: this.players.map(p => p.hand),
-                seat: this.currentTurnIndex,
-                passedSeats: this.players.reduce((seats, p, idx) => {
-                    if (this.passedPlayers.has(p.id)) seats.push(idx);
-                    return seats;
-                }, []),
-                passCount: this.passes,
-                playedCards: this.playedCards,
-                trickHistory: this.trickHistory,
-                lastPlayedHand: this.lastPlayedHand,
-                lastPlayedSeat: lastPlayerIdx === -1 ? undefined : lastPlayerIdx,
-                // Per-bot temperament, so four bots at one table do not all
-                // play identically
-                profile: BotLogic.getBotProfile(currentPlayer.name)
-            });
+            // Build the bot's observation. Shared with the self-play harness,
+            // the game-log replayer and the move-quality evaluator so all of
+            // them see identical features - see BotContext.js.
+            //
+            // Per-bot temperament, so four bots at one table do not all play
+            // identically. Grading passes null here instead.
+            const gameContext = this.buildSeatContext(
+                this.currentTurnIndex,
+                BotLogic.getBotProfile(currentPlayer.name)
+            );
 
             const handleBotMove = (move, reasoning) => {
                 // Store reasoning if in debug mode

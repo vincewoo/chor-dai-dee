@@ -88,11 +88,18 @@ const penaltyMultiplier = (handSize) => {
     return 1;
 };
 
+// The score a response has to clear to be worth playing at all. Below this the
+// card costs more than the trick is worth and the bot sits the trick out. It is
+// also what puts "pass" on the same scale as the plays, which the move-quality
+// evaluator needs in order to rank a pass against the alternatives.
+const PASS_PRICE = -12;
+
 const BotLogic = {
     // Exposed for tests and for the debug panel.
     cardRetentionCost,
     moveRetentionCost,
     penaltyMultiplier,
+    PASS_PRICE,
 
     /**
      * Main entry point: Get the best move for the bot
@@ -108,25 +115,18 @@ const BotLogic = {
      * @param {boolean} captureReasoning - Whether to capture detailed reasoning
      * @returns {Array|Object} - If captureReasoning is false, returns cards array. Otherwise returns { cards, reasoning }
      */
-    getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}, captureReasoning = false) => {
-        const reasoning = captureReasoning ? {
-            situation: {},
-            candidatesConsidered: [],
-            strategicFactors: [],
-            decision: null
-        } : null;
-
-        // === EARLY EXIT OPTIMIZATIONS ===
-
-        // Quick win: Only 1 card left on free play
-        if (!lastPlayedHand && hand.length === 1 && !isFirstTurn) {
-            if (reasoning) {
-                reasoning.decision = { action: 'play', cards: hand.map(c => `${c.rank}${c.suit}`).join(' '), reason: 'Last card - instant win' };
-            }
-            return captureReasoning ? { cards: hand, reasoning } : hand;
-        }
-
-        // Normalize gameContext with defaults
+    /**
+     * Normalize a raw game context into everything the scoring functions read:
+     * card counting, opponent models, the legal move set and the hand's
+     * "Poker First" organisation.
+     *
+     * Extracted from getBotMove so the move-quality evaluator (MoveQuality.js)
+     * reasons over the identical observation. Two hand-built copies of this
+     * setup would mean a player's move was graded against a slightly different
+     * position than the bot would have faced, which is the same class of
+     * divergence BotContext.js exists to prevent.
+     */
+    buildDecisionContext: (hand, gameContext = {}) => {
         const ctx = {
             playerCardCounts: gameContext.playerCardCounts || [13, 13, 13],
             lastPlayedByRelative: gameContext.lastPlayedByRelative || null,
@@ -168,6 +168,45 @@ const BotLogic = {
         }
         ctx.handOrganization = gameContext._handOrgCache.organization;
 
+        return ctx;
+    },
+
+    /**
+     * The moves that are legal right now: everything when leading (narrowed to
+     * hands containing 3D on the opening turn), otherwise whatever beats the
+     * pile. Shared with the move-quality evaluator so both agree on what the
+     * player was actually choosing between.
+     */
+    legalCandidates: (validMoves, lastPlayedHand, isFirstTurn) => {
+        if (!lastPlayedHand) {
+            return isFirstTurn
+                ? validMoves.filter(move => move.cards.some(c => c.rank === '3' && c.suit === 'D'))
+                : validMoves;
+        }
+        return validMoves.filter(move => Big2Rules.canBeat(move, lastPlayedHand));
+    },
+
+    getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}, captureReasoning = false) => {
+        const reasoning = captureReasoning ? {
+            situation: {},
+            candidatesConsidered: [],
+            strategicFactors: [],
+            decision: null
+        } : null;
+
+        // === EARLY EXIT OPTIMIZATIONS ===
+
+        // Quick win: Only 1 card left on free play
+        if (!lastPlayedHand && hand.length === 1 && !isFirstTurn) {
+            if (reasoning) {
+                reasoning.decision = { action: 'play', cards: hand.map(c => `${c.rank}${c.suit}`).join(' '), reason: 'Last card - instant win' };
+            }
+            return captureReasoning ? { cards: hand, reasoning } : hand;
+        }
+
+        const ctx = BotLogic.buildDecisionContext(hand, gameContext);
+        const validMoves = ctx.allValidMoves;
+
         if (reasoning) {
             reasoning.situation = {
                 handSize: hand.length,
@@ -192,20 +231,7 @@ const BotLogic = {
         }
 
         // Filter by what can beat the current hand
-        let candidates = [];
-        if (!lastPlayedHand) {
-            // Free play - we can play anything
-            candidates = validMoves;
-            if (isFirstTurn) {
-                // Must include 3D on first turn
-                candidates = candidates.filter(move =>
-                    move.cards.some(c => c.rank === '3' && c.suit === 'D')
-                );
-            }
-        } else {
-            // Must beat the last played hand
-            candidates = validMoves.filter(move => Big2Rules.canBeat(move, lastPlayedHand));
-        }
+        const candidates = BotLogic.legalCandidates(validMoves, lastPlayedHand, isFirstTurn);
 
         if (candidates.length === 0) {
             if (reasoning) {
@@ -1152,7 +1178,7 @@ const BotLogic = {
 
         // A small negative band rather than zero, so the bot does not become
         // passive over marginal trades. A patient bot demands a better price.
-        const PASS_THRESHOLD = -12 * (ctx.profile ? ctx.profile.patience : 1);
+        const PASS_THRESHOLD = PASS_PRICE * (ctx.profile ? ctx.profile.patience : 1);
         if (best.score < PASS_THRESHOLD) {
             const cheapest = best.move.cards.map(c => `${c.rank}${c.suit}`).join(' ');
             if (factors) {

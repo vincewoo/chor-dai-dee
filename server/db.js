@@ -250,9 +250,39 @@ function initDb() {
             current_pile_strength REAL,
             hand_strength REAL,
             decision_quality TEXT,
+            -- How the move ranked among the legal alternatives, and how much of
+            -- the gap between the best and worst option it gave up (0-1).
+            -- move_rank is NULL on a forced move, which is not graded.
+            move_rank INTEGER,
+            option_count INTEGER,
+            loss_fraction REAL,
+            forced INTEGER DEFAULT 0,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
+
+        // Migration for decision_tracking on existing databases
+        db.all("PRAGMA table_info(decision_tracking)", (err, columns) => {
+            if (err) {
+                console.error("Error checking decision_tracking schema", err);
+                return;
+            }
+            if (columns.length > 0) {
+                const addColumn = (name, ddl) => {
+                    if (!columns.some(c => c.name === name)) {
+                        db.run(`ALTER TABLE decision_tracking ADD COLUMN ${ddl}`, (err) => {
+                            if (err && !err.message.includes('duplicate column')) {
+                                console.error(`Error adding ${name} to decision_tracking:`, err.message);
+                            }
+                        });
+                    }
+                };
+                addColumn('move_rank', 'move_rank INTEGER');
+                addColumn('option_count', 'option_count INTEGER');
+                addColumn('loss_fraction', 'loss_fraction REAL');
+                addColumn('forced', 'forced INTEGER DEFAULT 0');
+            }
+        });
 
         db.run(`CREATE INDEX IF NOT EXISTS idx_decision_tracking_user
                 ON decision_tracking(user_id, game_id)`);
@@ -277,6 +307,12 @@ function initDb() {
             late_game_accuracy REAL DEFAULT 0.0,
             late_game_decisions INTEGER DEFAULT 0,
             late_game_optimal INTEGER DEFAULT 0,
+            -- Moves with no alternative, tracked apart from graded decisions so
+            -- they cannot pad an accuracy figure.
+            forced_decisions INTEGER DEFAULT 0,
+            -- Summed normalized loss across graded decisions. Accuracy is
+            -- 1 - total_loss / total_decisions.
+            total_loss REAL DEFAULT 0.0,
             FOREIGN KEY(user_id) REFERENCES users(id),
             UNIQUE(user_id, game_mode)
         )`);
@@ -299,6 +335,8 @@ function initDb() {
                 };
                 addColumn('late_game_decisions', 'late_game_decisions INTEGER DEFAULT 0');
                 addColumn('late_game_optimal', 'late_game_optimal INTEGER DEFAULT 0');
+                addColumn('forced_decisions', 'forced_decisions INTEGER DEFAULT 0');
+                addColumn('total_loss', 'total_loss REAL DEFAULT 0.0');
             }
         });
 
@@ -1186,8 +1224,8 @@ const trackDecision = (gameId, userId, roundNumber, turnNumber, action, handSize
 // per player; inserting them one awaited statement at a time was the largest
 // write source in the app. One multi-row INSERT collapses that into one
 // statement (chunked to stay under SQLITE_MAX_VARIABLE_NUMBER).
-const COLUMNS_PER_DECISION = 10;
-const MAX_DECISIONS_PER_INSERT = 90; // 900 bound params, well under the 999 default
+const COLUMNS_PER_DECISION = 14;
+const MAX_DECISIONS_PER_INSERT = 70; // 980 bound params, just under the 999 default
 
 const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
     if (!decisions || decisions.length === 0) return Promise.resolve();
@@ -1203,7 +1241,7 @@ const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
             .join(', ');
 
         const query = `INSERT INTO decision_tracking
-            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality)
+            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality, move_rank, option_count, loss_fraction, forced)
             VALUES ${placeholders}`;
 
         const params = [];
@@ -1221,7 +1259,13 @@ const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
                 d.cardsInDeck || 0,
                 d.pileStrength || 0,
                 d.handStrength || 0,
-                d.quality
+                d.quality,
+                // Null rather than 0 on a forced move: it has no rank among
+                // alternatives because there were none.
+                d.rank ?? null,
+                d.optionCount ?? null,
+                d.lossFraction ?? null,
+                d.forced ? 1 : 0
             );
         }
 
@@ -1274,7 +1318,9 @@ const pruneDecisionTracking = (retentionDays = DECISION_TRACKING_RETENTION_DAYS)
 const updateCardAwarenessStats = (userId, gameMode, summary) => {
     return new Promise((resolve, reject) => {
         const total = summary?.total || 0;
-        if (total === 0) return resolve();
+        // A game of nothing but forced moves still happened, and the forced
+        // count is the denominator that makes accuracy honest.
+        if (total === 0 && !(summary?.forced)) return resolve();
 
         const optimal = summary.optimal || 0;
         const suboptimal = summary.suboptimal || 0;
@@ -1282,10 +1328,12 @@ const updateCardAwarenessStats = (userId, gameMode, summary) => {
         const riskyFail = summary.riskyFailed || 0;
         const lateTotal = summary.lateTotal || 0;
         const lateOptimal = summary.lateOptimal || 0;
+        const forced = summary.forced || 0;
+        const loss = summary.totalLoss || 0;
 
         const query = `INSERT INTO card_awareness_stats
-            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal, forced_decisions, total_loss)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, game_mode) DO UPDATE SET
                 total_decisions = total_decisions + ?,
                 optimal_decisions = optimal_decisions + ?,
@@ -1293,11 +1341,13 @@ const updateCardAwarenessStats = (userId, gameMode, summary) => {
                 risky_plays_successful = risky_plays_successful + ?,
                 risky_plays_failed = risky_plays_failed + ?,
                 late_game_decisions = late_game_decisions + ?,
-                late_game_optimal = late_game_optimal + ?`;
+                late_game_optimal = late_game_optimal + ?,
+                forced_decisions = forced_decisions + ?,
+                total_loss = total_loss + ?`;
 
         db.run(query, [
-            userId, gameMode, total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal,
-            total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal
+            userId, gameMode, total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal, forced, loss,
+            total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal, forced, loss
         ], (err) => {
             if (err) reject(err);
             else resolve();
@@ -1318,10 +1368,17 @@ const getCardAwarenessStats = (userId, gameMode) => {
             if (!row) return resolve(null);
 
             const lateDecisions = row.late_game_decisions || 0;
+            const graded = row.total_decisions || 0;
             resolve({
                 ...row,
                 late_game_accuracy: lateDecisions > 0
                     ? (row.late_game_optimal || 0) / lateDecisions
+                    : null,
+                // How close to the best available move the player stays, on
+                // average. 1 means always the top-scored option; 0 means
+                // always the worst one on the table.
+                accuracy: graded > 0
+                    ? Math.max(0, 1 - (row.total_loss || 0) / graded)
                     : null
             });
         });

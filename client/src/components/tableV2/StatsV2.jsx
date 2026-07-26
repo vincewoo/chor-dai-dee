@@ -753,10 +753,15 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const variance = tier3?.variance;
     const behavioral = tier3?.behavioral;
 
+    // Decisions that carried a real choice. Forced moves are counted apart so
+    // they cannot inflate the rate.
     const totalDecisions = awareness?.total_decisions || 0;
     const optimal = awareness?.optimal_decisions || 0;
-    const suboptimal = awareness?.suboptimal_decisions || 0;
+    const forcedDecisions = awareness?.forced_decisions || 0;
     const optimalRate = pct(optimal, totalDecisions);
+    const accuracyRaw = awareness?.accuracy;
+    const accuracyKnown = accuracyRaw !== null && accuracyRaw !== undefined;
+    const accuracy = ratio(accuracyRaw);
     // Null when no late-round decisions have been taken yet, which is not the
     // same as having scored zero on them.
     const lateAccuracyRaw = awareness?.late_game_accuracy;
@@ -779,23 +784,32 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
         <>
             <DealStrengthSection data={handStrength} acc={acc} rm={rm} />
 
-            <Section title="DECISION EFFICIENCY" hint="Quality of your play choices" delay=".04s" rm={rm}>
+            <Section title="DECISION QUALITY" hint="Every move you had a choice about, ranked against the engine's own evaluation" delay=".04s" rm={rm}>
                 {totalDecisions === 0 ? (
                     <Empty>No decision data yet</Empty>
                 ) : (
                     <>
                         <div className="grid grid-cols-3 gap-2">
-                            <Tile label="Decisions" value={num(totalDecisions)} />
-                            <Tile label="Optimal" value={num(optimal)} color={GOOD} />
-                            <Tile label="Suboptimal" value={num(suboptimal)} color="#ffab6b" />
+                            <Tile label="Decisions" value={num(totalDecisions)} sub="with a choice" />
+                            <Tile label="Best move" value={num(optimal)} color={GOOD} sub="top-ranked pick" />
+                            <Tile label="Forced" value={num(forcedDecisions)} sub="no alternative" />
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
-                            <Meter label="Optimal rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} rm={rm} />
+                            {accuracyKnown && (
+                                <Meter
+                                    label="Accuracy"
+                                    value={accuracy}
+                                    color={parseFloat(accuracy) >= 80 ? GOOD : parseFloat(accuracy) >= 60 ? WARN : acc}
+                                    note="How close your moves stay to the best one available, on average."
+                                    rm={rm}
+                                />
+                            )}
+                            <Meter label="Best-move rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} note="Share of choices where you picked the top-ranked move." rm={rm} />
                             {lateAccuracyKnown && (
-                                <Meter label="Late game accuracy" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Share of your decisions after 60% of the deck is gone that were rated optimal." rm={rm} />
+                                <Meter label="Late game best-move rate" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Same measure, restricted to decisions after 60% of the deck is gone." rm={rm} />
                             )}
                             {riskyTotal > 0 && (
-                                <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} risky play${riskyTotal === 1 ? '' : 's'} attempted.`} rm={rm} />
+                                <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} play${riskyTotal === 1 ? '' : 's'} that risked a valuable card on holding the trick.`} rm={rm} />
                             )}
                         </div>
                     </>

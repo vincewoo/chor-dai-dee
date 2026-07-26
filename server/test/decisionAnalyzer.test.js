@@ -18,6 +18,11 @@ const decision = (overrides = {}) => ({
     turn: 0,
     action: 'play',
     quality: 'optimal',
+    // Graded by MoveQuality: `scored` false means the move was forced and must
+    // stay out of every accuracy figure.
+    scored: true,
+    forced: false,
+    lossFraction: 0,
     isRisky: false,
     riskOutcome: null,
     handSize: 10,
@@ -28,7 +33,7 @@ const decision = (overrides = {}) => ({
 test('summarizeDecisions counts decisions, not games', () => {
     const summary = DecisionAnalyzer.summarizeDecisions([
         decision({ quality: 'optimal' }),
-        decision({ quality: 'suboptimal' }),
+        decision({ quality: 'mistake' }),
         decision({ quality: 'optimal', action: 'pass' })
     ]);
 
@@ -37,6 +42,22 @@ test('summarizeDecisions counts decisions, not games', () => {
     assert.strictEqual(summary.suboptimal, 1);
     assert.strictEqual(summary.plays, 2);
     assert.strictEqual(summary.passes, 1);
+});
+
+test('forced moves are counted apart and never graded', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        decision({ quality: 'optimal', lossFraction: 0 }),
+        // Nothing beat the pile: no choice was made here.
+        decision({ scored: false, forced: true, quality: null, lossFraction: null, action: 'pass' }),
+        decision({ quality: 'inaccuracy', lossFraction: 0.3 })
+    ]);
+
+    assert.strictEqual(summary.total, 2, 'only decisions with a choice are graded');
+    assert.strictEqual(summary.forced, 1);
+    assert.strictEqual(summary.suboptimal, 1);
+    assert.ok(Math.abs(summary.totalLoss - 0.3) < 1e-9);
+    // Accuracy is derived from these two: 1 - 0.3/2 = 0.85.
+    assert.strictEqual(summary.passes, 1, 'a forced pass is still a pass');
 });
 
 test('summarizeDecisions counts only resolved risky plays', () => {
@@ -66,9 +87,9 @@ test('round phase comes from the deck remaining, not list position', () => {
 
 test('late-game counts track quality of late decisions only', () => {
     const summary = DecisionAnalyzer.summarizeDecisions([
-        decision({ cardsInDeck: 50, quality: 'suboptimal' }), // early, ignored
+        decision({ cardsInDeck: 50, quality: 'mistake' }), // early, ignored
         decision({ cardsInDeck: 10, quality: 'optimal' }),
-        decision({ cardsInDeck: 8, quality: 'suboptimal' })
+        decision({ cardsInDeck: 8, quality: 'mistake' })
     ]);
 
     assert.strictEqual(summary.lateTotal, 2);

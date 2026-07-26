@@ -185,53 +185,13 @@ class DecisionAnalyzer {
         return Math.min(100, strength);
     }
 
-    /**
-     * Evaluate if a play decision is optimal, suboptimal, or risky
-     * @param {Object} params - { action, hand, pile, cardsInDeck, playedCards }
-     * @returns {Object} - { quality: 'optimal'|'suboptimal'|'risky', isRisky: boolean, reasoning: string }
-     */
-    static evaluateDecision({ action, hand, pile, cardsInDeck, playedCards }) {
-        const handStrength = this.calculateHandStrength(hand);
-        const pileStrength = this.calculatePileStrength(pile);
-
-        if (action === 'pass') {
-            // Passing is optimal when pile is strong and hand is weak
-            if (pileStrength > 60 && handStrength < 40) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Wise pass against strong pile with weak hand' };
-            }
-            // Passing is suboptimal when you could play and pile is weak
-            if (pileStrength < 30 && handStrength > 50) {
-                return { quality: 'suboptimal', isRisky: false, reasoning: 'Could have played against weak pile' };
-            }
-            return { quality: 'optimal', isRisky: false, reasoning: 'Reasonable pass' };
-        }
-
-        if (action === 'play') {
-            // Playing strong cards early is risky
-            if (hand.length > 8 && handStrength > 70) {
-                return { quality: 'risky', isRisky: true, reasoning: 'Playing strong cards with many cards remaining' };
-            }
-
-            // Playing when you have control is optimal
-            if (!pile) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Leading with control' };
-            }
-
-            // Beating a weak pile is optimal
-            if (pileStrength < 40) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Beating weak pile' };
-            }
-
-            // Using powerful hands to beat strong piles in late game is optimal
-            if (hand.length <= 5 && handStrength > 60) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Strong play in end game' };
-            }
-
-            return { quality: 'optimal', isRisky: false, reasoning: 'Standard play' };
-        }
-
-        return { quality: 'optimal', isRisky: false, reasoning: 'Unknown action' };
-    }
+    // evaluateDecision is gone. It graded a move with an if-ladder whose
+    // fallback was 'optimal', so nearly every play scored as optimal whatever
+    // was on the table. Grading now happens in MoveQuality.js, which ranks the
+    // move actually made inside BotLogic's own scored list of the legal
+    // alternatives. calculateHandStrength and calculatePileStrength above stay:
+    // they are descriptive metadata stored alongside each decision, not the
+    // judgement itself.
 
     /**
      * Roll a game's tracked decisions up into the counts the stats tables
@@ -243,9 +203,15 @@ class DecisionAnalyzer {
      */
     static summarizeDecisions(decisions) {
         const summary = {
+            // Decisions that carried a real choice. Forced moves are counted
+            // separately: a pass with nothing that beats the pile, or a lone
+            // legal lead, measures the cards, not the player.
             total: 0,
+            forced: 0,
             optimal: 0,
             suboptimal: 0,
+            // Summed normalized loss over `total`. Accuracy is 1 - loss/total.
+            totalLoss: 0,
             plays: 0,
             passes: 0,
             riskySucceeded: 0,
@@ -255,10 +221,6 @@ class DecisionAnalyzer {
         };
 
         for (const d of decisions || []) {
-            summary.total++;
-            if (d.quality === 'optimal') summary.optimal++;
-            else summary.suboptimal++;
-
             if (d.action === 'play') summary.plays++;
             else if (d.action === 'pass') summary.passes++;
 
@@ -267,9 +229,21 @@ class DecisionAnalyzer {
             if (d.riskOutcome === 'success') summary.riskySucceeded++;
             else if (d.riskOutcome === 'failed') summary.riskyFailed++;
 
+            if (!d.scored) {
+                if (d.forced) summary.forced++;
+                continue;
+            }
+
+            summary.total++;
+            summary.totalLoss += d.lossFraction || 0;
+
+            const isOptimal = d.quality === 'optimal';
+            if (isOptimal) summary.optimal++;
+            else summary.suboptimal++;
+
             if (this.isLateGameDecision(d)) {
                 summary.lateTotal++;
-                if (d.quality === 'optimal') summary.lateOptimal++;
+                if (isOptimal) summary.lateOptimal++;
             }
         }
 
