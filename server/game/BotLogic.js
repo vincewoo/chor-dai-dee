@@ -100,6 +100,10 @@ const BotLogic = {
     moveRetentionCost,
     penaltyMultiplier,
     PASS_PRICE,
+    // The value of getting one card out of the hand. Exposed so surfaces that
+    // need a "is this loss worth mentioning" floor can anchor on the cost
+    // model's own smallest unit of progress rather than pick a number.
+    SHED_VALUE_PER_CARD,
 
     /**
      * Main entry point: Get the best move for the bot

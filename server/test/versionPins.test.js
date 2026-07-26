@@ -55,12 +55,12 @@ const RULES_PIN = '679109ebc4aa29579533a88cb687fe067d6b66b6c8724f9ad8870212e056a
 // BotLogic.js is the heuristics; BotContext.js is the observation they run on.
 // Changing either changes what the bot plays.
 const BOT_FILES = ['game/BotLogic.js', 'game/BotContext.js'];
-// Re-pinned when the context setup and candidate filter were extracted from
-// getBotMove so MoveQuality could grade human decisions against the identical
-// observation, and the pass threshold became a named constant. A pure
-// refactor: replaying 2655 decisions through the old and new modules, with and
-// without bot profiles, produced identical moves. BOT_LOGIC_VERSION stays.
-const BOT_PIN = '9829d9ca27513c8cacd74fa7b9046e2d364de9ee9abdeb5c7655306e53954723';
+// Re-pinned when SHED_VALUE_PER_CARD was added to the BotLogic export so
+// MoveReview could anchor its "is this loss worth mentioning" floor on the cost
+// model's own smallest unit rather than pick a number. Export-only: no
+// scoring function, constant or branch was touched, so the bot plays exactly
+// as before and BOT_LOGIC_VERSION stays.
+const BOT_PIN = 'd66bf6290ce3bffcd77500c43a121296c0163b181191f8d07fdfb05bb5b67b23';
 
 const explain = (label, constant, version, actual, pin) => `
 ${label} changed but ${constant} is still ${version}.

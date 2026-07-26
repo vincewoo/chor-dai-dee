@@ -22,9 +22,26 @@
 //     player on their last card. Those are policy shortcuts; grading through
 //     them would mean a player is measured on one scale in most positions and
 //     a synthetic one elsewhere. Scoring every option uniformly keeps the
-//     number comparable across decisions. The cost model already accounts for
-//     danger and for playing out, so the shortcuts are not carrying anything
-//     the score misses.
+//     number comparable across decisions.
+//
+//     With one exception, and it is the reason `confident` exists. This
+//     comment used to claim the shortcuts "are not carrying anything the score
+//     misses". Measured against self-play, that was wrong: 30% of decisions
+//     taken with five cards or fewer were graded a mistake, and 96% of a
+//     strong player's flagged mistakes sat in that range - almost exactly the
+//     hands where selectBestMove hands off to solveEndgame. The cost model
+//     prices cards; it does not search, and once a hand is small enough to
+//     read out, search is the operative question. So:
+//
+//       - Where search PROVES an answer, the score defers to it. A move that
+//         cannot be beaten and leaves a remainder that plays out as one hand
+//         is a forced win, and is scored as one.
+//       - Where the shortcut is merely a second opinion - solveEndgame's
+//         non-guaranteed "power" pick, which is what 78% of those flagged
+//         mistakes actually were - neither model has authority, and asserting
+//         a blunder would be inventing confidence. The score stands, so
+//         aggregate rates are unchanged, but `confident` goes false and a
+//         coaching surface must not present the decision as an error.
 //
 //   - Loss is normalized, not absolute. Raw score gaps are in retention-cost
 //     points and their spread varies wildly by position, so an average of them
@@ -34,6 +51,7 @@
 //     no calibration constant.
 
 const { BotLogic } = require('./BotLogic');
+const { Big2Rules } = require('./Big2Rules');
 
 // A decision is only graded when the player actually had a choice. A forced
 // pass (nothing beats the pile) and a lone legal lead measure card quality,
@@ -58,6 +76,16 @@ const MAX_SCORED_CANDIDATES = 40;
 // being a number fitted to a few example hands.
 const RISK_STAKE_THRESHOLD = Math.abs(BotLogic.PASS_PRICE);
 
+// The hand size at which BotLogic.selectBestMove hands off to solveEndgame.
+// Kept in step with that threshold deliberately: it marks the boundary where
+// the cost model stops being the model the bot itself is using.
+const ENDGAME_HAND_SIZE = 5;
+
+// Parity with the "plays out - wins the round" sentinel in scoreLeadMove and
+// scoreResponseMove. A forced win is the same outcome one move earlier, so it
+// has to sit at the same height or the two would be ranked against each other.
+const WIN_SCORE = 1e6;
+
 /** Stable identity for a set of cards, order-independent. */
 const cardKey = (cards) => cards
     .map(c => `${c.rank}${c.suit}`)
@@ -78,6 +106,40 @@ function passIsAvailable(candidates, hand, ctx, gamePhase) {
     if (ctx.playerCardCounts[0] <= 1) return false;                         // must contest
     if (hand.length <= 4 || gamePhase === 'late') return false;             // need the tempo
     return true;
+}
+
+/**
+ * The moves among `candidates` that force a win outright.
+ *
+ * Mirrors the guaranteed-win branch of BotLogic.solveEndgame, with one
+ * difference that matters here: solveEndgame returns the FIRST such move it
+ * finds, because it only needs one to play. A grader needs all of them - if
+ * two moves both force the win, playing either is optimal, and crediting only
+ * the one the solver happened to enumerate first would flag the other as a
+ * mistake for reaching the same guaranteed outcome.
+ *
+ * A move qualifies when no outstanding card can beat it (so the lead comes
+ * back) and everything left forms a single valid hand (so the next turn empties
+ * the hand). Moves that empty the hand immediately are already scored 1e6 by
+ * the cost model and need no help.
+ *
+ * @returns {Set<string>} cardKey of each forcing move.
+ */
+function forcedWinKeys(candidates, hand, ctx) {
+    const winners = new Set();
+    if (hand.length > ENDGAME_HAND_SIZE) return winners;
+
+    for (const move of candidates) {
+        const remaining = hand.filter(card =>
+            !move.cards.some(mc => mc.rank === card.rank && mc.suit === card.suit));
+
+        if (remaining.length === 0) continue;             // already worth 1e6
+        if (!Big2Rules.validateHand(remaining)) continue; // cannot play out next turn
+        if (!BotLogic.isUnbeatable(move, hand, ctx.playedCards)) continue;
+
+        winners.add(cardKey(move.cards));
+    }
+    return winners;
 }
 
 /**
@@ -105,12 +167,16 @@ function isRiskyMove(move, hand, ctx, gamePhase) {
  * @param {'play'|'pass'} action   What the player did.
  * @param {object[]} cards         Cards played, for action 'play'.
  *
- * @returns {object} { scored, forced, quality, lossFraction, rank, optionCount,
- *                     isRisky, bestMove }. When scored is false the decision
- *                     carried no choice and must be left out of any accuracy
- *                     figure; quality and lossFraction are null.
+ * @returns {object} { scored, forced, confident, quality, lossFraction, rank,
+ *                     optionCount, isRisky, bestMove, forcedWin, absoluteLoss,
+ *                     spread }. When scored is false the decision carried no
+ *                     choice and must be left out of any accuracy figure;
+ *                     quality and lossFraction are null. When confident is
+ *                     false the score stands but the position is one the cost
+ *                     model does not own - see the header - and no coaching
+ *                     surface may call it an error.
  */
-function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext = {}, action, cards = null }) {
+function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext = {}, action, cards = null, explain = false }) {
     // Fewest cards any opponent is holding. Carried on every decision so the
     // stats layer can ask how a player responds with someone about to go out,
     // without having to reconstruct the position.
@@ -119,12 +185,18 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
     const unscored = (forced) => ({
         scored: false,
         forced,
+        // A decision with no choice cannot be an error, so nothing downstream
+        // needs to weigh confidence in it.
+        confident: true,
         quality: null,
         lossFraction: null,
         rank: null,
         optionCount: null,
         isRisky: false,
         bestMove: null,
+        forcedWin: false,
+        absoluteLoss: null,
+        spread: null,
         minOpponentCards
     });
 
@@ -165,11 +237,29 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
         ? BotLogic.evaluateTrickValue(hand, ctx, gamePhase)
         : null;
 
+    // Search settles the position where it can. Computed over the full
+    // candidate set rather than the trimmed one: a forcing move that the
+    // trim happened to drop would otherwise leave the grader ranking against
+    // a best move that was not the best available.
+    const forcedWins = forcedWinKeys(candidates, hand, ctx);
+
+    // Off by default. Reasoning is only wanted for the handful of decisions a
+    // review actually renders, and capturing it for every graded move would put
+    // the cost on the live play path, which grades every turn.
     const options = toScore.map(move => {
+        const key = cardKey(move.cards);
+        if (forcedWins.has(key)) {
+            return {
+                action: 'play', key, move, score: WIN_SCORE,
+                factors: explain
+                    ? [{ factor: 'Cannot be beaten, and the rest plays out next turn', points: WIN_SCORE }]
+                    : null
+            };
+        }
         const scored = lastPlayedHand
-            ? BotLogic.scoreResponseMove(move, hand, ctx, gamePhase, trickValue)
-            : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase);
-        return { action: 'play', key: cardKey(move.cards), move, score: scored.score };
+            ? BotLogic.scoreResponseMove(move, hand, ctx, gamePhase, trickValue, explain)
+            : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase, explain);
+        return { action: 'play', key, move, score: scored.score, factors: scored.factors || null };
     });
 
     if (lastPlayedHand) {
@@ -181,7 +271,12 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
             // worth making -- the same comparison shouldStrategicPass draws.
             score: passIsAvailable(candidates, hand, ctx, gamePhase)
                 ? BotLogic.PASS_PRICE
-                : -Infinity
+                : -Infinity,
+            factors: explain
+                ? [passIsAvailable(candidates, hand, ctx, gamePhase)
+                    ? { factor: 'Let the trick go rather than pay for it', points: BotLogic.PASS_PRICE }
+                    : { factor: 'Passing gives up a trick that has to be contested', points: -Infinity }]
+                : null
         });
     }
 
@@ -213,19 +308,82 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
         lossFraction = (best - chosen.score) / spread;
     }
 
+    // Does the cost model own this position?
+    //
+    // Two places where it does not, both of them positions BotLogic itself
+    // decides by another route:
+    //
+    //   - A small hand with no forced win. solveEndgame takes over here and
+    //     picks by a "power" heuristic that is neither the cost model nor a
+    //     proof. Two heuristics disagreeing is not evidence of a mistake.
+    //   - The next player is on their last card. selectBestMove abandons
+    //     scoring outright to block, and whether a given block works depends on
+    //     the one card they hold, which is not knowable from here.
+    //
+    // A win on the board restores confidence, whichever route found it: a move
+    // that plays the hand out (scored 1e6 by the cost model itself) or one that
+    // forces the win a turn later. Either way the position is settled by proof
+    // rather than by pricing, and "you had a win and did not take it" is the
+    // most certain grade the module can issue - it must not be filtered out by
+    // the same rule that suppresses endgame guesswork.
+    const searchSettled = best >= WIN_SCORE;
+    const confident = searchSettled || (
+        hand.length > ENDGAME_HAND_SIZE &&
+        (gameContext.playerCardCounts || [13, 13, 13])[0] > 1
+    );
+
     return {
         scored: true,
         forced: false,
+        confident,
         quality: bandFor(lossFraction),
         lossFraction,
+        // The gap in raw retention-cost points. lossFraction is normalized to
+        // the spread at this one decision, which is what makes it averageable
+        // but also means it cannot tell "gave up a lot" from "every option was
+        // near-identical". Ranking decisions against each other - picking the
+        // worst few in a game - needs the absolute figure, so both are carried.
+        absoluteLoss: Number.isFinite(best) && Number.isFinite(chosen.score)
+            ? best - chosen.score
+            : null,
+        spread,
+        // The move played was itself a forced win.
+        forcedWin: chosen.action === 'play' && forcedWins.has(chosen.key),
         rank: chosenIndex + 1,
         optionCount: options.length,
+        // How many of the options were plays rather than the pass, and how many
+        // of those won outright. A surface that wants to credit a player for
+        // finding a win needs both: when every legal play wins, there was
+        // nothing to find, and praising it is flattery rather than coaching.
+        playOptions: options.filter(o => o.action === 'play').length,
+        winningOptions: options.filter(o => o.score >= WIN_SCORE).length,
         isRisky: chosen.action === 'play' && isRiskyMove(chosen.move, hand, ctx, gamePhase),
         minOpponentCards,
         bestMove: options[0].action === 'pass'
             ? 'pass'
-            : options[0].move.cards.map(c => `${c.rank}${c.suit}`).join(' ')
+            : options[0].move.cards.map(c => `${c.rank}${c.suit}`).join(' '),
+        // Structured form of the same thing. The string above is what the
+        // stats layer already stores; a review needs the cards themselves to
+        // render them.
+        bestMoveCards: options[0].action === 'pass'
+            ? null
+            : options[0].move.cards.map(c => ({ rank: c.rank, suit: c.suit, value: c.value })),
+        bestMoveType: options[0].action === 'pass' ? null : options[0].move.type,
+        bestScore: best,
+        chosenScore: chosen.score,
+        // Populated only under `explain`. The same factor breakdown the bot
+        // debug panel renders, for the move the model preferred and for the one
+        // actually made - which is the whole content of a coaching note.
+        bestMoveFactors: explain ? (options[0].factors || []) : null,
+        chosenFactors: explain ? (chosen.factors || []) : null
     };
 }
 
-module.exports = { evaluateMove, QUALITY_BANDS, MAX_SCORED_CANDIDATES };
+module.exports = {
+    evaluateMove,
+    forcedWinKeys,
+    QUALITY_BANDS,
+    MAX_SCORED_CANDIDATES,
+    ENDGAME_HAND_SIZE,
+    WIN_SCORE
+};

@@ -80,6 +80,11 @@ const Stats = ({ user }) => {
                 onViewMyStats={() => navigate(`/stats?mode=${mode}`)}
                 onOpponentClick={(name) => navigate(`/stats/${name}?mode=${mode}`)}
             onCreateAccount={() => navigate('/')}
+            // Guests have no tape attributed to them, so there is nothing to
+            // draw examples from.
+            onExamples={user?.isGuest
+                ? null
+                : (topic) => navigate(`/training?topic=${topic}&mode=${mode}`)}
         />
     );
 };
