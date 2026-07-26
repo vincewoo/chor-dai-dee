@@ -796,7 +796,12 @@ const BotLogic = {
     /**
      * How urgently we need to stop an opponent going out.
      * 0 = no pressure, 3 = the next player wins unless we block.
-     * The next player matters most because they act immediately after us.
+     *
+     * The next player carries the top tier alone, and that is not the rough
+     * approximation it looks like - see the note on the emergency branch in
+     * selectBestMove. Other opponents on their last card are still pressure, but
+     * they reach this function through minOpp, one tier lower, because we are
+     * never the last player who can stop them.
      */
     dangerLevel: (hand, ctx) => {
         const counts = ctx.playerCardCounts;
@@ -1254,6 +1259,26 @@ const BotLogic = {
 
         // Emergency: the next player goes out unless we take this trick away.
         // Worth overriding the cost model outright.
+        //
+        // Reads only playerCardCounts[0], and that is exact rather than a
+        // shorthand for "somebody is about to go out". Turn order is us -> next
+        // -> across -> previous. A trick passes out to whoever holds the pile,
+        // so:
+        //
+        //   - Pile held by the NEXT player: across and previous already acted
+        //     this trick (they sit between them and us), so if it is our turn
+        //     they have both passed. Our pass ends the trick and they lead their
+        //     last card. We are the last player who can stop them - always.
+        //   - Pile held by across or previous: the next player still acts after
+        //     us. Our pass cannot end the trick, so we are never the last line
+        //     of defence and blocking is a priced decision, not a forced one.
+        //
+        // Measured over 56,831 self-play decisions: with the next player holding
+        // the pile, both other opponents had passed in 1616 of 1616 positions;
+        // with across or previous holding it, in 0 of 35,465. Extending this
+        // branch to every opponent on one card was tried and cost 4.8pp of win
+        // rate - it pays a control card for a block it does not buy. See
+        // docs/BOT-HEURISTICS-REVIEW.md section 15.
         if (ctx.playerCardCounts[0] === 1) {
             const multi = candidates.filter(m => m.type !== HAND_TYPES.SINGLE);
             const pool = (!lastPlayedHand && multi.length) ? multi : candidates;
