@@ -197,6 +197,7 @@ function StatsV2({
     stats,
     headToHead = [],
     tier3,
+    handStrength,
     rank,
     loading,
     error,
@@ -389,6 +390,7 @@ function StatsV2({
                     {tab === 'advanced' && (
                         <AdvancedTab
                             tier3={tier3}
+                            handStrength={handStrength}
                             acc={acc}
                             rm={rm}
                             onArchetypeClick={setArchetypeSheet}
@@ -612,7 +614,125 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
     );
 }
 
-function AdvancedTab({ tier3, acc, rm, onArchetypeClick }) {
+// Deal strength vs outcome. Did you do better or worse than the cards you were
+// dealt would predict? Bot rounds and human rounds stay on separate scopes:
+// bot games are most of the play, so they are shown rather than hidden, but
+// beating three bots is a different test from beating three humans.
+function DealStrengthSection({ data, acc, rm }) {
+    const [scope, setScope] = useState('all');
+
+    if (!data || !data.all || data.all.rounds === 0) {
+        return (
+            <Section title="DEAL STRENGTH" hint="Your results against the cards you were dealt" delay=".16s" rm={rm}>
+                <Empty>No scored rounds yet</Empty>
+            </Section>
+        );
+    }
+
+    const s = data[scope] || data.all;
+    const scopes = [
+        { id: 'all', label: 'All' },
+        { id: 'vsBots', label: 'Bots' },
+        { id: 'vsHumans', label: 'Humans' },
+    ];
+    const signed = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}pp`;
+    // Below the threshold the interval is wider than any plausible skill
+    // effect, so Edge is not presented as a verdict.
+    const edgeKnown = s.confidence !== 'insufficient';
+    const edgeColor = !edgeKnown ? MUTED : s.winRateAboveExpected >= 0 ? GOOD : BAD;
+
+    const chip = (on) => ({
+        flex: 1,
+        padding: '5px 0',
+        borderRadius: 9,
+        border: `1px solid ${on ? acc : 'rgba(255,255,255,.12)'}`,
+        background: on ? `${acc}33` : 'rgba(0,0,0,.3)',
+        color: on ? TEXT : MUTED,
+        fontFamily: "'Outfit',sans-serif",
+        fontWeight: 800,
+        fontSize: 11,
+        cursor: 'pointer',
+    });
+
+    return (
+        <Section title="DEAL STRENGTH" hint="Your results against the cards you were dealt" delay=".16s" rm={rm}>
+            <div className="flex gap-[6px]">
+                {scopes.map((sc) => (
+                    <button
+                        key={sc.id}
+                        onClick={() => setScope(sc.id)}
+                        disabled={!data[sc.id] || data[sc.id].rounds === 0}
+                        style={{ ...chip(scope === sc.id), opacity: !data[sc.id] || data[sc.id].rounds === 0 ? 0.35 : 1 }}
+                    >
+                        {sc.label}
+                        {data[sc.id] ? ` ${data[sc.id].rounds}` : ''}
+                    </button>
+                ))}
+            </div>
+
+            {s.rounds === 0 ? (
+                <div className="mt-3"><Empty>No rounds in this category yet</Empty></div>
+            ) : (
+                <>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Tile
+                            label="Deal luck"
+                            value={`p${s.avgDealPercentile}`}
+                            color={s.avgDealPercentile > 55 ? WARN : s.avgDealPercentile < 45 ? '#7fb2ff' : TEXT}
+                            sub="p50 is average"
+                        />
+                        <Tile
+                            label="Edge"
+                            value={edgeKnown ? signed(s.winRateAboveExpected) : '—'}
+                            color={edgeColor}
+                            sub={edgeKnown ? `±${(s.winRateConfidence * 100).toFixed(1)}pp` : `needs ${data.minRoundsForEdge} rounds`}
+                        />
+                        <Tile label="Steals" value={`${s.steals}/${s.worstDeals}`} color={GOOD} sub="won on the worst deal" />
+                        <Tile label="Squanders" value={`${s.squanders}/${s.bestDeals}`} color="#ffab6b" sub="lost with the best" />
+                    </div>
+
+                    {!edgeKnown && (
+                        <div style={{ color: FAINT, fontSize: 10, fontWeight: 600, marginTop: 8 }}>
+                            Single-round luck in Big 2 is large enough to swamp skill below {data.minRoundsForEdge} rounds.
+                        </div>
+                    )}
+
+                    <div className="mt-3 flex flex-col gap-3">
+                        {s.tiers.map((t) => {
+                            // Fewer than 10 rounds is too little to draw a bar from.
+                            if (t.rounds < 10) {
+                                return (
+                                    <div key={t.key} className="flex items-baseline justify-between">
+                                        <div style={{ color: 'rgba(244,245,247,.7)', fontSize: 11, fontWeight: 700 }}>{t.label}</div>
+                                        <div style={{ color: FAINT, fontSize: 11, fontWeight: 700 }}>{t.rounds} rounds</div>
+                                    </div>
+                                );
+                            }
+                            const beat = t.winRate >= t.expectedWinRate;
+                            return (
+                                <Meter
+                                    key={t.key}
+                                    label={t.label}
+                                    value={(t.winRate * 100).toFixed(0)}
+                                    color={beat ? GOOD : '#ffab6b'}
+                                    note={`expected ${(t.expectedWinRate * 100).toFixed(0)}% from ${t.rounds} round${t.rounds === 1 ? '' : 's'}`}
+                                    rm={rm}
+                                />
+                            );
+                        })}
+                    </div>
+
+                    <div style={{ color: FAINT, fontSize: 10, fontWeight: 600, marginTop: 10, lineHeight: 1.5 }}>
+                        Deal luck is variance, not skill. Edge is how much more you win than those same
+                        hands are worth — that part is you.
+                    </div>
+                </>
+            )}
+        </Section>
+    );
+}
+
+function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const awareness = tier3?.cardAwareness;
     const variance = tier3?.variance;
     const behavioral = tier3?.behavioral;
@@ -638,6 +758,8 @@ function AdvancedTab({ tier3, acc, rm, onArchetypeClick }) {
 
     return (
         <>
+            <DealStrengthSection data={handStrength} acc={acc} rm={rm} />
+
             <Section title="DECISION EFFICIENCY" hint="Quality of your play choices" delay=".04s" rm={rm}>
                 {totalDecisions === 0 ? (
                     <Empty>No decision data yet</Empty>
