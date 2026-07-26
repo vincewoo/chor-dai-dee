@@ -1,16 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useVoice } from '../contexts/VoiceContext';
-import { AnimatePresence, motion } from 'framer-motion';
-import useVoiceParticipants from '../hooks/useVoiceParticipants';
 
 const VoiceChat = ({
   roomId,
   username,
-  players,
   onVoiceStateChange
 }) => {
-  const [showVolumeControls, setShowVolumeControls] = useState(false);
-
   const {
     voiceEnabled,
     isVoiceConnected,
@@ -18,7 +13,6 @@ const VoiceChat = ({
     isDeafened,
     forcedMute,
     peers,
-    audioLevels,
     permissionError,
     playerVolumes,
     joinVoiceRoom,
@@ -27,9 +21,6 @@ const VoiceChat = ({
     toggleDeafen,
     setPlayerVolume
   } = useVoice();
-
-  // Everyone we're peered with, including spectators who hold no seat
-  const voiceParticipants = useVoiceParticipants(players, peers, username);
 
   // Store stable callback refs to avoid infinite loops
   const callbacksRef = useRef({});
@@ -40,7 +31,6 @@ const VoiceChat = ({
       await joinVoiceRoom(roomId, username);
     } else {
       leaveVoiceRoom();
-      setShowVolumeControls(false);
     }
   }, [voiceEnabled, roomId, username, joinVoiceRoom, leaveVoiceRoom]);
 
@@ -90,219 +80,10 @@ const VoiceChat = ({
     permissionError
   ]);
 
-  // Get speaking indicator size based on audio level
-  const getSpeakingIndicator = (level) => {
-    if (!level || level < 0.05) return null;
-    const scale = 1 + (level * 0.5);
-    return scale;
-  };
-
-  return (
-    <>
-      {/* Voice Control Panel - Desktop only (hidden on mobile) */}
-      <div className="hidden md:flex fixed bottom-4 left-4 z-40 items-center gap-2">
-        {/* Main Voice Toggle */}
-        <button
-          onClick={handleVoiceToggle}
-          className={`
-            px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2
-            ${voiceEnabled
-              ? isVoiceConnected
-                ? 'bg-green-600 hover:bg-green-700 text-white'
-                : 'bg-yellow-600 hover:bg-yellow-700 text-white'
-              : 'bg-gray-700 hover:bg-gray-600 text-white'
-            }
-          `}
-          title={voiceEnabled ? 'Disable Voice Chat' : 'Enable Voice Chat'}
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d={voiceEnabled
-                ? "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                : "M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-              }
-            />
-          </svg>
-          {voiceEnabled
-            ? isVoiceConnected
-              ? 'Voice On'
-              : 'Connecting...'
-            : 'Voice Off'
-          }
-        </button>
-
-        {/* Mute Button (when voice is enabled) */}
-        {voiceEnabled && isVoiceConnected && (
-          <>
-            <button
-              onClick={toggleMute}
-              className={`
-                p-2 rounded-lg transition-all
-                ${isMuted
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-gray-700 hover:bg-gray-600'
-                } text-white
-              `}
-              title={isMuted ? 'Unmute' : 'Mute'}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                {isMuted ? (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2 2m0-2l-2 2"
-                  />
-                ) : (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                  />
-                )}
-              </svg>
-            </button>
-
-            {/* Deafen Button */}
-            <button
-              onClick={toggleDeafen}
-              className={`
-                p-2 rounded-lg transition-all
-                ${isDeafened
-                  ? 'bg-orange-600 hover:bg-orange-700'
-                  : 'bg-gray-700 hover:bg-gray-600'
-                } text-white
-              `}
-              title={isDeafened ? 'Undeafen' : 'Deafen'}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                {isDeafened ? (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
-                  />
-                ) : (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                  />
-                )}
-              </svg>
-            </button>
-
-            {/* Volume Controls Button */}
-            <button
-              onClick={() => setShowVolumeControls(!showVolumeControls)}
-              className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
-              title="Volume Controls"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                />
-              </svg>
-            </button>
-          </>
-        )}
-
-        {/* Permission Error */}
-        {permissionError && (
-          <div className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm">
-            Microphone permission denied
-          </div>
-        )}
-      </div>
-
-      {/* Volume Control Panel - Desktop only */}
-      <AnimatePresence>
-        {showVolumeControls && voiceEnabled && isVoiceConnected && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="hidden md:block fixed bottom-20 left-4 bg-gray-800 rounded-lg p-4 z-40 shadow-xl"
-          >
-            <h3 className="text-white font-semibold mb-3">Volume Controls</h3>
-            <div className="space-y-2">
-              {voiceParticipants
-                .map(player => (
-                  <div key={player.id} className="flex items-center gap-3">
-                    <span className="text-gray-300 w-24 text-sm truncate">
-                      {player.isSpectator && <span title="Spectator">👁 </span>}
-                      {player.name}
-                    </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={(playerVolumes[player.name] ?? 1) * 100}
-                      onChange={(e) => handleVolumeChange(player.name, e.target.value)}
-                      className="w-32"
-                    />
-                    <span className="text-gray-400 text-xs w-10">
-                      {Math.round((playerVolumes[player.name] ?? 1) * 100)}%
-                    </span>
-                  </div>
-                ))}
-              {peers.length === 0 && (
-                <div className="text-gray-400 text-sm">No other players in voice</div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Speaking Indicators (rendered by parent component) */}
-      {voiceEnabled && isVoiceConnected && (
-        <div className="voice-indicators">
-          {Object.entries(audioLevels).map(([userId, level]) => {
-            const scale = getSpeakingIndicator(level);
-            if (!scale) return null;
-
-            return (
-              <div
-                key={userId}
-                className="speaking-indicator"
-                data-user-id={userId}
-                data-scale={scale}
-              />
-            );
-          })}
-        </div>
-      )}
-    </>
-  );
+  // No UI of its own: the v2 tables render VoiceControlBubble in the HUD and
+  // VoiceIndicator on each seat. This component exists to own the WebRTC
+  // lifecycle for the room and to publish voice state upward.
+  return null;
 };
 
 export default VoiceChat;

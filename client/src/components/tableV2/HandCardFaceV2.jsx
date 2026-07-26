@@ -4,10 +4,11 @@ import { PILE_SUIT_COLORS, SUIT_SYMBOLS, FACE_EMOJI } from '../../theme/tableThe
 // The visual face of a v2 hand card, with no interaction or dnd concerns.
 // Shared by SortableHandCardV2 (player, interactive) and SpectatorHandV2
 // (read-only) so there is exactly one card-face implementation.
-const HandCardFaceV2 = ({ card, isSelected, width, height, acc, fourColor, onClick, readOnly = false }) => {
+const HandCardFaceV2 = ({ card, isSelected, width, height, acc, fourColor, onClick, readOnly = false, typeScale = 1 }) => {
     const colors = fourColor ? PILE_SUIT_COLORS.fourColor : PILE_SUIT_COLORS.standard;
     const color = colors[card.suit] || '#1c2026';
     const sym = SUIT_SYMBOLS[card.suit] || '';
+    const t = (px) => Math.round(px * typeScale);
 
     return (
         <div
@@ -27,14 +28,14 @@ const HandCardFaceV2 = ({ card, isSelected, width, height, acc, fourColor, onCli
                 userSelect: 'none',
             }}
         >
-            <div style={{ position: 'absolute', top: 7, left: 8, lineHeight: 0.92, color }}>
-                <div style={{ fontWeight: 800, fontSize: 23 }}>{card.rank}</div>
-                <div style={{ fontSize: 15 }}>{sym}</div>
+            <div style={{ position: 'absolute', top: t(7), left: t(8), lineHeight: 0.92, color }}>
+                <div style={{ fontWeight: 800, fontSize: t(23) }}>{card.rank}</div>
+                <div style={{ fontSize: t(15) }}>{sym}</div>
             </div>
             {FACE_EMOJI[card.rank] ? (
-                <div style={{ position: 'absolute', left: '50%', top: '60%', transform: 'translate(-50%,-50%)', fontSize: 38 }}>{FACE_EMOJI[card.rank]}</div>
+                <div style={{ position: 'absolute', left: '50%', top: '60%', transform: 'translate(-50%,-50%)', fontSize: t(38) }}>{FACE_EMOJI[card.rank]}</div>
             ) : (
-                <div style={{ position: 'absolute', left: '50%', top: '60%', transform: 'translate(-50%,-50%)', fontSize: 40, color }}>{sym}</div>
+                <div style={{ position: 'absolute', left: '50%', top: '60%', transform: 'translate(-50%,-50%)', fontSize: t(40), color }}>{sym}</div>
             )}
         </div>
     );

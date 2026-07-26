@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
-import logoImage from '../assets/chor-dai-dee-logo.webp';
+import { AuthShell, Field, AuthButton, Divider } from './tableV2/LoginV2';
 
 // In production, use same origin; in development, use localhost:3000
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
@@ -174,283 +174,150 @@ const Login = ({ setUser }) => {
         setError('');
     };
 
-    // Render Google registration form (choose username for new account)
+    // Google step 2a: new Google user picks a username.
     if (googleFlowStep === 'register') {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
-                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
-                <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
-                    <h2 className="text-2xl font-bold mb-2 text-center">Choose Username</h2>
-                    <p className="text-sm text-gray-600 mb-4 text-center">
-                        Creating account with {googleEmail}
-                    </p>
-                    {error && (
-                        <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
-                            {error}
-                        </div>
-                    )}
-                    <form onSubmit={handleGoogleRegister} className="space-y-4">
-                        <div>
-                            <label htmlFor="google-username" className="block text-sm font-medium text-gray-700 mb-1">
-                                Username
-                            </label>
-                            <input
-                                id="google-username"
-                                type="text"
-                                autoFocus
-                                required
-                                minLength={3}
-                                maxLength={20}
-                                pattern="[a-zA-Z0-9_]+"
-                                title="Username can only contain letters, numbers, and underscores"
-                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                                value={suggestedUsername}
-                                onChange={e => setSuggestedUsername(e.target.value)}
-                                disabled={isLoading}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">3-20 characters, letters, numbers, and underscores only</p>
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                        >
-                            {isLoading ? 'Creating Account...' : 'Create Account'}
-                        </button>
-                    </form>
-                    <button
-                        onClick={cancelGoogleFlow}
-                        className="w-full mt-3 text-gray-500 hover:text-gray-700 text-sm"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+            <AuthShell title="Choose a username" subtitle={`Creating an account with ${googleEmail}`} error={error}>
+                <form onSubmit={handleGoogleRegister} className="flex flex-col gap-3">
+                    <Field
+                        id="google-username"
+                        label="Username"
+                        hint="3-20 characters: letters, numbers and underscores"
+                        type="text"
+                        autoFocus
+                        required
+                        value={suggestedUsername}
+                        onChange={(e) => setSuggestedUsername(e.target.value)}
+                        disabled={isLoading}
+                    />
+                    <AuthButton type="submit" disabled={isLoading}>
+                        {isLoading ? 'Creating account…' : 'Create account'}
+                    </AuthButton>
+                </form>
+                <AuthButton variant="ghost" onClick={cancelGoogleFlow}>Cancel</AuthButton>
+            </AuthShell>
         );
     }
 
-    // Render account linking form (verify existing account)
+    // Google step 2b: attach Google to an account they already have.
     if (googleFlowStep === 'link') {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
-                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
-                <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
-                    <h2 className="text-2xl font-bold mb-2 text-center">Link Existing Account</h2>
-                    <p className="text-sm text-gray-600 mb-4 text-center">
-                        Enter your existing account credentials to link with Google
-                    </p>
-                    {error && (
-                        <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
-                            {error}
-                        </div>
-                    )}
-                    <form onSubmit={handleGoogleLink} className="space-y-4">
-                        <div>
-                            <label htmlFor="link-username" className="block text-sm font-medium text-gray-700 mb-1">
-                                Username
-                            </label>
-                            <input
-                                id="link-username"
-                                type="text"
-                                autoFocus
-                                required
-                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                                value={username}
-                                onChange={e => setUsername(e.target.value)}
-                                disabled={isLoading}
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="link-password" className="block text-sm font-medium text-gray-700 mb-1">
-                                Password
-                            </label>
-                            <input
-                                id="link-password"
-                                type="password"
-                                required
-                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                disabled={isLoading}
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                        >
-                            {isLoading ? 'Linking Account...' : 'Link & Sign In'}
-                        </button>
-                    </form>
-                    <button
-                        onClick={cancelGoogleFlow}
-                        className="w-full mt-3 text-gray-500 hover:text-gray-700 text-sm"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+            <AuthShell title="Link your account" subtitle={`Signing in with ${googleEmail}`} error={error}>
+                <form onSubmit={handleGoogleLink} className="flex flex-col gap-3">
+                    <Field
+                        id="link-username"
+                        label="Username"
+                        type="text"
+                        autoFocus
+                        required
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        disabled={isLoading}
+                    />
+                    <Field
+                        id="link-password"
+                        label="Password"
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={isLoading}
+                    />
+                    <AuthButton type="submit" disabled={isLoading}>
+                        {isLoading ? 'Linking account…' : 'Link and sign in'}
+                    </AuthButton>
+                </form>
+                <AuthButton variant="ghost" onClick={cancelGoogleFlow}>Cancel</AuthButton>
+            </AuthShell>
         );
     }
 
-    // Render choice dialog (create new or link existing)
+    // Google step 1: we have never seen this Google account before.
     if (googleFlowStep === 'choose') {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
-                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
-                <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
-                    <h2 className="text-2xl font-bold mb-2 text-center">Welcome!</h2>
-                    <p className="text-sm text-gray-600 mb-6 text-center">
-                        Signing in with {googleEmail}
-                    </p>
-                    <div className="space-y-3">
-                        <button
-                            onClick={() => setGoogleFlowStep('register')}
-                            className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition font-bold"
-                        >
-                            Create New Account
-                        </button>
-                        <button
-                            onClick={() => setGoogleFlowStep('link')}
-                            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-bold"
-                        >
-                            Link Existing Account
-                        </button>
-                    </div>
-                    <button
-                        onClick={cancelGoogleFlow}
-                        className="w-full mt-4 text-gray-500 hover:text-gray-700 text-sm"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+            <AuthShell title="Welcome!" subtitle={`Signing in with ${googleEmail}`} error={error}>
+                <AuthButton onClick={() => setGoogleFlowStep('register')}>Create a new account</AuthButton>
+                <AuthButton variant="secondary" onClick={() => setGoogleFlowStep('link')}>
+                    Link an existing account
+                </AuthButton>
+                <AuthButton variant="ghost" onClick={cancelGoogleFlow}>Cancel</AuthButton>
+            </AuthShell>
         );
     }
 
-    // Main login form
+    // Main login / register form.
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white">
-            <img src={logoImage} alt="Chor Dai Dee Logo" className="w-60 mb-4" />
-            <div className="bg-white text-gray-800 p-8 rounded-xl shadow-2xl w-96">
-                {/* Guest Login Button */}
+        <AuthShell
+            title={isRegistering ? 'Create an account' : 'Welcome back'}
+            subtitle={isRegistering ? 'Your stats and rating follow the account.' : "Let's blast some 2s!"}
+            error={error}
+            footer={
                 <button
-                    onClick={handleGuestLogin}
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-bold mb-4 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    onClick={() => setIsRegistering(!isRegistering)}
+                    style={{ background: 'none', border: 'none', color: 'rgba(244,245,247,.55)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}
                 >
-                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                    </svg>
-                    Play as Guest
+                    {isRegistering ? 'Already have an account? Log in' : 'Need an account? Register'}
                 </button>
+            }
+        >
+            <AuthButton variant="secondary" onClick={handleGuestLogin}>
+                Play as guest
+            </AuthButton>
 
-                {/* Google Sign-In Button */}
-                {GOOGLE_CLIENT_ID && (
-                    <div className="mb-4">
-                        <GoogleLogin
-                            onSuccess={handleGoogleSuccess}
-                            onError={handleGoogleError}
-                            useOneTap={false}
-                            theme="outline"
-                            size="large"
-                            width="100%"
-                            text="signin_with"
-                            shape="rectangular"
-                        />
-                    </div>
-                )}
-
-                <div className="flex items-center my-4">
-                    <div className="flex-1 border-t border-gray-300"></div>
-                    <span className="px-3 text-gray-500 text-sm">OR</span>
-                    <div className="flex-1 border-t border-gray-300"></div>
+            {GOOGLE_CLIENT_ID && (
+                <div className="flex justify-center">
+                    <GoogleLogin
+                        onSuccess={handleGoogleSuccess}
+                        onError={handleGoogleError}
+                        useOneTap={false}
+                        theme="filled_black"
+                        size="large"
+                        width="100%"
+                        text="signin_with"
+                        shape="rectangular"
+                    />
                 </div>
+            )}
 
-                <h2 className="text-2xl font-bold mb-4 text-center">{isRegistering ? 'Register' : 'Login'}</h2>
-                {error && (
-                    <div role="alert" aria-live="polite" className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
-                        {error}
-                    </div>
-                )}
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                            Username
-                        </label>
-                        <input
-                            id="username"
-                            type="text"
-                            autoFocus
-                            required
-                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                            value={username}
-                            onChange={e => setUsername(e.target.value)}
-                            disabled={isLoading}
-                        />
-                    </div>
-                    <div>
-                        <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                            Password
-                        </label>
-                        <div className="relative">
-                            <input
-                                id="password"
-                                type={showPassword ? 'text' : 'password'}
-                                required
-                                className="w-full p-2 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                disabled={isLoading}
-                            />
-                            <button
-                                type="button"
-                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 rounded-full p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-                                onClick={() => setShowPassword(!showPassword)}
-                                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                            >
-                                {showPassword ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                                    </svg>
-                                ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                    <button
-                        type="submit"
+            <Divider />
+
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                <Field
+                    id="username"
+                    label="Username"
+                    type="text"
+                    autoFocus
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={isLoading}
+                />
+                <div className="relative">
+                    <Field
+                        id="password"
+                        label="Password"
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                         disabled={isLoading}
-                        aria-busy={isLoading}
-                        aria-disabled={isLoading}
-                        className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-bold flex justify-center items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                        {isLoading ? (
-                            <>
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                {isRegistering ? 'Signing Up...' : 'Logging In...'}
-                            </>
-                        ) : (
-                            isRegistering ? 'Sign Up' : 'Log In'
-                        )}
-                    </button>
-                </form>
-                <div className="mt-4 text-center text-sm">
+                    />
                     <button
-                        onClick={() => setIsRegistering(!isRegistering)}
-                        className="text-green-600 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 px-2 py-1"
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        style={{ position: 'absolute', right: 12, bottom: 12, background: 'none', border: 'none', color: 'rgba(244,245,247,.55)', fontSize: 15, cursor: 'pointer', lineHeight: 1 }}
                     >
-                        {isRegistering ? 'Already have an account? Login' : 'Need an account? Register'}
+                        {showPassword ? '🙈' : '👁'}
                     </button>
                 </div>
-            </div>
-        </div>
+                <AuthButton type="submit" disabled={isLoading} aria-busy={isLoading}>
+                    {isLoading
+                        ? (isRegistering ? 'Signing up…' : 'Logging in…')
+                        : (isRegistering ? 'Sign up' : 'Log in')}
+                </AuthButton>
+            </form>
+        </AuthShell>
     );
 };
 

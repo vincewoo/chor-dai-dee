@@ -42,7 +42,7 @@ function AvatarPickerV2({ user }) {
             <div className="absolute pointer-events-none select-none" style={{ top: 250, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 560, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♣</div>
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-92 pt-safe-18">
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-92 pt-safe-18 md:max-w-[720px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -69,7 +69,7 @@ function AvatarPickerV2({ user }) {
                 {/* Animal grid */}
                 <div className="mt-7">
                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 10, fontWeight: 800, letterSpacing: 2, marginBottom: 10 }}>PICK AN ANIMAL</div>
-                    <div className="grid grid-cols-4 gap-[10px]">
+                    <div className="grid grid-cols-4 gap-[10px] md:grid-cols-6 md:gap-3">
                         {PICKER_ANIMALS.map((e, i) => {
                             const on = e === animal;
                             return (

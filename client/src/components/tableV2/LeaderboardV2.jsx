@@ -4,11 +4,62 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
-// v2 mobile leaderboard (global only — no friends system server-side). Mirrors
-// the "Leaderboard v2" mockup: podium for the top 3, a scrollable rank list, and
-// a pinned "YOU" row. Data comes from /api/leaderboard via the Leaderboard
-// container; no trend arrows (no historical delta stored).
-function LeaderboardV2({ data = [], mode, onSetMode, user, loading, error, onBack, onPlayerClick }) {
+const SORTS = [
+    { id: 'rating', label: 'Rating' },
+    { id: 'games', label: 'Games' },
+    { id: 'wins', label: 'Wins' },
+    { id: 'winRate', label: 'Win rate' },
+    { id: 'firstPlace', label: '1st places' },
+    { id: 'avgPlacement', label: 'Avg place' },
+];
+const MIN_GAMES = [0, 5, 10, 25, 50];
+
+const ARCHETYPE_COLOR = {
+    Aggressive: '#ff8d96',
+    Conservative: '#7fb2ff',
+    Balanced: '#6ee7a8',
+    Adaptive: '#a48fff',
+};
+
+const GOOD = '#6ee7a8';
+
+const pct = (v) => (v || v === 0 ? `${(v * 100).toFixed(1)}%` : '—');
+
+const chip = (on, acc, accGrad) => ({
+    padding: '5px 11px',
+    borderRadius: 9,
+    border: `1px solid ${on ? acc : 'rgba(255,255,255,.14)'}`,
+    background: on ? accGrad : 'rgba(0,0,0,.38)',
+    color: on ? '#0b0d10' : 'rgba(244,245,247,.6)',
+    fontFamily: "'Outfit',sans-serif",
+    fontWeight: 700,
+    fontSize: 12,
+    cursor: 'pointer',
+});
+
+// One right-aligned column in a desktop leaderboard row.
+function Stat({ label, value, color = '#f4f5f7' }) {
+    return (
+        <div style={{ textAlign: 'right', minWidth: 54 }}>
+            <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 9, fontWeight: 800, letterSpacing: 1 }}>{label.toUpperCase()}</div>
+            <div style={{ color, fontWeight: 700, fontSize: 13 }}>{value ?? '—'}</div>
+        </div>
+    );
+}
+
+// v2 leaderboard (global only — no friends system server-side). Mirrors the
+// "Leaderboard v2" mockup: podium for the top 3, a rank list, and a pinned "YOU"
+// row. Data comes from /api/leaderboard via the Leaderboard container; no trend
+// arrows (no historical delta stored).
+//
+// Sorting, the minimum-games filter and the per-player detail columns are
+// desktop-only. They came from the legacy desktop table and there is no room for
+// them on a phone, so they render from md up and the phone keeps the podium and
+// a rating-ranked list.
+function LeaderboardV2({
+    data = [], mode, onSetMode, user, loading, error, onBack, onPlayerClick,
+    sortBy, onSetSortBy, minGames, onSetMinGames, onArchetypeClick,
+}) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
 
     const ranked = useMemo(
@@ -38,7 +89,7 @@ function LeaderboardV2({ data = [], mode, onSetMode, user, loading, error, onBac
             <div className="absolute pointer-events-none select-none" style={{ top: 200, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♣</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 540, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♦</div>
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-104 pt-safe-18">
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-104 pt-safe-18 md:max-w-[1000px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -65,6 +116,34 @@ function LeaderboardV2({ data = [], mode, onSetMode, user, loading, error, onBac
                         );
                     })}
                 </div>
+
+                {/* Sorting and the minimum-games filter: desktop only. */}
+                {onSetSortBy && (
+                    <div className="mt-3 hidden flex-wrap items-center gap-x-5 gap-y-2 md:flex">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span style={{ color: 'rgba(244,245,247,.5)', fontSize: 10, fontWeight: 800, letterSpacing: 2 }}>SORT</span>
+                            {SORTS.map((sort) => (
+                                <button
+                                    key={sort.id}
+                                    onClick={() => onSetSortBy(sort.id)}
+                                    style={chip(sortBy === sort.id, acc, accGrad)}
+                                >{sort.label}</button>
+                            ))}
+                        </div>
+                        {onSetMinGames && (
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span style={{ color: 'rgba(244,245,247,.5)', fontSize: 10, fontWeight: 800, letterSpacing: 2 }}>MIN GAMES</span>
+                                {MIN_GAMES.map((n) => (
+                                    <button
+                                        key={n}
+                                        onClick={() => onSetMinGames(n)}
+                                        style={chip(minGames === n, acc, accGrad)}
+                                    >{n}+</button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {loading && (
                     <div className="mt-10 text-center" style={{ color: 'rgba(244,245,247,.6)', fontSize: 14, fontWeight: 600 }}>Loading leaderboard…</div>
@@ -112,6 +191,36 @@ function LeaderboardV2({ data = [], mode, onSetMode, user, loading, error, onBac
                                         <div className="truncate" style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>{r.username}</div>
                                         <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>{r.first_place} rounds won</div>
                                     </div>
+
+                                    {/* The legacy desktop table's columns. Hidden
+                                        on phones, where there is no room. */}
+                                    <div className="hidden items-center gap-5 md:flex">
+                                        <Stat label="Games" value={r.games_played} />
+                                        <Stat label="Wins" value={r.wins} color={GOOD} />
+                                        <Stat label="Win rate" value={pct(r.win_rate)} />
+                                        <Stat label="Avg place" value={r.avg_placement ? r.avg_placement.toFixed(2) : '—'} />
+                                        <Stat label="Leads won" value={r.leads_won} />
+                                        {/* Fixed-width slot: players without an
+                                            archetype must not shift the columns
+                                            of their row out of line. */}
+                                        <div style={{ minWidth: 104, display: 'flex', justifyContent: 'flex-end' }}>
+                                            {r.archetype && (
+                                                <span
+                                                    onClick={(e) => { e.stopPropagation(); onArchetypeClick?.(r.archetype); }}
+                                                    role={onArchetypeClick ? 'button' : undefined}
+                                                    style={{
+                                                        background: `${ARCHETYPE_COLOR[r.archetype] || '#8b949e'}22`,
+                                                        border: `1px solid ${ARCHETYPE_COLOR[r.archetype] || '#8b949e'}66`,
+                                                        color: ARCHETYPE_COLOR[r.archetype] || '#c3ccd6',
+                                                        fontSize: 10, fontWeight: 800, letterSpacing: .4,
+                                                        padding: '4px 8px', borderRadius: 8, whiteSpace: 'nowrap',
+                                                        cursor: onArchetypeClick ? 'pointer' : 'default',
+                                                    }}
+                                                >{r.archetype}</span>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 15, whiteSpace: 'nowrap', minWidth: 44, textAlign: 'right' }}>{fmt(r.rating_display)}</div>
                                 </button>
                             ))}
@@ -123,7 +232,7 @@ function LeaderboardV2({ data = [], mode, onSetMode, user, loading, error, onBac
             {/* Pinned "you" row */}
             {me && (
                 <div
-                    className="absolute inset-x-0 z-20 mx-auto flex max-w-[440px] items-center gap-[11px] px-[22px]"
+                    className="absolute inset-x-0 z-20 mx-auto flex max-w-[440px] items-center gap-[11px] px-[22px] md:max-w-[1000px] md:px-8"
                     style={{ bottom: 26 }}
                 >
                     <div

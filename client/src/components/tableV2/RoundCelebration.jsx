@@ -20,7 +20,10 @@ function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGr
 
     return (
         <div style={{
-            position: 'absolute', inset: 0, zIndex: 100,
+            // Pinned to the viewport, not to the table root: this is a
+            // full-screen takeover, and `fixed` keeps it correct regardless of
+            // which composition mounted it or how that composition is nested.
+            position: 'fixed', inset: 0, zIndex: 100,
             background: 'radial-gradient(ellipse 120% 90% at 50% 32%,#1e6141 0%,#154930 46%,#0d3520 78%,#082515 100%)',
             display: 'flex', flexDirection: 'column', padding: '26px 22px 22px', overflow: 'hidden',
         }}>
@@ -31,6 +34,9 @@ function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGr
                 }} />
             ))}
 
+            {/* Confetti stays full-bleed; the results themselves read better in
+                a column, so they never stretch across a wide screen. */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, width: '100%', maxWidth: 620, margin: '0 auto' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 4, position: 'relative' }}>
                 <img
                     src={logoImage}
@@ -105,6 +111,7 @@ function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGr
             >
                 Start Round {nextRoundNum}
             </button>
+            </div>
         </div>
     );
 }

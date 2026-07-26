@@ -137,16 +137,14 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 - **Game Components:**
   - `Login.jsx` - User authentication
   - `Lobby.jsx` - Room creation/joining, game mode selection
-  - `GameRoom.jsx` - Main game interface with settings panel
-  - `Card.jsx` - Card rendering with 2-color and 4-color mode support
-  - `CardCountIndicator.jsx` - Visual card back showing opponent card counts
-  - `VoiceChat.jsx` - WebRTC voice chat component (uses simple-peer)
+  - `GameRoom.jsx` - Owns all in-game state, socket wiring and player actions,
+    then hands one prop bundle to a v2 table orchestrator. It renders no table
+    chrome of its own.
+  - `VoiceChat.jsx` - Owns the room's WebRTC lifecycle (uses simple-peer) and
+    publishes voice state upward. Renders nothing; the v2 tables draw the
+    controls (`VoiceControlBubble` in the HUD, `VoiceIndicator` per seat).
 
 - **UI Helper Components:**
-  - `HandHelper.jsx` - Quick selection tool for finding valid hands
-    - Auto-detects all playable combinations
-    - Highlights hands that beat current pile
-    - Cycling through multiple hands of same type
   - `BotDebugPanel.jsx` - Real-time bot decision analysis
     - Shows bot reasoning and decision factors
     - Displays situation analysis and alternative moves
@@ -157,6 +155,36 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
     - Tier 3: Advanced analytics (decision efficiency, consistency, behavioral profiling)
     - Mode switcher for Short vs Standard game stats
 
+#### The v2 UI (`components/tableV2/`)
+
+The whole client renders in one design system, defined by `theme/tableTheme.js`
+(accent palettes, felt/ink surfaces, `useTableTheme`) and the `cdd*` keyframes in
+`index.css`. There is no second, older UI: the legacy green/white Tailwind
+screens were removed when desktop moved to v2.
+
+The split is by **composition, not design**. `hooks/useMediaQuery.js` is the one
+place breakpoints are defined — `useIsDesktop()` (768px) picks the composition,
+`useIsWide()` (1024px) decides whether the desktop table's rails fit.
+
+- `GameTableMobile.jsx` / `GameTableDesktop.jsx` - the two in-game orchestrators.
+  They take an **identical prop bundle** (built once in `GameRoom.jsx`) and share
+  every leaf component; only the arrangement differs. Mobile is a full-bleed
+  stack; desktop is a three-column grid whose rails hold `ScorePanel` and
+  `RoundLogPanel` permanently. Below `useIsWide()` those rails are dropped and
+  the desktop table falls back to the mobile affordances for the same
+  information — the HUD's Info toggle (`ScoreStrip`) and `RoundLogSheet`.
+- `layout.js` - `MOBILE_LAYOUT` / `DESKTOP_LAYOUT`: seat placements, pile frame
+  and scale, banner placement, hand geometry caps. The v2 table was built with
+  these offsets inline for a ~390x844 phone; they live here now so a second
+  composition does not mean a second set of components. **Every leaf still
+  defaults to the mobile values**, so a component rendered without a placement
+  prop looks exactly as it did before desktop existed.
+- `RoundLogRows.jsx` - the log rows, shared by the mobile sheet and the desktop
+  rail so the two can't drift.
+- `useHandGeometry.js` (in `hooks/`) - card size and overlap for the hand fan.
+  Type scales only *above* the 75px mobile card (`typeScale`), so no mobile
+  width can be altered by a desktop change.
+
 #### Contexts (`contexts/`)
 - `SuitColorContext.jsx` - Manages 2-color vs 4-color deck modes
 - `VoiceChatContext.jsx` - Manages WebRTC connections and voice state
@@ -166,7 +194,8 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
   - Syncs with server-side user_preferences table
 
 #### Utils & Constants
-- `handFinder.js` - Hand detection and validation logic for HandHelper
+- `handFinder.js` - Hand detection and validation, backing the quick-select
+  chips in `tableV2/ControlsRow.jsx`
 - `gameModes.js` - Game mode definitions (Short: 50pts, Standard: 100pts)
 
 ### Backend Structure (`server/`)
@@ -396,29 +425,26 @@ Unsetting it is the kill switch.
   - Toggle advanced bots
 
 ### Gameplay Helpers
-- **Hand Helper/Quick Select:**
-  - Shows all valid hands in current hand
-  - Highlights hands that beat the pile (green)
-  - Click to select cards, cycle through alternatives
-  - Shows counts and percentages for each hand type
+- **Quick Select** (`tableV2/ControlsRow.jsx`, backed by `utils/handFinder.js`):
+  - Chips for every hand type currently playable
+  - Chips that can beat the pile are accented; tapping one cycles through the
+    alternatives of that type
 - **Drag & Drop Card Reordering:**
-  - Reorder hand cards by dragging
-  - Uses @dnd-kit library
-  - Touch and mouse support
+  - Reorder hand cards by dragging (@dnd-kit); touch and mouse
+  - Swipe across the fan to select a run of cards
 
-### Mobile Optimization
-- Dynamic card spacing based on screen size and card count
-- Swipe selection support
-- Improved touch targets
-- Responsive card layout prevents overlap
-- Full-width card container on mobile
-- Card count indicators for opponents
+### Layout
+- Card size and overlap come from `useHandGeometry`, driven by the active
+  table layout: the fan fills a phone's width and spreads out on desktop.
+- Seats are positioned relative to the viewer, so you are always at the bottom.
+- Opponent card counts show on each seat; on desktop the score rail repeats
+  them alongside ratings.
 
 ### Visual Features
 - Custom logo and favicon
-- Smooth card animations with Framer Motion
-- Responsive table layout with relative player positioning (current player always at bottom)
-- Card count indicators on opponent hands
+- Smooth card animations with Framer Motion plus the `cdd*` keyframes
+- Accent colour, table surface and reduced-motion are user preferences
+  (`useTableTheme`)
 - Auto-reconnection with status indicators
 
 ### Developer Features

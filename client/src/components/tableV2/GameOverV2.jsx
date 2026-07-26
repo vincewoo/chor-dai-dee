@@ -57,7 +57,9 @@ function GameOverV2({ gameOver, myName, children }) {
 
     return (
         <div
-            className="absolute inset-0 z-50 overflow-y-auto font-sans"
+            // Fixed, like RoundCelebration: a full-screen takeover should be
+            // pinned to the viewport rather than to whatever mounted it.
+            className="fixed inset-0 z-50 overflow-y-auto font-sans"
             style={{
                 background: 'radial-gradient(ellipse 120% 90% at 50% 32%,#1e6141 0%,#154930 46%,#0d3520 78%,#082515 100%)',
                 fontFamily: "'Outfit',sans-serif",
@@ -77,7 +79,7 @@ function GameOverV2({ gameOver, myName, children }) {
                 />
             ))}
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-6 pt-[52px]">
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-6 pt-[52px] md:max-w-[560px] md:justify-center">
                 {/* Winner hero */}
                 <div className="flex flex-col items-center gap-2">
                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 800, letterSpacing: 2.5, ...anim({ animation: 'cddToast .4s ease-out both' }) }}>

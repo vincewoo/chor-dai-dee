@@ -132,7 +132,7 @@ function ActivityFeedV2({
             <div className="absolute pointer-events-none select-none" style={{ top: 210, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♥</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 560, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♠</div>
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[22px] pb-safe-36 pt-safe-18">
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-36 pt-safe-18 md:max-w-[960px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -184,8 +184,10 @@ function ActivityFeedV2({
                     <div className="mt-10 text-center" style={{ color: 'rgba(244,245,247,.6)', fontSize: 14, fontWeight: 600 }}>No games here yet — go play one!</div>
                 )}
 
+                {/* Two columns of cards once there is room; each still expands
+                    its standings in place. */}
                 {!loading && !error && cards.length > 0 && (
-                    <div className="mt-4 flex flex-col gap-[10px]">
+                    <div className="mt-4 grid grid-cols-1 items-start gap-[10px] md:grid-cols-2 md:gap-3">
                         {cards.map((c, i) => {
                             const open = expandedId === c.id;
                             return (

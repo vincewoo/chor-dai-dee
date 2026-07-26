@@ -10,8 +10,8 @@ import useHandGeometry from '../../hooks/useHandGeometry';
  * Dropping DndContext also avoids touchAction:'none' on a view nobody drags.
  * Geometry and card face are shared, so the two stay visually identical.
  */
-function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, ownerName }) {
-    const { width, height, marginLeft } = useHandGeometry(sortedHand.length, containerWidth);
+function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, ownerName, geometry }) {
+    const { width, height, marginLeft, typeScale } = useHandGeometry(sortedHand.length, containerWidth, geometry);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
@@ -25,7 +25,7 @@ function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, ownerName
                 </span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', minHeight: 126, alignItems: 'flex-end', paddingBottom: 2 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', minHeight: Math.max(126, height + 8), alignItems: 'flex-end', paddingBottom: 2 }}>
                 <div style={{ display: 'flex', justifyContent: 'center', minHeight: height }}>
                     {sortedHand.map((card, index) => (
                         <div
@@ -39,6 +39,7 @@ function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, ownerName
                                 height={height}
                                 acc={acc}
                                 fourColor={fourColor}
+                                typeScale={typeScale}
                                 readOnly
                             />
                         </div>

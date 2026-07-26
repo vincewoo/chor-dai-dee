@@ -2,7 +2,8 @@ import { memo } from 'react';
 import PileCardGlyph from './PileCardGlyph';
 import { describeHand } from '../../theme/tableTheme';
 
-// Offsets per depth-from-top (0 = newest, on top).
+// Offsets per depth-from-top (0 = newest, on top). Translations scale with the
+// pile; rotations do not, so the stack keeps the same silhouette at any size.
 const OFF = [
     { dx: 0, dy: 0, r: 0 },
     { dx: -54, dy: -20, r: -9 },
@@ -10,6 +11,9 @@ const OFF = [
     { dx: -30, dy: 22, r: -5 },
     { dx: 34, dy: 24, r: 6 },
 ];
+
+// The mobile pile frame, used when no explicit frame is passed.
+const DEFAULT_FRAME = { top: 268, left: 26, right: 26, height: 216, borderRadius: 24 };
 
 // Maps a relative seat offset (0=self bottom, 1=right, 2=top, 3=left) to a fly-in keyframe.
 const FLY = { 0: 'cddFlyUp', 1: 'cddFlyRight', 2: 'cddFlyDown', 3: 'cddFlyLeft' };
@@ -29,6 +33,9 @@ const CenterPile = memo(function CenterPile({
     showControlToast,
     onOpenLog,
     hasLog,
+    frame,          // positioning + size of the pile well; defaults to mobile
+    scale = 1,      // card + fan scale
+    stackHeight = 118,
 }) {
     // Resolve label from authoritative lastPlayedHand.
     let label = '';
@@ -44,7 +51,7 @@ const CenterPile = memo(function CenterPile({
         <div
             onClick={hasLog ? onOpenLog : undefined}
             style={{
-                position: 'absolute', top: 268, left: 26, right: 26, height: 216, borderRadius: 24,
+                position: 'absolute', ...(frame || DEFAULT_FRAME),
                 background: 'linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02))',
                 border: '1px solid rgba(255,255,255,.13)',
                 boxShadow: 'inset 0 1px 0 rgba(255,255,255,.1),inset 0 -18px 30px rgba(0,0,0,.25),0 18px 36px rgba(0,0,0,.28)',
@@ -56,11 +63,11 @@ const CenterPile = memo(function CenterPile({
                 <>
                     <div style={{
                         background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '4px 12px',
-                        color: 'rgba(244,245,247,.9)', fontSize: 12, fontWeight: 700, position: 'relative', zIndex: 8,
+                        color: 'rgba(244,245,247,.9)', fontSize: Math.round(12 * scale), fontWeight: 700, position: 'relative', zIndex: 8,
                     }}>
                         {label}
                     </div>
-                    <div style={{ position: 'relative', width: '100%', height: 118 }}>
+                    <div style={{ position: 'relative', width: '100%', height: stackHeight }}>
                         {stack.map((play, idx) => {
                             const back = topIndex - idx; // 0 = top
                             const isTop = back === 0;
@@ -75,7 +82,7 @@ const CenterPile = memo(function CenterPile({
                                     key={`${play.trick}-${play.playOrder}`}
                                     style={{
                                         position: 'absolute', left: '50%', top: '50%',
-                                        transform: `translate(-50%,-50%) translate(${o.dx}px,${o.dy}px) rotate(${o.r}deg) scale(${isTop ? 1 : 0.82})`,
+                                        transform: `translate(-50%,-50%) translate(${o.dx * scale}px,${o.dy * scale}px) rotate(${o.r}deg) scale(${isTop ? 1 : 0.82})`,
                                         opacity: isTop ? 1 : 0.6,
                                         filter: isTop ? 'none' : 'brightness(.75)',
                                         zIndex: idx + 1,
@@ -87,7 +94,7 @@ const CenterPile = memo(function CenterPile({
                                             <div
                                                 key={`${c.rank}-${c.suit}`}
                                                 style={{
-                                                    marginLeft: i === 0 ? 0 : -22,
+                                                    marginLeft: i === 0 ? 0 : -22 * scale,
                                                     transform: `rotate(${(i - (cards.length - 1) / 2) * 5}deg)`,
                                                 }}
                                             >
@@ -103,7 +110,7 @@ const CenterPile = memo(function CenterPile({
                                                             : `${flyName} .5s cubic-bezier(.2,.8,.3,1.1) ${i * 80}ms both`,
                                                     }}
                                                 >
-                                                    <PileCardGlyph rank={c.rank} suit={c.suit} fourColor={fourColor} size="pile" />
+                                                    <PileCardGlyph rank={c.rank} suit={c.suit} fourColor={fourColor} size="pile" scale={scale} />
                                                 </div>
                                             </div>
                                         ))}
