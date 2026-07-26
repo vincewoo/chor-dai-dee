@@ -1,4 +1,6 @@
 import { memo } from 'react';
+import { SUIT_SYMBOLS } from '../../theme/tableTheme';
+import { displaySuit } from '../../utils/suitLens';
 
 // The status banner above the hand. Communicates whose turn it is / what to do.
 // `placement` positions the banner absolutely and defaults to the mobile
@@ -6,7 +8,7 @@ import { memo } from 'react';
 // table does — there it lives in the bottom section above the controls.
 const StatusBanner = memo(function StatusBanner({
     isMyTurn, mustBeat, trickWinPending, trickWinnerName,
-    currentPlayerName, isFirstLead, acc, accGrad, rm,
+    currentPlayerName, isFirstLead, acc, accGrad, rm, pusoyMode,
     placement = { bottom: 308, left: 0, right: 0 },
 }) {
     let text;
@@ -18,7 +20,11 @@ const StatusBanner = memo(function StatusBanner({
         text = 'Your turn — beat it or pass';
         mine = true;
     } else if (isMyTurn) {
-        text = isFirstLead ? 'Your turn — lead with 3♦︎' : 'Your turn';
+        // The opener is always the underlying 3♦; under the Pusoy Dos lens that
+        // card is drawn — and named here — as 3♣.
+        text = isFirstLead
+            ? `Your turn — lead with 3${SUIT_SYMBOLS[displaySuit('D', pusoyMode)]}`
+            : 'Your turn';
         mine = true;
     } else {
         text = `${currentPlayerName || 'Opponent'} is thinking…`;

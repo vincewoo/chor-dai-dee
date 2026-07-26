@@ -20,6 +20,11 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return saved === 'true';
     });
 
+    const [pusoyMode, setPusoyMode] = useState(() => {
+        const saved = localStorage.getItem('pusoyMode');
+        return saved === 'true';
+    });
+
     const [autoPass, setAutoPass] = useState(() => {
         const saved = localStorage.getItem('autoPass');
         return saved === 'true';
@@ -77,6 +82,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
                     if (!cancelled) {
                         setFourColorMode(data.fourColorMode);
                         setAutoPass(data.autoPass);
+                        if (data.pusoyMode !== undefined) {
+                            setPusoyMode(data.pusoyMode);
+                        }
                         if (data.voiceChatEnabled !== undefined) {
                             setVoiceChatEnabled(data.voiceChatEnabled);
                         }
@@ -98,6 +106,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         // Also update localStorage
                         localStorage.setItem('fourColorMode', data.fourColorMode);
                         localStorage.setItem('autoPass', data.autoPass);
+                        if (data.pusoyMode !== undefined) {
+                            localStorage.setItem('pusoyMode', data.pusoyMode);
+                        }
                         if (data.voiceChatEnabled !== undefined) {
                             localStorage.setItem('voiceChatEnabled', data.voiceChatEnabled);
                         }
@@ -143,7 +154,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
+                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -154,6 +165,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
 
         // Also save to localStorage
         localStorage.setItem('fourColorMode', fourColorMode);
+        localStorage.setItem('pusoyMode', pusoyMode);
         localStorage.setItem('autoPass', autoPass);
         localStorage.setItem('voiceChatEnabled', voiceChatEnabled);
         localStorage.setItem('tableTheme', tableTheme);
@@ -161,7 +173,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
         localStorage.setItem('reducedMotion', reducedMotion);
         localStorage.setItem('soundEnabled', soundEnabled);
         localStorage.setItem('soundVolume', soundVolume);
-    }, [fourColorMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
+    }, [fourColorMode, pusoyMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
 
     // Mirror sound settings into the audio engine, which keeps its own state so
     // that playSound() callers don't have to thread preferences through props.
@@ -175,6 +187,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
 
     const toggleFourColorMode = () => {
         setFourColorMode(prev => !prev);
+    };
+
+    const togglePusoyMode = () => {
+        setPusoyMode(prev => !prev);
     };
 
     const toggleAutoPass = () => {
@@ -197,6 +213,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
     return (
         <UserPreferencesContext.Provider value={{
             fourColorMode,
+            pusoyMode,
             autoPass,
             voiceChatEnabled,
             tableTheme,
@@ -205,6 +222,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
             soundEnabled,
             soundVolume,
             toggleFourColorMode,
+            togglePusoyMode,
             toggleAutoPass,
             toggleVoiceChat,
             toggleReducedMotion,

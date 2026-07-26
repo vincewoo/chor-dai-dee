@@ -188,6 +188,11 @@ Access settings via the gear icon in-game:
 - **Four-Color Deck**: Toggle colorblind-friendly deck colors
   - 2-color mode: Red (Hearts/Diamonds), Black (Spades/Clubs)
   - 4-color mode: Red (Hearts), Blue (Diamonds), Black (Spades), Green (Clubs)
+- **Pusoy Dos Suits**: Display suits in the Filipino Pusoy Dos order (♣ lowest,
+  then ♠, ♥, ♦ highest) instead of the underlying Diamonds < Clubs < Hearts <
+  Spades. Purely a display setting — it changes nothing about the rules, the
+  cards you hold, or what other players at the table see, and each player can
+  set it independently.
 - **Auto-Pass**: Automatically pass when you have no valid moves
 - **Advanced Bots**: Toggle between simple and heuristic-based AI opponents
 - **Bot Debug Panel**: View real-time bot decision analysis (for developers)

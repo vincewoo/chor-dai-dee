@@ -2489,6 +2489,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
         const preferences = await getUserPreferences(userId);
         res.json({
             fourColorMode: preferences.four_color_mode === 1,
+            // Display-only Pusoy Dos suit lens; off when the column predates it.
+            pusoyMode: (preferences.pusoy_mode ?? 0) === 1,
             autoPass: preferences.auto_pass === 1,
             tableTheme: preferences.table_theme || 'felt',
             accentColor: preferences.accent_color || 'gold',
@@ -2509,8 +2511,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
+        const { fourColorMode, pusoyMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);

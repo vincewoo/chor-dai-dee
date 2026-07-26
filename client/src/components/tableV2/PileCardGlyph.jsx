@@ -1,21 +1,29 @@
 import { memo } from 'react';
 import { PILE_SUIT_COLORS, SUIT_SYMBOLS, FACE_EMOJI } from '../../theme/tableTheme';
+import { displaySuit } from '../../utils/suitLens';
 
 // Presentational white card face used in the pile (60x90) and round log (32x46).
 // `scale` multiplies every dimension so the desktop pile can show a larger card
 // without a second set of metrics.
+//
+// The second seam where the Pusoy Dos suit lens applies; `suit` is always the
+// underlying suit, and only the drawn glyph is remapped.
 const PileCardGlyph = memo(function PileCardGlyph({
     rank,
     suit,
     fourColor = false,
+    pusoyMode = false,
     size = 'pile', // 'pile' | 'log'
     scale = 1,
     className,
     style,
 }) {
+    // Symbol and colour both key off the displayed suit, so a card shown as ♦
+    // is red rather than keeping the underlying suit's colour.
+    const shown = displaySuit(suit, pusoyMode);
     const colors = fourColor ? PILE_SUIT_COLORS.fourColor : PILE_SUIT_COLORS.standard;
-    const color = colors[suit] || '#1c2026';
-    const sym = SUIT_SYMBOLS[suit] || '';
+    const color = colors[shown] || '#1c2026';
+    const sym = SUIT_SYMBOLS[shown] || '';
     const isLog = size === 'log';
 
     const base = isLog

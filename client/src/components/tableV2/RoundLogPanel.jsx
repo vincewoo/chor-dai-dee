@@ -2,7 +2,7 @@ import RoundLogRows from './RoundLogRows';
 
 // Persistent round-log rail for the desktop table. Same rows as the mobile
 // bottom sheet, always on screen instead of behind a tap.
-function RoundLogPanel({ log, acc, fourColor }) {
+function RoundLogPanel({ log, acc, fourColor, pusoyMode }) {
     return (
         <aside
             style={{
@@ -25,7 +25,7 @@ function RoundLogPanel({ log, acc, fourColor }) {
                 className="scrollbar-thin"
                 style={{ overflowY: 'auto', padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}
             >
-                <RoundLogRows log={log} acc={acc} fourColor={fourColor} emptyText="Nothing played yet this round." />
+                <RoundLogRows log={log} acc={acc} fourColor={fourColor} pusoyMode={pusoyMode} emptyText="Nothing played yet this round." />
             </div>
         </aside>
     );

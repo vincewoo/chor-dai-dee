@@ -33,7 +33,7 @@ const HUD_HEIGHT = 72;
 // HUD's Info toggle (ScoreStrip) and the tap-to-open RoundLogSheet.
 function GameTableDesktop(props) {
     const {
-        user, roomId, gameState, myPlayerId, fourColorMode,
+        user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode,
         sortedHand, myHand, selectedCards, toggleCard, handleSelectCards,
         playCards, passTurn, isSubmitting, isMyTurn, getRelativePlayer,
         canKickPlayer, handlePlayerClick,
@@ -188,6 +188,7 @@ function GameTableDesktop(props) {
                             players={players}
                             viewerIndex={viewerIndex}
                             fourColor={fourColorMode}
+                            pusoyMode={pusoyMode}
                             accGrad={accGrad}
                             soft={soft}
                             rm={rm}
@@ -217,6 +218,7 @@ function GameTableDesktop(props) {
                             acc={acc}
                             accGrad={accGrad}
                             rm={rm}
+                            pusoyMode={pusoyMode}
                             placement={DESKTOP_LAYOUT.banner}
                         />
 
@@ -226,6 +228,7 @@ function GameTableDesktop(props) {
                                 containerWidth={handAreaWidth}
                                 acc={acc}
                                 fourColor={fourColorMode}
+                                pusoyMode={pusoyMode}
                                 ownerName={getRelativePlayer(0)?.name}
                                 geometry={DESKTOP_LAYOUT.hand}
                             />
@@ -262,13 +265,14 @@ function GameTableDesktop(props) {
                                 containerWidth={handAreaWidth}
                                 acc={acc}
                                 fourColor={fourColorMode}
+                                pusoyMode={pusoyMode}
                                 geometry={DESKTOP_LAYOUT.hand}
                             />
                         </>)}
                     </div>
                 </div>
 
-                {wide && <RoundLogPanel log={log} acc={acc} fourColor={fourColorMode} />}
+                {wide && <RoundLogPanel log={log} acc={acc} fourColor={fourColorMode} pusoyMode={pusoyMode} />}
             </div>
 
             {sheetIsTheLog && (
@@ -277,6 +281,7 @@ function GameTableDesktop(props) {
                     log={log}
                     acc={acc}
                     fourColor={fourColorMode}
+                    pusoyMode={pusoyMode}
                     rm={rm}
                     onClose={() => setLogOpen(false)}
                 />

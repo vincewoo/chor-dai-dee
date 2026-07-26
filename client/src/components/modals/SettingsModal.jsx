@@ -13,6 +13,8 @@ const SettingsModal = ({
     toggleAutoPass,
     fourColorMode,
     toggleFourColorMode,
+    pusoyMode,
+    togglePusoyMode,
     // v2 table theme (optional)
     tableTheme,
     setTableTheme,
@@ -107,6 +109,32 @@ const SettingsModal = ({
                             </div>
                             <p className="text-gray-300 text-sm md:text-[0.85vmax]">
                                 Use 4-color suits for better visibility (blue diamonds, green clubs)
+                            </p>
+                        </div>
+
+                        {/* Pusoy Dos Suit Lens (display only) */}
+                        <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
+                            <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
+                                <label
+                                    id="pusoy-mode-label"
+                                    className="text-white font-semibold text-lg md:text-[1.2vmax]"
+                                >
+                                    Pusoy Dos Suits
+                                </label>
+                                <button
+                                    role="switch"
+                                    aria-checked={!!pusoyMode}
+                                    aria-labelledby="pusoy-mode-label"
+                                    onClick={togglePusoyMode}
+                                    className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 focus-visible:outline-none
+                                        ${pusoyMode ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                >
+                                    {pusoyMode ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                            <p className="text-gray-300 text-sm md:text-[0.85vmax]">
+                                Display suits in Filipino Pusoy Dos order: ♣ lowest, then ♠, ♥, ♦ highest.
+                                Changes only what you see — the game rules and every other player's view are unchanged.
                             </p>
                         </div>
 
