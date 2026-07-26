@@ -23,7 +23,10 @@ const gamelog = require('../gamelog');
 const { makeRng, deal, playRound } = require('./botHarness');
 const { BotLogic } = require('../game/BotLogic');
 const { encodeDeal, SOURCE } = require('../game/TapeCodec');
-const { reviewForUser, forget, ReviewUnavailable, seatResolver } = require('../gamelogReview');
+const {
+    reviewForUser, examplesForUser, forget, ReviewUnavailable, seatResolver
+} = require('../gamelogReview');
+const { TOPICS, HIGHLIGHT_KINDS } = require('../game/MoveReview');
 
 const USER = 42;
 const OTHER = 77;
@@ -194,6 +197,90 @@ test('the reviewed seat never appears among the opponent hands', async () => {
         assert.strictEqual(h.opponentHands[0], null, 'seat 0 is the reviewed player');
         assert.ok(h.opponentHands.slice(1).every(Array.isArray));
     }
+});
+
+// --- worked examples ----------------------------------------------------------
+
+test('examples are drawn across games and only of the topic asked for', async () => {
+    await logGame('ex-1');
+    await logGame('ex-2');
+    await logGame('ex-3');
+
+    for (const topic of Object.keys(TOPICS)) {
+        const { examples, topic: echoed, gamesSearched } = await examplesForUser(USER, { topic });
+
+        assert.strictEqual(echoed, topic);
+        assert.ok(gamesSearched >= 3, 'searched the account\'s recent games');
+        for (const example of examples) {
+            assert.ok(
+                TOPICS[topic].includes(example.kind),
+                `${example.kind} is not part of the ${topic} topic`
+            );
+            assert.ok(example.gameId, 'carries the game it came from');
+            assert.ok(example.playedAt, 'and when it was played');
+        }
+    }
+});
+
+test('examples are ranked the way a review ranks them', async () => {
+    await logGame('ex-rank-1');
+    await logGame('ex-rank-2');
+
+    const { examples } = await examplesForUser(USER, { topic: 'mistakes', limit: 20 });
+
+    for (let i = 1; i < examples.length; i++) {
+        const prev = HIGHLIGHT_KINDS[examples[i - 1].kind].tier;
+        const curr = HIGHLIGHT_KINDS[examples[i].kind].tier;
+        assert.ok(prev >= curr, 'proven errors come before priced ones');
+        if (prev === curr) {
+            assert.ok(
+                examples[i - 1].absoluteLoss >= examples[i].absoluteLoss,
+                'and within a tier, the costlier mistake first'
+            );
+        }
+    }
+});
+
+test('an unknown topic is refused rather than silently returning nothing', async () => {
+    const err = await refusal(() => examplesForUser(USER, { topic: 'vibes' }));
+    assert.ok(err, 'must refuse');
+    assert.strictEqual(err.status, 400);
+    assert.strictEqual(err.reason, 'unknown_topic');
+});
+
+test('examples can be scoped to one game mode', async () => {
+    // Every seeded game here is standard, so filtering to short must come back
+    // empty rather than falling back to everything.
+    const short = await examplesForUser(USER, { topic: 'mistakes', mode: 'short' });
+    assert.strictEqual(short.gamesSearched, 0);
+    assert.deepStrictEqual(short.examples, []);
+
+    const standard = await examplesForUser(USER, { topic: 'mistakes', mode: 'standard' });
+    assert.ok(standard.gamesSearched > 0);
+});
+
+test('an account with no games gets an empty list, not an error', async () => {
+    const { examples, gamesSearched } = await examplesForUser(4242, { topic: 'mistakes' });
+    assert.deepStrictEqual(examples, []);
+    assert.strictEqual(gamesSearched, 0);
+});
+
+test('the per-game cache is not truncated by the first limit it is asked for', async () => {
+    // reviewForUser caches the full highlight list and slices on the way out.
+    // Caching a trimmed list would make the examples lookup - which ranks across
+    // games and needs all of them - depend on whichever limit arrived first.
+    await logGame('ex-cache');
+    forget('ex-cache');
+
+    const small = await reviewForUser('ex-cache', USER, { limit: 1 });
+    assert.ok(small.highlights.length <= 1);
+
+    const full = await reviewForUser('ex-cache', USER, { limit: Infinity });
+    assert.ok(
+        full.highlights.length >= small.highlights.length,
+        'the cached review still holds every highlight'
+    );
+    assert.strictEqual(full.summary.highlightsFound, full.highlights.length);
 });
 
 test.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));

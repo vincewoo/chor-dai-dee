@@ -7,7 +7,11 @@ const ScoreDialog = ({
     gameData,
     showActions = false,
     onNextRound = null,
-    onBackToLobby = null
+    onBackToLobby = null,
+    // Shown for a finished game the viewer actually played in. Independent of
+    // showActions: the review is offered from the activity feed, where the
+    // round/lobby actions are not.
+    onReview = null
 }) => {
     if (!isOpen) return null;
 
@@ -136,6 +140,15 @@ const ScoreDialog = ({
                             <div className="text-center text-sm text-gray-400 mb-4">
                                 Game Mode: {gameData.gameMode === 'short' ? '⚡ Short (50 pts)' : '🏆 Standard (100 pts)'}
                             </div>
+                        )}
+
+                        {onReview && isGameOver && (
+                            <button
+                                onClick={onReview}
+                                className="w-full mb-3 bg-purple-600 px-6 py-3 rounded-lg font-bold hover:bg-purple-700 transition transform hover:scale-105"
+                            >
+                                🔍 Review my moves
+                            </button>
                         )}
 
                         {/* Actions */}

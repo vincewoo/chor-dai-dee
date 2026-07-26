@@ -72,6 +72,20 @@ const HARD_POSITION_MIN_SPREAD = SHED_VALUE_PER_CARD * 4;
  */
 const TIER = { PROVEN: 3, COSTLY: 2, CREDIT: 1 };
 
+/**
+ * Named groupings, so a caller can ask for "the mistakes" without knowing which
+ * kinds count as one.
+ *
+ * These exist because the stats page links into them: a number is only useful
+ * to a player if they can get from it to the moves behind it, and the link has
+ * to name the thing the number measures rather than a list of internal kinds.
+ */
+const TOPICS = {
+    mistakes: ['missed_win', 'missed_forced_win', 'blunder'],
+    gambles: ['failed_gamble', 'won_gamble'],
+    best: ['found_forced_win', 'won_gamble', 'hard_position']
+};
+
 const HIGHLIGHT_KINDS = {
     missed_win: {
         tone: 'bad', tier: TIER.PROVEN,
@@ -335,14 +349,8 @@ function reviewGame({ rounds, actionsByRound, seatForRound, limit = DEFAULT_LIMI
         if (result.error) failedRounds.push(round.round_number);
     }
 
-    const byImportance = (a, b) => {
-        const byTier = HIGHLIGHT_KINDS[b.kind].tier - HIGHLIGHT_KINDS[a.kind].tier;
-        if (byTier !== 0) return byTier;
-        return (b.absoluteLoss ?? 0) - (a.absoluteLoss ?? 0);
-    };
-
     const ranked = [...all].sort(byImportance);
-    let chosen = ranked.slice(0, limit);
+    let chosen = limit === Infinity ? ranked : ranked.slice(0, limit);
 
     // Keep one slot for something that went right.
     //
@@ -351,7 +359,7 @@ function reviewGame({ rounds, actionsByRound, seatForRound, limit = DEFAULT_LIMI
     // scolds gets closed, and the credit kinds exist precisely because reading
     // one is the reason a player opens the next one. Costs the least important
     // error in the list, which by construction is the one worth least.
-    if (chosen.length === limit && chosen.every(h => h.tone === 'bad')) {
+    if (Number.isFinite(limit) && chosen.length === limit && chosen.every(h => h.tone === 'bad')) {
         const bestGood = ranked.find(h => h.tone === 'good');
         if (bestGood) chosen = [...chosen.slice(0, limit - 1), bestGood];
     }
@@ -377,12 +385,21 @@ function reviewGame({ rounds, actionsByRound, seatForRound, limit = DEFAULT_LIMI
     };
 }
 
+/** Orders highlights the way a review presents them: tier, then what it cost. */
+function byImportance(a, b) {
+    const byTier = HIGHLIGHT_KINDS[b.kind].tier - HIGHLIGHT_KINDS[a.kind].tier;
+    if (byTier !== 0) return byTier;
+    return (b.absoluteLoss ?? 0) - (a.absoluteLoss ?? 0);
+}
+
 module.exports = {
     reviewGame,
     reviewRound,
     classify,
     playOutcome,
+    byImportance,
     HIGHLIGHT_KINDS,
+    TOPICS,
     MATERIAL_LOSS,
     DEFAULT_LIMIT
 };

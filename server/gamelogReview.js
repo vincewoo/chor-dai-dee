@@ -15,7 +15,15 @@
 
 const gamelog = require('./gamelog');
 const { seatsFor, occupantAtRound } = require('./scripts/gamelogQuery');
-const { reviewGame } = require('./game/MoveReview');
+const { reviewGame, byImportance, TOPICS } = require('./game/MoveReview');
+
+// How many recent games an examples lookup will replay.
+//
+// Each game costs ~30ms of replay and grading, so this is the knob that decides
+// whether "show me examples" is instant or a spinner. Eight is enough to find
+// worked examples of anything a player does regularly, and the per-game reviews
+// are cached, so the second topic a player opens is nearly free.
+const EXAMPLE_GAME_LIMIT = 8;
 
 // Reviews are small (a handful of highlights) and expensive relative to their
 // size (~35-70ms of replay and grading). Immutable once the game ends, so the
@@ -139,11 +147,14 @@ async function reviewForUser(gameId, userId, { limit } = {}) {
         (actionsByRound[action.round_number] ||= []).push(action);
     }
 
+    // Cached unabridged, then sliced on the way out. The examples lookup ranks
+    // highlights across games, so it needs the whole set - caching a truncated
+    // one would make the cache depend on the limit it was first asked for.
     const { highlights, summary } = reviewGame({
-        rounds, actionsByRound, seatForRound, limit
+        rounds, actionsByRound, seatForRound, limit: Infinity
     });
 
-    return remember(key, {
+    const full = remember(key, {
         gameId,
         gameMode: game.game_mode,
         totalRounds: game.total_rounds,
@@ -151,6 +162,92 @@ async function reviewForUser(gameId, userId, { limit } = {}) {
         highlights,
         summary
     });
+
+    return capped(full, limit);
+}
+
+/** A review with its highlight list trimmed, leaving the cached copy whole. */
+function capped(review, limit) {
+    if (!Number.isFinite(limit) || review.highlights.length <= limit) return review;
+
+    let chosen = review.highlights.slice(0, limit);
+    // Same reservation reviewGame makes: keep one slot for something that went
+    // right rather than handing back a page of nothing but mistakes.
+    if (chosen.every(h => h.tone === 'bad')) {
+        const bestGood = review.highlights.find(h => h.tone === 'good');
+        if (bestGood) chosen = [...chosen.slice(0, limit - 1), bestGood];
+    }
+    return { ...review, highlights: chosen };
+}
+
+/**
+ * Worked examples of one kind of decision, drawn from a player's recent games.
+ *
+ * The single-game review answers "how did that game go". This answers "show me
+ * what this number is talking about", which is the question a statistic
+ * provokes and could not previously answer.
+ *
+ * @param {number} userId
+ * @param {object} options { topic, mode, limit }
+ */
+async function examplesForUser(userId, { topic = 'mistakes', mode = null, limit = 8 } = {}) {
+    if (!gamelog.enabled) {
+        throw new ReviewUnavailable(
+            503, 'logging_disabled',
+            'Game logging is off, so there is no tape to review.'
+        );
+    }
+
+    const kinds = TOPICS[topic];
+    if (!kinds) {
+        throw new ReviewUnavailable(400, 'unknown_topic', `Unknown topic "${topic}".`);
+    }
+
+    const { all } = await gamelog.openForRead();
+
+    // Most recent finished games this account sat in. DISTINCT because a player
+    // who reconnected holds more than one seat segment in the same game.
+    const params = [userId];
+    let modeClause = '';
+    if (mode) {
+        modeClause = 'AND g.game_mode = ?';
+        params.push(mode);
+    }
+    params.push(EXAMPLE_GAME_LIMIT);
+
+    const games = await all(
+        `SELECT DISTINCT g.game_id, g.started_at
+           FROM mlog_game g
+           JOIN mlog_seat s ON s.game_key = g.game_key
+          WHERE s.user_id = ? AND g.ended_at IS NOT NULL ${modeClause}
+          ORDER BY g.started_at DESC
+          LIMIT ?`,
+        params
+    );
+
+    const found = [];
+    for (const game of games) {
+        try {
+            const review = await reviewForUser(game.game_id, userId, { limit: Infinity });
+            for (const h of review.highlights) {
+                if (kinds.includes(h.kind)) {
+                    // Carried so a training card can say which game it came
+                    // from and link back to that game's full review.
+                    found.push({ ...h, gameId: game.game_id, playedAt: game.started_at });
+                }
+            }
+        } catch (err) {
+            // One unreadable game must not empty the whole list.
+            if (!(err instanceof ReviewUnavailable)) throw err;
+        }
+    }
+
+    return {
+        topic,
+        examples: found.sort(byImportance).slice(0, limit),
+        gamesSearched: games.length,
+        totalFound: found.length
+    };
 }
 
 /** Drops any cached review for a game. For tests and for a re-recorded game. */
@@ -160,4 +257,7 @@ function forget(gameId) {
     }
 }
 
-module.exports = { reviewForUser, forget, ReviewUnavailable, seatResolver };
+module.exports = {
+    reviewForUser, examplesForUser, forget, ReviewUnavailable, seatResolver,
+    EXAMPLE_GAME_LIMIT
+};

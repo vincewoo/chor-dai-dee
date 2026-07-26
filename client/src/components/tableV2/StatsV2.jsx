@@ -95,7 +95,7 @@ function Bar({ label, labelWidth = 40, percentage, color, right, rm }) {
 }
 
 // Score meter used for the 0-100% behavioural / quality scores.
-function Meter({ label, value, color, note, rm }) {
+function Meter({ label, value, color, note, rm, onExamples }) {
     const p = Math.max(0, Math.min(100, parseFloat(value) || 0));
     return (
         <div>
@@ -107,7 +107,27 @@ function Meter({ label, value, color, note, rm }) {
                 <div style={{ width: `${p}%`, height: '100%', borderRadius: 5, background: `linear-gradient(90deg,${color}aa,${color})`, transition: rm ? undefined : 'width .5s ease' }} />
             </div>
             {note && <div style={{ color: FAINT, fontSize: 10, fontWeight: 600, marginTop: 4 }}>{note}</div>}
+            {/* Its own line rather than beside the note: a two-line note wrapping
+                around a right-aligned link leaves an orphaned last word.
+                A rate on its own is not actionable — this is the way from the
+                number to the moves it is made of. */}
+            {onExamples && (
+                <div className="flex justify-end" style={{ marginTop: 3 }}>
+                    <ExamplesLink onClick={onExamples} />
+                </div>
+            )}
         </div>
+    );
+}
+
+// Deliberately quiet: the stat is the content, this is the way out of it.
+function ExamplesLink({ onClick, label = 'See examples' }) {
+    const { acc } = useTableTheme();
+    return (
+        <button
+            onClick={onClick}
+            style={{ color: acc, fontFamily: "'Outfit',sans-serif", fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
+        >{label} →</button>
     );
 }
 
@@ -206,6 +226,7 @@ function StatsV2({
     onViewMyStats,
     onOpponentClick,
     onCreateAccount,
+    onExamples,
 }) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const [tab, setTab] = useState('overview');
@@ -396,6 +417,7 @@ function StatsV2({
                             acc={acc}
                             rm={rm}
                             onArchetypeClick={setArchetypeSheet}
+                            onExamples={isSelf ? onExamples : null}
                         />
                     )}
                 </>
@@ -851,7 +873,7 @@ function DealStrengthSection({ data, acc, rm }) {
     );
 }
 
-function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
+function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick, onExamples }) {
     const awareness = tier3?.cardAwareness;
     const variance = tier3?.variance;
     const behavioral = tier3?.behavioral;
@@ -903,6 +925,11 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                             <Tile label="Best move" value={num(optimal)} color={GOOD} sub="top-ranked pick" />
                             <Tile label="Forced" value={num(forcedDecisions)} sub="no alternative" />
                         </div>
+                        {onExamples && (
+                            <div className="mt-2 flex justify-end">
+                                <ExamplesLink onClick={() => onExamples('best')} label="Your best calls" />
+                            </div>
+                        )}
                         <div className="mt-3 flex flex-col gap-3">
                             {accuracyKnown && (
                                 <Meter
@@ -913,12 +940,12 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                                     rm={rm}
                                 />
                             )}
-                            <Meter label="Best-move rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} note="Share of choices where you picked the top-ranked move." rm={rm} />
+                            <Meter label="Best-move rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} note="Share of choices where you picked the top-ranked move." rm={rm} onExamples={onExamples && (() => onExamples('mistakes'))} />
                             {lateAccuracyKnown && (
                                 <Meter label="Late game best-move rate" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Same measure, restricted to decisions after 60% of the deck is gone." rm={rm} />
                             )}
                             {riskyTotal > 0 && (
-                                <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} play${riskyTotal === 1 ? '' : 's'} that risked a valuable card on holding the trick.`} rm={rm} />
+                                <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} play${riskyTotal === 1 ? '' : 's'} that risked a valuable card on holding the trick.`} rm={rm} onExamples={onExamples && (() => onExamples('gambles'))} />
                             )}
                         </div>
                     </>

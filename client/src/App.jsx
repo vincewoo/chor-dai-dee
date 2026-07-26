@@ -15,6 +15,8 @@ import { useOwnAvatarSync } from './hooks/useAvatars';
 const Stats = lazy(() => import('./components/Stats'));
 const Leaderboard = lazy(() => import('./components/Leaderboard'));
 const ActivityFeed = lazy(() => import('./components/ActivityFeed'));
+const GameReview = lazy(() => import('./components/GameReview'));
+const Training = lazy(() => import('./components/Training'));
 const AvatarPickerV2 = lazy(() =>
   import('./components/tableV2').then(m => ({ default: m.AvatarPickerV2 }))
 );
@@ -103,6 +105,8 @@ function App() {
                   <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
                   <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} user={user} /> : <Navigate to="/" />} />
                   <Route path="/avatar" element={user ? <AvatarPickerV2 user={user} /> : <Navigate to="/" />} />
+                  <Route path="/review/:gameId" element={user ? <GameReview user={user} /> : <Navigate to="/" />} />
+                  <Route path="/training" element={user ? <Training user={user} /> : <Navigate to="/" />} />
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>
             </Suspense>

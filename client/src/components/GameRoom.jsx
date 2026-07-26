@@ -1023,6 +1023,17 @@ const GameRoom = ({ user, socket }) => {
                 return (
                     <GameOverV2 gameOver={gameOver} myName={user?.username}>
                         {gameOverActions}
+                        {/* Guests have no account to attribute decisions to, so
+                            there is nothing to review. */}
+                        {gameOver?.gameId && !user?.isGuest && (
+                            <button
+                                onClick={() => navigate(`/review/${gameOver.gameId}`)}
+                                className="px-6 py-2 rounded-lg font-bold text-sm transition transform hover:scale-105"
+                                style={{ background: 'rgba(0,0,0,.38)', border: '1px solid rgba(255,255,255,.2)', color: 'rgba(244,245,247,.9)' }}
+                            >
+                                🔍 Review my moves
+                            </button>
+                        )}
                     </GameOverV2>
                 );
             })()}

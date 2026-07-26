@@ -167,7 +167,14 @@ const Lobby = ({ user, socket, setUser }) => {
             })),
             roundNumber: game.total_rounds || 0,
             gameMode: game.game_mode || 'standard',
-            isDragonWin: false // We could detect this from events if needed
+            isDragonWin: false, // We could detect this from events if needed
+            // Carried so the dialog can offer a review, but only for a game
+            // this player actually sat in - reviews show every hand at the
+            // table and are scoped to your own games.
+            gameId: game.game_id,
+            canReview: !user?.isGuest && game.participants.some(
+                p => !p.isBot && p.username === user?.username
+            )
         };
         setSelectedGame(gameDialogData);
     };
@@ -381,6 +388,9 @@ const Lobby = ({ user, socket, setUser }) => {
                 onClose={() => setSelectedGame(null)}
                 gameData={selectedGame}
                 showActions={false}
+                onReview={selectedGame?.canReview && selectedGame?.gameId
+                    ? () => navigate(`/review/${selectedGame.gameId}`)
+                    : null}
             />
         </>
     );

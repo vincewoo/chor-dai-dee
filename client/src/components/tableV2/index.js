@@ -8,4 +8,7 @@ export { default as AvatarPickerV2 } from './AvatarPickerV2';
 export { default as LeaderboardV2 } from './LeaderboardV2';
 export { default as ActivityFeedV2 } from './ActivityFeedV2';
 export { default as StatsV2 } from './StatsV2';
+export { default as GameReviewV2 } from './GameReviewV2';
+export { default as ReviewMoment } from './ReviewMoment';
+export { default as TrainingV2 } from './TrainingV2';
 export { default as SuitWatermark } from './SuitWatermark';
