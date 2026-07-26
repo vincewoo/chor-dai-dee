@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTableTheme } from '../../theme/tableTheme';
 import { PICKER_ANIMALS, TILE_GRADS, NAME_POOLS, getAvatarChoice, saveAvatarChoice, persistAvatarChoice } from '../../utils/avatars';
+import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile avatar picker. Mirrors the "Avatar Picker v2" mockup. The choice is
@@ -39,8 +40,8 @@ function AvatarPickerV2({ user }) {
         >
             <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
             <div className="absolute pointer-events-none" style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }} />
-            <div className="absolute pointer-events-none select-none" style={{ top: 250, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
-            <div className="absolute pointer-events-none select-none" style={{ top: 560, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♣</div>
+            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: 250, left: -46 }} />
+            <SuitWatermark suit="C" size={165} rotate={12} opacity={0.03} style={{ top: 560, right: -52 }} />
 
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-92 pt-safe-18 md:max-w-[720px] md:px-8">
                 {/* HUD */}
