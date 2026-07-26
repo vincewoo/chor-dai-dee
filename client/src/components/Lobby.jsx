@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import logoImage from '../assets/chor-dai-dee-logo.webp';
 import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
 import { useVoice } from '../contexts/VoiceContext';
 import { GAME_MODES } from '../constants/gameModes';
 import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
-import { useIsDesktop } from '../hooks/useMediaQuery';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -24,7 +22,6 @@ const Lobby = ({ user, socket, setUser }) => {
     // across re-renders (avoids calling Date.now() during render).
     const [nowTs] = useState(() => Date.now());
     const [selectedGame, setSelectedGame] = useState(null);
-    const isDesktop = useIsDesktop();
     const navigate = useNavigate();
     const location = useLocation();
     const voiceContext = useVoice();
@@ -320,474 +317,72 @@ const Lobby = ({ user, socket, setUser }) => {
         const isHost = user.username === roomLobbyData.hostUsername;
         const players = roomLobbyData.players || [];
 
-        // v2 mobile room lobby (narrow viewports). Desktop keeps the layout below.
-        if (!isDesktop) {
-            return (
-                <WaitingRoomV2
-                    roomId={roomLobbyData.roomId}
-                    players={players}
-                    myPlayerId={players.find(p => p.name === user.username)?.id}
-                    isHost={isHost}
-                    hostUsername={roomLobbyData.hostUsername}
-                    gameMode={selectedGameMode}
-                    fourColorMode={fourColorMode}
-                    onSetGameMode={handleGameModeChange}
-                    onToggleFourColor={toggleFourColorMode}
-                    onStartGame={handleStartGameFromLobby}
-                    onLeave={handleLeaveRoomLobby}
-                    onShareInvite={() => {
-                        try { navigator.clipboard?.writeText(window.location.href); } catch { /* ignore */ }
-                    }}
-                />
-            );
-        }
-
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white p-6 sm:p-4">
-                <img src={logoImage} alt="Chor Dai Dee Logo" className="w-48 sm:w-40 mb-6" />
-                <div className="bg-white text-gray-800 p-8 sm:p-6 rounded-xl shadow-2xl w-full sm:max-w-lg text-center">
-                    <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
-                        {connected ? '● Connected' : '● Disconnected'}
-                    </div>
-
-                    <h2 className="text-2xl font-bold mb-2">Room Lobby</h2>
-                    <div className="text-3xl font-mono font-bold text-green-600 mb-4 tracking-widest">
-                        {roomLobbyData.roomId}
-                    </div>
-
-                    {/* Players List */}
-                    <div className="mb-6">
-                        <h3 className="text-lg font-semibold mb-3">Players ({players.length}/4)</h3>
-                        <div className="flex flex-wrap justify-center gap-2">
-                            {players.map(p => (
-                                <div
-                                    key={p.id || p.name}
-                                    className={`px-4 py-2 rounded-lg ${
-                                        p.name === roomLobbyData.hostUsername
-                                            ? 'bg-yellow-100 border-2 border-yellow-400'
-                                            : 'bg-gray-100'
-                                    }`}
-                                >
-                                    {p.name === roomLobbyData.hostUsername && '👑 '}
-                                    {p.name}
-                                    {p.name === user.username && ' (You)'}
-                                </div>
-                            ))}
-                            {Array.from({ length: 4 - players.length }).map((_, i) => (
-                                <div key={`empty-${i}`} className="px-4 py-2 rounded-lg bg-gray-50 text-gray-400 border-2 border-dashed border-gray-300">
-                                    Empty
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Game Mode Selector - Host only */}
-                    {isHost && (
-                        <div className="mb-6">
-                            <h3 className="text-sm font-semibold mb-2 text-gray-600">Game Mode</h3>
-                            <div className="flex gap-2 justify-center">
-                                {Object.values(GAME_MODES).map(mode => (
-                                    <button
-                                        key={mode.id}
-                                        onClick={() => handleGameModeChange(mode.id)}
-                                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                                            selectedGameMode === mode.id
-                                                ? 'bg-green-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }`}
-                                    >
-                                        {mode.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Voice Chat Toggle */}
-                    <div className="mb-6">
-                        <button
-                            onClick={handleVoiceToggle}
-                            className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 mx-auto ${
-                                voiceContext.voiceEnabled
-                                    ? voiceContext.isVoiceConnected
-                                        ? 'bg-green-600 text-white'
-                                        : 'bg-yellow-500 text-white'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                            }`}
-                        >
-                            <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d={voiceContext.voiceEnabled
-                                        ? "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                                        : "M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                                    }
-                                />
-                            </svg>
-                            {voiceContext.voiceEnabled
-                                ? voiceContext.isVoiceConnected ? 'Voice On' : 'Connecting...'
-                                : 'Join Voice'
-                            }
-                        </button>
-                        {voiceContext.voiceEnabled && voiceContext.isVoiceConnected && (
-                            <div className="flex gap-2 justify-center mt-2">
-                                <button
-                                    onClick={voiceContext.toggleMute}
-                                    className={`p-2 rounded-lg transition ${
-                                        voiceContext.isMuted ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700'
-                                    }`}
-                                    title={voiceContext.isMuted ? 'Unmute' : 'Mute'}
-                                    aria-label={voiceContext.isMuted ? 'Unmute' : 'Mute'}
-                                >
-                                    <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        {voiceContext.isMuted ? (
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2 2m0-2l-2 2" />
-                                        ) : (
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                        )}
-                                    </svg>
-                                </button>
-                                <button
-                                    onClick={voiceContext.toggleDeafen}
-                                    className={`p-2 rounded-lg transition ${
-                                        voiceContext.isDeafened ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700'
-                                    }`}
-                                    title={voiceContext.isDeafened ? 'Undeafen' : 'Deafen'}
-                                    aria-label={voiceContext.isDeafened ? 'Undeafen' : 'Deafen'}
-                                >
-                                    <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        {voiceContext.isDeafened ? (
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                                        ) : (
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                                        )}
-                                    </svg>
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-3 justify-center">
-                        {isHost ? (
-                            <button
-                                onClick={handleStartGameFromLobby}
-                                className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition"
-                            >
-                                Start Game
-                            </button>
-                        ) : (
-                            <div className="text-gray-500 py-3">
-                                Waiting for host to start...
-                            </div>
-                        )}
-                        <button
-                            onClick={handleLeaveRoomLobby}
-                            className="bg-red-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-600 transition"
-                        >
-                            Leave Room
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <WaitingRoomV2
+                roomId={roomLobbyData.roomId}
+                players={players}
+                myPlayerId={players.find(p => p.name === user.username)?.id}
+                isHost={isHost}
+                hostUsername={roomLobbyData.hostUsername}
+                gameMode={selectedGameMode}
+                fourColorMode={fourColorMode}
+                onSetGameMode={handleGameModeChange}
+                onToggleFourColor={toggleFourColorMode}
+                onStartGame={handleStartGameFromLobby}
+                onLeave={handleLeaveRoomLobby}
+                voice={{
+                    enabled: !!voiceContext?.voiceEnabled,
+                    connected: !!voiceContext?.isVoiceConnected,
+                    isMuted: !!voiceContext?.isMuted,
+                    isDeafened: !!voiceContext?.isDeafened,
+                    userCount: 0,
+                    onJoin: handleVoiceToggle,
+                    onToggleMute: () => voiceContext?.toggleMute(),
+                    onToggleDeafen: () => voiceContext?.toggleDeafen(),
+                }}
+                onShareInvite={() => {
+                    try { navigator.clipboard?.writeText(window.location.href); } catch { /* ignore */ }
+                }}
+            />
         );
     }
 
-    // v2 mobile home screen (narrow viewports). Desktop keeps the layout below.
-    if (!isDesktop) {
-        return (
-            <>
-                <HomeScreenV2
-                    username={user.username}
-                    isGuest={user.isGuest}
-                    connected={connected}
-                    reconnecting={reconnecting}
-                    isJoining={isJoining}
-                    code={roomId}
-                    onCodeChange={setRoomId}
-                    onCreateRoom={createRoom}
-                    onJoinRoom={joinRoom}
-                    activeGames={joinableRooms}
-                    onJoinActiveGame={joinInProgressRoom}
-                    onHowToPlay={() => setShowHowToPlay(true)}
-                    onLeaderboard={() => navigate('/leaderboard')}
-                    onActivity={() => navigate('/activity')}
-                    onStats={() => navigate('/stats')}
-                    onEditAvatar={() => navigate('/avatar')}
-                    onLogout={handleLogout}
-                    error={error}
-                    spectateOffer={spectateOffer}
-                    onWatchRoom={watchRoom}
-                />
-                <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
-            </>
-        );
-    }
-
-    // Main Lobby View
+    // The home screen at every width; HomeScreenV2 handles the desktop split.
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-green-800 text-white p-6 sm:p-4">
-            <img src={logoImage} alt="Chor Dai Dee Logo" className="w-64 sm:w-60 mb-8" />
-            <div className="bg-white text-gray-800 p-8 sm:p-8 rounded-xl shadow-2xl w-full sm:max-w-md text-center">
-                <div className={`text-xs mb-2 ${connected ? 'text-green-600' : 'text-red-600'}`}>
-                    {reconnecting ? '● Checking for existing game...' : connected ? '● Connected' : '● Disconnected - Is the server running?'}
-                </div>
-                <div className="flex items-center justify-center gap-2 mb-2">
-                    <h2 className="text-2xl font-bold">Welcome, {user.username}!</h2>
-                    {user.isGuest && (
-                        <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded">
-                            Guest
-                        </span>
-                    )}
-                </div>
-                {user.isGuest && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                        <p className="text-sm text-blue-900 mb-2">
-                            Playing as a guest? Your stats won't be saved.
-                        </p>
-                        <button
-                            onClick={() => navigate('/')}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold underline"
-                        >
-                            Create Account to Save Progress
-                        </button>
-                    </div>
-                )}
-                <div className="flex justify-center gap-4 mb-4 flex-wrap">
-                    <button
-                        onClick={() => setShowHowToPlay(true)}
-                        className="text-sm text-green-600 hover:text-green-800 underline font-medium"
-                    >
-                        How to Play
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button
-                        onClick={() => navigate('/stats')}
-                        className="text-sm text-blue-600 hover:text-blue-800 underline font-medium"
-                    >
-                        View Stats
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button
-                        onClick={() => navigate('/leaderboard')}
-                        className="text-sm text-purple-600 hover:text-purple-800 underline font-medium"
-                    >
-                        Leaderboard
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button
-                        onClick={() => navigate('/activity')}
-                        className="text-sm text-green-600 hover:text-green-800 underline font-medium"
-                    >
-                        Activity Feed
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 underline">
-                        Logout
-                    </button>
-                </div>
-
-                <div className="space-y-4">
-                    <button
-                        onClick={createRoom}
-                        disabled={isJoining}
-                        className={`w-full bg-yellow-500 text-white py-3 rounded-lg font-bold hover:bg-yellow-600 transition shadow-md flex justify-center items-center ${isJoining ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                        {isJoining ? (
-                            <>
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Connecting...
-                            </>
-                        ) : (
-                            'Create New Room'
-                        )}
-                    </button>
-
-                    <div className="relative flex py-2 items-center">
-                        <div className="flex-grow border-t border-gray-300"></div>
-                        <span className="flex-shrink mx-4 text-gray-400">OR</span>
-                        <div className="flex-grow border-t border-gray-300"></div>
-                    </div>
-
-                    <div className="flex space-x-2 items-end">
-                        <div className="flex-1 text-left">
-                            <label htmlFor="room-code" className="block text-sm font-medium text-gray-700 mb-1">
-                                Join Existing Room
-                            </label>
-                            <input
-                                id="room-code"
-                                type="text"
-                                placeholder="Enter Room Code"
-                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
-                                value={roomId}
-                                onChange={e => setRoomId(e.target.value)}
-                            />
-                        </div>
-                        <button
-                            onClick={joinRoom}
-                            disabled={isJoining}
-                            className={`bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition h-[42px] flex items-center justify-center min-w-[80px] ${isJoining ? 'opacity-75 cursor-not-allowed' : ''}`}
-                        >
-                            {isJoining ? (
-                                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            ) : (
-                                'Join'
-                            )}
-                        </button>
-                    </div>
-
-                    {joinableRooms.length > 0 && (
-                        <>
-                            <div className="relative flex py-2 items-center">
-                                <div className="flex-grow border-t border-gray-300"></div>
-                                <span className="flex-shrink mx-4 text-gray-400 text-sm">Join In-Progress Game</span>
-                                <div className="flex-grow border-t border-gray-300"></div>
-                            </div>
-
-                            <div className="max-h-48 overflow-y-auto space-y-2">
-                                {joinableRooms.map(room => (
-                                    <div
-                                        key={room.roomId}
-                                        className={`w-full border border-gray-300 rounded p-3 transition ${isJoining ? 'opacity-75' : ''}`}
-                                    >
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className="font-bold text-green-600">{room.roomId}</span>
-                                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                                {room.gameMode === 'short' ? 'Short' : 'Standard'}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-gray-600">
-                                            Round {room.roundNumber} • {room.botCount} bot{room.botCount !== 1 ? 's' : ''} available
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            {room.players.filter(p => !p.isBot).map(p => p.name).join(', ')}
-                                        </div>
-                                        <div className="flex gap-2 mt-2">
-                                            <button
-                                                disabled={isJoining}
-                                                onClick={() => joinInProgressRoom(room.roomId)}
-                                                className={`flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-3 py-1.5 rounded ${isJoining ? 'cursor-not-allowed' : ''}`}
-                                            >
-                                                Join
-                                            </button>
-                                            <button
-                                                disabled={isJoining}
-                                                onClick={() => watchRoom(room.roomId)}
-                                                title="Watch this game without playing"
-                                                className={`bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-bold px-3 py-1.5 rounded ${isJoining ? 'cursor-not-allowed' : ''}`}
-                                            >
-                                                👁 Watch
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-                {error && <div className="mt-4 text-red-600 text-sm">{error}</div>}
-                {spectateOffer && (
-                    <div className="mt-3 flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-                        <span className="text-sm text-blue-900">
-                            Room <span className="font-bold">{spectateOffer}</span> is full — you can watch instead.
-                        </span>
-                        <button
-                            onClick={() => watchRoom(spectateOffer)}
-                            className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg"
-                        >
-                            👁 Watch
-                        </button>
-                    </div>
-                )}
-
-                {/* Recent Games Activity Snippet */}
-                {recentGames.length > 0 && (
-                    <div className="mt-6 pt-6 border-t border-gray-300">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-sm font-bold text-gray-600">🔥 Recent Activity</h3>
-                            <button
-                                onClick={() => navigate('/activity')}
-                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                            >
-                                View All →
-                            </button>
-                        </div>
-                        <div className="space-y-2">
-                            {recentGames.slice(0, 3).map((game) => {
-                                const timeDiff = nowTs - new Date(game.end_time);
-                                const minutesAgo = Math.floor(timeDiff / 60000);
-                                const hoursAgo = Math.floor(timeDiff / 3600000);
-                                const timeStr = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minutesAgo}m ago`;
-
-                                return (
-                                    <button
-                                        key={game.game_id}
-                                        className="w-full text-left bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition cursor-pointer"
-                                        onClick={() => handleGameClick(game)}
-                                    >
-                                        <div className="flex items-start justify-between mb-1">
-                                            <div className="flex items-center gap-1">
-                                                <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                                                    game.game_mode === 'short'
-                                                        ? 'bg-blue-100 text-blue-700'
-                                                        : 'bg-purple-100 text-purple-700'
-                                                }`}>
-                                                    {game.game_mode === 'short' ? '⚡ Short' : '🏆 Standard'}
-                                                </span>
-                                                <span className="text-xs text-gray-400">ended {timeStr}</span>
-                                            </div>
-                                            <span className="text-xs text-gray-500">{game.total_rounds} rounds</span>
-                                        </div>
-                                        <div className="text-sm">
-                                            <div className="flex flex-wrap items-center">
-                                                {game.participants?.sort((a, b) => a.placement - b.placement).map((p, idx) => (
-                                                    <React.Fragment key={idx}>
-                                                        {idx > 0 && <span className="text-gray-400 mr-1">, </span>}
-                                                        <span className="inline-flex items-center">
-                                                            {p.placement === 1 && <span className="mr-1">👑</span>}
-                                                            <span className={
-                                                                p.placement === 1 && !p.isBot
-                                                                    ? "font-semibold text-green-700"
-                                                                    : p.isBot
-                                                                    ? "text-gray-400 italic"
-                                                                    : "text-gray-700"
-                                                            }>
-                                                                {p.username}
-                                                            </span>
-                                                        </span>
-                                                    </React.Fragment>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-            </div>
-
+        <>
+            <HomeScreenV2
+                username={user.username}
+                isGuest={user.isGuest}
+                connected={connected}
+                reconnecting={reconnecting}
+                isJoining={isJoining}
+                code={roomId}
+                onCodeChange={setRoomId}
+                onCreateRoom={createRoom}
+                onJoinRoom={joinRoom}
+                activeGames={joinableRooms}
+                onJoinActiveGame={joinInProgressRoom}
+                recentGames={recentGames}
+                onGameClick={handleGameClick}
+                nowTs={nowTs}
+                onHowToPlay={() => setShowHowToPlay(true)}
+                onLeaderboard={() => navigate('/leaderboard')}
+                onActivity={() => navigate('/activity')}
+                onStats={() => navigate('/stats')}
+                onEditAvatar={() => navigate('/avatar')}
+                onLogout={handleLogout}
+                error={error}
+                spectateOffer={spectateOffer}
+                onWatchRoom={watchRoom}
+            />
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
-
             <ScoreDialog
                 isOpen={!!selectedGame}
                 onClose={() => setSelectedGame(null)}
                 gameData={selectedGame}
                 showActions={false}
             />
-        </div>
+        </>
     );
 };
 
