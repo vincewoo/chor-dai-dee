@@ -1170,58 +1170,36 @@ io.on('connection', (socket) => {
                                         // updateBehavioralStats. Feeding in lifetime
                                         // totals, as this used to, averaged an
                                         // average and could never move.
-                                        const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
-                                            gameSummary.plays || 0,
-                                            gameSummary.passes || 0,
-                                            gameSummary.leads_won || 0
-                                        );
-
-                                        // Risky plays and the decisions they are a
-                                        // fraction of have to come from the same
-                                        // population, so both are read back off the
-                                        // row just updated.
-                                        const lifetimeAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
-                                        const riskScore = DecisionAnalyzer.calculateRiskScore(
-                                            lifetimeAwareness?.risky_plays_successful || 0,
-                                            lifetimeAwareness?.risky_plays_failed || 0,
-                                            lifetimeAwareness?.total_decisions || 0
-                                        );
-
-                                        // Get placement history for adaptability calculation
-                                        const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
-                                        const adaptabilityScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
-
-                                        // Calculate early/late game phase-specific behaviors.
                                         //
-                                        // Phase is a property of the round, read from
-                                        // the deck remaining when each decision was
-                                        // taken. Slicing the game's decision list by
-                                        // index instead - as this used to - made
-                                        // "early game" mean the first rounds of the
-                                        // match rather than the opening of each round.
-                                        const earlyDecisions = tier3Data.decisions.filter(
-                                            d => DecisionAnalyzer.isEarlyGameDecision(d)
-                                        );
-                                        const lateDecisions = tier3Data.decisions.filter(
-                                            d => DecisionAnalyzer.isLateGameDecision(d)
+                                        // Both axes come from the same decision
+                                        // summary, over the population each is a
+                                        // rate of: engagement over early-round
+                                        // decisions that offered a choice, commitment
+                                        // over plays.
+                                        const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
+                                            decisionSummary.earlyChoicePlays,
+                                            decisionSummary.earlyChoices
                                         );
 
-                                        // Calculate early game aggression (play rate in early game)
-                                        const earlyPlays = earlyDecisions.filter(d => d.action === 'play').length;
-                                        const earlyGameAggression = earlyDecisions.length > 0 ? earlyPlays / earlyDecisions.length : 0.5;
+                                        const riskScore = DecisionAnalyzer.calculateRiskScore(
+                                            decisionSummary.riskySucceeded,
+                                            decisionSummary.riskyFailed,
+                                            decisionSummary.choicePlays
+                                        );
 
-                                        // Calculate late game risk (risky play rate in late game)
-                                        const lateRiskyPlays = lateDecisions.filter(d => d.isRisky).length;
-                                        const lateGameRisk = lateDecisions.length > 0 ? lateRiskyPlays / lateDecisions.length : 0.5;
+                                        // Form: is recent placement better than
+                                        // earlier placement? A trend in results, not
+                                        // a play style, so it does not feed the
+                                        // archetype.
+                                        const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
+                                        const formScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
 
                                         await updateBehavioralStats(
                                             user.id,
                                             room.gameMode,
                                             aggressionScore,
                                             riskScore,
-                                            adaptabilityScore,
-                                            earlyGameAggression,
-                                            lateGameRisk
+                                            formScore
                                         );
                                     }
                                 } catch (e) {

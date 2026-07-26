@@ -166,3 +166,42 @@ test('danger response counts only turns that offered a choice', () => {
     assert.strictEqual(summary.dangerDecisions, 2);
     assert.strictEqual(summary.dangerContested, 1);
 });
+
+test('aggression measures early engagement, not the whole round', () => {
+    // Played 6 of 8 early decisions that offered a choice.
+    assert.strictEqual(DecisionAnalyzer.calculateAggressionScore(6, 8), 0.75);
+    // No early choices recorded: neutral, never NaN.
+    assert.strictEqual(DecisionAnalyzer.calculateAggressionScore(0, 0), 0.5);
+    // Passing without ever playing used to divide by zero and poison the
+    // stored EWMA with NaN forever.
+    assert.ok(Number.isFinite(DecisionAnalyzer.calculateAggressionScore(0, 5)));
+    assert.strictEqual(DecisionAnalyzer.calculateAggressionScore(0, 5), 0);
+});
+
+test('risk score rises monotonically with how much is gambled', () => {
+    const never = DecisionAnalyzer.calculateRiskScore(0, 0, 50);
+    const rareWon = DecisionAnalyzer.calculateRiskScore(2, 0, 50);
+    const rareLost = DecisionAnalyzer.calculateRiskScore(0, 2, 50);
+    const frequent = DecisionAnalyzer.calculateRiskScore(10, 10, 50);
+
+    assert.strictEqual(never, 0, 'never gambling is zero risk, not 0.2');
+    assert.strictEqual(rareWon, rareLost, 'outcome must not change the risk taken');
+    assert.ok(frequent > rareWon, 'more gambles means more risk');
+    // The old formula had the reckless loser BELOW the cautious winner.
+    assert.ok(DecisionAnalyzer.calculateRiskScore(0, 20, 50) > rareWon);
+});
+
+test('summarizeDecisions splits play rate by round phase', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        decision({ action: 'play', cardsInDeck: 50 }),
+        decision({ action: 'pass', cardsInDeck: 48 }),
+        decision({ action: 'play', cardsInDeck: 8 }),
+        decision({ action: 'play', cardsInDeck: 6 })
+    ]);
+
+    assert.strictEqual(summary.choicePlays, 3);
+    assert.strictEqual(summary.earlyChoices, 2);
+    assert.strictEqual(summary.earlyChoicePlays, 1);
+    assert.strictEqual(summary.lateChoices, 2);
+    assert.strictEqual(summary.lateChoicePlays, 2);
+});

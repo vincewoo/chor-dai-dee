@@ -1,6 +1,29 @@
 // server/game/DecisionAnalyzer.js
 const { Big2Rules } = require('./Big2Rules');
 
+// Reference points for the behavioural axes, measured rather than chosen.
+//
+// 160 seat-samples over 40 four-handed games, every decision graded by
+// MoveQuality with the bots playing their own policy. Medians and the
+// inter-quartile spread of that sample:
+//
+//   early-round play rate   p25 0.719  median 0.765  p75 0.826
+//   gambles per play        p25 0.165  median 0.200  p75 0.237
+//
+// The bands are wider than that IQR because the reference is four copies of
+// one policy and real players spread further; a band at the bot IQR would flip
+// a human between labels on noise. Regenerate with the baseline script in the
+// PR description if the cost model changes.
+//
+// The previous thresholds (aggression > 0.7 AND risk > 0.6 for Aggressive)
+// were unreachable: sweeping the space the scores can occupy put 90% of a
+// realistic band in Balanced and 0% in Aggressive.
+const BEHAVIOR_BASELINE_VERSION = 1;
+const AGGRESSION_REFERENCE = 0.765;
+const AGGRESSION_BAND = 0.08;
+const RISK_REFERENCE = 0.200;
+const RISK_BAND = 0.06;
+
 /**
  * DecisionAnalyzer - Evaluates hand strength, decision quality, and play optimality
  * Used for Tier 3 advanced analytics
@@ -214,6 +237,14 @@ class DecisionAnalyzer {
             totalLoss: 0,
             plays: 0,
             passes: 0,
+            // Plays chosen over an available alternative, and the same split by
+            // round phase. These are the aggression axis: forced moves are
+            // excluded, so bad cards no longer read as a passive style.
+            choicePlays: 0,
+            earlyChoices: 0,
+            earlyChoicePlays: 0,
+            lateChoices: 0,
+            lateChoicePlays: 0,
             // A pass with nothing that beats the pile says the cards were
             // unplayable; a pass with a legal answer in hand is a choice. Split
             // apart, a high pass rate stops reading as passivity by default.
@@ -257,12 +288,25 @@ class DecisionAnalyzer {
             summary.total++;
             summary.totalLoss += d.lossFraction || 0;
 
+            // Plays made when holding back was an option. This is the honest
+            // numerator for aggression: a forced lead is not assertiveness and
+            // a forced pass is not caution.
+            const chosePlay = d.action === 'play';
+            if (chosePlay) summary.choicePlays++;
+
             const isOptimal = d.quality === 'optimal';
             if (isOptimal) summary.optimal++;
             else summary.suboptimal++;
 
+            if (this.isEarlyGameDecision(d)) {
+                summary.earlyChoices++;
+                if (chosePlay) summary.earlyChoicePlays++;
+            }
+
             if (this.isLateGameDecision(d)) {
                 summary.lateTotal++;
+                summary.lateChoices++;
+                if (chosePlay) summary.lateChoicePlays++;
                 if (isOptimal) summary.lateOptimal++;
             }
         }
@@ -305,46 +349,55 @@ class DecisionAnalyzer {
     // a running mean, so it stays a ratio of things that actually happened.
 
     /**
-     * Calculate aggression score based on play patterns
-     * @param {number} totalPlays - Total plays made
-     * @param {number} totalPasses - Total passes made
-     * @param {number} leadsWon - Number of times won control
-     * @returns {number} - Aggression score (0-1)
+     * Aggression: how often a player engages when holding back is genuinely an
+     * option, measured over the opening 40% of a round.
+     *
+     * Three things this fixes. It used to divide plays by plays-plus-passes,
+     * counting FORCED passes as passivity - so a player dealt unplayable cards
+     * read as timid. It blended in leadsWon/totalPlays, which is closer to how
+     * effective a play was than to how willing the player is to make one, and
+     * which divided by zero (guarded on the wrong variable) for anyone who
+     * passed without playing, poisoning the stored EWMA with NaN permanently.
+     *
+     * And it covered the whole round. Late in a round everyone plays whatever
+     * they legally can - measured across 160 reference seats the late-round
+     * play rate has a median of 1.000 - so including that region only dilutes
+     * the signal. The early round is where players actually differ.
+     *
+     * @param {number} earlyChoicePlays - Early plays chosen over an alternative
+     * @param {number} earlyChoices - Early decisions that offered a choice
+     * @returns {number} - Aggression score (0-1), 0.5 when unknown
      */
-    static calculateAggressionScore(totalPlays, totalPasses, leadsWon) {
-        const totalActions = totalPlays + totalPasses;
-        if (totalActions === 0) return 0.5;
-
-        const playRate = totalPlays / totalActions;
-        const leadRate = totalActions > 0 ? leadsWon / totalPlays : 0;
-
-        // Aggression = high play rate + high control rate
-        return (playRate * 0.7) + (leadRate * 0.3);
+    static calculateAggressionScore(earlyChoicePlays, earlyChoices) {
+        if (!earlyChoices) return 0.5;
+        return earlyChoicePlays / earlyChoices;
     }
 
     /**
-     * Calculate risk score based on risky play frequency
+     * Risk: how often a player's plays are gambles - a card committed where
+     * the value at stake times the chance of losing it clears the price the
+     * cost model puts on a trick.
      *
-     * All three arguments must be counted over the same population. Callers
-     * used to divide per-game risky counters by a lifetime count of plays,
-     * which pinned riskyPlayRate near zero and made the score a function of
-     * the success rate alone.
+     * Frequency only. The old version was 0.6 x frequency + 0.4 x success
+     * rate, which made the score non-monotonic in risk: a cautious player who
+     * won two gambles scored 0.412 while a reckless one who lost thirty scored
+     * 0.180. How the gambles turn out is a separate question, and one the
+     * "Risky play success" meter already answers. A player who never gambles
+     * now scores 0 rather than 0.200.
      *
-     * @param {number} riskyPlaysSuccessful - Number of successful risky plays
-     * @param {number} riskyPlaysFailed - Number of failed risky plays
-     * @param {number} totalDecisions - Decisions taken over the same period
-     * @returns {number} - Risk score (0-1)
+     * Per PLAY rather than per decision. Gambles are plays, so dividing by all
+     * decisions couples this to how often the player plays at all - measured
+     * across the reference sample that coupling is r = 0.32, against r = 0.15
+     * per play. The archetype needs two axes that move independently.
+     *
+     * @param {number} riskyPlaysSuccessful - Gambles that held the trick
+     * @param {number} riskyPlaysFailed - Gambles that were beaten
+     * @param {number} choicePlays - Plays made when there was a choice
+     * @returns {number} - Risk score (0-1), 0.5 when unknown
      */
-    static calculateRiskScore(riskyPlaysSuccessful, riskyPlaysFailed, totalDecisions) {
-        if (totalDecisions === 0) return 0.5;
-
-        const totalRiskyPlays = riskyPlaysSuccessful + riskyPlaysFailed;
-        const riskyPlayRate = Math.min(1, totalRiskyPlays / totalDecisions);
-
-        // Risk score combines frequency of risky plays and success rate
-        const successRate = totalRiskyPlays > 0 ? riskyPlaysSuccessful / totalRiskyPlays : 0.5;
-
-        return (riskyPlayRate * 0.6) + (successRate * 0.4);
+    static calculateRiskScore(riskyPlaysSuccessful, riskyPlaysFailed, choicePlays) {
+        if (!choicePlays) return 0.5;
+        return Math.min(1, (riskyPlaysSuccessful + riskyPlaysFailed) / choicePlays);
     }
 
     /**
@@ -382,6 +435,29 @@ class DecisionAnalyzer {
     // round rather than wins only, against a measured per-tier baseline, and
     // with a confidence interval. See DealStrength.js and the hand-strength
     // endpoint in index.js.
+
+    /**
+     * Classify a play style from the two axes that were measured to move
+     * independently (r = 0.007 across the reference sample): how often a player
+     * engages early, and how much they commit per play.
+     *
+     * Four quadrants exist; three get names, because "plays often with cheap
+     * cards" is not a distinct style so much as steadiness. Nothing here reads
+     * form: a trend in results is not a play style, and the old 'Adaptive' label
+     * claimed to detect opponent reading that nothing in the data supports.
+     */
+    static classifyArchetype(aggression, risk) {
+        const engaged = aggression > AGGRESSION_REFERENCE + AGGRESSION_BAND;
+        const withdrawn = aggression < AGGRESSION_REFERENCE - AGGRESSION_BAND;
+        const committing = risk > RISK_REFERENCE + RISK_BAND;
+        const sparing = risk < RISK_REFERENCE - RISK_BAND;
+
+        if (engaged && committing) return 'Aggressive';
+        if (withdrawn && sparing) return 'Conservative';
+        // Picks its spots, then commits hard to the ones it picks.
+        if (withdrawn && committing) return 'Opportunist';
+        return 'Balanced';
+    }
 }
 
-module.exports = { DecisionAnalyzer };
+module.exports = { DecisionAnalyzer, BEHAVIOR_BASELINE_VERSION };

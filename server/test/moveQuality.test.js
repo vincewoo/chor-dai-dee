@@ -9,6 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const { evaluateMove } = require('../game/MoveQuality');
+const { DecisionAnalyzer } = require('../game/DecisionAnalyzer');
 const { BotLogic } = require('../game/BotLogic');
 const { Big2Rules } = require('../game/Big2Rules');
 const { RANKS, SUITS } = require('../game/Deck');
@@ -198,4 +199,25 @@ test('a move that is not legal in the position is not graded', () => {
 
     assert.strictEqual(result.scored, false);
     assert.strictEqual(result.quality, null);
+});
+
+test('every archetype is reachable, and the reference reads Balanced', () => {
+    const { classifyArchetype } = DecisionAnalyzer;
+
+    assert.strictEqual(classifyArchetype(0.90, 0.30), 'Aggressive');
+    assert.strictEqual(classifyArchetype(0.60, 0.10), 'Conservative');
+    assert.strictEqual(classifyArchetype(0.60, 0.32), 'Opportunist');
+    // A player who plays exactly like the measured reference is not a type.
+    assert.strictEqual(classifyArchetype(0.765, 0.200), 'Balanced');
+
+    // Sweep a plausible human range: no label may be unreachable, which is
+    // what the previous thresholds were.
+    const seen = new Set();
+    for (let a = 0.4; a <= 1.0001; a += 0.02) {
+        for (let r = 0; r <= 0.45; r += 0.02) seen.add(classifyArchetype(a, r));
+    }
+    assert.deepStrictEqual(
+        [...seen].sort(),
+        ['Aggressive', 'Balanced', 'Conservative', 'Opportunist']
+    );
 });
