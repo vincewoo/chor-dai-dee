@@ -25,7 +25,7 @@ const Lobby = ({ user, socket, setUser }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const voiceContext = useVoice();
-    const { fourColorMode, toggleFourColorMode } = useSuitColors();
+    const { fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode } = useSuitColors();
 
         // Room lobby state (when returning from a game)
     const [roomLobbyData, setRoomLobbyData] = useState(null);
@@ -326,8 +326,10 @@ const Lobby = ({ user, socket, setUser }) => {
                 hostUsername={roomLobbyData.hostUsername}
                 gameMode={selectedGameMode}
                 fourColorMode={fourColorMode}
+                pusoyMode={pusoyMode}
                 onSetGameMode={handleGameModeChange}
                 onToggleFourColor={toggleFourColorMode}
+                onTogglePusoy={togglePusoyMode}
                 onStartGame={handleStartGameFromLobby}
                 onLeave={handleLeaveRoomLobby}
                 voice={{
@@ -375,7 +377,7 @@ const Lobby = ({ user, socket, setUser }) => {
                 spectateOffer={spectateOffer}
                 onWatchRoom={watchRoom}
             />
-            <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
+            <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} pusoyMode={pusoyMode} />
             <ScoreDialog
                 isOpen={!!selectedGame}
                 onClose={() => setSelectedGame(null)}

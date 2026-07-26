@@ -1,1 +1,11 @@
-{}
+{
+  "name": "chor-dai-dee",
+  "private": true,
+  "description": "Monorepo root. The real packages are client/ and server/, each with its own package.json and its own node_modules; these scripts only delegate so the repo can be linted, tested and built from the top level. Deliberately NOT npm workspaces — the Dockerfile installs and builds each package from its own directory, and hoisting would break that.",
+  "scripts": {
+    "install:all": "npm install --prefix client && npm install --prefix server",
+    "lint": "npm run lint --prefix client",
+    "build": "npm run build --prefix client",
+    "test": "npm test --prefix client && npm test --prefix server"
+  }
+}

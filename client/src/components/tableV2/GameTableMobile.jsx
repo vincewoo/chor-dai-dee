@@ -20,7 +20,7 @@ import { MOBILE_LAYOUT } from './layout';
 // GameRoom and arrives via props; only local UI state (info/log toggles) is here.
 function GameTableMobile(props) {
     const {
-        user, roomId, gameState, myPlayerId, fourColorMode,
+        user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode,
         sortedHand, myHand, selectedCards, toggleCard, handleSelectCards,
         playCards, passTurn, isSubmitting, isMyTurn, getRelativePlayer,
         canKickPlayer, handlePlayerClick,
@@ -145,6 +145,7 @@ function GameTableMobile(props) {
                 players={players}
                 viewerIndex={viewerIndex}
                 fourColor={fourColorMode}
+                pusoyMode={pusoyMode}
                 accGrad={accGrad}
                 soft={soft}
                 rm={rm}
@@ -167,6 +168,7 @@ function GameTableMobile(props) {
                 acc={acc}
                 accGrad={accGrad}
                 rm={rm}
+                pusoyMode={pusoyMode}
                 placement={MOBILE_LAYOUT.banner}
             />
 
@@ -179,6 +181,7 @@ function GameTableMobile(props) {
                         containerWidth={containerWidth}
                         acc={acc}
                         fourColor={fourColorMode}
+                        pusoyMode={pusoyMode}
                         ownerName={getRelativePlayer(0)?.name}
                         geometry={MOBILE_LAYOUT.hand}
                     />
@@ -215,6 +218,7 @@ function GameTableMobile(props) {
                     containerWidth={containerWidth}
                     acc={acc}
                     fourColor={fourColorMode}
+                    pusoyMode={pusoyMode}
                     geometry={MOBILE_LAYOUT.hand}
                 />
                 </>)}
@@ -226,6 +230,7 @@ function GameTableMobile(props) {
                 log={log}
                 acc={acc}
                 fourColor={fourColorMode}
+                pusoyMode={pusoyMode}
                 rm={rm}
                 onClose={() => setLogOpen(false)}
             />

@@ -9,7 +9,7 @@ function MobileHandV2({
     sortedHand, selectedCards, onToggle,
     sensors, onDragStart, onDragEnd,
     handContainerRef, onTouchStart, onTouchMove, onTouchEnd,
-    containerWidth, acc, fourColor, geometry,
+    containerWidth, acc, fourColor, pusoyMode, geometry,
 }) {
     const { width, height, marginLeft, typeScale } = useHandGeometry(sortedHand.length, containerWidth, geometry);
 
@@ -46,6 +46,7 @@ function MobileHandV2({
                                     height={height}
                                     acc={acc}
                                     fourColor={fourColor}
+                                    pusoyMode={pusoyMode}
                                     typeScale={typeScale}
                                 />
                             );

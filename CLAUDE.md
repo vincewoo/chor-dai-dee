@@ -14,6 +14,7 @@ cd client/
 npm run dev          # Start dev server at http://localhost:5173
 npm run build        # Production build to dist/
 npm run lint         # ESLint checks
+npm test             # Node's built-in runner over test/*.test.js (pure utils only)
 npm run preview      # Preview production build
 ```
 
@@ -213,6 +214,7 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 - `RoomManager.js` - Room creation, player management, game state, reconnection handling
 - `Big2Rules.js` - Hand validation and comparison logic
 - `Deck.js` - Card deck (ranks: 3→2, suits: Diamonds < Clubs < Hearts < Spades)
+  (display can be remapped per-viewer; see the Pusoy Dos lens)
 - `BotLogic.js` - Heuristic AI with decision reasoning. See
   `docs/BOT-HEURISTICS-REVIEW.md` for the design rationale.
   - **Retention-cost scoring** - every heuristic is denominated in one currency:
@@ -355,7 +357,7 @@ Unsetting it is the kill switch.
 
 #### Core Tables
 - `users` - User accounts (id, username, password_hash)
-- `user_preferences` - Settings (four_color_mode, auto_pass, table theme, sound, avatar_animal/avatar_tile)
+- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, table theme, sound, avatar_animal/avatar_tile)
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
 - `stats_standard` - Standard game mode statistics
@@ -412,6 +414,26 @@ Unsetting it is the kill switch.
 - **Four-Color Deck Mode:** Optional colorblind-friendly deck
   - 2-color mode: Red (Hearts/Diamonds), Black (Spades/Clubs)
   - 4-color mode: Red (Hearts), Blue (Diamonds), Black (Spades), Green (Clubs)
+- **Pusoy Dos Suit Lens:** A per-user, **display-only** remap of every rendered
+  suit glyph and colour from the underlying order (D < C < H < S) to the
+  Filipino Pusoy Dos order (C < S < H < D).
+  `client/src/utils/suitLens.js` holds the permutation and nothing else. Because
+  both are total orders over the same four suits, aligning them position-for-
+  position gives an order-preserving bijection — which is why no rule,
+  comparison or flush check changes, and why the underlying 3♦ opener correctly
+  displays as the 3♣ a Pusoy Dos player expects.
+  The seam is exactly two leaf components — `tableV2/HandCardFaceV2.jsx` and
+  `tableV2/PileCardGlyph.jsx` — plus a handful of user-facing strings
+  (`StatusBanner`, `HowToPlay`, and the one card-naming server error, reworded
+  on arrival by `lensServerMessage`). Both leaves key the symbol *and* the
+  colour off the lensed suit, so a card shown as ♦ is drawn red; remapping only
+  the symbol is the bug to watch for.
+  **Hard rule: the lens must never reach card data.** `play_card` payloads, the
+  `${rank}-${suit}` identity keys, the socket protocol, `SUITS_ORDER` in
+  `cardUtils.js`, the bots, stats and the ML game log all keep seeing the
+  underlying suit. A lensed suit in the 52-byte deal blob or the 52-bit card
+  masks would corrupt stored tapes irreversibly. `BotDebugPanel` is dev-only and
+  deliberately stays in underlying notation.
 - **Auto-Pass:** Automatically pass when no valid moves available
 - **Avatars:** Emoji animal on a coloured tile, picked in the v2 Avatar Picker.
   Stored on the account so every player at the table sees the same avatar; the

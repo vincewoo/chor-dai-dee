@@ -26,6 +26,7 @@ const CenterPile = memo(function CenterPile({
     players,
     viewerIndex,
     fourColor,
+    pusoyMode,
     accGrad,
     soft,
     rm,
@@ -110,7 +111,7 @@ const CenterPile = memo(function CenterPile({
                                                             : `${flyName} .5s cubic-bezier(.2,.8,.3,1.1) ${i * 80}ms both`,
                                                     }}
                                                 >
-                                                    <PileCardGlyph rank={c.rank} suit={c.suit} fourColor={fourColor} size="pile" scale={scale} />
+                                                    <PileCardGlyph rank={c.rank} suit={c.suit} fourColor={fourColor} pusoyMode={pusoyMode} size="pile" scale={scale} />
                                                 </div>
                                             </div>
                                         ))}

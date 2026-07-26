@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
 import PileCardGlyph from './tableV2/PileCardGlyph';
 import { SUIT_SYMBOLS } from '../constants';
+import { displaySuit } from '../utils/suitLens';
+
+// Suit names and tiers, indexed by the underlying ascending order so the
+// Pusoy Dos lens can relabel the whole table without a second copy of the copy.
+const SUIT_NAMES = { D: 'Diamonds', C: 'Clubs', H: 'Hearts', S: 'Spades' };
+const TIER_LABELS = ['Lowest', 'Low', 'High', 'Highest'];
+const ASCENDING_SUITS = ['D', 'C', 'H', 'S'];
+const suitClass = (suit) => (suit === 'D' || suit === 'H' ? 'text-[#ff8d96]' : 'text-black');
 
 // Helper to render a row of example cards (stacked like in-game)
 // Uses traditional red-black colors instead of 4-color mode
-const CardRow = ({ cards }) => (
+const CardRow = ({ cards, pusoyMode }) => (
     <div className="flex justify-center items-center my-2">
         <div className="flex">
             {cards.map((card, idx) => (
@@ -16,15 +24,20 @@ const CardRow = ({ cards }) => (
                         zIndex: idx
                     }}
                 >
-                    <PileCardGlyph rank={card.rank} suit={card.suit} size="pile" scale={1.15} />
+                    <PileCardGlyph rank={card.rank} suit={card.suit} pusoyMode={pusoyMode} size="pile" scale={1.15} />
                 </div>
             ))}
         </div>
     </div>
 );
 
-const HowToPlay = React.memo(({ isOpen, onClose }) => {
+const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
     const [activeTab, setActiveTab] = useState('overview');
+
+    // Every suit glyph in the copy goes through the lens, so the examples match
+    // the cards the reader actually sees at the table.
+    const sym = (s) => SUIT_SYMBOLS[displaySuit(s, pusoyMode)];
+    const ordered = ASCENDING_SUITS.map(s => displaySuit(s, pusoyMode));
 
     if (!isOpen) return null;
 
@@ -113,7 +126,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-2">Quick Start</h3>
                                 <ol className="list-decimal list-inside space-y-2 text-[rgba(244,245,247,.75)]">
                                     <li>Each player receives 13 cards</li>
-                                    <li>The player with 3{SUIT_SYMBOLS.D} starts the first round</li>
+                                    <li>The player with 3{sym('D')} starts the first round</li>
                                     <li>Play cards that beat the current hand on the table</li>
                                     <li>If you can't or don't want to play, pass your turn</li>
                                     <li>When everyone passes, the last player to play gets "free control" and can play anything</li>
@@ -143,27 +156,17 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                         <div className="space-y-6">
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Suit Rankings (Lowest to Highest)</h3>
+                                {pusoyMode && (
+                                    <p className="text-sm text-[rgba(244,245,247,.55)] mb-3">Pusoy Dos (Filipino) suit order</p>
+                                )}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div className="border border-white/10 rounded-lg p-3 text-center">
-                                        <div className="text-4xl mb-2 text-[#ff8d96]">{SUIT_SYMBOLS.D}</div>
-                                        <div className="font-bold text-[#f4f5f7]">Diamonds</div>
-                                        <div className="text-sm text-[rgba(244,245,247,.55)]">Lowest</div>
-                                    </div>
-                                    <div className="border border-white/10 rounded-lg p-3 text-center">
-                                        <div className="text-4xl mb-2 text-black">{SUIT_SYMBOLS.C}</div>
-                                        <div className="font-bold text-[#f4f5f7]">Clubs</div>
-                                        <div className="text-sm text-[rgba(244,245,247,.55)]">Low</div>
-                                    </div>
-                                    <div className="border border-white/10 rounded-lg p-3 text-center">
-                                        <div className="text-4xl mb-2 text-[#ff8d96]">{SUIT_SYMBOLS.H}</div>
-                                        <div className="font-bold text-[#f4f5f7]">Hearts</div>
-                                        <div className="text-sm text-[rgba(244,245,247,.55)]">High</div>
-                                    </div>
-                                    <div className="border border-white/10 rounded-lg p-3 text-center">
-                                        <div className="text-4xl mb-2 text-black">{SUIT_SYMBOLS.S}</div>
-                                        <div className="font-bold text-[#f4f5f7]">Spades</div>
-                                        <div className="text-sm text-[rgba(244,245,247,.55)]">Highest</div>
-                                    </div>
+                                    {ordered.map((suit, i) => (
+                                        <div key={suit} className="border border-white/10 rounded-lg p-3 text-center">
+                                            <div className={`text-4xl mb-2 ${suitClass(suit)}`}>{SUIT_SYMBOLS[suit]}</div>
+                                            <div className="font-bold text-[#f4f5f7]">{SUIT_NAMES[suit]}</div>
+                                            <div className="text-sm text-[rgba(244,245,247,.55)]">{TIER_LABELS[i]}</div>
+                                        </div>
+                                    ))}
                                 </div>
                             </section>
 
@@ -184,23 +187,23 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                 <div className="border border-white/10 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">1. Single Card</h4>
                                     <p className="text-[rgba(244,245,247,.75)] text-sm mb-2">Any single card. Compared by rank first, then suit.</p>
-                                    <CardRow cards={[{ rank: '7', suit: 'H' }]} />
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Example: 7{SUIT_SYMBOLS.H} beats 7{SUIT_SYMBOLS.D} but loses to 8{SUIT_SYMBOLS.D}</p>
+                                    <CardRow pusoyMode={pusoyMode} cards={[{ rank: '7', suit: 'H' }]} />
+                                    <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Example: 7{sym('H')} beats 7{sym('D')} but loses to 8{sym('D')}</p>
                                 </div>
 
                                 {/* Pair */}
                                 <div className="border border-white/10 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">2. Pair</h4>
                                     <p className="text-[rgba(244,245,247,.75)] text-sm mb-2">Two cards of the same rank. Compared by rank, then highest suit.</p>
-                                    <CardRow cards={[{ rank: 'J', suit: 'S' }, { rank: 'J', suit: 'H' }]} />
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Example: JJ with {SUIT_SYMBOLS.S} as highest suit</p>
+                                    <CardRow pusoyMode={pusoyMode} cards={[{ rank: 'J', suit: 'S' }, { rank: 'J', suit: 'H' }]} />
+                                    <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Example: JJ with {sym('S')} as highest suit</p>
                                 </div>
 
                                 {/* Triple */}
                                 <div className="border border-white/10 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">3. Triple</h4>
                                     <p className="text-[rgba(244,245,247,.75)] text-sm mb-2">Three cards of the same rank. Compared by rank only.</p>
-                                    <CardRow cards={[{ rank: '9', suit: 'S' }, { rank: '9', suit: 'H' }, { rank: '9', suit: 'C' }]} />
+                                    <CardRow pusoyMode={pusoyMode} cards={[{ rank: '9', suit: 'S' }, { rank: '9', suit: 'H' }, { rank: '9', suit: 'C' }]} />
                                 </div>
 
                                 {/* 5-Card Hands */}
@@ -215,7 +218,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Straight (Weakest 5-card hand)</h5>
                                         <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Five consecutive ranks. Compared by highest card.</p>
-                                        <CardRow cards={[
+                                        <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '5', suit: 'D' },
                                             { rank: '6', suit: 'C' },
                                             { rank: '7', suit: 'H' },
@@ -228,7 +231,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Flush</h5>
                                         <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Five cards of the same suit. Compared by highest card, then suit.</p>
-                                        <CardRow cards={[
+                                        <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '3', suit: 'H' },
                                             { rank: '5', suit: 'H' },
                                             { rank: '8', suit: 'H' },
@@ -241,7 +244,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Full House</h5>
                                         <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Three of a kind + a pair. Compared by the triple's rank.</p>
-                                        <CardRow cards={[
+                                        <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: 'Q', suit: 'S' },
                                             { rank: 'Q', suit: 'H' },
                                             { rank: 'Q', suit: 'C' },
@@ -255,7 +258,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Four of a Kind (Quads)</h5>
                                         <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Four cards of the same rank + any fifth card. Compared by the quad's rank.</p>
-                                        <CardRow cards={[
+                                        <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '8', suit: 'S' },
                                             { rank: '8', suit: 'H' },
                                             { rank: '8', suit: 'D' },
@@ -268,7 +271,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                     <div className="rounded bg-black/25 p-3">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Straight Flush (Strongest hand!)</h5>
                                         <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Five consecutive ranks, all same suit. Compared by highest card, then suit.</p>
-                                        <CardRow cards={[
+                                        <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '9', suit: 'S' },
                                             { rank: '10', suit: 'S' },
                                             { rank: 'J', suit: 'S' },
@@ -286,7 +289,7 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Starting the Game</h3>
                                 <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.75)]">
-                                    <li><strong>First Round:</strong> The player with 3{SUIT_SYMBOLS.D} must play it first (can be in a hand containing 3{SUIT_SYMBOLS.D})</li>
+                                    <li><strong>First Round:</strong> The player with 3{sym('D')} must play it first (can be in a hand containing 3{sym('D')})</li>
                                     <li><strong>Subsequent Rounds:</strong> The winner of the previous round starts and can play any valid hand</li>
                                     <li>Each player receives 13 cards at the start of each round</li>
                                 </ul>
@@ -331,7 +334,14 @@ const HowToPlay = React.memo(({ isOpen, onClose }) => {
                                 <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.75)]">
                                     <li><strong>5-Card Hands:</strong> Can only be beaten by stronger 5-card hands (e.g., a straight flush beats a flush)</li>
                                     <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
-                                    <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (<span className="text-black">{SUIT_SYMBOLS.S}</span> Spades &gt; <span className="text-[#ff8d96]">{SUIT_SYMBOLS.H}</span> Hearts &gt; <span className="text-black">{SUIT_SYMBOLS.C}</span> Clubs &gt; <span className="text-[#ff8d96]">{SUIT_SYMBOLS.D}</span> Diamonds)</li>
+                                    <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (
+                                        {[...ordered].reverse().map((suit, i) => (
+                                            <React.Fragment key={suit}>
+                                                {i > 0 && ' > '}
+                                                <span className={suitClass(suit)}>{SUIT_SYMBOLS[suit]}</span> {SUIT_NAMES[suit]}
+                                            </React.Fragment>
+                                        ))}
+                                        )</li>
                                 </ul>
                                 <div className="mt-4 border-l-4 border-blue-500 bg-[#7fb2ff]/10 p-4 rounded-r-lg">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">Hong Kong Variant: Straights with 2s</h4>

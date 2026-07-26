@@ -5,7 +5,7 @@ import { describeHand } from '../../theme/tableTheme';
 // The per-play rows of the round log, most recent first, with a divider at the
 // head of each trick. Shared by the mobile bottom sheet (RoundLogSheet) and the
 // persistent desktop rail (RoundLogPanel) so there is one renderer.
-function RoundLogRows({ log, acc, fourColor, emptyText = 'No plays yet.' }) {
+function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays yet.' }) {
     const rows = [...log].reverse();
 
     if (rows.length === 0) {
@@ -45,6 +45,7 @@ function RoundLogRows({ log, acc, fourColor, emptyText = 'No plays yet.' }) {
                                     rank={c.rank}
                                     suit={c.suit}
                                     fourColor={fourColor}
+                                    pusoyMode={pusoyMode}
                                     size="log"
                                     style={{ marginLeft: j === 0 ? 0 : -10 }}
                                 />

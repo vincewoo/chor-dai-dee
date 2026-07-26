@@ -4,7 +4,7 @@ import RoundLogRows from './RoundLogRows';
 // Bottom sheet showing every play/pass this round, grouped by trick (latest
 // first). The rows themselves come from RoundLogRows, shared with the desktop
 // RoundLogPanel.
-function RoundLogSheet({ open, log, acc, fourColor, rm, onClose }) {
+function RoundLogSheet({ open, log, acc, fourColor, pusoyMode, rm, onClose }) {
     return (
         <AnimatePresence>
             {open && (
@@ -40,7 +40,7 @@ function RoundLogSheet({ open, log, acc, fourColor, rm, onClose }) {
                             </button>
                         </div>
                         <div className="scrollbar-thin" style={{ overflowY: 'auto', padding: '0 18px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <RoundLogRows log={log} acc={acc} fourColor={fourColor} />
+                            <RoundLogRows log={log} acc={acc} fourColor={fourColor} pusoyMode={pusoyMode} />
                         </div>
                     </motion.div>
                 </>

@@ -17,10 +17,12 @@ function WaitingRoomV2({
     hostUsername,
     gameMode,
     fourColorMode,
+    pusoyMode,
     isPrivate,
     onSetPrivacy,
     onSetGameMode,
     onToggleFourColor,
+    onTogglePusoy,
     onAddBot,
     onStartGame,
     onLeave,
@@ -242,6 +244,24 @@ function WaitingRoomV2({
                                 <span style={{ position: 'absolute', top: 3, left: fourColorMode ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 2px 5px rgba(0,0,0,.4)', transition: 'left .2s' }} />
                             </button>
                         </div>
+
+                        {/* Display-only suit lens — per-viewer, so it never
+                            changes the game everyone else is playing. */}
+                        {onTogglePusoy && (
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Pusoy Dos suits</div>
+                                    <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>Filipino suit order — ♣ ♠ ♥ ♦</div>
+                                </div>
+                                <button
+                                    onClick={onTogglePusoy}
+                                    aria-label="Toggle Pusoy Dos suit display"
+                                    style={{ width: 46, height: 26, borderRadius: 13, border: 'none', background: pusoyMode ? acc : 'rgba(255,255,255,.18)', position: 'relative', cursor: 'pointer', transition: 'background .2s' }}
+                                >
+                                    <span style={{ position: 'absolute', top: 3, left: pusoyMode ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 2px 5px rgba(0,0,0,.4)', transition: 'left .2s' }} />
+                                </button>
+                            </div>
+                        )}
 
                         {voice && (
                             <div className="flex items-center justify-between gap-3">

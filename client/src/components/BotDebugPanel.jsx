@@ -28,6 +28,8 @@ const BotDebugPanel = ({ reasoning, isVisible, onClose }) => {
         return cardsStr.split(' ').map(card => {
             const suit = card.slice(-1);
             const rank = card.slice(0, -1);
+            // Underlying notation on purpose: this parses "3D"-style tokens out
+            // of bot reasoning prose, and it's a dev-only panel. Not lensed.
             const suitSymbol = { D: '♦', C: '♣', H: '♥', S: '♠' }[suit] || suit;
             const suitColor = suit === 'D' || suit === 'H' ? 'text-red-500' : 'text-gray-800';
             return (

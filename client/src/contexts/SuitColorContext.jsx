@@ -13,12 +13,12 @@ export const useSuitColors = () => {
 };
 
 export const SuitColorProvider = ({ children }) => {
-    const { fourColorMode, toggleFourColorMode } = useUserPreferences();
+    const { fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode } = useUserPreferences();
 
     const suitColors = fourColorMode ? SUIT_COLORS_4 : SUIT_COLORS;
 
     return (
-        <SuitColorContext.Provider value={{ suitColors, fourColorMode, toggleFourColorMode }}>
+        <SuitColorContext.Provider value={{ suitColors, fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode }}>
             {children}
         </SuitColorContext.Provider>
     );

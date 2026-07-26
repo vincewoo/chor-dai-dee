@@ -10,7 +10,7 @@ import useHandGeometry from '../../hooks/useHandGeometry';
  * Dropping DndContext also avoids touchAction:'none' on a view nobody drags.
  * Geometry and card face are shared, so the two stay visually identical.
  */
-function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, ownerName, geometry }) {
+function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, pusoyMode, ownerName, geometry }) {
     const { width, height, marginLeft, typeScale } = useHandGeometry(sortedHand.length, containerWidth, geometry);
 
     return (
@@ -39,6 +39,7 @@ function SpectatorHandV2({ sortedHand, containerWidth, acc, fourColor, ownerName
                                 height={height}
                                 acc={acc}
                                 fourColor={fourColor}
+                                pusoyMode={pusoyMode}
                                 typeScale={typeScale}
                                 readOnly
                             />

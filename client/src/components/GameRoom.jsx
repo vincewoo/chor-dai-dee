@@ -4,6 +4,7 @@ import useSpectator from '../hooks/useSpectator';
 import { AnimatePresence, motion } from 'framer-motion';
 import { canBeatWithAnyHand } from '../utils/handChecker';
 import { sortByRank, sortBySuit } from '../utils/cardUtils';
+import { lensServerMessage } from '../utils/suitLens';
 import ScoreDialog from './ScoreDialog';
 import { useSuitColors } from '../contexts/SuitColorContext';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
@@ -22,7 +23,7 @@ import { playSound } from '../utils/sounds';
 const GameRoom = ({ user, socket }) => {
     const { roomId } = useParams();
     const navigate = useNavigate();
-    const { fourColorMode, toggleFourColorMode } = useSuitColors();
+    const { fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode } = useSuitColors();
     const {
         autoPass, toggleAutoPass,
         tableTheme, setTableTheme,
@@ -114,6 +115,12 @@ const GameRoom = ({ user, socket }) => {
 
     // Track touch interactions for swipe selection
     const touchStartRef = useRef(null);
+
+    // The socket listeners below are registered once (deps: [socket, navigate]),
+    // so the suit lens is read through a ref — putting it in the dep array would
+    // tear down and rebuild every listener each time the player toggles it.
+    const pusoyModeRef = useRef(pusoyMode);
+    useEffect(() => { pusoyModeRef.current = pusoyMode; }, [pusoyMode]);
 
     // The hand rendered in the bottom area. Players see their own; spectators see
     // the hand of whichever seat they're watching (seat 0, or their picked seat).
@@ -247,7 +254,9 @@ const GameRoom = ({ user, socket }) => {
         });
 
         socket.on('error', (err) => {
-            setError(err);
+            // The server writes errors in underlying suit notation; rewrite the
+            // one that names a card for whichever lens this viewer is using.
+            setError(lensServerMessage(err, pusoyModeRef.current));
             playSound('error');
             setIsSubmitting(false); // Reset submission state on error
             setTimeout(() => setError(''), 3000);
@@ -815,7 +824,7 @@ const GameRoom = ({ user, socket }) => {
     const showTable = gameState.gameState !== 'waiting';
     const TableComposition = isDesktop ? GameTableDesktop : GameTableMobile;
     const tableProps = {
-        user, roomId, gameState, myPlayerId, fourColorMode,
+        user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode,
         sortedHand, myHand, selectedCards, toggleCard, handleSelectCards,
         playCards, passTurn, isSubmitting, isMyTurn, getRelativePlayer,
         canKickPlayer, handlePlayerClick,
@@ -1037,10 +1046,12 @@ const GameRoom = ({ user, socket }) => {
                     hostUsername={gameState.hostUsername}
                     gameMode={gameState.gameMode}
                     fourColorMode={fourColorMode}
+                    pusoyMode={pusoyMode}
                     isPrivate={gameState.isPrivate}
                     onSetPrivacy={(priv) => socket.emit('set_privacy', { isPrivate: priv })}
                     onSetGameMode={(mode) => socket.emit('set_game_mode', { gameMode: mode })}
                     onToggleFourColor={toggleFourColorMode}
+                    onTogglePusoy={togglePusoyMode}
                     voice={{
                         enabled: !!voiceContext?.voiceEnabled,
                         connected: !!voiceContext?.isVoiceConnected,
@@ -1083,6 +1094,8 @@ const GameRoom = ({ user, socket }) => {
                 toggleAutoPass={toggleAutoPass}
                 fourColorMode={fourColorMode}
                 toggleFourColorMode={toggleFourColorMode}
+                pusoyMode={pusoyMode}
+                togglePusoyMode={togglePusoyMode}
                 tableTheme={tableTheme}
                 setTableTheme={setTableTheme}
                 accentColor={accentColor}
