@@ -185,53 +185,13 @@ class DecisionAnalyzer {
         return Math.min(100, strength);
     }
 
-    /**
-     * Evaluate if a play decision is optimal, suboptimal, or risky
-     * @param {Object} params - { action, hand, pile, cardsInDeck, playedCards }
-     * @returns {Object} - { quality: 'optimal'|'suboptimal'|'risky', isRisky: boolean, reasoning: string }
-     */
-    static evaluateDecision({ action, hand, pile, cardsInDeck, playedCards }) {
-        const handStrength = this.calculateHandStrength(hand);
-        const pileStrength = this.calculatePileStrength(pile);
-
-        if (action === 'pass') {
-            // Passing is optimal when pile is strong and hand is weak
-            if (pileStrength > 60 && handStrength < 40) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Wise pass against strong pile with weak hand' };
-            }
-            // Passing is suboptimal when you could play and pile is weak
-            if (pileStrength < 30 && handStrength > 50) {
-                return { quality: 'suboptimal', isRisky: false, reasoning: 'Could have played against weak pile' };
-            }
-            return { quality: 'optimal', isRisky: false, reasoning: 'Reasonable pass' };
-        }
-
-        if (action === 'play') {
-            // Playing strong cards early is risky
-            if (hand.length > 8 && handStrength > 70) {
-                return { quality: 'risky', isRisky: true, reasoning: 'Playing strong cards with many cards remaining' };
-            }
-
-            // Playing when you have control is optimal
-            if (!pile) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Leading with control' };
-            }
-
-            // Beating a weak pile is optimal
-            if (pileStrength < 40) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Beating weak pile' };
-            }
-
-            // Using powerful hands to beat strong piles in late game is optimal
-            if (hand.length <= 5 && handStrength > 60) {
-                return { quality: 'optimal', isRisky: false, reasoning: 'Strong play in end game' };
-            }
-
-            return { quality: 'optimal', isRisky: false, reasoning: 'Standard play' };
-        }
-
-        return { quality: 'optimal', isRisky: false, reasoning: 'Unknown action' };
-    }
+    // evaluateDecision is gone. It graded a move with an if-ladder whose
+    // fallback was 'optimal', so nearly every play scored as optimal whatever
+    // was on the table. Grading now happens in MoveQuality.js, which ranks the
+    // move actually made inside BotLogic's own scored list of the legal
+    // alternatives. calculateHandStrength and calculatePileStrength above stay:
+    // they are descriptive metadata stored alongside each decision, not the
+    // judgement itself.
 
     /**
      * Roll a game's tracked decisions up into the counts the stats tables
@@ -243,11 +203,26 @@ class DecisionAnalyzer {
      */
     static summarizeDecisions(decisions) {
         const summary = {
+            // Decisions that carried a real choice. Forced moves are counted
+            // separately: a pass with nothing that beats the pile, or a lone
+            // legal lead, measures the cards, not the player.
             total: 0,
+            forced: 0,
             optimal: 0,
             suboptimal: 0,
+            // Summed normalized loss over `total`. Accuracy is 1 - loss/total.
+            totalLoss: 0,
             plays: 0,
             passes: 0,
+            // A pass with nothing that beats the pile says the cards were
+            // unplayable; a pass with a legal answer in hand is a choice. Split
+            // apart, a high pass rate stops reading as passivity by default.
+            forcedPasses: 0,
+            voluntaryPasses: 0,
+            // Decisions taken with an opponent one or two cards from going out,
+            // and how many of those contested the trick rather than conceding.
+            dangerDecisions: 0,
+            dangerContested: 0,
             riskySucceeded: 0,
             riskyFailed: 0,
             lateTotal: 0,
@@ -255,21 +230,40 @@ class DecisionAnalyzer {
         };
 
         for (const d of decisions || []) {
-            summary.total++;
-            if (d.quality === 'optimal') summary.optimal++;
-            else summary.suboptimal++;
-
             if (d.action === 'play') summary.plays++;
-            else if (d.action === 'pass') summary.passes++;
+            else if (d.action === 'pass') {
+                summary.passes++;
+                if (d.forced) summary.forcedPasses++;
+                else summary.voluntaryPasses++;
+            }
+
+            // Only counts where the player had something to decide: conceding
+            // with no legal answer is not a failure to respond.
+            if (!d.forced && this.isDangerDecision(d)) {
+                summary.dangerDecisions++;
+                if (d.action === 'play') summary.dangerContested++;
+            }
 
             // Risky plays resolve when the trick they were made into resolves.
             // An unresolved one (the round ended first) is counted as neither.
             if (d.riskOutcome === 'success') summary.riskySucceeded++;
             else if (d.riskOutcome === 'failed') summary.riskyFailed++;
 
+            if (!d.scored) {
+                if (d.forced) summary.forced++;
+                continue;
+            }
+
+            summary.total++;
+            summary.totalLoss += d.lossFraction || 0;
+
+            const isOptimal = d.quality === 'optimal';
+            if (isOptimal) summary.optimal++;
+            else summary.suboptimal++;
+
             if (this.isLateGameDecision(d)) {
                 summary.lateTotal++;
-                if (d.quality === 'optimal') summary.lateOptimal++;
+                if (isOptimal) summary.lateOptimal++;
             }
         }
 
@@ -283,6 +277,15 @@ class DecisionAnalyzer {
      */
     static isLateGameDecision(decision) {
         return this.roundProgress(decision) > 0.6;
+    }
+
+    /**
+     * Was an opponent close enough to going out that letting the trick go was
+     * likely to end the round? Two cards is the point at which a single
+     * uncontested trick can finish them.
+     */
+    static isDangerDecision(decision) {
+        return typeof decision.minOpponentCards === 'number' && decision.minOpponentCards <= 2;
     }
 
     /** Mirror of isLateGameDecision: the opening 40% of a round. */
@@ -373,34 +376,12 @@ class DecisionAnalyzer {
         return Math.max(0, Math.min(1, 0.5 + delta / 2));
     }
 
-    /**
-     * Determine if a win was "lucky" vs "skilled".
-     *
-     * Luck in Big 2 is the cards you are dealt, and DealStrength already
-     * measures exactly that: deal_rank is where a player's hand ranked among
-     * the four dealt at the table, 1 (best) to 4 (worst). The previous version
-     * took "average cards remaining for other players" but was handed their
-     * cumulative game scores, which at game end sit at the 50/100 threshold -
-     * so its > 8 test was always true and lucky/skilled collapsed into the
-     * optimal-rate test alone.
-     *
-     * A win only counts as lucky on evidence of favourable cards. With no deal
-     * data (rounds recorded before the feature, or an unscored game) the win is
-     * credited as skilled rather than guessed at.
-     *
-     * @param {number|null} avgDealRank - Mean deal rank across the game's rounds
-     * @param {number} playerOptimalRate - Player's optimal decision rate
-     * @returns {boolean} - True if win appears lucky
-     */
-    static isLuckyWin(avgDealRank, playerOptimalRate) {
-        if (avgDealRank === null || avgDealRank === undefined) return false;
-
-        // 2.5 is the mean rank at a four-player table.
-        const favourableCards = avgDealRank < 2.5;
-        const lowSkillPlay = playerOptimalRate < 0.5;
-
-        return favourableCards && lowSkillPlay;
-    }
+    // isLuckyWin is gone. Splitting wins into "lucky" and "skilled" on a pair of
+    // thresholds was a coarse restatement of what the deal-strength stats
+    // already measure: those work per round rather than per game, over every
+    // round rather than wins only, against a measured per-tier baseline, and
+    // with a confidence interval. See DealStrength.js and the hand-strength
+    // endpoint in index.js.
 }
 
 module.exports = { DecisionAnalyzer };

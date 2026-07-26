@@ -143,6 +143,23 @@ function initDb() {
             deal_rank INTEGER,
             deal_baseline_version INTEGER,
             human_opponents INTEGER,
+            -- Fewest plays the dealt hand could have gone out in. Against
+            -- plays_count on a round the player won, this is how much of the
+            -- hand's shape survived contact.
+            deal_plays_needed INTEGER,
+            -- Control economy: aces and 2s dealt, how many were committed, and
+            -- how many of those actually took the trick. Cards never played are
+            -- dealt minus played.
+            controls_dealt INTEGER,
+            controls_played INTEGER,
+            controls_won INTEGER,
+            -- Fewest cards held at any point in the round. Reaching the endgame
+            -- and not converting is a different failure from never reaching it.
+            min_hand_size INTEGER,
+            -- Position in the GAME after this round, by cumulative score.
+            -- round_stats holds one player's own score and never the table's,
+            -- so without this there is no way to ask who was ahead when.
+            standing INTEGER,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
@@ -250,9 +267,39 @@ function initDb() {
             current_pile_strength REAL,
             hand_strength REAL,
             decision_quality TEXT,
+            -- How the move ranked among the legal alternatives, and how much of
+            -- the gap between the best and worst option it gave up (0-1).
+            -- move_rank is NULL on a forced move, which is not graded.
+            move_rank INTEGER,
+            option_count INTEGER,
+            loss_fraction REAL,
+            forced INTEGER DEFAULT 0,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
+
+        // Migration for decision_tracking on existing databases
+        db.all("PRAGMA table_info(decision_tracking)", (err, columns) => {
+            if (err) {
+                console.error("Error checking decision_tracking schema", err);
+                return;
+            }
+            if (columns.length > 0) {
+                const addColumn = (name, ddl) => {
+                    if (!columns.some(c => c.name === name)) {
+                        db.run(`ALTER TABLE decision_tracking ADD COLUMN ${ddl}`, (err) => {
+                            if (err && !err.message.includes('duplicate column')) {
+                                console.error(`Error adding ${name} to decision_tracking:`, err.message);
+                            }
+                        });
+                    }
+                };
+                addColumn('move_rank', 'move_rank INTEGER');
+                addColumn('option_count', 'option_count INTEGER');
+                addColumn('loss_fraction', 'loss_fraction REAL');
+                addColumn('forced', 'forced INTEGER DEFAULT 0');
+            }
+        });
 
         db.run(`CREATE INDEX IF NOT EXISTS idx_decision_tracking_user
                 ON decision_tracking(user_id, game_id)`);
@@ -277,6 +324,21 @@ function initDb() {
             late_game_accuracy REAL DEFAULT 0.0,
             late_game_decisions INTEGER DEFAULT 0,
             late_game_optimal INTEGER DEFAULT 0,
+            -- Moves with no alternative, tracked apart from graded decisions so
+            -- they cannot pad an accuracy figure.
+            forced_decisions INTEGER DEFAULT 0,
+            -- Summed normalized loss across graded decisions. Accuracy is
+            -- 1 - total_loss / total_decisions.
+            total_loss REAL DEFAULT 0.0,
+            -- Passes with nothing that beats the pile vs passes with a legal
+            -- answer in hand. The split is what separates bad cards from a
+            -- patient style.
+            forced_passes INTEGER DEFAULT 0,
+            voluntary_passes INTEGER DEFAULT 0,
+            -- Decisions taken with an opponent two cards or fewer from going
+            -- out, and how many contested the trick instead of conceding it.
+            danger_decisions INTEGER DEFAULT 0,
+            danger_contested INTEGER DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id),
             UNIQUE(user_id, game_mode)
         )`);
@@ -299,6 +361,12 @@ function initDb() {
                 };
                 addColumn('late_game_decisions', 'late_game_decisions INTEGER DEFAULT 0');
                 addColumn('late_game_optimal', 'late_game_optimal INTEGER DEFAULT 0');
+                addColumn('forced_decisions', 'forced_decisions INTEGER DEFAULT 0');
+                addColumn('total_loss', 'total_loss REAL DEFAULT 0.0');
+                addColumn('forced_passes', 'forced_passes INTEGER DEFAULT 0');
+                addColumn('voluntary_passes', 'voluntary_passes INTEGER DEFAULT 0');
+                addColumn('danger_decisions', 'danger_decisions INTEGER DEFAULT 0');
+                addColumn('danger_contested', 'danger_contested INTEGER DEFAULT 0');
             }
         });
 
@@ -313,6 +381,9 @@ function initDb() {
             total_sessions INTEGER DEFAULT 0,
             variance_score REAL DEFAULT 0.0,
             consistency_rating REAL DEFAULT 0.0,
+            -- Retired. The luck-vs-skill question is answered by the
+            -- deal-strength stats, per round and against a measured baseline.
+            -- Kept so old rows still read; nothing writes them.
             lucky_wins INTEGER DEFAULT 0,
             skilled_wins INTEGER DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id),
@@ -449,6 +520,14 @@ function initDb() {
                 addColumn('deal_rank', 'deal_rank INTEGER');
                 addColumn('deal_baseline_version', 'deal_baseline_version INTEGER');
                 addColumn('human_opponents', 'human_opponents INTEGER');
+                // NULL on older rows for the same reason as the deal columns:
+                // these were not measured, which is not the same as zero.
+                addColumn('deal_plays_needed', 'deal_plays_needed INTEGER');
+                addColumn('controls_dealt', 'controls_dealt INTEGER');
+                addColumn('controls_played', 'controls_played INTEGER');
+                addColumn('controls_won', 'controls_won INTEGER');
+                addColumn('min_hand_size', 'min_hand_size INTEGER');
+                addColumn('standing', 'standing INTEGER');
             }
         });
 
@@ -938,8 +1017,10 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             straights_played, flushes_played, full_houses_played,
             quads_played, straight_flushes_played,
             deal_strength_raw, deal_tier, deal_rank,
-            deal_baseline_version, human_opponents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            deal_baseline_version, human_opponents,
+            deal_plays_needed, controls_dealt, controls_played, controls_won,
+            min_hand_size, standing
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
@@ -960,7 +1041,15 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             roundData.dealStrength ? roundData.dealStrength.tier : null,
             roundData.dealStrength ? roundData.dealStrength.rank : null,
             roundData.dealStrength ? roundData.dealStrength.baselineVersion : null,
-            roundData.dealStrength ? roundData.dealStrength.humanOpponents : null
+            roundData.dealStrength ? roundData.dealStrength.humanOpponents : null,
+            // Tied to the deal being scored: without it there is no baseline to
+            // compare the plays used against, and no dealt control count.
+            roundData.dealStrength ? roundData.dealStrength.playsNeeded : null,
+            roundData.dealStrength ? roundData.dealStrength.controls : null,
+            roundData.dealStrength ? (roundData.controlsPlayed || 0) : null,
+            roundData.dealStrength ? (roundData.controlsWon || 0) : null,
+            roundData.minHandSize ?? null,
+            roundData.standing ?? null
         ];
 
         db.run(query, params, (err) => {
@@ -995,7 +1084,22 @@ const getRoundAggregates = (userId, gameMode) => {
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x,
                 SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x,
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x_rounds,
-                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x_rounds
+                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x_rounds,
+                -- Shedding efficiency, over won rounds only: a round you did
+                -- not finish says nothing about how many plays the hand needed,
+                -- because you never got to the end of it.
+                SUM(CASE WHEN deal_plays_needed IS NOT NULL AND placement = 1 THEN deal_plays_needed END) as won_min_plays,
+                SUM(CASE WHEN deal_plays_needed IS NOT NULL AND placement = 1 THEN plays_count END) as won_plays,
+                SUM(CASE WHEN deal_plays_needed IS NOT NULL AND placement = 1 THEN 1 ELSE 0 END) as shed_rounds,
+                -- Control economy. Cards never played are dealt minus played.
+                SUM(controls_dealt) as controls_dealt,
+                SUM(controls_played) as controls_played,
+                SUM(controls_won) as controls_won,
+                SUM(CASE WHEN controls_dealt IS NOT NULL THEN 1 ELSE 0 END) as control_rounds,
+                -- Endgame conversion: rounds where the player got within three
+                -- cards of going out, and how many of those they finished.
+                SUM(CASE WHEN min_hand_size IS NOT NULL AND min_hand_size <= 3 THEN 1 ELSE 0 END) as endgame_rounds,
+                SUM(CASE WHEN min_hand_size IS NOT NULL AND min_hand_size <= 3 AND placement = 1 THEN 1 ELSE 0 END) as endgame_wins
             FROM round_stats
             WHERE user_id = ? AND game_mode = ?
         `;
@@ -1003,6 +1107,50 @@ const getRoundAggregates = (userId, gameMode) => {
         db.get(query, [userId, gameMode], (err, row) => {
             if (err) reject(err);
             else resolve(row || {});
+        });
+    });
+};
+
+/**
+ * Comebacks and collapses: how a player's position at the halfway point of a
+ * game relates to where they finished.
+ *
+ * The midpoint standing comes from round_stats, the final placement from
+ * game_participants - which only carries rows for completed games, so abandoned
+ * ones fall out on their own. Games shorter than three rounds are excluded:
+ * with one or two rounds the "midpoint" is the finish, and every game would
+ * score as a held lead.
+ */
+const getComebackStats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const query = `
+            WITH game_rounds AS (
+                SELECT game_id, MAX(round_number) AS last_round
+                FROM round_stats
+                WHERE user_id = ? AND game_mode = ? AND standing IS NOT NULL
+                GROUP BY game_id
+                HAVING MAX(round_number) >= 3
+            ),
+            midpoint AS (
+                SELECT rs.game_id, rs.standing
+                FROM round_stats rs
+                JOIN game_rounds gr ON gr.game_id = rs.game_id
+                WHERE rs.user_id = ? AND rs.game_mode = ?
+                  AND rs.round_number = (gr.last_round + 1) / 2
+            )
+            SELECT
+                COUNT(*) AS games,
+                SUM(CASE WHEN m.standing >= 3 THEN 1 ELSE 0 END) AS behind_at_half,
+                SUM(CASE WHEN m.standing >= 3 AND gp.final_placement = 1 THEN 1 ELSE 0 END) AS comebacks,
+                SUM(CASE WHEN m.standing = 1 THEN 1 ELSE 0 END) AS led_at_half,
+                SUM(CASE WHEN m.standing = 1 AND gp.final_placement >= 3 THEN 1 ELSE 0 END) AS collapses
+            FROM midpoint m
+            JOIN game_participants gp ON gp.game_id = m.game_id AND gp.user_id = ?
+        `;
+
+        db.get(query, [userId, gameMode, userId, gameMode, userId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || { games: 0, behind_at_half: 0, comebacks: 0, led_at_half: 0, collapses: 0 });
         });
     });
 };
@@ -1183,8 +1331,8 @@ const trackDecision = (gameId, userId, roundNumber, turnNumber, action, handSize
 // per player; inserting them one awaited statement at a time was the largest
 // write source in the app. One multi-row INSERT collapses that into one
 // statement (chunked to stay under SQLITE_MAX_VARIABLE_NUMBER).
-const COLUMNS_PER_DECISION = 10;
-const MAX_DECISIONS_PER_INSERT = 90; // 900 bound params, well under the 999 default
+const COLUMNS_PER_DECISION = 14;
+const MAX_DECISIONS_PER_INSERT = 70; // 980 bound params, just under the 999 default
 
 const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
     if (!decisions || decisions.length === 0) return Promise.resolve();
@@ -1200,7 +1348,7 @@ const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
             .join(', ');
 
         const query = `INSERT INTO decision_tracking
-            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality)
+            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality, move_rank, option_count, loss_fraction, forced)
             VALUES ${placeholders}`;
 
         const params = [];
@@ -1218,7 +1366,13 @@ const trackDecisionsBatch = (gameId, userId, roundNumber, decisions) => {
                 d.cardsInDeck || 0,
                 d.pileStrength || 0,
                 d.handStrength || 0,
-                d.quality
+                d.quality,
+                // Null rather than 0 on a forced move: it has no rank among
+                // alternatives because there were none.
+                d.rank ?? null,
+                d.optionCount ?? null,
+                d.lossFraction ?? null,
+                d.forced ? 1 : 0
             );
         }
 
@@ -1271,7 +1425,9 @@ const pruneDecisionTracking = (retentionDays = DECISION_TRACKING_RETENTION_DAYS)
 const updateCardAwarenessStats = (userId, gameMode, summary) => {
     return new Promise((resolve, reject) => {
         const total = summary?.total || 0;
-        if (total === 0) return resolve();
+        // A game of nothing but forced moves still happened, and the forced
+        // count is the denominator that makes accuracy honest.
+        if (total === 0 && !(summary?.forced)) return resolve();
 
         const optimal = summary.optimal || 0;
         const suboptimal = summary.suboptimal || 0;
@@ -1279,10 +1435,19 @@ const updateCardAwarenessStats = (userId, gameMode, summary) => {
         const riskyFail = summary.riskyFailed || 0;
         const lateTotal = summary.lateTotal || 0;
         const lateOptimal = summary.lateOptimal || 0;
+        const forced = summary.forced || 0;
+        const loss = summary.totalLoss || 0;
+        const forcedPasses = summary.forcedPasses || 0;
+        const voluntaryPasses = summary.voluntaryPasses || 0;
+        const dangerDecisions = summary.dangerDecisions || 0;
+        const dangerContested = summary.dangerContested || 0;
+
+        const values = [total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal,
+            forced, loss, forcedPasses, voluntaryPasses, dangerDecisions, dangerContested];
 
         const query = `INSERT INTO card_awareness_stats
-            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal, forced_decisions, total_loss, forced_passes, voluntary_passes, danger_decisions, danger_contested)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, game_mode) DO UPDATE SET
                 total_decisions = total_decisions + ?,
                 optimal_decisions = optimal_decisions + ?,
@@ -1290,12 +1455,15 @@ const updateCardAwarenessStats = (userId, gameMode, summary) => {
                 risky_plays_successful = risky_plays_successful + ?,
                 risky_plays_failed = risky_plays_failed + ?,
                 late_game_decisions = late_game_decisions + ?,
-                late_game_optimal = late_game_optimal + ?`;
+                late_game_optimal = late_game_optimal + ?,
+                forced_decisions = forced_decisions + ?,
+                total_loss = total_loss + ?,
+                forced_passes = forced_passes + ?,
+                voluntary_passes = voluntary_passes + ?,
+                danger_decisions = danger_decisions + ?,
+                danger_contested = danger_contested + ?`;
 
-        db.run(query, [
-            userId, gameMode, total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal,
-            total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal
-        ], (err) => {
+        db.run(query, [userId, gameMode, ...values, ...values], (err) => {
             if (err) reject(err);
             else resolve();
         });
@@ -1315,18 +1483,31 @@ const getCardAwarenessStats = (userId, gameMode) => {
             if (!row) return resolve(null);
 
             const lateDecisions = row.late_game_decisions || 0;
+            const graded = row.total_decisions || 0;
             resolve({
                 ...row,
                 late_game_accuracy: lateDecisions > 0
                     ? (row.late_game_optimal || 0) / lateDecisions
+                    : null,
+                // How close to the best available move the player stays, on
+                // average. 1 means always the top-scored option; 0 means
+                // always the worst one on the table.
+                accuracy: graded > 0
+                    ? Math.max(0, 1 - (row.total_loss || 0) / graded)
                     : null
             });
         });
     });
 };
 
-// Update variance and streak stats
-const updateVarianceStats = (userId, gameMode, isWin, isLucky) => {
+// Update variance and streak stats.
+//
+// lucky_wins / skilled_wins are no longer maintained. The luck-vs-skill
+// question belongs to the deal-strength stats, which answer it per round
+// against a measured baseline and with a confidence interval, rather than as a
+// threshold applied to game wins only. The columns stay for old rows; nothing
+// reads or writes them.
+const updateVarianceStats = (userId, gameMode, isWin) => {
     return new Promise((resolve, reject) => {
         // First get current stats
         db.get(`SELECT * FROM variance_stats WHERE user_id = ? AND game_mode = ?`, [userId, gameMode], (err, row) => {
@@ -1350,23 +1531,18 @@ const updateVarianceStats = (userId, gameMode, isWin, isLucky) => {
             const newLongestWin = isWin && newStreak > longestWin ? newStreak : longestWin;
             const newLongestLoss = !isWin && Math.abs(newStreak) > longestLoss ? Math.abs(newStreak) : longestLoss;
 
-            const luckyWinInc = (isWin && isLucky) ? 1 : 0;
-            const skilledWinInc = (isWin && !isLucky) ? 1 : 0;
-
             const query = `INSERT INTO variance_stats
-                (user_id, game_mode, current_streak, longest_win_streak, longest_loss_streak, total_sessions, lucky_wins, skilled_wins)
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                (user_id, game_mode, current_streak, longest_win_streak, longest_loss_streak, total_sessions)
+                VALUES (?, ?, ?, ?, ?, 1)
                 ON CONFLICT(user_id, game_mode) DO UPDATE SET
                     current_streak = ?,
                     longest_win_streak = ?,
                     longest_loss_streak = ?,
-                    total_sessions = total_sessions + 1,
-                    lucky_wins = lucky_wins + ?,
-                    skilled_wins = skilled_wins + ?`;
+                    total_sessions = total_sessions + 1`;
 
             db.run(query, [
-                userId, gameMode, newStreak, newLongestWin, newLongestLoss, luckyWinInc, skilledWinInc,
-                newStreak, newLongestWin, newLongestLoss, luckyWinInc, skilledWinInc
+                userId, gameMode, newStreak, newLongestWin, newLongestLoss,
+                newStreak, newLongestWin, newLongestLoss
             ], (err) => {
                 if (err) reject(err);
                 else resolve();
@@ -1455,8 +1631,7 @@ const updateBehavioralStats = (userId, gameMode, aggressionScore, riskScore, ada
  * Behavioural scores describe how someone played *this* game and are then
  * smoothed by updateBehavioralStats; feeding them lifetime totals (as the
  * game-end path used to) meant averaging an average, and the result could
- * never move. The deal columns support the lucky-vs-skilled split, and are
- * null when the game predates deal scoring.
+ * never move.
  */
 const getGameRoundSummary = (userId, gameId, gameMode) => {
     return new Promise((resolve, reject) => {
@@ -1465,16 +1640,14 @@ const getGameRoundSummary = (userId, gameId, gameMode) => {
                 COUNT(*) as rounds,
                 COALESCE(SUM(plays_count), 0) as plays,
                 COALESCE(SUM(passes_count), 0) as passes,
-                COALESCE(SUM(leads_won), 0) as leads_won,
-                AVG(CASE WHEN deal_tier IS NOT NULL THEN deal_rank END) as avg_deal_rank,
-                AVG(CASE WHEN deal_tier IS NOT NULL THEN deal_strength_raw END) as avg_deal_raw
+                COALESCE(SUM(leads_won), 0) as leads_won
             FROM round_stats
             WHERE user_id = ? AND game_id = ? AND game_mode = ?
         `;
 
         db.get(query, [userId, gameId, gameMode], (err, row) => {
             if (err) reject(err);
-            else resolve(row || { rounds: 0, plays: 0, passes: 0, leads_won: 0, avg_deal_rank: null, avg_deal_raw: null });
+            else resolve(row || { rounds: 0, plays: 0, passes: 0, leads_won: 0 });
         });
     });
 };
@@ -2234,6 +2407,7 @@ module.exports = {
     getUserByUsername,
     saveRoundStats,
     getRoundAggregates,
+    getComebackStats,
     getCombinationStats,
     getRecentRounds,
     updateAggregateStats,

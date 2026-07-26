@@ -368,6 +368,7 @@ function StatsV2({
                             overview={overview}
                             game={game}
                             rounds={rounds}
+                            comeback={stats?.comeback}
                             rankLabel={rankLabel}
                             acc={acc}
                             rm={rm}
@@ -404,12 +405,18 @@ function StatsV2({
     );
 }
 
-function OverviewTab({ overview, game, rounds, rankLabel, acc, rm }) {
+function OverviewTab({ overview, game, rounds, comeback, rankLabel, acc, rm }) {
     const first = game.first_place || 0;
     const second = game.second_place || 0;
     const third = game.third_place || 0;
     const fourth = game.fourth_place || 0;
     const placements = first + second + third + fourth;
+
+    // Only over games of three rounds or more, where a halfway point exists.
+    const behindAtHalf = comeback?.behind_at_half || 0;
+    const comebacks = comeback?.comebacks || 0;
+    const ledAtHalf = comeback?.led_at_half || 0;
+    const collapses = comeback?.collapses || 0;
 
     return (
         <>
@@ -454,6 +461,25 @@ function OverviewTab({ overview, game, rounds, rankLabel, acc, rm }) {
                     </div>
                 )}
             </Section>
+
+            {(behindAtHalf > 0 || ledAtHalf > 0) && (
+                <Section title="HOW GAMES TURN" hint="Where you stood at the halfway mark versus where you finished" delay=".10s" rm={rm}>
+                    <div className="grid grid-cols-2 gap-2">
+                        <Tile
+                            label="Comebacks"
+                            value={`${num(comebacks)}/${num(behindAtHalf)}`}
+                            color={GOOD}
+                            sub="won from the back half"
+                        />
+                        <Tile
+                            label="Collapses"
+                            value={`${num(collapses)}/${num(ledAtHalf)}`}
+                            color="#ffab6b"
+                            sub="led, finished 3rd or 4th"
+                        />
+                    </div>
+                </Section>
+            )}
 
             <Section title="ROUND SNAPSHOT" delay=".12s" rm={rm}>
                 <div className="grid grid-cols-3 gap-2">
@@ -584,6 +610,8 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
                 )}
             </Section>
 
+            <CardUsageSection rounds={rounds} acc={acc} rm={rm} />
+
             <Section title="HEAD TO HEAD" delay=".2s" rm={rm}>
                 {(!headToHead || headToHead.length === 0) ? (
                     <Empty>Play against other people to build a record</Empty>
@@ -627,6 +655,80 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
             {/* Accent glow marker keeps the tab visually anchored to the theme. */}
             <div className="pointer-events-none" style={{ height: 1, background: `linear-gradient(90deg,transparent,${soft},transparent)`, marginTop: 18 }} />
         </>
+    );
+}
+
+// What happened to the cards you were dealt: whether your aces and 2s bought
+// anything, and whether the hand's shape survived being played out.
+function CardUsageSection({ rounds, acc, rm }) {
+    const controlRounds = rounds?.control_rounds || 0;
+    const dealt = rounds?.controls_dealt || 0;
+    const played = rounds?.controls_played || 0;
+    const won = rounds?.controls_won || 0;
+    // A control card is either played or still in hand when the round ends.
+    const stranded = Math.max(0, dealt - played);
+    const spent = Math.max(0, played - won);
+
+    const shedRounds = rounds?.shed_rounds || 0;
+    const minPlays = rounds?.won_min_plays || 0;
+    const usedPlays = rounds?.won_plays || 0;
+
+    const endgameRounds = rounds?.endgame_rounds || 0;
+    const endgameWins = rounds?.endgame_wins || 0;
+
+    if (controlRounds === 0 && shedRounds === 0 && endgameRounds === 0) {
+        return (
+            <Section title="CARD USAGE" hint="Where your aces and 2s end up" delay=".18s" rm={rm}>
+                <Empty>No scored rounds yet</Empty>
+            </Section>
+        );
+    }
+
+    return (
+        <Section title="CARD USAGE" hint="Where your aces and 2s end up, and how cleanly you shed" delay=".18s" rm={rm}>
+            {controlRounds > 0 && dealt > 0 && (
+                <>
+                    <div className="grid grid-cols-3 gap-2">
+                        <Tile label="Bought a trick" value={num(won)} color={GOOD} sub="took the lead" />
+                        <Tile label="Spent for nothing" value={num(spent)} color="#ffab6b" sub="got beaten" />
+                        <Tile label="Died in hand" value={num(stranded)} color={BAD} sub="never played" />
+                    </div>
+                    <div className="mt-3">
+                        <Meter
+                            label="Control cards that bought a trick"
+                            value={pct(won, dealt)}
+                            color={parseFloat(pct(won, dealt)) >= 50 ? GOOD : acc}
+                            note={`${num(dealt)} ace${dealt === 1 ? '' : 's'} and 2s dealt to you across ${num(controlRounds)} rounds.`}
+                            rm={rm}
+                        />
+                    </div>
+                </>
+            )}
+
+            {shedRounds > 0 && usedPlays > 0 && (
+                <div className="mt-3">
+                    <Meter
+                        label="Shedding efficiency"
+                        value={pct(minPlays, usedPlays)}
+                        color={parseFloat(pct(minPlays, usedPlays)) >= 85 ? GOOD : acc}
+                        note={`Over ${num(shedRounds)} round${shedRounds === 1 ? '' : 's'} you won: ${num(usedPlays)} plays used against the ${num(minPlays)} those hands needed. Breaking up a combination costs you here.`}
+                        rm={rm}
+                    />
+                </div>
+            )}
+
+            {endgameRounds > 0 && (
+                <div className="mt-3">
+                    <Meter
+                        label="Endgame conversion"
+                        value={pct(endgameWins, endgameRounds)}
+                        color={parseFloat(pct(endgameWins, endgameRounds)) >= 50 ? GOOD : acc}
+                        note={`You got within three cards of going out in ${num(endgameRounds)} round${endgameRounds === 1 ? '' : 's'} and finished ${num(endgameWins)} of them.`}
+                        rm={rm}
+                    />
+                </div>
+            )}
+        </Section>
     );
 }
 
@@ -753,10 +855,15 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const variance = tier3?.variance;
     const behavioral = tier3?.behavioral;
 
+    // Decisions that carried a real choice. Forced moves are counted apart so
+    // they cannot inflate the rate.
     const totalDecisions = awareness?.total_decisions || 0;
     const optimal = awareness?.optimal_decisions || 0;
-    const suboptimal = awareness?.suboptimal_decisions || 0;
+    const forcedDecisions = awareness?.forced_decisions || 0;
     const optimalRate = pct(optimal, totalDecisions);
+    const accuracyRaw = awareness?.accuracy;
+    const accuracyKnown = accuracyRaw !== null && accuracyRaw !== undefined;
+    const accuracy = ratio(accuracyRaw);
     // Null when no late-round decisions have been taken yet, which is not the
     // same as having scored zero on them.
     const lateAccuracyRaw = awareness?.late_game_accuracy;
@@ -765,10 +872,15 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const riskyTotal = (awareness?.risky_plays_successful || 0) + (awareness?.risky_plays_failed || 0);
     const riskyRate = pct(awareness?.risky_plays_successful || 0, riskyTotal);
 
+    const forcedPasses = awareness?.forced_passes || 0;
+    const voluntaryPasses = awareness?.voluntary_passes || 0;
+    const allPasses = forcedPasses + voluntaryPasses;
+    const dangerDecisions = awareness?.danger_decisions || 0;
+    const dangerContested = awareness?.danger_contested || 0;
+
     const streak = variance?.current_streak || 0;
-    const luckyWins = variance?.lucky_wins || 0;
-    const skilledWins = variance?.skilled_wins || 0;
-    const skillRate = pct(skilledWins, luckyWins + skilledWins);
+    // Lucky vs skilled wins retired: Deal Strength above answers the same
+    // question per round, against a measured baseline and with an interval.
     const varianceScore = ratio(variance?.variance_score);
     const consistency = ratio(variance?.consistency_rating);
 
@@ -780,25 +892,72 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
         <>
             <DealStrengthSection data={handStrength} acc={acc} rm={rm} />
 
-            <Section title="DECISION EFFICIENCY" hint="Quality of your play choices" delay=".04s" rm={rm}>
+            <Section title="DECISION QUALITY" hint="Every move you had a choice about, ranked against the engine's own evaluation" delay=".04s" rm={rm}>
                 {totalDecisions === 0 ? (
                     <Empty>No decision data yet</Empty>
                 ) : (
                     <>
                         <div className="grid grid-cols-3 gap-2">
-                            <Tile label="Decisions" value={num(totalDecisions)} />
-                            <Tile label="Optimal" value={num(optimal)} color={GOOD} />
-                            <Tile label="Suboptimal" value={num(suboptimal)} color="#ffab6b" />
+                            <Tile label="Decisions" value={num(totalDecisions)} sub="with a choice" />
+                            <Tile label="Best move" value={num(optimal)} color={GOOD} sub="top-ranked pick" />
+                            <Tile label="Forced" value={num(forcedDecisions)} sub="no alternative" />
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
-                            <Meter label="Optimal rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} rm={rm} />
+                            {accuracyKnown && (
+                                <Meter
+                                    label="Accuracy"
+                                    value={accuracy}
+                                    color={parseFloat(accuracy) >= 80 ? GOOD : parseFloat(accuracy) >= 60 ? WARN : acc}
+                                    note="How close your moves stay to the best one available, on average."
+                                    rm={rm}
+                                />
+                            )}
+                            <Meter label="Best-move rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} note="Share of choices where you picked the top-ranked move." rm={rm} />
                             {lateAccuracyKnown && (
-                                <Meter label="Late game accuracy" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Share of your decisions after 60% of the deck is gone that were rated optimal." rm={rm} />
+                                <Meter label="Late game best-move rate" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Same measure, restricted to decisions after 60% of the deck is gone." rm={rm} />
                             )}
                             {riskyTotal > 0 && (
-                                <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} risky play${riskyTotal === 1 ? '' : 's'} attempted.`} rm={rm} />
+                                <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} play${riskyTotal === 1 ? '' : 's'} that risked a valuable card on holding the trick.`} rm={rm} />
                             )}
                         </div>
+                    </>
+                )}
+            </Section>
+
+            <Section title="PASSES & PRESSURE" hint="Why you pass, and what you do when someone is about to go out" delay=".06s" rm={rm}>
+                {allPasses === 0 && dangerDecisions === 0 ? (
+                    <Empty>No pass data yet</Empty>
+                ) : (
+                    <>
+                        {allPasses > 0 && (
+                            <>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <Tile label="Passes" value={num(allPasses)} />
+                                    <Tile label="Nothing to play" value={num(forcedPasses)} sub="cards, not choice" />
+                                    <Tile label="Chose to hold" value={num(voluntaryPasses)} color={acc} sub="had an answer" />
+                                </div>
+                                <div className="mt-3">
+                                    <Meter
+                                        label="Passes that were a choice"
+                                        value={pct(voluntaryPasses, allPasses)}
+                                        color={acc}
+                                        note="The rest were forced — no legal card would have beaten the pile."
+                                        rm={rm}
+                                    />
+                                </div>
+                            </>
+                        )}
+                        {dangerDecisions > 0 && (
+                            <div className="mt-3">
+                                <Meter
+                                    label="Contested when an opponent was close"
+                                    value={pct(dangerContested, dangerDecisions)}
+                                    color={parseFloat(pct(dangerContested, dangerDecisions)) >= 70 ? GOOD : WARN}
+                                    note={`${num(dangerDecisions)} turn${dangerDecisions === 1 ? '' : 's'} where someone held two cards or fewer and you could have played.`}
+                                    rm={rm}
+                                />
+                            </div>
+                        )}
                     </>
                 )}
             </Section>
@@ -824,11 +983,8 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         <div className="mt-2 grid grid-cols-2 gap-2">
                             <Tile label="Longest win streak" value={num(variance.longest_win_streak)} color={GOOD} />
                             <Tile label="Longest loss streak" value={num(variance.longest_loss_streak)} color={BAD} />
-                            <Tile label="Skilled wins" value={num(skilledWins)} color={GOOD} sub="earned by play" />
-                            <Tile label="Lucky wins" value={num(luckyWins)} color={WARN} sub="favourable deals" />
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
-                            <Meter label="Skill rate" value={skillRate} color={parseFloat(skillRate) >= 70 ? GOOD : acc} rm={rm} />
                             <Meter
                                 label="Consistency"
                                 value={consistency}

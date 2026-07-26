@@ -5,10 +5,17 @@ const { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN } = requ
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
-const { rankTable, BASELINE_VERSION } = require('./DealStrength');
+const { rankTable, playsNeeded, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
+const { evaluateMove } = require('./MoveQuality');
 const { GameTape } = require('./GameTape');
 const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
+
+// Aces and 2s: the cards that buy tricks. BotLogic's retention model prices
+// them far above everything else, so where a player's copies end up is the
+// clearest read available on control-card management.
+const CONTROL_RANKS = new Set(['A', '2']);
+const countControls = (cards) => cards.filter(c => CONTROL_RANKS.has(c.rank)).length;
 
 class Room {
     constructor(roomId, gameMode = 'short') {
@@ -51,6 +58,8 @@ class Room {
         // references into tier3DecisionTracking, so resolving one writes
         // through to the decision record itself.
         this.pendingRiskyDecisions = {};
+        // Control cards riding on an unresolved trick, keyed by player id.
+        this.pendingControlPlays = {};
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
@@ -705,6 +714,7 @@ class Room {
             // them under the new game id.
             this.tier3DecisionTracking = {};
             this.pendingRiskyDecisions = {};
+            this.pendingControlPlays = {};
         }
 
         this.roundNumber++;
@@ -780,6 +790,7 @@ class Room {
 
         // A new deal starts no trick, so nothing can still be pending.
         this.pendingRiskyDecisions = {};
+        this.pendingControlPlays = {};
         this.trickIndex = 0;
 
         // Initialize round play stats for advanced stats tracking
@@ -795,6 +806,14 @@ class Room {
                 // which is a different (and much smaller) number.
                 tricksContested: 0,
                 lastTrickCounted: -1,
+                // Aces and 2s committed, and how many of them actually bought
+                // the trick they were spent on.
+                controlsPlayed: 0,
+                controlsWon: 0,
+                // Fewest cards held at any point this round. Reaching the
+                // endgame and not converting is a different failure from never
+                // getting there.
+                minHandSize: 13,
                 handTypes: {
                     SINGLE: 0,
                     PAIR: 0,
@@ -852,6 +871,13 @@ class Room {
                 ...scored[seat],
                 // Opponents only, so a player's own seat never counts itself.
                 humanOpponents: humanCount - (player.isBot ? 0 : 1),
+                // Fewest plays this hand could ever go out in. Compared against
+                // the plays actually used, it says whether the hand was kept
+                // together or broken up.
+                playsNeeded: playsNeeded(player.hand),
+                // Aces and 2s dealt. Where they end up - taking a trick, spent
+                // without taking one, or still in hand - is the control economy.
+                controls: countControls(player.hand),
                 baselineVersion: BASELINE_VERSION
             };
         });
@@ -992,6 +1018,17 @@ class Room {
                 : SOURCE.HUMAN
         });
 
+        // Grade the decision BEFORE anything is mutated. The hand, the pile,
+        // the played cards and the trick history all change below, and a move
+        // has to be judged against the position it was made in.
+        const moveQuality = player.isBot
+            ? null
+            : this.gradeDecision(playerIndex, {
+                action: 'play',
+                cards: validatedHand.cards,
+                isFirstTurn: isFirstTurnOfGame
+            });
+
         player.hand = newPlayerHand; // Update hand
 
         // This play beats whatever was on the pile, so if its owner was
@@ -1057,53 +1094,26 @@ class Room {
                 stats.tricksContested++;
                 stats.lastTrickCounted = this.trickIndex;
             }
+
+            stats.minHandSize = Math.min(stats.minHandSize, player.hand.length);
+
+            // Control cards ride on the pile until the trick resolves. Playing
+            // again in the same trick means the earlier ones were beaten, so
+            // the pending count is replaced rather than added to.
+            const controls = countControls(validatedHand.cards);
+            stats.controlsPlayed += controls;
+            this.pendingControlPlays[playerId] = controls;
         }
 
         // Track Tier 3 decision quality (for human players only)
-        if (!player.isBot) {
-            const handValues = player.hand.map(c => c.value);
-            const cardsInDeck = 52 - this.playedCards.length;
-            const handStrength = DecisionAnalyzer.calculateHandStrength(handValues);
-            const pileStrength = DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand);
-
-            const decision = DecisionAnalyzer.evaluateDecision({
-                action: 'play',
-                hand: handValues,
-                pile: this.lastPlayedHand,
-                cardsInDeck,
-                playedCards: this.playedCards
+        if (!player.isBot && moveQuality) {
+            const record = this.recordDecision(playerId, 'play', moveQuality, {
+                handSize: player.hand.length,
+                handStrength: DecisionAnalyzer.calculateHandStrength(player.hand.map(c => c.value)),
+                pileStrength: DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand)
             });
 
-            if (!this.tier3DecisionTracking[playerId]) {
-                this.tier3DecisionTracking[playerId] = {
-                    decisions: [],
-                    riskyPlays: 0,
-                    optimalPlays: 0
-                };
-            }
-
-            const record = {
-                round: this.roundNumber,
-                turn: this.turnNumber,
-                action: 'play',
-                quality: decision.quality,
-                isRisky: decision.isRisky,
-                // Filled in when the trick resolves: 'success' if nobody beat
-                // this play, 'failed' if somebody did. Stays null if the round
-                // ended first, and an unresolved play counts as neither.
-                riskOutcome: null,
-                handSize: player.hand.length,
-                cardsInDeck: cardsInDeck,
-                handStrength: handStrength,
-                pileStrength: pileStrength
-            };
-            this.tier3DecisionTracking[playerId].decisions.push(record);
-
-            if (decision.quality === 'optimal') {
-                this.tier3DecisionTracking[playerId].optimalPlays++;
-            }
-            if (decision.isRisky) {
-                this.tier3DecisionTracking[playerId].riskyPlays++;
+            if (moveQuality.isRisky) {
                 this.pendingRiskyDecisions[playerId] = record;
             }
         }
@@ -1115,6 +1125,7 @@ class Room {
             // The play that empties a hand ends the round: nothing can beat it.
             this.resolveRiskyDecision(playerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.resolveControlPlays(playerId);
 
             this.winners.push(player);
             this.roundsWonByName[player.name] = (this.roundsWonByName[player.name] || 0) + 1;
@@ -1135,6 +1146,7 @@ class Room {
             // Unbeatable as a single, so the trick is already resolved.
             this.resolveRiskyDecision(playerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.resolveControlPlays(playerId);
             this.trickIndex++;
 
             // Don't clear state immediately - set pending flag for delayed clear
@@ -1150,6 +1162,104 @@ class Room {
 
         this.advanceTurn();
         return { success: true };
+    }
+
+    /**
+     * The observation for a seat about to act, in the shape BotContext defines.
+     * Used both to drive live bot play and to grade human decisions, so a
+     * player is measured against exactly the position a bot would have faced.
+     */
+    buildSeatContext(seat, profile = null) {
+        const lastPlayerIdx = this.lastPlayedHand && this.lastPlayedHand.playerId
+            ? this.players.findIndex(p => p.id === this.lastPlayedHand.playerId)
+            : -1;
+
+        return buildGameContext({
+            hands: this.players.map(p => p.hand),
+            seat,
+            passedSeats: this.players.reduce((seats, p, idx) => {
+                if (this.passedPlayers.has(p.id)) seats.push(idx);
+                return seats;
+            }, []),
+            passCount: this.passes,
+            playedCards: this.playedCards,
+            trickHistory: this.trickHistory,
+            lastPlayedHand: this.lastPlayedHand,
+            lastPlayedSeat: lastPlayerIdx === -1 ? undefined : lastPlayerIdx,
+            profile
+        });
+    }
+
+    /**
+     * Grade a human decision against the bot's evaluation of the position.
+     *
+     * MUST be called before the move is applied - the hand, pile, played cards
+     * and trick history all move on, and a decision is only meaningful against
+     * the position it was taken in.
+     *
+     * Stats must never cost a player their turn, so any failure here degrades
+     * to an ungraded decision rather than propagating.
+     */
+    gradeDecision(seat, { action, cards = null, isFirstTurn = false }) {
+        try {
+            return evaluateMove({
+                hand: this.players[seat].hand,
+                lastPlayedHand: this.lastPlayedHand,
+                isFirstTurn,
+                // Profile-free: the yardstick has to be the same for everyone.
+                gameContext: this.buildSeatContext(seat, null),
+                action,
+                cards
+            });
+        } catch (err) {
+            console.error('Move quality evaluation failed:', err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Append a graded decision to the player's game-long tape and keep the
+     * running counters in step. Returns the record so callers can hold a
+     * reference to it - the risky-play resolution writes through to it later.
+     */
+    recordDecision(playerId, action, quality, { handSize, handStrength, pileStrength }) {
+        if (!this.tier3DecisionTracking[playerId]) {
+            this.tier3DecisionTracking[playerId] = {
+                decisions: [],
+                riskyPlays: 0,
+                optimalPlays: 0
+            };
+        }
+
+        const record = {
+            round: this.roundNumber,
+            turn: this.turnNumber,
+            action,
+            // Null when the decision carried no choice, and excluded from every
+            // accuracy figure rather than counted as a free success.
+            quality: quality.quality,
+            scored: quality.scored,
+            forced: quality.forced,
+            lossFraction: quality.lossFraction,
+            rank: quality.rank,
+            optionCount: quality.optionCount,
+            isRisky: quality.isRisky,
+            minOpponentCards: quality.minOpponentCards,
+            // Filled in when the trick resolves: 'success' if nobody beat this
+            // play, 'failed' if somebody did. Stays null if the round ended
+            // first, and an unresolved play counts as neither.
+            riskOutcome: null,
+            handSize,
+            cardsInDeck: 52 - this.playedCards.length,
+            handStrength,
+            pileStrength
+        };
+
+        this.tier3DecisionTracking[playerId].decisions.push(record);
+        if (quality.quality === 'optimal') this.tier3DecisionTracking[playerId].optimalPlays++;
+        if (quality.isRisky) this.tier3DecisionTracking[playerId].riskyPlays++;
+
+        return record;
     }
 
     /**
@@ -1174,6 +1284,20 @@ class Room {
         this.pendingRiskyDecisions = {};
     }
 
+    /**
+     * Credit the trick winner with the control cards their winning play
+     * committed, then clear the board. Called at the same three points as the
+     * risky-play resolution: a trick taken by passes, an unbeatable 2S, and a
+     * play that empties the hand.
+     */
+    resolveControlPlays(winnerId) {
+        const won = this.pendingControlPlays[winnerId] || 0;
+        if (won && this.roundPlayStats[winnerId]) {
+            this.roundPlayStats[winnerId].controlsWon += won;
+        }
+        this.pendingControlPlays = {};
+    }
+
     passTurn(playerId, { auto = false } = {}) {
         if (this.gameState !== 'playing') return { error: 'Game not active' };
 
@@ -1190,6 +1314,12 @@ class Room {
 
         // Update activity timestamp
         this.updateActivity();
+
+        // Graded before passedPlayers and trickHistory record this pass, so the
+        // observation is the one the decision was actually taken against.
+        const passQuality = this.players[playerIndex].isBot
+            ? null
+            : this.gradeDecision(playerIndex, { action: 'pass' });
 
         // Record that this player passed
         const passingPlayer = this.players[playerIndex];
@@ -1227,44 +1357,12 @@ class Room {
 
         // Track Tier 3 decision quality (for human players only)
         const player = this.players[playerIndex];
-        if (!player.isBot) {
-            const handValues = player.hand.map(c => c.value);
-            const cardsInDeck = 52 - this.playedCards.length;
-            const handStrength = DecisionAnalyzer.calculateHandStrength(handValues);
-            const pileStrength = DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand);
-
-            const decision = DecisionAnalyzer.evaluateDecision({
-                action: 'pass',
-                hand: handValues,
-                pile: this.lastPlayedHand,
-                cardsInDeck,
-                playedCards: this.playedCards
-            });
-
-            if (!this.tier3DecisionTracking[playerId]) {
-                this.tier3DecisionTracking[playerId] = {
-                    decisions: [],
-                    riskyPlays: 0,
-                    optimalPlays: 0
-                };
-            }
-
-            this.tier3DecisionTracking[playerId].decisions.push({
-                round: this.roundNumber,
-                turn: this.turnNumber,
-                action: 'pass',
-                quality: decision.quality,
-                isRisky: decision.isRisky,
-                riskOutcome: null,
+        if (!player.isBot && passQuality) {
+            this.recordDecision(playerId, 'pass', passQuality, {
                 handSize: player.hand.length,
-                cardsInDeck: cardsInDeck,
-                handStrength: handStrength,
-                pileStrength: pileStrength
+                handStrength: DecisionAnalyzer.calculateHandStrength(player.hand.map(c => c.value)),
+                pileStrength: DecisionAnalyzer.calculatePileStrength(this.lastPlayedHand)
             });
-
-            if (decision.quality === 'optimal') {
-                this.tier3DecisionTracking[playerId].optimalPlays++;
-            }
         }
 
         this.turnNumber++;
@@ -1286,6 +1384,7 @@ class Room {
             // Nobody beat the pile, so its owner's risky play paid off.
             this.resolveRiskyDecision(lastPlayerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.resolveControlPlays(lastPlayerId);
             this.trickIndex++;
 
             // Don't clear state immediately - set pending flag for delayed clear
@@ -1395,29 +1494,16 @@ class Room {
             const everyoneFull = this.players.every(p => p.hand.length === 13);
             const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
 
-            // Build the bot's observation. Shared with the self-play harness and
-            // the game-log replayer so all three see identical features - see
-            // BotContext.js.
-            const lastPlayerIdx = this.lastPlayedHand && this.lastPlayedHand.playerId
-                ? this.players.findIndex(p => p.id === this.lastPlayedHand.playerId)
-                : -1;
-
-            const gameContext = buildGameContext({
-                hands: this.players.map(p => p.hand),
-                seat: this.currentTurnIndex,
-                passedSeats: this.players.reduce((seats, p, idx) => {
-                    if (this.passedPlayers.has(p.id)) seats.push(idx);
-                    return seats;
-                }, []),
-                passCount: this.passes,
-                playedCards: this.playedCards,
-                trickHistory: this.trickHistory,
-                lastPlayedHand: this.lastPlayedHand,
-                lastPlayedSeat: lastPlayerIdx === -1 ? undefined : lastPlayerIdx,
-                // Per-bot temperament, so four bots at one table do not all
-                // play identically
-                profile: BotLogic.getBotProfile(currentPlayer.name)
-            });
+            // Build the bot's observation. Shared with the self-play harness,
+            // the game-log replayer and the move-quality evaluator so all of
+            // them see identical features - see BotContext.js.
+            //
+            // Per-bot temperament, so four bots at one table do not all play
+            // identically. Grading passes null here instead.
+            const gameContext = this.buildSeatContext(
+                this.currentTurnIndex,
+                BotLogic.getBotProfile(currentPlayer.name)
+            );
 
             const handleBotMove = (move, reasoning) => {
                 // Store reasoning if in debug mode

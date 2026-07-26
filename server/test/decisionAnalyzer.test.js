@@ -4,7 +4,7 @@
 // so the parts pinned here are the ones whose meaning has to stay fixed: that
 // counts are counts of decisions (not of games), that round phase is read from
 // the deck rather than from a decision's position in the list, and that the
-// adaptability and lucky-win definitions do not quietly drift back into
+// adaptability definition does not quietly drift back into
 // measuring something else.
 
 const test = require('node:test');
@@ -18,6 +18,11 @@ const decision = (overrides = {}) => ({
     turn: 0,
     action: 'play',
     quality: 'optimal',
+    // Graded by MoveQuality: `scored` false means the move was forced and must
+    // stay out of every accuracy figure.
+    scored: true,
+    forced: false,
+    lossFraction: 0,
     isRisky: false,
     riskOutcome: null,
     handSize: 10,
@@ -28,7 +33,7 @@ const decision = (overrides = {}) => ({
 test('summarizeDecisions counts decisions, not games', () => {
     const summary = DecisionAnalyzer.summarizeDecisions([
         decision({ quality: 'optimal' }),
-        decision({ quality: 'suboptimal' }),
+        decision({ quality: 'mistake' }),
         decision({ quality: 'optimal', action: 'pass' })
     ]);
 
@@ -37,6 +42,22 @@ test('summarizeDecisions counts decisions, not games', () => {
     assert.strictEqual(summary.suboptimal, 1);
     assert.strictEqual(summary.plays, 2);
     assert.strictEqual(summary.passes, 1);
+});
+
+test('forced moves are counted apart and never graded', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        decision({ quality: 'optimal', lossFraction: 0 }),
+        // Nothing beat the pile: no choice was made here.
+        decision({ scored: false, forced: true, quality: null, lossFraction: null, action: 'pass' }),
+        decision({ quality: 'inaccuracy', lossFraction: 0.3 })
+    ]);
+
+    assert.strictEqual(summary.total, 2, 'only decisions with a choice are graded');
+    assert.strictEqual(summary.forced, 1);
+    assert.strictEqual(summary.suboptimal, 1);
+    assert.ok(Math.abs(summary.totalLoss - 0.3) < 1e-9);
+    // Accuracy is derived from these two: 1 - 0.3/2 = 0.85.
+    assert.strictEqual(summary.passes, 1, 'a forced pass is still a pass');
 });
 
 test('summarizeDecisions counts only resolved risky plays', () => {
@@ -66,9 +87,9 @@ test('round phase comes from the deck remaining, not list position', () => {
 
 test('late-game counts track quality of late decisions only', () => {
     const summary = DecisionAnalyzer.summarizeDecisions([
-        decision({ cardsInDeck: 50, quality: 'suboptimal' }), // early, ignored
+        decision({ cardsInDeck: 50, quality: 'mistake' }), // early, ignored
         decision({ cardsInDeck: 10, quality: 'optimal' }),
-        decision({ cardsInDeck: 8, quality: 'suboptimal' })
+        decision({ cardsInDeck: 8, quality: 'mistake' })
     ]);
 
     assert.strictEqual(summary.lateTotal, 2);
@@ -111,13 +132,37 @@ test('adaptability is neutral without enough history', () => {
     assert.strictEqual(DecisionAnalyzer.calculateAdaptabilityScore([]), 0.5);
 });
 
-test('a win is lucky only on evidence of favourable cards', () => {
-    // Good deals (rank 1 is the best hand at the table) and weak play.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(1.8, 0.3), true);
-    // Good deals but strong play.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(1.8, 0.8), false);
-    // Weak play but below-average cards -- that win was earned.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(3.2, 0.3), false);
-    // No deal data recorded: credited as skilled rather than guessed at.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(null, 0.1), false);
+test('lucky-vs-skilled classification is not reintroduced', () => {
+    // The deal-strength stats own the luck-vs-skill question. A helper here
+    // would mean a second, uncalibrated answer to it.
+    assert.strictEqual(DecisionAnalyzer.isLuckyWin, undefined);
+});
+
+test('passes split by whether a legal answer existed', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        decision({ action: 'pass', scored: false, forced: true, quality: null, lossFraction: null }),
+        decision({ action: 'pass', quality: 'good', lossFraction: 0.1 }),
+        decision({ action: 'pass', quality: 'optimal' }),
+        decision({ action: 'play' })
+    ]);
+
+    assert.strictEqual(summary.passes, 3);
+    assert.strictEqual(summary.forcedPasses, 1, 'nothing beat the pile');
+    assert.strictEqual(summary.voluntaryPasses, 2, 'held a legal answer back');
+});
+
+test('danger response counts only turns that offered a choice', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        // Opponent on two cards, contested.
+        decision({ action: 'play', minOpponentCards: 2 }),
+        // Opponent on one card, conceded.
+        decision({ action: 'pass', minOpponentCards: 1 }),
+        // Opponent on one card but nothing could beat the pile: not a failure.
+        decision({ action: 'pass', minOpponentCards: 1, scored: false, forced: true, quality: null, lossFraction: null }),
+        // Nobody close to going out.
+        decision({ action: 'pass', minOpponentCards: 9 })
+    ]);
+
+    assert.strictEqual(summary.dangerDecisions, 2);
+    assert.strictEqual(summary.dangerContested, 1);
 });
