@@ -182,6 +182,20 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
   prop looks exactly as it did before desktop existed.
 - `RoundLogRows.jsx` - the log rows, shared by the mobile sheet and the desktop
   rail so the two can't drift.
+- `SuitWatermark.jsx` - the oversized faded suit shapes every v2 screen
+  background uses, drawn as **SVG paths, never text glyphs**. iOS resolves
+  ♠ ♥ ♦ ♣ to Apple Color Emoji, and a colour font ignores `color` - as text
+  these rendered on iPhone as full-opacity black and red emoji on top of the
+  page. Anywhere a suit *must* stay text (card pips, hand-type chips) the
+  symbol carries the U+FE0E text-presentation selector for the same reason;
+  `SUIT_SYMBOLS` in `theme/tableTheme.js` is the canonical copy.
+- `HomeScreenV2.jsx` - the home screen. The logo is a corner mark, not a hero:
+  the page opens on identity + the one button that starts a game, then a single
+  Live/Recent switch over one hairline-separated list (joinable rooms in
+  progress / finished games) instead of a stack of panels. Destinations are a
+  viewport-`fixed` bottom bar on phones - an absolutely-positioned footer inside
+  the scroller lands on top of the content once the page grows - and header
+  links from 768px up.
 - `useHandGeometry.js` (in `hooks/`) - card size and overlap for the hand fan.
   Type scales only *above* the 75px mobile card (`typeScale`), so no mobile
   width can be altered by a desktop change.

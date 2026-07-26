@@ -1,11 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
 import { findEligibleHands, findAvailableHandTypes, HAND_TYPES } from '../../utils/handFinder';
 
+// The suit icons carry U+FE0E for the same reason as theme/tableTheme's
+// SUIT_SYMBOLS: without it iOS renders them as colour emoji.
 const HAND_ICONS = {
-    [HAND_TYPES.PAIR]: '♦♦',
-    [HAND_TYPES.TRIPLE]: '♣♣♣',
+    [HAND_TYPES.PAIR]: '♦︎♦︎',
+    [HAND_TYPES.TRIPLE]: '♣︎♣︎♣︎',
     [HAND_TYPES.STRAIGHT]: '⇢',
-    [HAND_TYPES.FLUSH]: '♠',
+    [HAND_TYPES.FLUSH]: '♠︎',
     [HAND_TYPES.FULL_HOUSE]: '⌂',
     [HAND_TYPES.QUADS]: '■',
     [HAND_TYPES.STRAIGHT_FLUSH]: '★',

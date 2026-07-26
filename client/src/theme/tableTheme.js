@@ -35,7 +35,12 @@ export const PILE_SUIT_COLORS = {
     standard:  { D: '#e0434f', H: '#e0434f', C: '#1c2026', S: '#1c2026' },
 };
 
-export const SUIT_SYMBOLS = { D: '♦', C: '♣', H: '♥', S: '♠' };
+// U+FE0E is the text-presentation variation selector. iOS picks the Apple Color
+// Emoji face for all four suit code points by default, and a colour font ignores
+// `color` — which would render every pip as a black/red emoji and quietly defeat
+// four-colour deck mode on iPhone. The selector pins them to the text face so
+// PILE_SUIT_COLORS is what decides the colour on every platform.
+export const SUIT_SYMBOLS = { D: '♦︎', C: '♣︎', H: '♥︎', S: '♠︎' };
 
 // Face-card center emoji (kept for readability, matching the desktop Card.jsx).
 export const FACE_EMOJI = { K: '🫅', Q: '👸', J: '🤴' };

@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import SuitWatermark from './SuitWatermark';
 
 // Full-bleed themed background for the v2 mobile table:
 // surface gradient + tint overlay + two accent glow ellipses + faded suit glyphs.
@@ -20,10 +21,10 @@ const TableBackground = memo(function TableBackground({ surface, soft }) {
                 background: `radial-gradient(ellipse,${soft},transparent 72%)`, pointerEvents: 'none',
             }} />
 
-            {/* Decorative giant suit glyphs */}
-            <div style={{ position: 'absolute', top: '14%', left: '-12%', fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)', pointerEvents: 'none', userSelect: 'none' }}>♠</div>
-            <div style={{ position: 'absolute', top: '49%', right: '-13%', fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)', pointerEvents: 'none', userSelect: 'none' }}>♥</div>
-            <div style={{ position: 'absolute', top: '75%', left: '-8%', fontSize: 150, lineHeight: 1, color: 'rgba(255,255,255,.028)', transform: 'rotate(8deg)', pointerEvents: 'none', userSelect: 'none' }}>♦</div>
+            {/* Decorative giant suit shapes */}
+            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: '14%', left: '-12%' }} />
+            <SuitWatermark suit="H" size={165} rotate={12} opacity={0.03} style={{ top: '49%', right: '-13%' }} />
+            <SuitWatermark suit="D" size={120} rotate={8} opacity={0.028} style={{ top: '75%', left: '-8%' }} />
         </>
     );
 });
