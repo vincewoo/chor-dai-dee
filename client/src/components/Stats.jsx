@@ -98,6 +98,7 @@ const Stats = ({ user }) => {
                 stats={stats}
                 headToHead={headToHead}
                 tier3={tier3Stats}
+                handStrength={handStrength}
                 rank={playerRank}
                 loading={loading}
                 error={error}
