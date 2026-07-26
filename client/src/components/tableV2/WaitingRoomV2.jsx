@@ -5,9 +5,10 @@ import { useAvatars } from '../../hooks/useAvatars';
 import { GAME_MODES } from '../../constants/gameModes';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
-// v2 mobile waiting room. Mirrors the "Waiting Room v2" claude.ai/design mockup.
-// All room state and socket actions live in GameRoom and arrive via props; only
-// transient UI flashes (copied / shared labels) are local.
+// v2 waiting room. Mirrors the "Waiting Room v2" claude.ai/design mockup and
+// widens to a single row of seats on desktop. All room state and socket actions
+// live in GameRoom and arrive via props; only transient UI flashes (copied /
+// shared labels) are local.
 function WaitingRoomV2({
     roomId,
     players = [],
@@ -16,6 +17,8 @@ function WaitingRoomV2({
     hostUsername,
     gameMode,
     fourColorMode,
+    isPrivate,
+    onSetPrivacy,
     onSetGameMode,
     onToggleFourColor,
     onAddBot,
@@ -23,6 +26,7 @@ function WaitingRoomV2({
     onLeave,
     onOpenSettings,
     onShareInvite,
+    voice,
 }) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const [copied, setCopied] = useState(false);
@@ -92,7 +96,7 @@ function WaitingRoomV2({
             <div className="absolute pointer-events-none select-none" style={{ top: 120, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
             <div className="absolute pointer-events-none select-none" style={{ top: 460, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♥</div>
 
-            <div className="relative z-10 mx-auto flex min-h-full max-w-[440px] flex-col px-[18px] pb-safe-6 pt-[18px]">
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[18px] pb-safe-6 pt-[18px] md:max-w-[880px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -122,7 +126,7 @@ function WaitingRoomV2({
                 </div>
 
                 {/* Seats */}
-                <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
                     {seats.map((st) => (
                         <div
                             key={st.key}
@@ -197,6 +201,34 @@ function WaitingRoomV2({
                                 />
                             </div>
                         </div>
+                        {/* Only the host can change who may join. */}
+                        {isHost && onSetPrivacy && (
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Room privacy</div>
+                                    <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>
+                                        {isPrivate ? 'Only people with the code' : 'Anyone can join'}
+                                    </div>
+                                </div>
+                                <div className="flex gap-[6px]">
+                                    <SegButton
+                                        label="Public"
+                                        selected={!isPrivate}
+                                        accGrad={accGrad}
+                                        acc={acc}
+                                        onClick={() => onSetPrivacy(false)}
+                                    />
+                                    <SegButton
+                                        label="Private"
+                                        selected={!!isPrivate}
+                                        accGrad={accGrad}
+                                        acc={acc}
+                                        onClick={() => onSetPrivacy(true)}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex items-center justify-between">
                             <div>
                                 <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Four-colour deck</div>
@@ -210,6 +242,49 @@ function WaitingRoomV2({
                                 <span style={{ position: 'absolute', top: 3, left: fourColorMode ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 2px 5px rgba(0,0,0,.4)', transition: 'left .2s' }} />
                             </button>
                         </div>
+
+                        {voice && (
+                            <div className="flex items-center justify-between gap-3">
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Voice chat</div>
+                                    <div style={{ color: voice.enabled && voice.connected ? acc : 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>
+                                        {voice.enabled
+                                            ? (voice.connected ? 'Connected' : 'Connecting…')
+                                            : voice.userCount > 0
+                                                ? `${voice.userCount} already talking`
+                                                : 'Talk to the table while you play'}
+                                    </div>
+                                </div>
+                                <div className="flex gap-[6px]" style={{ flexShrink: 0 }}>
+                                    {voice.enabled ? (
+                                        <>
+                                            <SegButton
+                                                label={voice.isMuted ? '🔇 Muted' : '🔊 Mic on'}
+                                                selected={!voice.isMuted}
+                                                accGrad={accGrad}
+                                                acc={acc}
+                                                onClick={voice.onToggleMute}
+                                            />
+                                            <SegButton
+                                                label={voice.isDeafened ? '🔕 Deafened' : '🔔 Audio on'}
+                                                selected={!voice.isDeafened}
+                                                accGrad={accGrad}
+                                                acc={acc}
+                                                onClick={voice.onToggleDeafen}
+                                            />
+                                        </>
+                                    ) : (
+                                        <SegButton
+                                            label="🎤 Join voice"
+                                            selected
+                                            accGrad={accGrad}
+                                            acc={acc}
+                                            onClick={voice.onJoin}
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

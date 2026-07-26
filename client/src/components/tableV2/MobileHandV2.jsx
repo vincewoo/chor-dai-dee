@@ -9,12 +9,12 @@ function MobileHandV2({
     sortedHand, selectedCards, onToggle,
     sensors, onDragStart, onDragEnd,
     handContainerRef, onTouchStart, onTouchMove, onTouchEnd,
-    containerWidth, acc, fourColor,
+    containerWidth, acc, fourColor, geometry,
 }) {
-    const { width, height, marginLeft } = useHandGeometry(sortedHand.length, containerWidth);
+    const { width, height, marginLeft, typeScale } = useHandGeometry(sortedHand.length, containerWidth, geometry);
 
     return (
-        <div style={{ display: 'flex', justifyContent: 'center', width: '100%', minHeight: 126, alignItems: 'flex-end', paddingBottom: 2 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', width: '100%', minHeight: Math.max(126, height + 8), alignItems: 'flex-end', paddingBottom: 2 }}>
             <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -46,6 +46,7 @@ function MobileHandV2({
                                     height={height}
                                     acc={acc}
                                     fourColor={fourColor}
+                                    typeScale={typeScale}
                                 />
                             );
                         })}

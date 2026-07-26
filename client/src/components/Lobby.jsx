@@ -7,6 +7,7 @@ import { useVoice } from '../contexts/VoiceContext';
 import { GAME_MODES } from '../constants/gameModes';
 import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
+import { useIsDesktop } from '../hooks/useMediaQuery';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -23,20 +24,13 @@ const Lobby = ({ user, socket, setUser }) => {
     // across re-renders (avoids calling Date.now() during render).
     const [nowTs] = useState(() => Date.now());
     const [selectedGame, setSelectedGame] = useState(null);
-    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+    const isDesktop = useIsDesktop();
     const navigate = useNavigate();
     const location = useLocation();
     const voiceContext = useVoice();
     const { fourColorMode, toggleFourColorMode } = useSuitColors();
 
-    // Track viewport to gate the v2 mobile home screen (matches GameRoom's 768px breakpoint).
-    useEffect(() => {
-        const onResize = () => setIsDesktop(window.innerWidth >= 768);
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    // Room lobby state (when returning from a game)
+        // Room lobby state (when returning from a game)
     const [roomLobbyData, setRoomLobbyData] = useState(null);
     // { roomId, players, hostUsername, gameMode }
     const [selectedGameMode, setSelectedGameMode] = useState('standard');

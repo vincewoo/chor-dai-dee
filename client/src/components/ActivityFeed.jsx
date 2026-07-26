@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import ScoreDialog from './ScoreDialog';
 import { ActivityFeedV2 } from './tableV2';
+import { useIsDesktop } from '../hooks/useMediaQuery';
 
 const ActivityFeed = ({ serverUrl, user }) => {
     const [games, setGames] = useState([]);
@@ -18,20 +19,12 @@ const ActivityFeed = ({ serverUrl, user }) => {
     const [page, setPage] = useState({ number: 1, append: false });
     const [totalPages, setTotalPages] = useState(1);
     const [selectedGame, setSelectedGame] = useState(null);
-    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+    const isDesktop = useIsDesktop();
     const navigate = useNavigate();
 
     const currentPage = page.number;
 
-    // Track viewport to gate the v2 mobile feed (matches the 768px breakpoint
-    // used by the lobby and game room).
-    useEffect(() => {
-        const onResize = () => setIsDesktop(window.innerWidth >= 768);
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    const fetchActivityFeed = useCallback(async () => {
+        const fetchActivityFeed = useCallback(async () => {
         if (page.append) {
             setLoadingMore(true);
         } else {

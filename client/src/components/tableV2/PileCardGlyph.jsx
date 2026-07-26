@@ -2,13 +2,14 @@ import { memo } from 'react';
 import { PILE_SUIT_COLORS, SUIT_SYMBOLS, FACE_EMOJI } from '../../theme/tableTheme';
 
 // Presentational white card face used in the pile (60x90) and round log (32x46).
-// Deliberately independent of Card.jsx (different visual language) so the
-// desktop card renderer stays untouched.
+// `scale` multiplies every dimension so the desktop pile can show a larger card
+// without a second set of metrics.
 const PileCardGlyph = memo(function PileCardGlyph({
     rank,
     suit,
     fourColor = false,
     size = 'pile', // 'pile' | 'log'
+    scale = 1,
     className,
     style,
 }) {
@@ -17,9 +18,13 @@ const PileCardGlyph = memo(function PileCardGlyph({
     const sym = SUIT_SYMBOLS[suit] || '';
     const isLog = size === 'log';
 
-    const dims = isLog
-        ? { width: 32, height: 46, radius: 6, cornerTop: 3, cornerLeft: 4, rankSize: 12, symSize: 9 }
-        : { width: 60, height: 90, radius: 12, cornerTop: 6, cornerLeft: 7, rankSize: 18, symSize: 12 };
+    const base = isLog
+        ? { width: 32, height: 46, radius: 6, cornerTop: 3, cornerLeft: 4, rankSize: 12, symSize: 9, faceSize: 0, pipSize: 0, faceBottom: 0, faceRight: 0, pipBottom: 0, pipRight: 0 }
+        : { width: 60, height: 90, radius: 12, cornerTop: 6, cornerLeft: 7, rankSize: 18, symSize: 12, faceSize: 24, pipSize: 26, faceBottom: 4, faceRight: 6, pipBottom: 6, pipRight: 7 };
+
+    const dims = scale === 1
+        ? base
+        : Object.fromEntries(Object.entries(base).map(([k, v]) => [k, v * scale]));
 
     return (
         <div
@@ -42,9 +47,9 @@ const PileCardGlyph = memo(function PileCardGlyph({
             </div>
             {!isLog && (
                 FACE_EMOJI[rank] ? (
-                    <div style={{ position: 'absolute', bottom: 4, right: 6, fontSize: 24 }}>{FACE_EMOJI[rank]}</div>
+                    <div style={{ position: 'absolute', bottom: dims.faceBottom, right: dims.faceRight, fontSize: dims.faceSize }}>{FACE_EMOJI[rank]}</div>
                 ) : (
-                    <div style={{ position: 'absolute', bottom: 6, right: 7, color, fontSize: 26 }}>{sym}</div>
+                    <div style={{ position: 'absolute', bottom: dims.pipBottom, right: dims.pipRight, color, fontSize: dims.pipSize }}>{sym}</div>
                 )
             )}
         </div>

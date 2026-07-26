@@ -1,4 +1,5 @@
 export { default as GameTableMobile } from './GameTableMobile';
+export { default as GameTableDesktop } from './GameTableDesktop';
 export { default as SpectatorHandV2 } from './SpectatorHandV2';
 export { default as HomeScreenV2 } from './HomeScreenV2';
 export { default as WaitingRoomV2 } from './WaitingRoomV2';

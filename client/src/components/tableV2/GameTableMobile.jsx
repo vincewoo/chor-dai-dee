@@ -14,6 +14,7 @@ import SpectatorHandV2 from './SpectatorHandV2';
 import RoundLogSheet from './RoundLogSheet';
 import RoundCelebration from './RoundCelebration';
 import VoiceControlBubble from '../VoiceControlBubble';
+import { MOBILE_LAYOUT } from './layout';
 
 // Orchestrator for the v2 mobile in-game table. Stateful game logic lives in
 // GameRoom and arrives via props; only local UI state (info/log toggles) is here.
@@ -123,6 +124,8 @@ function GameTableMobile(props) {
                     key={position}
                     player={player}
                     position={position}
+                    placement={MOBILE_LAYOUT.seats[position]}
+                    size={MOBILE_LAYOUT.seats.size}
                     isTurn={gameState.currentTurn === player?.id}
                     infoOn={infoOn}
                     acc={acc}
@@ -149,6 +152,9 @@ function GameTableMobile(props) {
                 showControlToast={showControlToast}
                 onOpenLog={() => setLogOpen(true)}
                 hasLog={log.length > 0}
+                frame={MOBILE_LAYOUT.pile.frame}
+                scale={MOBILE_LAYOUT.pile.scale}
+                stackHeight={MOBILE_LAYOUT.pile.stackHeight}
             />
 
             <StatusBanner
@@ -161,6 +167,7 @@ function GameTableMobile(props) {
                 acc={acc}
                 accGrad={accGrad}
                 rm={rm}
+                placement={MOBILE_LAYOUT.banner}
             />
 
             {/* Bottom controls + hand. Spectators get the watched seat's hand
@@ -173,6 +180,7 @@ function GameTableMobile(props) {
                         acc={acc}
                         fourColor={fourColorMode}
                         ownerName={getRelativePlayer(0)?.name}
+                        geometry={MOBILE_LAYOUT.hand}
                     />
                 ) : (<>
                 <ControlsRow
@@ -207,6 +215,7 @@ function GameTableMobile(props) {
                     containerWidth={containerWidth}
                     acc={acc}
                     fourColor={fourColorMode}
+                    geometry={MOBILE_LAYOUT.hand}
                 />
                 </>)}
             </div>

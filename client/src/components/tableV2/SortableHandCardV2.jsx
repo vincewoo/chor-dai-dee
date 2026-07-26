@@ -7,7 +7,7 @@ import HandCardFaceV2 from './HandCardFaceV2';
 // Keeps the useSortable id scheme (`rank-suit`) and the data-card-id attribute
 // so GameRoom's swipe-select and dnd reorder handlers continue to work.
 const SortableHandCardV2 = ({
-    card, isSelected, onToggle, index, marginLeft, width, height, acc, fourColor,
+    card, isSelected, onToggle, index, marginLeft, width, height, acc, fourColor, typeScale,
 }) => {
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
@@ -41,6 +41,7 @@ const SortableHandCardV2 = ({
                 height={height}
                 acc={acc}
                 fourColor={fourColor}
+                typeScale={typeScale}
                 onClick={() => onToggle(card)}
             />
         </div>

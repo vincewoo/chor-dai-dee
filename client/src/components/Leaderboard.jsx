@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ArchetypeDialog from './ArchetypeDialog';
 import { LeaderboardV2 } from './tableV2';
+import { useIsDesktop } from '../hooks/useMediaQuery';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
@@ -16,20 +17,14 @@ const Leaderboard = ({ user }) => {
     const [error, setError] = useState('');
     const [showArchetypeDialog, setShowArchetypeDialog] = useState(false);
     const [selectedArchetype, setSelectedArchetype] = useState(null);
-    const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+    const isDesktop = useIsDesktop();
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchLeaderboard();
     }, [mode, sortBy, minGames]);
 
-    useEffect(() => {
-        const onResize = () => setIsDesktop(window.innerWidth >= 768);
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    const handleArchetypeClick = (archetype) => {
+        const handleArchetypeClick = (archetype) => {
         setSelectedArchetype(archetype);
         setShowArchetypeDialog(true);
     };
