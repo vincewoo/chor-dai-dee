@@ -21,6 +21,8 @@ const {
 const { normalizeAvatar } = require('./avatars');
 const gamelog = require('./gamelog');
 const gamelogRecorder = require('./gamelogRecorder');
+const { reviewForUser, ReviewUnavailable } = require('./gamelogReview');
+const { DEFAULT_LIMIT: REVIEW_DEFAULT_LIMIT } = require('./game/MoveReview');
 
 const app = express();
 
@@ -2760,6 +2762,46 @@ function confidenceLevelFor(rounds) {
     if (rounds < 250) return 'provisional';
     return 'established';
 }
+
+/**
+ * Move review: the handful of decisions in one finished game worth looking at.
+ *
+ * Derived from the tape on request rather than stored. Nothing about a review
+ * is written at play time - the grade a decision gets here is the grade it got
+ * live, because both paths replay the position through BotContext and score it
+ * profile-free. See docs/MOVE-REVIEW.md.
+ *
+ * Scoped to games the named account actually sat in. A review knows every hand
+ * at the table, which is the point of it and also why gamelogReview refuses to
+ * build one for a game that has not finished.
+ */
+app.get('/api/review/:gameId', async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        const { username } = req.query;
+
+        if (!username) {
+            return res.status(400).json({ error: 'username is required' });
+        }
+
+        const user = await getUserByUsername(username);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const limit = Math.min(parseInt(req.query.limit, 10) || REVIEW_DEFAULT_LIMIT, 20);
+        const review = await reviewForUser(gameId, user.id, { limit });
+
+        res.json(review);
+    } catch (err) {
+        if (err instanceof ReviewUnavailable) {
+            // Every "cannot review this" case carries its own status and a
+            // machine-readable reason, so the client can tell "this game
+            // predates logging" from "you were not in it" without parsing prose.
+            return res.status(err.status).json({ error: err.message, reason: err.reason });
+        }
+        console.error('Error building move review:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 // Get joinable rooms (rooms in-progress with bots)
 app.get('/api/rooms/joinable', (_req, res) => {
