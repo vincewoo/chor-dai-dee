@@ -436,7 +436,11 @@ function initDb() {
                     }
                 };
                 addColumn('leads_won', 'leads_won INTEGER DEFAULT 0');
-                addColumn('lead_attempts', 'lead_attempts INTEGER DEFAULT 0');
+                // NULL, not 0, on rows written before tricks were counted: a
+                // round with an unknown number of contested tricks is not a
+                // round with none. Same reasoning as the deal columns below --
+                // 0 here would divide a real leads_won by a fabricated zero.
+                addColumn('lead_attempts', 'lead_attempts INTEGER');
                 // Deal-strength columns default to NULL, not 0: a pre-existing
                 // row has an *unknown* deal, and 0 is a real (average) score.
                 // Every deal-strength query filters on NOT NULL for this reason.
@@ -881,6 +885,11 @@ const getRoundAggregates = (userId, gameMode) => {
                 SUM(passes_count) as total_passes,
                 SUM(leads_won) as leads_won,
                 SUM(lead_attempts) as lead_attempts,
+                -- Lead control has to be a ratio over the same rounds. Rounds
+                -- predating tricks-contested have leads_won but no attempts,
+                -- and pairing the two would report a success rate above 100%.
+                SUM(CASE WHEN lead_attempts IS NOT NULL THEN leads_won ELSE 0 END) as tracked_leads_won,
+                SUM(CASE WHEN lead_attempts IS NOT NULL THEN plays_count + passes_count ELSE 0 END) as tracked_actions,
                 AVG(CAST(plays_count AS REAL) / NULLIF(plays_count + passes_count, 0)) as play_rate,
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x,
                 SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x,

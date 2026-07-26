@@ -487,7 +487,12 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
     const totalRounds = source.total_rounds || 0;
 
     const leadsWon = source.leads_won || 0;
+    // Lead control is reported over the rounds that actually recorded contested
+    // tricks. Older rounds contribute leads with no attempts, and pairing those
+    // would put the success rate above 100% until they aged out.
     const leadAttempts = source.lead_attempts || 0;
+    const trackedLeadsWon = hasRoundData ? (rounds.tracked_leads_won || 0) : leadsWon;
+    const trackedActions = hasRoundData ? (rounds.tracked_actions || 0) : actions;
 
     const comboList = [
         { label: 'Singles', value: combos.singles || 0, color: '#7fb2ff' },
@@ -527,18 +532,18 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
 
             <Section title="LEAD CONTROL" hint="Tricks you played into, and how often you took them" delay=".08s" rm={rm}>
                 <div className="grid grid-cols-3 gap-2">
-                    <Tile label="Leads won" value={num(leadsWon)} color={GOOD} />
+                    <Tile label="Leads won" value={num(trackedLeadsWon)} color={GOOD} />
                     <Tile label="Tricks contested" value={num(leadAttempts)} sub="played into" />
                     <Tile
                         label="Success rate"
-                        value={`${pct(leadsWon, leadAttempts)}%`}
-                        color={parseFloat(pct(leadsWon, leadAttempts)) >= 50 ? GOOD : TEXT}
+                        value={`${pct(trackedLeadsWon, leadAttempts)}%`}
+                        color={parseFloat(pct(trackedLeadsWon, leadAttempts)) >= 50 ? GOOD : TEXT}
                     />
                 </div>
                 <div className="mt-3">
                     <Meter
                         label="Control efficiency"
-                        value={pct(leadsWon, actions)}
+                        value={pct(trackedLeadsWon, trackedActions)}
                         color={acc}
                         note="Leads won across all actions (plays + passes)."
                         rm={rm}
