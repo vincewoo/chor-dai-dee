@@ -176,7 +176,7 @@ function isRiskyMove(move, hand, ctx, gamePhase) {
  *                     model does not own - see the header - and no coaching
  *                     surface may call it an error.
  */
-function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext = {}, action, cards = null }) {
+function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext = {}, action, cards = null, explain = false }) {
     // Fewest cards any opponent is holding. Carried on every decision so the
     // stats layer can ask how a player responds with someone about to go out,
     // without having to reconstruct the position.
@@ -243,15 +243,23 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
     // a best move that was not the best available.
     const forcedWins = forcedWinKeys(candidates, hand, ctx);
 
+    // Off by default. Reasoning is only wanted for the handful of decisions a
+    // review actually renders, and capturing it for every graded move would put
+    // the cost on the live play path, which grades every turn.
     const options = toScore.map(move => {
         const key = cardKey(move.cards);
         if (forcedWins.has(key)) {
-            return { action: 'play', key, move, score: WIN_SCORE };
+            return {
+                action: 'play', key, move, score: WIN_SCORE,
+                factors: explain
+                    ? [{ factor: 'Cannot be beaten, and the rest plays out next turn', points: WIN_SCORE }]
+                    : null
+            };
         }
         const scored = lastPlayedHand
-            ? BotLogic.scoreResponseMove(move, hand, ctx, gamePhase, trickValue)
-            : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase);
-        return { action: 'play', key, move, score: scored.score };
+            ? BotLogic.scoreResponseMove(move, hand, ctx, gamePhase, trickValue, explain)
+            : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase, explain);
+        return { action: 'play', key, move, score: scored.score, factors: scored.factors || null };
     });
 
     if (lastPlayedHand) {
@@ -263,7 +271,12 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
             // worth making -- the same comparison shouldStrategicPass draws.
             score: passIsAvailable(candidates, hand, ctx, gamePhase)
                 ? BotLogic.PASS_PRICE
-                : -Infinity
+                : -Infinity,
+            factors: explain
+                ? [passIsAvailable(candidates, hand, ctx, gamePhase)
+                    ? { factor: 'Let the trick go rather than pay for it', points: BotLogic.PASS_PRICE }
+                    : { factor: 'Passing gives up a trick that has to be contested', points: -Infinity }]
+                : null
         });
     }
 
@@ -338,6 +351,12 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
         forcedWin: chosen.action === 'play' && forcedWins.has(chosen.key),
         rank: chosenIndex + 1,
         optionCount: options.length,
+        // How many of the options were plays rather than the pass, and how many
+        // of those won outright. A surface that wants to credit a player for
+        // finding a win needs both: when every legal play wins, there was
+        // nothing to find, and praising it is flattery rather than coaching.
+        playOptions: options.filter(o => o.action === 'play').length,
+        winningOptions: options.filter(o => o.score >= WIN_SCORE).length,
         isRisky: chosen.action === 'play' && isRiskyMove(chosen.move, hand, ctx, gamePhase),
         minOpponentCards,
         bestMove: options[0].action === 'pass'
@@ -350,7 +369,13 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
             ? null
             : options[0].move.cards.map(c => ({ rank: c.rank, suit: c.suit, value: c.value })),
         bestMoveType: options[0].action === 'pass' ? null : options[0].move.type,
-        bestScore: best
+        bestScore: best,
+        chosenScore: chosen.score,
+        // Populated only under `explain`. The same factor breakdown the bot
+        // debug panel renders, for the move the model preferred and for the one
+        // actually made - which is the whole content of a coaching note.
+        bestMoveFactors: explain ? (options[0].factors || []) : null,
+        chosenFactors: explain ? (chosen.factors || []) : null
     };
 }
 
