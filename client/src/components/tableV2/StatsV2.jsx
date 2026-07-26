@@ -584,6 +584,8 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
                 )}
             </Section>
 
+            <CardUsageSection rounds={rounds} acc={acc} rm={rm} />
+
             <Section title="HEAD TO HEAD" delay=".2s" rm={rm}>
                 {(!headToHead || headToHead.length === 0) ? (
                     <Empty>Play against other people to build a record</Empty>
@@ -627,6 +629,65 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
             {/* Accent glow marker keeps the tab visually anchored to the theme. */}
             <div className="pointer-events-none" style={{ height: 1, background: `linear-gradient(90deg,transparent,${soft},transparent)`, marginTop: 18 }} />
         </>
+    );
+}
+
+// What happened to the cards you were dealt: whether your aces and 2s bought
+// anything, and whether the hand's shape survived being played out.
+function CardUsageSection({ rounds, acc, rm }) {
+    const controlRounds = rounds?.control_rounds || 0;
+    const dealt = rounds?.controls_dealt || 0;
+    const played = rounds?.controls_played || 0;
+    const won = rounds?.controls_won || 0;
+    // A control card is either played or still in hand when the round ends.
+    const stranded = Math.max(0, dealt - played);
+    const spent = Math.max(0, played - won);
+
+    const shedRounds = rounds?.shed_rounds || 0;
+    const minPlays = rounds?.won_min_plays || 0;
+    const usedPlays = rounds?.won_plays || 0;
+
+    if (controlRounds === 0 && shedRounds === 0) {
+        return (
+            <Section title="CARD USAGE" hint="Where your aces and 2s end up" delay=".18s" rm={rm}>
+                <Empty>No scored rounds yet</Empty>
+            </Section>
+        );
+    }
+
+    return (
+        <Section title="CARD USAGE" hint="Where your aces and 2s end up, and how cleanly you shed" delay=".18s" rm={rm}>
+            {controlRounds > 0 && dealt > 0 && (
+                <>
+                    <div className="grid grid-cols-3 gap-2">
+                        <Tile label="Bought a trick" value={num(won)} color={GOOD} sub="took the lead" />
+                        <Tile label="Spent for nothing" value={num(spent)} color="#ffab6b" sub="got beaten" />
+                        <Tile label="Died in hand" value={num(stranded)} color={BAD} sub="never played" />
+                    </div>
+                    <div className="mt-3">
+                        <Meter
+                            label="Control cards that bought a trick"
+                            value={pct(won, dealt)}
+                            color={parseFloat(pct(won, dealt)) >= 50 ? GOOD : acc}
+                            note={`${num(dealt)} ace${dealt === 1 ? '' : 's'} and 2s dealt to you across ${num(controlRounds)} rounds.`}
+                            rm={rm}
+                        />
+                    </div>
+                </>
+            )}
+
+            {shedRounds > 0 && usedPlays > 0 && (
+                <div className="mt-3">
+                    <Meter
+                        label="Shedding efficiency"
+                        value={pct(minPlays, usedPlays)}
+                        color={parseFloat(pct(minPlays, usedPlays)) >= 85 ? GOOD : acc}
+                        note={`Over ${num(shedRounds)} round${shedRounds === 1 ? '' : 's'} you won: ${num(usedPlays)} plays used against the ${num(minPlays)} those hands needed. Breaking up a combination costs you here.`}
+                        rm={rm}
+                    />
+                </div>
+            )}
+        </Section>
     );
 }
 

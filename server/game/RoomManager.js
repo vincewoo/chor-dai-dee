@@ -5,11 +5,17 @@ const { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN } = requ
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
-const { rankTable, BASELINE_VERSION } = require('./DealStrength');
+const { rankTable, playsNeeded, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
 const { evaluateMove } = require('./MoveQuality');
 const { GameTape } = require('./GameTape');
 const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
+
+// Aces and 2s: the cards that buy tricks. BotLogic's retention model prices
+// them far above everything else, so where a player's copies end up is the
+// clearest read available on control-card management.
+const CONTROL_RANKS = new Set(['A', '2']);
+const countControls = (cards) => cards.filter(c => CONTROL_RANKS.has(c.rank)).length;
 
 class Room {
     constructor(roomId, gameMode = 'short') {
@@ -52,6 +58,8 @@ class Room {
         // references into tier3DecisionTracking, so resolving one writes
         // through to the decision record itself.
         this.pendingRiskyDecisions = {};
+        // Control cards riding on an unresolved trick, keyed by player id.
+        this.pendingControlPlays = {};
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
@@ -706,6 +714,7 @@ class Room {
             // them under the new game id.
             this.tier3DecisionTracking = {};
             this.pendingRiskyDecisions = {};
+            this.pendingControlPlays = {};
         }
 
         this.roundNumber++;
@@ -781,6 +790,7 @@ class Room {
 
         // A new deal starts no trick, so nothing can still be pending.
         this.pendingRiskyDecisions = {};
+        this.pendingControlPlays = {};
         this.trickIndex = 0;
 
         // Initialize round play stats for advanced stats tracking
@@ -796,6 +806,10 @@ class Room {
                 // which is a different (and much smaller) number.
                 tricksContested: 0,
                 lastTrickCounted: -1,
+                // Aces and 2s committed, and how many of them actually bought
+                // the trick they were spent on.
+                controlsPlayed: 0,
+                controlsWon: 0,
                 handTypes: {
                     SINGLE: 0,
                     PAIR: 0,
@@ -853,6 +867,13 @@ class Room {
                 ...scored[seat],
                 // Opponents only, so a player's own seat never counts itself.
                 humanOpponents: humanCount - (player.isBot ? 0 : 1),
+                // Fewest plays this hand could ever go out in. Compared against
+                // the plays actually used, it says whether the hand was kept
+                // together or broken up.
+                playsNeeded: playsNeeded(player.hand),
+                // Aces and 2s dealt. Where they end up - taking a trick, spent
+                // without taking one, or still in hand - is the control economy.
+                controls: countControls(player.hand),
                 baselineVersion: BASELINE_VERSION
             };
         });
@@ -1069,6 +1090,13 @@ class Room {
                 stats.tricksContested++;
                 stats.lastTrickCounted = this.trickIndex;
             }
+
+            // Control cards ride on the pile until the trick resolves. Playing
+            // again in the same trick means the earlier ones were beaten, so
+            // the pending count is replaced rather than added to.
+            const controls = countControls(validatedHand.cards);
+            stats.controlsPlayed += controls;
+            this.pendingControlPlays[playerId] = controls;
         }
 
         // Track Tier 3 decision quality (for human players only)
@@ -1091,6 +1119,7 @@ class Room {
             // The play that empties a hand ends the round: nothing can beat it.
             this.resolveRiskyDecision(playerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.resolveControlPlays(playerId);
 
             this.winners.push(player);
             this.roundsWonByName[player.name] = (this.roundsWonByName[player.name] || 0) + 1;
@@ -1111,6 +1140,7 @@ class Room {
             // Unbeatable as a single, so the trick is already resolved.
             this.resolveRiskyDecision(playerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.resolveControlPlays(playerId);
             this.trickIndex++;
 
             // Don't clear state immediately - set pending flag for delayed clear
@@ -1248,6 +1278,20 @@ class Room {
         this.pendingRiskyDecisions = {};
     }
 
+    /**
+     * Credit the trick winner with the control cards their winning play
+     * committed, then clear the board. Called at the same three points as the
+     * risky-play resolution: a trick taken by passes, an unbeatable 2S, and a
+     * play that empties the hand.
+     */
+    resolveControlPlays(winnerId) {
+        const won = this.pendingControlPlays[winnerId] || 0;
+        if (won && this.roundPlayStats[winnerId]) {
+            this.roundPlayStats[winnerId].controlsWon += won;
+        }
+        this.pendingControlPlays = {};
+    }
+
     passTurn(playerId, { auto = false } = {}) {
         if (this.gameState !== 'playing') return { error: 'Game not active' };
 
@@ -1334,6 +1378,7 @@ class Room {
             // Nobody beat the pile, so its owner's risky play paid off.
             this.resolveRiskyDecision(lastPlayerId, 'success');
             this.clearPendingRiskyDecisions();
+            this.resolveControlPlays(lastPlayerId);
             this.trickIndex++;
 
             // Don't clear state immediately - set pending flag for delayed clear

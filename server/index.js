@@ -898,6 +898,8 @@ io.on('connection', (socket) => {
                         passes: playStats.passes,
                         leadsWon: playStats.leadsWon,
                         leadAttempts: playStats.tricksContested || 0,
+                        controlsPlayed: playStats.controlsPlayed || 0,
+                        controlsWon: playStats.controlsWon || 0,
                         handTypes: playStats.handTypes,
                         // Scored at deal time, before a card was played. Absent
                         // for rounds already in flight when the server restarted.

@@ -143,6 +143,16 @@ function initDb() {
             deal_rank INTEGER,
             deal_baseline_version INTEGER,
             human_opponents INTEGER,
+            -- Fewest plays the dealt hand could have gone out in. Against
+            -- plays_count on a round the player won, this is how much of the
+            -- hand's shape survived contact.
+            deal_plays_needed INTEGER,
+            -- Control economy: aces and 2s dealt, how many were committed, and
+            -- how many of those actually took the trick. Cards never played are
+            -- dealt minus played.
+            controls_dealt INTEGER,
+            controls_played INTEGER,
+            controls_won INTEGER,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
@@ -503,6 +513,12 @@ function initDb() {
                 addColumn('deal_rank', 'deal_rank INTEGER');
                 addColumn('deal_baseline_version', 'deal_baseline_version INTEGER');
                 addColumn('human_opponents', 'human_opponents INTEGER');
+                // NULL on older rows for the same reason as the deal columns:
+                // these were not measured, which is not the same as zero.
+                addColumn('deal_plays_needed', 'deal_plays_needed INTEGER');
+                addColumn('controls_dealt', 'controls_dealt INTEGER');
+                addColumn('controls_played', 'controls_played INTEGER');
+                addColumn('controls_won', 'controls_won INTEGER');
             }
         });
 
@@ -992,8 +1008,9 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             straights_played, flushes_played, full_houses_played,
             quads_played, straight_flushes_played,
             deal_strength_raw, deal_tier, deal_rank,
-            deal_baseline_version, human_opponents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            deal_baseline_version, human_opponents,
+            deal_plays_needed, controls_dealt, controls_played, controls_won
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
@@ -1014,7 +1031,13 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             roundData.dealStrength ? roundData.dealStrength.tier : null,
             roundData.dealStrength ? roundData.dealStrength.rank : null,
             roundData.dealStrength ? roundData.dealStrength.baselineVersion : null,
-            roundData.dealStrength ? roundData.dealStrength.humanOpponents : null
+            roundData.dealStrength ? roundData.dealStrength.humanOpponents : null,
+            // Tied to the deal being scored: without it there is no baseline to
+            // compare the plays used against, and no dealt control count.
+            roundData.dealStrength ? roundData.dealStrength.playsNeeded : null,
+            roundData.dealStrength ? roundData.dealStrength.controls : null,
+            roundData.dealStrength ? (roundData.controlsPlayed || 0) : null,
+            roundData.dealStrength ? (roundData.controlsWon || 0) : null
         ];
 
         db.run(query, params, (err) => {
@@ -1049,7 +1072,18 @@ const getRoundAggregates = (userId, gameMode) => {
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x,
                 SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x,
                 SUM(CASE WHEN penalty_multiplier = 2 THEN 1 ELSE 0 END) as penalty_2x_rounds,
-                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x_rounds
+                SUM(CASE WHEN penalty_multiplier = 3 THEN 1 ELSE 0 END) as penalty_3x_rounds,
+                -- Shedding efficiency, over won rounds only: a round you did
+                -- not finish says nothing about how many plays the hand needed,
+                -- because you never got to the end of it.
+                SUM(CASE WHEN deal_plays_needed IS NOT NULL AND placement = 1 THEN deal_plays_needed END) as won_min_plays,
+                SUM(CASE WHEN deal_plays_needed IS NOT NULL AND placement = 1 THEN plays_count END) as won_plays,
+                SUM(CASE WHEN deal_plays_needed IS NOT NULL AND placement = 1 THEN 1 ELSE 0 END) as shed_rounds,
+                -- Control economy. Cards never played are dealt minus played.
+                SUM(controls_dealt) as controls_dealt,
+                SUM(controls_played) as controls_played,
+                SUM(controls_won) as controls_won,
+                SUM(CASE WHEN controls_dealt IS NOT NULL THEN 1 ELSE 0 END) as control_rounds
             FROM round_stats
             WHERE user_id = ? AND game_mode = ?
         `;
