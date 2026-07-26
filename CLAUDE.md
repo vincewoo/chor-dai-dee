@@ -425,29 +425,26 @@ Unsetting it is the kill switch.
   - Toggle advanced bots
 
 ### Gameplay Helpers
-- **Hand Helper/Quick Select:**
-  - Shows all valid hands in current hand
-  - Highlights hands that beat the pile (green)
-  - Click to select cards, cycle through alternatives
-  - Shows counts and percentages for each hand type
+- **Quick Select** (`tableV2/ControlsRow.jsx`, backed by `utils/handFinder.js`):
+  - Chips for every hand type currently playable
+  - Chips that can beat the pile are accented; tapping one cycles through the
+    alternatives of that type
 - **Drag & Drop Card Reordering:**
-  - Reorder hand cards by dragging
-  - Uses @dnd-kit library
-  - Touch and mouse support
+  - Reorder hand cards by dragging (@dnd-kit); touch and mouse
+  - Swipe across the fan to select a run of cards
 
-### Mobile Optimization
-- Dynamic card spacing based on screen size and card count
-- Swipe selection support
-- Improved touch targets
-- Responsive card layout prevents overlap
-- Full-width card container on mobile
-- Card count indicators for opponents
+### Layout
+- Card size and overlap come from `useHandGeometry`, driven by the active
+  table layout: the fan fills a phone's width and spreads out on desktop.
+- Seats are positioned relative to the viewer, so you are always at the bottom.
+- Opponent card counts show on each seat; on desktop the score rail repeats
+  them alongside ratings.
 
 ### Visual Features
 - Custom logo and favicon
-- Smooth card animations with Framer Motion
-- Responsive table layout with relative player positioning (current player always at bottom)
-- Card count indicators on opponent hands
+- Smooth card animations with Framer Motion plus the `cdd*` keyframes
+- Accent colour, table surface and reduced-motion are user preferences
+  (`useTableTheme`)
 - Auto-reconnection with status indicators
 
 ### Developer Features

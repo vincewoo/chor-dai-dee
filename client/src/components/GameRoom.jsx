@@ -9,7 +9,6 @@ import { useSuitColors } from '../contexts/SuitColorContext';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 import { MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import logoImage from '../assets/chor-dai-dee-logo.webp';
-import Modal from './Modal';
 import SpectatorPanel from './SpectatorPanel';
 import VoiceChat from './VoiceChat';
 import VoiceControlBubble from './VoiceControlBubble';
