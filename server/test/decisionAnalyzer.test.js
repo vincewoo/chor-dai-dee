@@ -4,7 +4,7 @@
 // so the parts pinned here are the ones whose meaning has to stay fixed: that
 // counts are counts of decisions (not of games), that round phase is read from
 // the deck rather than from a decision's position in the list, and that the
-// adaptability and lucky-win definitions do not quietly drift back into
+// adaptability definition does not quietly drift back into
 // measuring something else.
 
 const test = require('node:test');
@@ -111,13 +111,8 @@ test('adaptability is neutral without enough history', () => {
     assert.strictEqual(DecisionAnalyzer.calculateAdaptabilityScore([]), 0.5);
 });
 
-test('a win is lucky only on evidence of favourable cards', () => {
-    // Good deals (rank 1 is the best hand at the table) and weak play.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(1.8, 0.3), true);
-    // Good deals but strong play.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(1.8, 0.8), false);
-    // Weak play but below-average cards -- that win was earned.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(3.2, 0.3), false);
-    // No deal data recorded: credited as skilled rather than guessed at.
-    assert.strictEqual(DecisionAnalyzer.isLuckyWin(null, 0.1), false);
+test('lucky-vs-skilled classification is not reintroduced', () => {
+    // The deal-strength stats own the luck-vs-skill question. A helper here
+    // would mean a second, uncalibrated answer to it.
+    assert.strictEqual(DecisionAnalyzer.isLuckyWin, undefined);
 });

@@ -313,6 +313,9 @@ function initDb() {
             total_sessions INTEGER DEFAULT 0,
             variance_score REAL DEFAULT 0.0,
             consistency_rating REAL DEFAULT 0.0,
+            -- Retired. The luck-vs-skill question is answered by the
+            -- deal-strength stats, per round and against a measured baseline.
+            -- Kept so old rows still read; nothing writes them.
             lucky_wins INTEGER DEFAULT 0,
             skilled_wins INTEGER DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id),
@@ -1325,8 +1328,14 @@ const getCardAwarenessStats = (userId, gameMode) => {
     });
 };
 
-// Update variance and streak stats
-const updateVarianceStats = (userId, gameMode, isWin, isLucky) => {
+// Update variance and streak stats.
+//
+// lucky_wins / skilled_wins are no longer maintained. The luck-vs-skill
+// question belongs to the deal-strength stats, which answer it per round
+// against a measured baseline and with a confidence interval, rather than as a
+// threshold applied to game wins only. The columns stay for old rows; nothing
+// reads or writes them.
+const updateVarianceStats = (userId, gameMode, isWin) => {
     return new Promise((resolve, reject) => {
         // First get current stats
         db.get(`SELECT * FROM variance_stats WHERE user_id = ? AND game_mode = ?`, [userId, gameMode], (err, row) => {
@@ -1350,23 +1359,18 @@ const updateVarianceStats = (userId, gameMode, isWin, isLucky) => {
             const newLongestWin = isWin && newStreak > longestWin ? newStreak : longestWin;
             const newLongestLoss = !isWin && Math.abs(newStreak) > longestLoss ? Math.abs(newStreak) : longestLoss;
 
-            const luckyWinInc = (isWin && isLucky) ? 1 : 0;
-            const skilledWinInc = (isWin && !isLucky) ? 1 : 0;
-
             const query = `INSERT INTO variance_stats
-                (user_id, game_mode, current_streak, longest_win_streak, longest_loss_streak, total_sessions, lucky_wins, skilled_wins)
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                (user_id, game_mode, current_streak, longest_win_streak, longest_loss_streak, total_sessions)
+                VALUES (?, ?, ?, ?, ?, 1)
                 ON CONFLICT(user_id, game_mode) DO UPDATE SET
                     current_streak = ?,
                     longest_win_streak = ?,
                     longest_loss_streak = ?,
-                    total_sessions = total_sessions + 1,
-                    lucky_wins = lucky_wins + ?,
-                    skilled_wins = skilled_wins + ?`;
+                    total_sessions = total_sessions + 1`;
 
             db.run(query, [
-                userId, gameMode, newStreak, newLongestWin, newLongestLoss, luckyWinInc, skilledWinInc,
-                newStreak, newLongestWin, newLongestLoss, luckyWinInc, skilledWinInc
+                userId, gameMode, newStreak, newLongestWin, newLongestLoss,
+                newStreak, newLongestWin, newLongestLoss
             ], (err) => {
                 if (err) reject(err);
                 else resolve();
@@ -1455,8 +1459,7 @@ const updateBehavioralStats = (userId, gameMode, aggressionScore, riskScore, ada
  * Behavioural scores describe how someone played *this* game and are then
  * smoothed by updateBehavioralStats; feeding them lifetime totals (as the
  * game-end path used to) meant averaging an average, and the result could
- * never move. The deal columns support the lucky-vs-skilled split, and are
- * null when the game predates deal scoring.
+ * never move.
  */
 const getGameRoundSummary = (userId, gameId, gameMode) => {
     return new Promise((resolve, reject) => {
@@ -1465,16 +1468,14 @@ const getGameRoundSummary = (userId, gameId, gameMode) => {
                 COUNT(*) as rounds,
                 COALESCE(SUM(plays_count), 0) as plays,
                 COALESCE(SUM(passes_count), 0) as passes,
-                COALESCE(SUM(leads_won), 0) as leads_won,
-                AVG(CASE WHEN deal_tier IS NOT NULL THEN deal_rank END) as avg_deal_rank,
-                AVG(CASE WHEN deal_tier IS NOT NULL THEN deal_strength_raw END) as avg_deal_raw
+                COALESCE(SUM(leads_won), 0) as leads_won
             FROM round_stats
             WHERE user_id = ? AND game_id = ? AND game_mode = ?
         `;
 
         db.get(query, [userId, gameId, gameMode], (err, row) => {
             if (err) reject(err);
-            else resolve(row || { rounds: 0, plays: 0, passes: 0, leads_won: 0, avg_deal_rank: null, avg_deal_raw: null });
+            else resolve(row || { rounds: 0, plays: 0, passes: 0, leads_won: 0 });
         });
     });
 };

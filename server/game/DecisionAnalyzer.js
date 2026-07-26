@@ -373,34 +373,12 @@ class DecisionAnalyzer {
         return Math.max(0, Math.min(1, 0.5 + delta / 2));
     }
 
-    /**
-     * Determine if a win was "lucky" vs "skilled".
-     *
-     * Luck in Big 2 is the cards you are dealt, and DealStrength already
-     * measures exactly that: deal_rank is where a player's hand ranked among
-     * the four dealt at the table, 1 (best) to 4 (worst). The previous version
-     * took "average cards remaining for other players" but was handed their
-     * cumulative game scores, which at game end sit at the 50/100 threshold -
-     * so its > 8 test was always true and lucky/skilled collapsed into the
-     * optimal-rate test alone.
-     *
-     * A win only counts as lucky on evidence of favourable cards. With no deal
-     * data (rounds recorded before the feature, or an unscored game) the win is
-     * credited as skilled rather than guessed at.
-     *
-     * @param {number|null} avgDealRank - Mean deal rank across the game's rounds
-     * @param {number} playerOptimalRate - Player's optimal decision rate
-     * @returns {boolean} - True if win appears lucky
-     */
-    static isLuckyWin(avgDealRank, playerOptimalRate) {
-        if (avgDealRank === null || avgDealRank === undefined) return false;
-
-        // 2.5 is the mean rank at a four-player table.
-        const favourableCards = avgDealRank < 2.5;
-        const lowSkillPlay = playerOptimalRate < 0.5;
-
-        return favourableCards && lowSkillPlay;
-    }
+    // isLuckyWin is gone. Splitting wins into "lucky" and "skilled" on a pair of
+    // thresholds was a coarse restatement of what the deal-strength stats
+    // already measure: those work per round rather than per game, over every
+    // round rather than wins only, against a measured per-tier baseline, and
+    // with a confidence interval. See DealStrength.js and the hand-strength
+    // endpoint in index.js.
 }
 
 module.exports = { DecisionAnalyzer };

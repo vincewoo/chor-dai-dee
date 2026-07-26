@@ -766,9 +766,8 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const riskyRate = pct(awareness?.risky_plays_successful || 0, riskyTotal);
 
     const streak = variance?.current_streak || 0;
-    const luckyWins = variance?.lucky_wins || 0;
-    const skilledWins = variance?.skilled_wins || 0;
-    const skillRate = pct(skilledWins, luckyWins + skilledWins);
+    // Lucky vs skilled wins retired: Deal Strength above answers the same
+    // question per round, against a measured baseline and with an interval.
     const varianceScore = ratio(variance?.variance_score);
     const consistency = ratio(variance?.consistency_rating);
 
@@ -824,11 +823,8 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         <div className="mt-2 grid grid-cols-2 gap-2">
                             <Tile label="Longest win streak" value={num(variance.longest_win_streak)} color={GOOD} />
                             <Tile label="Longest loss streak" value={num(variance.longest_loss_streak)} color={BAD} />
-                            <Tile label="Skilled wins" value={num(skilledWins)} color={GOOD} sub="earned by play" />
-                            <Tile label="Lucky wins" value={num(luckyWins)} color={WARN} sub="favourable deals" />
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
-                            <Meter label="Skill rate" value={skillRate} color={parseFloat(skillRate) >= 70 ? GOOD : acc} rm={rm} />
                             <Meter
                                 label="Consistency"
                                 value={consistency}

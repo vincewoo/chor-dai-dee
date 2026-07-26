@@ -1122,10 +1122,6 @@ io.on('connection', (socket) => {
                                         // 1. Card Awareness Stats -- real per-decision
                                         // counts, not one increment per game.
                                         const decisionSummary = DecisionAnalyzer.summarizeDecisions(tier3Data.decisions);
-                                        const totalDecisions = decisionSummary.total;
-                                        const optimalRate = totalDecisions > 0
-                                            ? decisionSummary.optimal / totalDecisions
-                                            : 0;
 
                                         await updateCardAwarenessStats(
                                             user.id,
@@ -1133,25 +1129,13 @@ io.on('connection', (socket) => {
                                             decisionSummary
                                         );
 
-                                        // 2. Variance Stats (Streaks and Lucky/Skilled wins)
+                                        // 2. Variance Stats (streaks)
                                         const isWinner = p.id === gameWinner.id;
-
-                                        // Luck is the cards you were dealt, which
-                                        // DealStrength measures directly. Rank 1 is
-                                        // the best hand at the table, 4 the worst.
-                                        let isLucky = false;
-                                        if (isWinner) {
-                                            isLucky = DecisionAnalyzer.isLuckyWin(
-                                                gameSummary.avg_deal_rank,
-                                                optimalRate
-                                            );
-                                        }
 
                                         await updateVarianceStats(
                                             user.id,
                                             room.gameMode,
-                                            isWinner,
-                                            isLucky
+                                            isWinner
                                         );
 
                                         // 3. Save placement history for adaptability tracking
