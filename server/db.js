@@ -486,7 +486,108 @@ function initDb() {
                 }
             }
         });
+
+        runOnce(RESET_PRE_DECISION_COUNTERS, resetPreDecisionCounters);
     });
+}
+
+// ---- One-time data migrations ---------------------------------------------
+//
+// Column additions are idempotent by inspection -- PRAGMA table_info says
+// whether the work is already done. A data migration cannot be recognised that
+// way (a zeroed counter is indistinguishable from a counter that has since been
+// legitimately incremented), so applied migrations are recorded by key.
+function runOnce(key, migration) {
+    db.run(`CREATE TABLE IF NOT EXISTS schema_meta (
+        key TEXT PRIMARY KEY,
+        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => {
+        if (err) {
+            console.error('Error creating schema_meta table:', err.message);
+            return;
+        }
+
+        db.get(`SELECT key FROM schema_meta WHERE key = ?`, [key], (err, row) => {
+            if (err) {
+                console.error(`Error checking migration ${key}:`, err.message);
+                return;
+            }
+            if (row) return; // already applied
+
+            migration((err) => {
+                if (err) {
+                    // Deliberately not recorded, so the next start retries.
+                    console.error(`Migration ${key} failed:`, err.message);
+                    return;
+                }
+                db.run(`INSERT OR IGNORE INTO schema_meta (key) VALUES (?)`, [key], (err) => {
+                    if (err) console.error(`Error recording migration ${key}:`, err.message);
+                    else console.log(`Applied one-time migration: ${key}`);
+                });
+            });
+        });
+    });
+}
+
+const RESET_PRE_DECISION_COUNTERS = 'reset_pre_decision_counters_v1';
+
+// Counters that were accumulated under a different meaning than they now carry.
+//
+// card_awareness_stats' decision counters were incremented once per GAME, and
+// its risky counters at most once per game with success inferred from final
+// placement; they now take real per-decision counts, which would otherwise be
+// added on top of the old units. variance_stats' lucky/skilled split came from
+// a test that was always true. stats_*.lead_attempts held a copy of total
+// plays. All of them are cumulative, so there is no way to read them back
+// apart -- zero is the only honest starting point.
+//
+// Not reset: behavioural scores, which are an exponential moving average and
+// converge on their own within about ten games; streaks and placement history,
+// which were never miscounted; and the legacy late_game_accuracy column, which
+// is no longer read.
+const PRE_DECISION_COUNTER_RESETS = [
+    {
+        table: 'card_awareness_stats',
+        columns: ['total_decisions', 'optimal_decisions', 'suboptimal_decisions',
+                  'risky_plays_successful', 'risky_plays_failed']
+    },
+    { table: 'variance_stats', columns: ['lucky_wins', 'skilled_wins'] },
+    { table: 'stats', columns: ['lead_attempts'] },
+    { table: 'stats_short', columns: ['lead_attempts'] },
+    { table: 'stats_standard', columns: ['lead_attempts'] }
+];
+
+function resetPreDecisionCounters(done) {
+    // A table or column that does not exist yet is about to be created with a
+    // DEFAULT of 0, which is the state this migration is trying to reach --
+    // so skipping is correct however the schema work interleaves with this.
+    const columnsPresent = (table) => new Promise((resolve, reject) => {
+        db.all(`PRAGMA table_info(${table})`, (err, columns) => {
+            if (err) return reject(err);
+            resolve((columns || []).map(c => c.name));
+        });
+    });
+
+    const zero = (table, columns) => new Promise((resolve, reject) => {
+        const assignments = columns.map(c => `${c} = 0`).join(', ');
+        const guard = columns.map(c => `${c} != 0`).join(' OR ');
+        db.run(`UPDATE ${table} SET ${assignments} WHERE ${guard}`, function (err) {
+            if (err) return reject(err);
+            if (this.changes > 0) {
+                console.log(`Reset ${columns.join(', ')} on ${this.changes} row(s) of ${table}`);
+            }
+            resolve();
+        });
+    });
+
+    PRE_DECISION_COUNTER_RESETS.reduce(
+        (chain, { table, columns }) => chain.then(async () => {
+            const present = await columnsPresent(table);
+            const target = columns.filter(c => present.includes(c));
+            if (target.length > 0) await zero(table, target);
+        }),
+        Promise.resolve()
+    ).then(() => done(null), (err) => done(err));
 }
 
 // Leaderboard sort indexes. rating_display is a computed expression so it cannot
