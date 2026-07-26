@@ -3,6 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import { GAME_MODES } from '../../constants/gameModes';
+import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 waiting room. Mirrors the "Waiting Room v2" claude.ai/design mockup and
@@ -93,8 +94,8 @@ function WaitingRoomV2({
                 className="absolute pointer-events-none"
                 style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
             />
-            <div className="absolute pointer-events-none select-none" style={{ top: 120, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
-            <div className="absolute pointer-events-none select-none" style={{ top: 460, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♥</div>
+            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: 120, left: -46 }} />
+            <SuitWatermark suit="H" size={165} rotate={12} opacity={0.03} style={{ top: 460, right: -52 }} />
 
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[18px] pb-safe-6 pt-[18px] md:max-w-[880px] md:px-8">
                 {/* HUD */}

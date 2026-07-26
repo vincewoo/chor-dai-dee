@@ -1,4 +1,5 @@
 import { useTableTheme } from '../../theme/tableTheme';
+import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // Presentational shell for every auth screen. Login.jsx owns all the state,
@@ -17,8 +18,8 @@ export function AuthShell({ title, subtitle, error, children, footer }) {
                 className="absolute pointer-events-none"
                 style={{ top: '-120px', left: '50%', transform: 'translateX(-50%)', width: 560, height: 380, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
             />
-            <div className="absolute pointer-events-none select-none" style={{ top: 180, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
-            <div className="absolute pointer-events-none select-none" style={{ top: 520, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♥</div>
+            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: 180, left: -46 }} />
+            <SuitWatermark suit="H" size={165} rotate={12} opacity={0.03} style={{ top: 520, right: -52 }} />
 
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[420px] flex-col justify-center px-[22px] py-10">
                 <div className="flex flex-col items-center gap-2">

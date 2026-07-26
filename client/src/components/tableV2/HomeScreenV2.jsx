@@ -1,38 +1,63 @@
+import { useState } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
+import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
-const footerLink = {
-    background: 'none',
-    border: 'none',
-    color: 'rgba(244,245,247,.55)',
-    fontSize: 13,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontFamily: "'Outfit',sans-serif",
+const TEXT = '#f4f5f7';
+const MUTED = 'rgba(244,245,247,.5)';
+const FAINT = 'rgba(244,245,247,.38)';
+const FONT = "'Outfit',sans-serif";
+
+// One frosted container per section instead of a stack of black cards. Rows
+// inside are separated by hairlines, so a list of games reads as one object
+// rather than N nested cards.
+const shell = {
+    background: 'linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.022))',
+    border: '1px solid rgba(255,255,255,.09)',
+    borderRadius: 20,
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
+    overflow: 'hidden',
 };
 
-// Shared card chrome for the panels in the right-hand column.
-const panel = {
-    background: 'linear-gradient(160deg,rgba(0,0,0,.42),rgba(0,0,0,.26))',
-    border: '1px solid rgba(255,255,255,.1)',
-    borderRadius: 18,
-    padding: 16,
-    boxShadow: '0 8px 18px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.08)',
+// Stroke icons rather than emoji: the nav has to sit on one line at 320px, and
+// emoji would drag their own colour and metrics into the bar.
+const NAV_ICONS = {
+    help: <><circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1.1 1-1.1 1.9" /><path d="M12 16.8h.01" /></>,
+    trophy: <><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" /><path d="M8 5.5H5.5V7a3 3 0 0 0 3 3" /><path d="M16 5.5h2.5V7a3 3 0 0 1-3 3" /><path d="M12 13v3.5" /><path d="M9 20h6" /></>,
+    pulse: <path d="M3 12.5h4l2.5-7 4 14 2.5-7h5" />,
+    bars: <><path d="M5 20v-8" /><path d="M12 20V4" /><path d="M19 20v-5" /></>,
+    signOut: <><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M9 8.5 5 12l4 3.5" /><path d="M5 12h10" /></>,
+    signIn: <><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" /><path d="M15 8.5l4 3.5-4 3.5" /><path d="M19 12H9" /></>,
 };
 
-const sectionLabel = {
-    color: 'rgba(244,245,247,.5)',
-    fontSize: 10,
-    fontWeight: 800,
-    letterSpacing: 2,
-};
+function NavIcon({ name, size = 19 }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            focusable="false"
+        >
+            {NAV_ICONS[name]}
+        </svg>
+    );
+}
 
-// v2 home / lobby screen. Mirrors the "Home Screen v2" claude.ai/design mockup
-// on phones and splits into two columns from 768px up: identity and the primary
-// actions on the left, everything you might join or read on the right. All
-// connection state and actions live in Lobby and arrive via props.
+// v2 home screen. The brand is a mark in the corner, not a hero: the page opens
+// on who you are and the one button that starts a game, then a single Live /
+// Recent list for everything happening on the server. Destinations live in a
+// bottom bar on phones (thumb reach, and it can't collide with the scrolling
+// content the way the old floating footer did) and in the header on desktop.
+// All connection state and actions live in Lobby and arrive via props.
 function HomeScreenV2({
     username,
     isGuest,
@@ -63,345 +88,336 @@ function HomeScreenV2({
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const codeReady = (code || '').trim().length >= 4;
     const anim = (delay) => (rm ? undefined : { animation: `cddToast .4s ${delay} ease-out both` });
-    const showActiveGames = !!onJoinActiveGame && activeGames.length > 0;
-    const showRecent = !!onGameClick && recentGames.length > 0;
 
-    // Your own avatar, the players on the joinable-game cards, and everyone in
+    const liveGames = onJoinActiveGame ? activeGames : [];
+    const finishedGames = onGameClick ? recentGames : [];
+    const hasLive = liveGames.length > 0;
+    const hasRecent = finishedGames.length > 0;
+
+    // `null` means "follow the data" — live rooms arrive a beat after mount, and
+    // until someone picks a tab we want the busier one in front.
+    const [pickedTab, setPickedTab] = useState(null);
+    const tab = pickedTab ?? (hasLive ? 'live' : 'recent');
+    const showLive = tab === 'live';
+    const isEmpty = showLive ? !hasLive : !hasRecent;
+
+    // Your own avatar, the players on the joinable-game rows, and the winners in
     // the recent-results list.
     useAvatars([
         username,
-        ...activeGames.flatMap(g => (g.players || []).map(p => p.name)),
-        ...recentGames.flatMap(g => (g.participants || []).map(p => p.username)),
+        ...liveGames.flatMap(g => (g.players || []).map(p => p.name)),
+        ...finishedGames.flatMap(g => (g.participants || []).map(p => p.username)),
     ]);
 
     const statusText = reconnecting
-        ? 'Checking for existing game…'
-        : connected ? "Let's blast some 2s!" : 'Disconnected — is the server running?';
-    const statusColor = reconnecting
-        ? 'rgba(244,245,247,.6)'
-        : connected ? 'rgba(244,245,247,.6)' : '#ff8f70';
+        ? 'Checking for an existing game…'
+        : connected ? (ratingLine || (isGuest ? 'Stats not saved' : 'Ready to play')) : 'Offline';
+    const statusDot = reconnecting ? '#ffc94d' : connected ? '#6ee7a8' : '#ff8f70';
 
-    const navLinks = (
-        <>
-            <button onClick={onHowToPlay} style={footerLink}>How to play</button>
-            <button onClick={onLeaderboard} style={footerLink}>Leaderboard</button>
-            {onActivity && (
-                <button onClick={onActivity} style={footerLink}>Activity</button>
-            )}
-            <button onClick={onStats} style={footerLink}>Stats</button>
-            {onLogout && (
-                // Guests have no account to leave, so this is their route to
-                // one; registered players use it to switch accounts.
-                <button onClick={onLogout} style={footerLink}>
-                    {isGuest ? 'Sign in' : 'Log out'}
-                </button>
-            )}
-        </>
-    );
+    const destinations = [
+        { key: 'how', label: 'How to play', icon: 'help', onClick: onHowToPlay },
+        { key: 'board', label: 'Leaders', icon: 'trophy', onClick: onLeaderboard },
+        onActivity && { key: 'activity', label: 'Activity', icon: 'pulse', onClick: onActivity },
+        { key: 'stats', label: 'Stats', icon: 'bars', onClick: onStats },
+        // Guests have no account to leave, so this is their route to one;
+        // registered players use it to switch accounts.
+        onLogout && {
+            key: 'auth',
+            label: isGuest ? 'Sign in' : 'Log out',
+            icon: isGuest ? 'signIn' : 'signOut',
+            onClick: onLogout,
+        },
+    ].filter(Boolean);
+
+    const tabButton = (id, label, count) => {
+        const on = tab === id;
+        return (
+            <button
+                onClick={() => setPickedTab(id)}
+                aria-pressed={on}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '7px 14px', borderRadius: 10, border: 'none',
+                    background: on ? accGrad : 'transparent',
+                    color: on ? '#0b0d10' : MUTED,
+                    fontFamily: FONT, fontWeight: 800, fontSize: 13,
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+            >
+                {label}
+                {count > 0 && (
+                    <span style={{ color: on ? 'rgba(11,13,16,.6)' : FAINT, fontSize: 11, fontWeight: 800 }}>{count}</span>
+                )}
+            </button>
+        );
+    };
+
+    const row = (isFirst) => ({
+        display: 'flex', alignItems: 'center', gap: 11,
+        width: '100%', padding: '12px 14px', boxSizing: 'border-box',
+        border: 'none',
+        borderTop: isFirst ? 'none' : '1px solid rgba(255,255,255,.07)',
+        background: 'none', textAlign: 'left', fontFamily: FONT,
+    });
 
     return (
         <div
             className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
-            style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            style={{ background: surface.base, fontFamily: FONT, '--cdd-acc': acc, '--cdd-acc-soft': soft }}
         >
             <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
             <div
                 className="absolute pointer-events-none"
-                style={{ top: '-120px', left: '50%', transform: 'translateX(-50%)', width: 560, height: 380, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
+                style={{ top: '-160px', left: '50%', transform: 'translateX(-50%)', width: 560, height: 380, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
             />
-            <div className="absolute pointer-events-none select-none" style={{ top: 150, left: -46, fontSize: 190, lineHeight: 1, color: 'rgba(255,255,255,.035)', transform: 'rotate(-14deg)' }}>♠</div>
-            <div className="absolute pointer-events-none select-none" style={{ top: 480, right: -52, fontSize: 210, lineHeight: 1, color: 'rgba(255,255,255,.03)', transform: 'rotate(12deg)' }}>♥</div>
-            <div className="absolute pointer-events-none select-none" style={{ top: 700, left: -30, fontSize: 150, lineHeight: 1, color: 'rgba(255,255,255,.028)', transform: 'rotate(8deg)' }}>♦</div>
+            <SuitWatermark suit="S" size={150} rotate={-14} opacity={0.03} style={{ top: 120, left: -52 }} />
+            <SuitWatermark suit="H" size={170} rotate={12} opacity={0.026} style={{ top: 520, right: -60 }} />
 
-            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-88 pt-safe-16 md:max-w-[1040px] md:px-8 md:pb-12 md:pt-8">
-                {/* Desktop nav. On phones these same links are the fixed footer
-                    below, where they stay in thumb reach. */}
-                <div className="mb-5 hidden flex-wrap items-center justify-end gap-x-6 gap-y-2 md:flex">
-                    {navLinks}
-                </div>
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-5 pb-safe-88 pt-safe-18 md:max-w-[1000px] md:px-8 md:pb-10 md:pt-7">
+                {/* Header: identity first, brand reduced to a corner mark. */}
+                <header className="flex items-center gap-3" style={anim('.02s')}>
+                    <button
+                        onClick={onEditAvatar}
+                        disabled={!onEditAvatar}
+                        aria-label={onEditAvatar ? 'Change your avatar' : undefined}
+                        style={{ flexShrink: 0, width: 46, height: 46, borderRadius: 15, border: '1px solid rgba(255,255,255,.12)', background: getAvatarTile(username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, padding: 0, cursor: onEditAvatar ? 'pointer' : 'default' }}
+                    >{getAvatarEmoji(username)}</button>
 
-                {/* One column on phones (the original order), two from md up.
-                    `min-w-0` on the tracks and the children matters: a grid item
-                    defaults to min-width:auto, so the wide-tracking room-code
-                    input would otherwise push the column past the viewport. */}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-start md:gap-7">
-                    <div className="flex min-w-0 flex-col">
-                        {/* Hero */}
-                        <div className="flex flex-col items-center gap-[10px]">
-                            <img
-                                src={logoImage}
-                                alt="Chor Dai Dee"
-                                style={{ width: 150, height: 150, filter: 'drop-shadow(0 14px 30px rgba(0,0,0,.5))', ...(rm ? {} : { animation: 'cddFloat 4s ease-in-out infinite' }) }}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="flex items-center gap-[6px]" style={{ color: TEXT, fontWeight: 800, fontSize: 17 }}>
+                            <span className="truncate">{username}</span>
+                            {isGuest && (
+                                <span style={{ flexShrink: 0, background: 'rgba(255,255,255,.12)', color: 'rgba(244,245,247,.8)', fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: '2px 6px', borderRadius: 6 }}>GUEST</span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-[6px]" style={{ color: MUTED, fontSize: 12, fontWeight: 600 }}>
+                            <span
+                                aria-hidden="true"
+                                style={{ width: 6, height: 6, borderRadius: '50%', background: statusDot, flexShrink: 0, ...(rm || !reconnecting ? {} : { animation: 'cddBreathe 1.8s ease-in-out infinite' }) }}
                             />
-                            <div style={{ color: statusColor, fontSize: 14, fontWeight: 600, letterSpacing: '.3px' }}>{statusText}</div>
-                        </div>
-
-                        {/* Player identity */}
-                        <div
-                            className="mt-8 flex items-center gap-3 md:mt-7"
-                            style={{ background: 'linear-gradient(160deg,rgba(0,0,0,.48),rgba(0,0,0,.3))', border: '1px solid rgba(255,255,255,.1)', borderRadius: 18, padding: '12px 14px', boxShadow: '0 8px 18px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.08)', ...anim('.05s') }}
-                        >
-                            <div style={{ width: 48, height: 48, borderRadius: 14, background: getAvatarTile(username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>{getAvatarEmoji(username)}</div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span className="truncate">{username}</span>
-                                    {isGuest && (
-                                        <span style={{ background: 'rgba(255,255,255,.14)', color: 'rgba(244,245,247,.85)', fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: '2px 6px', borderRadius: 6 }}>GUEST</span>
-                                    )}
-                                </div>
-                                <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>
-                                    {ratingLine || (isGuest ? 'Stats not saved' : 'Ready to play')}
-                                </div>
-                            </div>
-                            {onEditAvatar && (
-                                <button
-                                    onClick={onEditAvatar}
-                                    style={{ padding: '7px 13px', borderRadius: 10, border: `1px solid ${acc}66`, background: 'rgba(0,0,0,.35)', color: acc, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}
-                                >Edit</button>
-                            )}
-                        </div>
-
-                        {/* Primary actions */}
-                        <div className="mt-3 flex flex-col gap-3">
-                            <button
-                                onClick={onCreateRoom}
-                                disabled={isJoining}
-                                style={{ padding: '17px 0', borderRadius: 16, border: 'none', background: accGrad, color: '#0b0d10', fontWeight: 800, fontSize: 18, boxShadow: `0 10px 24px ${soft},inset 0 1px 0 rgba(255,255,255,.3)`, cursor: isJoining ? 'default' : 'pointer', fontFamily: "'Outfit',sans-serif", opacity: isJoining ? 0.7 : 1, ...anim('.12s') }}
-                            >{isJoining ? 'Connecting…' : 'Create a room'}</button>
-                            {onQuickPlay && (
-                                <button
-                                    onClick={onQuickPlay}
-                                    disabled={isJoining}
-                                    style={{ padding: '14px 0', borderRadius: 16, background: 'rgba(0,0,0,.38)', border: '1px solid rgba(255,255,255,.2)', color: '#f4f5f7', fontWeight: 800, fontSize: 15, cursor: isJoining ? 'default' : 'pointer', fontFamily: "'Outfit',sans-serif", ...anim('.18s') }}
-                                >Quick play vs bots</button>
-                            )}
+                            <span className="truncate">{statusText}</span>
                         </div>
                     </div>
 
-                    <div className="flex min-w-0 flex-col">
-                        {/* Join with code */}
-                        <div className="mt-4 md:mt-0" style={{ ...panel, ...anim('.24s') }}>
-                            <div style={{ ...sectionLabel, marginBottom: 10 }}>JOIN A FRIEND&apos;S ROOM</div>
-                            <form
-                                className="flex gap-[10px]"
-                                onSubmit={(e) => { e.preventDefault(); if (codeReady && !isJoining) onJoinRoom(); }}
+                    {/* Desktop destinations. On phones these are the bottom bar. */}
+                    <nav className="hidden items-center gap-1 md:flex">
+                        {destinations.map((d) => (
+                            <button
+                                key={d.key}
+                                onClick={d.onClick}
+                                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderRadius: 11, border: 'none', background: 'none', color: 'rgba(244,245,247,.62)', fontFamily: FONT, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
                             >
-                                <input
-                                    value={code}
-                                    onChange={(e) => onCodeChange(e.target.value.toUpperCase())}
-                                    placeholder="Enter code"
-                                    maxLength={5}
-                                    aria-label="Room code"
-                                    style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', background: 'rgba(0,0,0,.4)', border: '1px solid rgba(255,255,255,.16)', borderRadius: 12, padding: '0 14px', height: 48, color: '#f4f5f7', fontFamily: "'Outfit',sans-serif", fontWeight: 800, fontSize: 19, letterSpacing: 5, textTransform: 'uppercase', outline: 'none' }}
-                                />
-                                {codeReady ? (
-                                    <button
-                                        type="submit"
-                                        disabled={isJoining}
-                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 86, borderRadius: 12, border: 'none', background: accGrad, color: '#0b0d10', fontWeight: 800, fontSize: 15, boxShadow: `0 6px 16px ${soft}`, cursor: isJoining ? 'default' : 'pointer', fontFamily: "'Outfit',sans-serif", ...(rm ? {} : { animation: 'cddPop .3s cubic-bezier(.2,.8,.3,1.2)' }) }}
-                                    >Join</button>
-                                ) : (
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 86, borderRadius: 12, background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(244,245,247,.4)', fontWeight: 800, fontSize: 15 }}>Join</div>
-                                )}
-                            </form>
+                                <NavIcon name={d.icon} size={17} />
+                                {d.label}
+                            </button>
+                        ))}
+                    </nav>
+
+                    <img
+                        src={logoImage}
+                        alt="Chor Dai Dee"
+                        style={{ flexShrink: 0, width: 38, height: 38, filter: 'drop-shadow(0 4px 10px rgba(0,0,0,.45))' }}
+                    />
+                </header>
+
+                {/* Actions on the left, everything happening on the server on the
+                    right. `min-w-0` on both tracks matters: a grid item defaults
+                    to min-width:auto, so the tracking on the code input would
+                    otherwise push the column past the viewport. */}
+                <div className="mt-7 grid grid-cols-1 gap-4 md:mt-9 md:grid-cols-2 md:items-start md:gap-8">
+                    <div className="flex min-w-0 flex-col gap-3">
+                        <button
+                            onClick={onCreateRoom}
+                            disabled={isJoining}
+                            style={{ padding: '19px 0', borderRadius: 18, border: 'none', background: accGrad, color: '#0b0d10', fontWeight: 800, fontSize: 18, letterSpacing: '.2px', boxShadow: `0 14px 30px ${soft},inset 0 1px 0 rgba(255,255,255,.32)`, cursor: isJoining ? 'default' : 'pointer', fontFamily: FONT, opacity: isJoining ? 0.7 : 1, ...anim('.08s') }}
+                        >{isJoining ? 'Connecting…' : 'Create a room'}</button>
+
+                        {onQuickPlay && (
+                            <button
+                                onClick={onQuickPlay}
+                                disabled={isJoining}
+                                style={{ padding: '15px 0', borderRadius: 16, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)', color: TEXT, fontWeight: 800, fontSize: 15, cursor: isJoining ? 'default' : 'pointer', fontFamily: FONT, ...anim('.12s') }}
+                            >Quick play vs bots</button>
+                        )}
+
+                        {/* Joining a friend is one row, not a titled panel. */}
+                        <form
+                            className="flex gap-2"
+                            onSubmit={(e) => { e.preventDefault(); if (codeReady && !isJoining) onJoinRoom(); }}
+                            style={anim('.16s')}
+                        >
+                            <input
+                                value={code}
+                                onChange={(e) => onCodeChange(e.target.value.toUpperCase())}
+                                placeholder="Room code"
+                                maxLength={5}
+                                aria-label="Room code"
+                                // `onCodeChange` already uppercases, so no
+                                // text-transform — that would shout the
+                                // placeholder too.
+                                style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', background: 'rgba(0,0,0,.28)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 14, padding: '0 16px', height: 52, color: TEXT, fontFamily: FONT, fontWeight: 700, fontSize: 16, letterSpacing: 1, outline: 'none' }}
+                            />
+                            <button
+                                type="submit"
+                                disabled={!codeReady || isJoining}
+                                style={{
+                                    minWidth: 88, borderRadius: 14, border: codeReady ? 'none' : '1px solid rgba(255,255,255,.1)',
+                                    background: codeReady ? accGrad : 'rgba(0,0,0,.22)',
+                                    color: codeReady ? '#0b0d10' : FAINT,
+                                    fontWeight: 800, fontSize: 15, fontFamily: FONT,
+                                    cursor: codeReady && !isJoining ? 'pointer' : 'default',
+                                    boxShadow: codeReady ? `0 8px 18px ${soft}` : 'none',
+                                    transition: rm ? undefined : 'background .18s ease,color .18s ease',
+                                }}
+                            >Join</button>
+                        </form>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col" style={anim('.2s')}>
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div style={{ display: 'inline-flex', gap: 2, background: 'rgba(0,0,0,.26)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 13, padding: 3 }}>
+                                {tabButton('live', 'Live', liveGames.length)}
+                                {tabButton('recent', 'Recent')}
+                            </div>
+                            {/* The full feed is finished games, so this only
+                                belongs to the Recent tab. */}
+                            {onActivity && !showLive && (
+                                <button
+                                    onClick={onActivity}
+                                    style={{ background: 'none', border: 'none', padding: 0, color: acc, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap' }}
+                                >View all →</button>
+                            )}
                         </div>
 
-                        {/* Active games — public rooms in progress with a bot seat to take over */}
-                        {showActiveGames && (
-                            <div className="mt-4" style={{ ...panel, ...anim('.3s') }}>
-                                <div className="flex items-center gap-[7px]" style={{ marginBottom: 10 }}>
-                                    <span
-                                        aria-hidden="true"
-                                        style={{ width: 7, height: 7, borderRadius: '50%', background: acc, boxShadow: `0 0 8px ${soft}`, ...(rm ? {} : { animation: 'cddBreathe 1.8s ease-in-out infinite' }) }}
-                                    />
-                                    <span style={sectionLabel}>ACTIVE GAMES</span>
-                                    <span style={{ color: 'rgba(244,245,247,.35)', fontSize: 10, fontWeight: 700 }}>
-                                        {activeGames.length} joinable
-                                    </span>
-                                </div>
-
-                                {/* Capped so a busy server can't turn the panel
-                                    into an endless scroll of rooms. */}
-                                <div className="scrollbar-thin flex max-h-[420px] flex-col gap-[10px] overflow-y-auto">
-                                    {activeGames.map((game, i) => {
-                                        const humans = (game.players || []).filter((p) => !p.isBot);
-                                        const seats = game.botCount || 0;
-                                        return (
-                                            <div
-                                                key={game.roomId}
-                                                className="text-left"
-                                                style={{
-                                                    background: 'rgba(0,0,0,.34)',
-                                                    border: '1px solid rgba(255,255,255,.09)',
-                                                    borderRadius: 14,
-                                                    padding: '11px 12px',
-                                                    opacity: isJoining ? 0.6 : 1,
-                                                    ...anim(`${(0.34 + Math.min(i, 6) * 0.04).toFixed(2)}s`),
-                                                }}
-                                            >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <div className="flex items-center gap-[6px]" style={{ minWidth: 0 }}>
-                                                        <span style={{ color: acc, fontWeight: 800, fontSize: 14, letterSpacing: 1.5 }}>{game.roomId}</span>
-                                                        <span style={{ background: 'rgba(255,255,255,.09)', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(244,245,247,.75)', fontSize: 9, fontWeight: 800, letterSpacing: .6, padding: '3px 7px', borderRadius: 7, whiteSpace: 'nowrap' }}>
-                                                            {game.gameMode === 'short' ? '⚡ SHORT' : '🏆 STANDARD'}
-                                                        </span>
-                                                    </div>
-                                                    <span style={{ color: 'rgba(244,245,247,.42)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                                        {game.gameState === 'round_over' ? 'Between rounds' : `Round ${game.roundNumber}`}
-                                                    </span>
-                                                </div>
-
-                                                <div className="mt-[9px] flex items-center gap-[9px]">
-                                                    <div className="flex" style={{ flexShrink: 0 }}>
-                                                        {humans.slice(0, 3).map((p, idx) => (
-                                                            <div
-                                                                key={`${p.name}-${idx}`}
-                                                                style={{ width: 28, height: 28, borderRadius: 9, background: getAvatarTile(p.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, marginLeft: idx === 0 ? 0 : -8, border: '1px solid rgba(0,0,0,.45)' }}
-                                                            >{getAvatarEmoji(p.name)}</div>
-                                                        ))}
-                                                    </div>
-                                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div className="truncate" style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 12 }}>
-                                                            {humans.length > 0 ? humans.map((p) => p.name).join(', ') : 'Bots only'}
-                                                        </div>
-                                                        <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 10, fontWeight: 600 }}>
-                                                            {seats} seat{seats === 1 ? '' : 's'} open
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-[6px]" style={{ flexShrink: 0 }}>
-                                                        {onWatchRoom && (
-                                                            <button
-                                                                onClick={() => onWatchRoom(game.roomId)}
-                                                                disabled={isJoining}
-                                                                aria-label={`Watch room ${game.roomId}`}
-                                                                style={{
-                                                                    padding: '6px 10px', borderRadius: 10,
-                                                                    border: '1px solid rgba(255,255,255,.16)', background: 'rgba(0,0,0,.35)',
-                                                                    color: 'rgba(244,245,247,.8)', fontWeight: 800, fontSize: 12,
-                                                                    whiteSpace: 'nowrap', cursor: isJoining ? 'default' : 'pointer',
-                                                                    fontFamily: "'Outfit',sans-serif",
-                                                                }}
-                                                            >
-                                                                👁
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => onJoinActiveGame(game.roomId)}
-                                                            disabled={isJoining}
-                                                            aria-label={`Join room ${game.roomId}, round ${game.roundNumber}, ${seats} seat${seats === 1 ? '' : 's'} open`}
-                                                            style={{
-                                                                padding: '6px 12px', borderRadius: 10, border: `1px solid ${acc}66`,
-                                                                background: 'rgba(0,0,0,.35)', color: acc, fontWeight: 800, fontSize: 12,
-                                                                whiteSpace: 'nowrap', cursor: isJoining ? 'default' : 'pointer',
-                                                                fontFamily: "'Outfit',sans-serif",
-                                                            }}
-                                                        >
-                                                            Join
-                                                        </button>
-                                                    </div>
-                                                </div>
+                        <div style={shell}>
+                            {showLive && liveGames.slice(0, 6).map((game, i) => {
+                                const humans = (game.players || []).filter((p) => !p.isBot);
+                                const seats = game.botCount || 0;
+                                const meta = [
+                                    game.roomId,
+                                    game.gameMode === 'short' ? 'Short' : 'Standard',
+                                    game.gameState === 'round_over' ? 'Between rounds' : `Round ${game.roundNumber}`,
+                                    `${seats} open`,
+                                ].join(' · ');
+                                return (
+                                    <div key={game.roomId} style={{ ...row(i === 0), opacity: isJoining ? 0.6 : 1 }}>
+                                        <div className="flex" style={{ flexShrink: 0 }}>
+                                            {(humans.length ? humans : [{ name: game.roomId }]).slice(0, 3).map((p, idx) => (
+                                                <div
+                                                    key={`${p.name}-${idx}`}
+                                                    style={{ width: 32, height: 32, borderRadius: 11, background: getAvatarTile(p.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, marginLeft: idx === 0 ? 0 : -10, border: '1.5px solid rgba(12,32,22,.65)' }}
+                                                >{getAvatarEmoji(p.name)}</div>
+                                            ))}
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div className="truncate" style={{ color: TEXT, fontWeight: 700, fontSize: 14 }}>
+                                                {humans.length > 0 ? humans.map((p) => p.name).join(', ') : 'Bots only'}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Recent results. Tapping a game opens its full scorecard. */}
-                        {showRecent && (
-                            <div className="mt-4" style={{ ...panel, ...anim('.36s') }}>
-                                <div className="mb-[10px] flex items-center justify-between gap-2">
-                                    <span style={sectionLabel}>RECENT GAMES</span>
-                                    {onActivity && (
-                                        <button
-                                            onClick={onActivity}
-                                            style={{ background: 'none', border: 'none', padding: 0, color: acc, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}
-                                        >
-                                            View all →
-                                        </button>
-                                    )}
-                                </div>
-
-                                <div className="flex flex-col gap-[10px]">
-                                    {recentGames.slice(0, 3).map((game) => {
-                                        // `nowTs` is sampled once by Lobby, so the
-                                        // relative times don't drift on re-render.
-                                        const ms = nowTs ? nowTs - new Date(game.end_time) : null;
-                                        const hours = ms === null ? 0 : Math.floor(ms / 3600000);
-                                        const timeStr = ms === null
-                                            ? null
-                                            : hours > 0 ? `${hours}h ago` : `${Math.max(0, Math.floor(ms / 60000))}m ago`;
-                                        const ranked = [...(game.participants || [])].sort((a, b) => a.placement - b.placement);
-                                        const winner = ranked[0];
-                                        return (
+                                            <div className="truncate" style={{ color: MUTED, fontSize: 11, fontWeight: 600 }}>{meta}</div>
+                                        </div>
+                                        <div className="flex items-center gap-[6px]" style={{ flexShrink: 0 }}>
+                                            {onWatchRoom && (
+                                                <button
+                                                    onClick={() => onWatchRoom(game.roomId)}
+                                                    disabled={isJoining}
+                                                    aria-label={`Watch room ${game.roomId}`}
+                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 10, border: '1px solid rgba(255,255,255,.14)', background: 'rgba(255,255,255,.05)', color: 'rgba(244,245,247,.7)', cursor: isJoining ? 'default' : 'pointer', padding: 0 }}
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                                                        <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" />
+                                                        <circle cx="12" cy="12" r="2.6" />
+                                                    </svg>
+                                                </button>
+                                            )}
                                             <button
-                                                key={game.game_id}
-                                                onClick={() => onGameClick(game)}
-                                                className="text-left"
-                                                style={{
-                                                    background: 'rgba(0,0,0,.34)',
-                                                    border: '1px solid rgba(255,255,255,.09)',
-                                                    borderRadius: 14,
-                                                    padding: '11px 12px',
-                                                    cursor: 'pointer',
-                                                    fontFamily: "'Outfit',sans-serif",
-                                                }}
-                                            >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span style={{ background: 'rgba(255,255,255,.09)', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(244,245,247,.75)', fontSize: 9, fontWeight: 800, letterSpacing: .6, padding: '3px 7px', borderRadius: 7, whiteSpace: 'nowrap' }}>
-                                                        {game.game_mode === 'short' ? '⚡ SHORT' : '🏆 STANDARD'}
-                                                    </span>
-                                                    <span style={{ color: 'rgba(244,245,247,.42)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                                        {game.total_rounds} rounds{timeStr ? ` · ${timeStr}` : ''}
-                                                    </span>
-                                                </div>
+                                                onClick={() => onJoinActiveGame(game.roomId)}
+                                                disabled={isJoining}
+                                                aria-label={`Join room ${game.roomId}, round ${game.roundNumber}, ${seats} seat${seats === 1 ? '' : 's'} open`}
+                                                style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${acc}66`, background: `${acc}18`, color: acc, fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap', cursor: isJoining ? 'default' : 'pointer', fontFamily: FONT }}
+                                            >Join</button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
 
-                                                <div className="mt-[9px] flex items-center gap-[9px]">
-                                                    {winner && (
-                                                        <div style={{ position: 'relative', flexShrink: 0 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 9, background: getAvatarTile(winner.username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, border: '1px solid rgba(0,0,0,.45)' }}>
-                                                                {getAvatarEmoji(winner.username)}
-                                                            </div>
-                                                            <span aria-hidden="true" style={{ position: 'absolute', top: -8, left: -4, fontSize: 13 }}>👑</span>
-                                                        </div>
-                                                    )}
-                                                    <div className="truncate" style={{ flex: 1, minWidth: 0, color: '#f4f5f7', fontWeight: 700, fontSize: 12 }}>
-                                                        {ranked.map((p) => p.username).join(', ')}
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
+                            {!showLive && finishedGames.slice(0, 4).map((game, i) => {
+                                // `nowTs` is sampled once by Lobby, so the
+                                // relative times don't drift on re-render.
+                                const ms = nowTs ? nowTs - new Date(game.end_time) : null;
+                                const hours = ms === null ? 0 : Math.floor(ms / 3600000);
+                                const timeStr = ms === null
+                                    ? null
+                                    : hours > 0 ? `${hours}h ago` : `${Math.max(0, Math.floor(ms / 60000))}m ago`;
+                                const ranked = [...(game.participants || [])].sort((a, b) => a.placement - b.placement);
+                                const winner = ranked[0];
+                                const meta = [
+                                    game.game_mode === 'short' ? 'Short' : 'Standard',
+                                    `${game.total_rounds} round${game.total_rounds === 1 ? '' : 's'}`,
+                                    ranked.length ? `beat ${ranked.slice(1).map((p) => p.username).join(', ')}` : null,
+                                ].filter(Boolean).join(' · ');
+                                return (
+                                    <button
+                                        key={game.game_id}
+                                        onClick={() => onGameClick(game)}
+                                        style={{ ...row(i === 0), cursor: 'pointer' }}
+                                    >
+                                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                                            <div style={{ width: 32, height: 32, borderRadius: 11, background: getAvatarTile(winner?.username || '?'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, border: '1.5px solid rgba(12,32,22,.65)' }}>
+                                                {getAvatarEmoji(winner?.username || '?')}
+                                            </div>
+                                            <span aria-hidden="true" style={{ position: 'absolute', top: -7, left: -5, fontSize: 12 }}>👑</span>
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div className="truncate" style={{ color: TEXT, fontWeight: 700, fontSize: 14 }}>
+                                                {winner ? `${winner.username} won` : 'Game finished'}
+                                            </div>
+                                            <div className="truncate" style={{ color: MUTED, fontSize: 11, fontWeight: 600 }}>{meta}</div>
+                                        </div>
+                                        <span style={{ color: FAINT, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{timeStr}</span>
+                                    </button>
+                                );
+                            })}
+
+                            {isEmpty && (
+                                <div style={{ padding: '26px 16px', textAlign: 'center', color: MUTED, fontSize: 13, fontWeight: 600 }}>
+                                    {showLive ? 'No games in progress — start one!' : 'No finished games yet.'}
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 {error && (
-                    <div style={{ marginTop: 12, textAlign: 'center', color: '#ff8f70', fontSize: 13, fontWeight: 600 }}>{error}</div>
+                    <div role="alert" style={{ marginTop: 14, textAlign: 'center', color: '#ff8f70', fontSize: 13, fontWeight: 600 }}>{error}</div>
                 )}
 
                 {spectateOffer && (
                     <button
                         onClick={() => onWatchRoom(spectateOffer)}
                         className="md:mx-auto md:max-w-[420px]"
-                        style={{
-                            marginTop: 12, width: '100%', padding: '12px 16px', borderRadius: 14,
-                            background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.16)',
-                            color: '#f4f5f7', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                            fontFamily: "'Outfit',sans-serif",
-                        }}
-                    >
-                        👁 Watch {spectateOffer} instead
-                    </button>
+                        style={{ marginTop: 12, width: '100%', padding: '13px 16px', borderRadius: 14, background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.15)', color: TEXT, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}
+                    >Watch {spectateOffer} instead</button>
                 )}
             </div>
 
-            {/* Mobile footer. The same links sit in the desktop nav above. */}
-            <div className="absolute inset-x-0 z-10 flex flex-wrap justify-center gap-x-[18px] gap-y-[6px] px-4 md:hidden" style={{ bottom: 28 }}>
-                {navLinks}
-            </div>
+            {/* Phone destinations. Fixed to the viewport rather than absolute in
+                the scroller, which is what let the old footer land on top of the
+                game list once the page grew. */}
+            <nav
+                className="fixed inset-x-0 bottom-0 z-20 flex items-stretch justify-around gap-1 px-2 pb-safe pt-[7px] md:hidden"
+                style={{ background: 'rgba(8,26,18,.82)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderTop: '1px solid rgba(255,255,255,.09)' }}
+            >
+                {destinations.map((d) => (
+                    <button
+                        key={d.key}
+                        onClick={d.onClick}
+                        style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '4px 2px 8px', border: 'none', background: 'none', color: 'rgba(244,245,247,.6)', fontFamily: FONT, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
+                    >
+                        <NavIcon name={d.icon} />
+                        <span className="truncate" style={{ maxWidth: '100%' }}>{d.label}</span>
+                    </button>
+                ))}
+            </nav>
         </div>
     );
 }

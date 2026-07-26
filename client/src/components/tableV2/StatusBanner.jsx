@@ -18,7 +18,7 @@ const StatusBanner = memo(function StatusBanner({
         text = 'Your turn — beat it or pass';
         mine = true;
     } else if (isMyTurn) {
-        text = isFirstLead ? 'Your turn — lead with 3♦' : 'Your turn';
+        text = isFirstLead ? 'Your turn — lead with 3♦︎' : 'Your turn';
         mine = true;
     } else {
         text = `${currentPlayerName || 'Opponent'} is thinking…`;
