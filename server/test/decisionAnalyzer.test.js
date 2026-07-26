@@ -137,3 +137,32 @@ test('lucky-vs-skilled classification is not reintroduced', () => {
     // would mean a second, uncalibrated answer to it.
     assert.strictEqual(DecisionAnalyzer.isLuckyWin, undefined);
 });
+
+test('passes split by whether a legal answer existed', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        decision({ action: 'pass', scored: false, forced: true, quality: null, lossFraction: null }),
+        decision({ action: 'pass', quality: 'good', lossFraction: 0.1 }),
+        decision({ action: 'pass', quality: 'optimal' }),
+        decision({ action: 'play' })
+    ]);
+
+    assert.strictEqual(summary.passes, 3);
+    assert.strictEqual(summary.forcedPasses, 1, 'nothing beat the pile');
+    assert.strictEqual(summary.voluntaryPasses, 2, 'held a legal answer back');
+});
+
+test('danger response counts only turns that offered a choice', () => {
+    const summary = DecisionAnalyzer.summarizeDecisions([
+        // Opponent on two cards, contested.
+        decision({ action: 'play', minOpponentCards: 2 }),
+        // Opponent on one card, conceded.
+        decision({ action: 'pass', minOpponentCards: 1 }),
+        // Opponent on one card but nothing could beat the pile: not a failure.
+        decision({ action: 'pass', minOpponentCards: 1, scored: false, forced: true, quality: null, lossFraction: null }),
+        // Nobody close to going out.
+        decision({ action: 'pass', minOpponentCards: 9 })
+    ]);
+
+    assert.strictEqual(summary.dangerDecisions, 2);
+    assert.strictEqual(summary.dangerContested, 1);
+});

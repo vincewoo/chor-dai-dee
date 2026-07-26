@@ -313,6 +313,15 @@ function initDb() {
             -- Summed normalized loss across graded decisions. Accuracy is
             -- 1 - total_loss / total_decisions.
             total_loss REAL DEFAULT 0.0,
+            -- Passes with nothing that beats the pile vs passes with a legal
+            -- answer in hand. The split is what separates bad cards from a
+            -- patient style.
+            forced_passes INTEGER DEFAULT 0,
+            voluntary_passes INTEGER DEFAULT 0,
+            -- Decisions taken with an opponent two cards or fewer from going
+            -- out, and how many contested the trick instead of conceding it.
+            danger_decisions INTEGER DEFAULT 0,
+            danger_contested INTEGER DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id),
             UNIQUE(user_id, game_mode)
         )`);
@@ -337,6 +346,10 @@ function initDb() {
                 addColumn('late_game_optimal', 'late_game_optimal INTEGER DEFAULT 0');
                 addColumn('forced_decisions', 'forced_decisions INTEGER DEFAULT 0');
                 addColumn('total_loss', 'total_loss REAL DEFAULT 0.0');
+                addColumn('forced_passes', 'forced_passes INTEGER DEFAULT 0');
+                addColumn('voluntary_passes', 'voluntary_passes INTEGER DEFAULT 0');
+                addColumn('danger_decisions', 'danger_decisions INTEGER DEFAULT 0');
+                addColumn('danger_contested', 'danger_contested INTEGER DEFAULT 0');
             }
         });
 
@@ -1330,10 +1343,17 @@ const updateCardAwarenessStats = (userId, gameMode, summary) => {
         const lateOptimal = summary.lateOptimal || 0;
         const forced = summary.forced || 0;
         const loss = summary.totalLoss || 0;
+        const forcedPasses = summary.forcedPasses || 0;
+        const voluntaryPasses = summary.voluntaryPasses || 0;
+        const dangerDecisions = summary.dangerDecisions || 0;
+        const dangerContested = summary.dangerContested || 0;
+
+        const values = [total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal,
+            forced, loss, forcedPasses, voluntaryPasses, dangerDecisions, dangerContested];
 
         const query = `INSERT INTO card_awareness_stats
-            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal, forced_decisions, total_loss)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, game_mode, total_decisions, optimal_decisions, suboptimal_decisions, risky_plays_successful, risky_plays_failed, late_game_decisions, late_game_optimal, forced_decisions, total_loss, forced_passes, voluntary_passes, danger_decisions, danger_contested)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, game_mode) DO UPDATE SET
                 total_decisions = total_decisions + ?,
                 optimal_decisions = optimal_decisions + ?,
@@ -1343,12 +1363,13 @@ const updateCardAwarenessStats = (userId, gameMode, summary) => {
                 late_game_decisions = late_game_decisions + ?,
                 late_game_optimal = late_game_optimal + ?,
                 forced_decisions = forced_decisions + ?,
-                total_loss = total_loss + ?`;
+                total_loss = total_loss + ?,
+                forced_passes = forced_passes + ?,
+                voluntary_passes = voluntary_passes + ?,
+                danger_decisions = danger_decisions + ?,
+                danger_contested = danger_contested + ?`;
 
-        db.run(query, [
-            userId, gameMode, total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal, forced, loss,
-            total, optimal, suboptimal, riskySuccess, riskyFail, lateTotal, lateOptimal, forced, loss
-        ], (err) => {
+        db.run(query, [userId, gameMode, ...values, ...values], (err) => {
             if (err) reject(err);
             else resolve();
         });

@@ -214,6 +214,15 @@ class DecisionAnalyzer {
             totalLoss: 0,
             plays: 0,
             passes: 0,
+            // A pass with nothing that beats the pile says the cards were
+            // unplayable; a pass with a legal answer in hand is a choice. Split
+            // apart, a high pass rate stops reading as passivity by default.
+            forcedPasses: 0,
+            voluntaryPasses: 0,
+            // Decisions taken with an opponent one or two cards from going out,
+            // and how many of those contested the trick rather than conceding.
+            dangerDecisions: 0,
+            dangerContested: 0,
             riskySucceeded: 0,
             riskyFailed: 0,
             lateTotal: 0,
@@ -222,7 +231,18 @@ class DecisionAnalyzer {
 
         for (const d of decisions || []) {
             if (d.action === 'play') summary.plays++;
-            else if (d.action === 'pass') summary.passes++;
+            else if (d.action === 'pass') {
+                summary.passes++;
+                if (d.forced) summary.forcedPasses++;
+                else summary.voluntaryPasses++;
+            }
+
+            // Only counts where the player had something to decide: conceding
+            // with no legal answer is not a failure to respond.
+            if (!d.forced && this.isDangerDecision(d)) {
+                summary.dangerDecisions++;
+                if (d.action === 'play') summary.dangerContested++;
+            }
 
             // Risky plays resolve when the trick they were made into resolves.
             // An unresolved one (the round ended first) is counted as neither.
@@ -257,6 +277,15 @@ class DecisionAnalyzer {
      */
     static isLateGameDecision(decision) {
         return this.roundProgress(decision) > 0.6;
+    }
+
+    /**
+     * Was an opponent close enough to going out that letting the trick go was
+     * likely to end the round? Two cards is the point at which a single
+     * uncontested trick can finish them.
+     */
+    static isDangerDecision(decision) {
+        return typeof decision.minOpponentCards === 'number' && decision.minOpponentCards <= 2;
     }
 
     /** Mirror of isLateGameDecision: the opening 40% of a round. */

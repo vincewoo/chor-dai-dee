@@ -770,6 +770,12 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const riskyTotal = (awareness?.risky_plays_successful || 0) + (awareness?.risky_plays_failed || 0);
     const riskyRate = pct(awareness?.risky_plays_successful || 0, riskyTotal);
 
+    const forcedPasses = awareness?.forced_passes || 0;
+    const voluntaryPasses = awareness?.voluntary_passes || 0;
+    const allPasses = forcedPasses + voluntaryPasses;
+    const dangerDecisions = awareness?.danger_decisions || 0;
+    const dangerContested = awareness?.danger_contested || 0;
+
     const streak = variance?.current_streak || 0;
     // Lucky vs skilled wins retired: Deal Strength above answers the same
     // question per round, against a measured baseline and with an interval.
@@ -812,6 +818,44 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                                 <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} play${riskyTotal === 1 ? '' : 's'} that risked a valuable card on holding the trick.`} rm={rm} />
                             )}
                         </div>
+                    </>
+                )}
+            </Section>
+
+            <Section title="PASSES & PRESSURE" hint="Why you pass, and what you do when someone is about to go out" delay=".06s" rm={rm}>
+                {allPasses === 0 && dangerDecisions === 0 ? (
+                    <Empty>No pass data yet</Empty>
+                ) : (
+                    <>
+                        {allPasses > 0 && (
+                            <>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <Tile label="Passes" value={num(allPasses)} />
+                                    <Tile label="Nothing to play" value={num(forcedPasses)} sub="cards, not choice" />
+                                    <Tile label="Chose to hold" value={num(voluntaryPasses)} color={acc} sub="had an answer" />
+                                </div>
+                                <div className="mt-3">
+                                    <Meter
+                                        label="Passes that were a choice"
+                                        value={pct(voluntaryPasses, allPasses)}
+                                        color={acc}
+                                        note="The rest were forced — no legal card would have beaten the pile."
+                                        rm={rm}
+                                    />
+                                </div>
+                            </>
+                        )}
+                        {dangerDecisions > 0 && (
+                            <div className="mt-3">
+                                <Meter
+                                    label="Contested when an opponent was close"
+                                    value={pct(dangerContested, dangerDecisions)}
+                                    color={parseFloat(pct(dangerContested, dangerDecisions)) >= 70 ? GOOD : WARN}
+                                    note={`${num(dangerDecisions)} turn${dangerDecisions === 1 ? '' : 's'} where someone held two cards or fewer and you could have played.`}
+                                    rm={rm}
+                                />
+                            </div>
+                        )}
                     </>
                 )}
             </Section>

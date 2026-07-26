@@ -111,6 +111,11 @@ function isRiskyMove(move, hand, ctx, gamePhase) {
  *                     figure; quality and lossFraction are null.
  */
 function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext = {}, action, cards = null }) {
+    // Fewest cards any opponent is holding. Carried on every decision so the
+    // stats layer can ask how a player responds with someone about to go out,
+    // without having to reconstruct the position.
+    const minOpponentCards = Math.min(...(gameContext.playerCardCounts || [13, 13, 13]));
+
     const unscored = (forced) => ({
         scored: false,
         forced,
@@ -119,7 +124,8 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
         rank: null,
         optionCount: null,
         isRisky: false,
-        bestMove: null
+        bestMove: null,
+        minOpponentCards
     });
 
     const ctx = BotLogic.buildDecisionContext(hand, { ...gameContext, profile: null });
@@ -215,6 +221,7 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
         rank: chosenIndex + 1,
         optionCount: options.length,
         isRisky: chosen.action === 'play' && isRiskyMove(chosen.move, hand, ctx, gamePhase),
+        minOpponentCards,
         bestMove: options[0].action === 'pass'
             ? 'pass'
             : options[0].move.cards.map(c => `${c.rank}${c.suit}`).join(' ')

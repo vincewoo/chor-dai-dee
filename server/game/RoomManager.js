@@ -1208,6 +1208,7 @@ class Room {
             rank: quality.rank,
             optionCount: quality.optionCount,
             isRisky: quality.isRisky,
+            minOpponentCards: quality.minOpponentCards,
             // Filled in when the trick resolves: 'success' if nobody beat this
             // play, 'failed' if somebody did. Stays null if the round ended
             // first, and an unresolved play counts as neither.
