@@ -318,7 +318,7 @@ function StatsV2({
                     <div style={{ color: MUTED, fontSize: 11, fontWeight: 600 }}>
                         {loading && !stats
                             ? 'Loading…'
-                            : `${num(overview.played)} ${mode === 'short' ? 'short' : 'standard'} game${overview.played === 1 ? '' : 's'} · ${num(game.total_rounds)} rounds`}
+                            : `${num(overview.played)} ${mode === 'short' ? 'short' : 'standard'} game${overview.played === 1 ? '' : 's'} · ${num(rounds.total_rounds || game.total_rounds)} rounds`}
                     </div>
                 </div>
                 {!isSelf && onViewMyStats && (
@@ -457,7 +457,9 @@ function OverviewTab({ overview, game, rounds, rankLabel, acc, rm }) {
 
             <Section title="ROUND SNAPSHOT" delay=".12s" rm={rm}>
                 <div className="grid grid-cols-3 gap-2">
-                    <Tile label="Rounds" value={num(game.total_rounds)} />
+                    {/* Round counts come from round_stats, the same source as
+                        the placement average beside them. */}
+                    <Tile label="Rounds" value={num(rounds.total_rounds || game.total_rounds)} />
                     <Tile
                         label="Avg placement"
                         value={rounds.avg_placement ? rounds.avg_placement.toFixed(2) : '—'}
@@ -471,13 +473,26 @@ function OverviewTab({ overview, game, rounds, rankLabel, acc, rm }) {
 }
 
 function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft, rm }) {
-    const plays = game.total_plays || 0;
-    const passes = game.total_passes || 0;
-    const actions = plays + passes;
-    const totalRounds = game.total_rounds || 0;
+    // Everything on this tab is per-round, so it all reads from round_stats.
+    // The stats tables only take a game's totals once that game completes, so
+    // mixing the two sources made the tiles disagree with each other whenever a
+    // game was abandoned. `game` stays as the fallback for accounts whose rows
+    // predate round tracking.
+    const hasRoundData = (rounds?.total_rounds || 0) > 0;
+    const source = hasRoundData ? rounds : game;
 
-    const leadsWon = game.leads_won || 0;
-    const leadAttempts = game.lead_attempts || 0;
+    const plays = source.total_plays || 0;
+    const passes = source.total_passes || 0;
+    const actions = plays + passes;
+    const totalRounds = source.total_rounds || 0;
+
+    const leadsWon = source.leads_won || 0;
+    // Lead control is reported over the rounds that actually recorded contested
+    // tricks. Older rounds contribute leads with no attempts, and pairing those
+    // would put the success rate above 100% until they aged out.
+    const leadAttempts = source.lead_attempts || 0;
+    const trackedLeadsWon = hasRoundData ? (rounds.tracked_leads_won || 0) : leadsWon;
+    const trackedActions = hasRoundData ? (rounds.tracked_actions || 0) : actions;
 
     const comboList = [
         { label: 'Singles', value: combos.singles || 0, color: '#7fb2ff' },
@@ -492,12 +507,13 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
     const comboTotal = comboList.reduce((sum, c) => sum + c.value, 0);
     const comboMax = comboList.reduce((max, c) => Math.max(max, c.value), 0);
 
-    // Penalty severity comes from live round data when available (matches desktop).
-    const penaltySource = rounds && rounds.total_rounds > 0 ? rounds : game;
-    const penaltyRounds = penaltySource.total_rounds || 0;
-    const penalty2x = penaltySource.penalty_2x_rounds || 0;
-    const penalty3x = penaltySource.penalty_3x_rounds || 0;
-    const penalty1x = penaltyRounds - penalty2x - penalty3x;
+    // Penalty severity describes rounds you lost. A round you won scores zero
+    // off no cards, and was previously swept into the "1-9" bucket by
+    // subtracting the other two from every round played.
+    const penalty2x = source.penalty_2x_rounds || 0;
+    const penalty3x = source.penalty_3x_rounds || 0;
+    const penaltyRounds = Math.max(0, totalRounds - (rounds?.round_wins || 0));
+    const penalty1x = Math.max(0, penaltyRounds - penalty2x - penalty3x);
 
     return (
         <>
@@ -514,20 +530,20 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
                 </div>
             </Section>
 
-            <Section title="LEAD CONTROL" hint="Plays that ended with everyone else passing" delay=".08s" rm={rm}>
+            <Section title="LEAD CONTROL" hint="Tricks you played into, and how often you took them" delay=".08s" rm={rm}>
                 <div className="grid grid-cols-3 gap-2">
-                    <Tile label="Leads won" value={num(leadsWon)} color={GOOD} />
-                    <Tile label="Lead attempts" value={num(leadAttempts)} />
+                    <Tile label="Leads won" value={num(trackedLeadsWon)} color={GOOD} />
+                    <Tile label="Tricks contested" value={num(leadAttempts)} sub="played into" />
                     <Tile
                         label="Success rate"
-                        value={`${pct(leadsWon, leadAttempts)}%`}
-                        color={parseFloat(pct(leadsWon, leadAttempts)) >= 50 ? GOOD : TEXT}
+                        value={`${pct(trackedLeadsWon, leadAttempts)}%`}
+                        color={parseFloat(pct(trackedLeadsWon, leadAttempts)) >= 50 ? GOOD : TEXT}
                     />
                 </div>
                 <div className="mt-3">
                     <Meter
                         label="Control efficiency"
-                        value={pct(leadsWon, actions)}
+                        value={pct(trackedLeadsWon, trackedActions)}
                         color={acc}
                         note="Leads won across all actions (plays + passes)."
                         rm={rm}
@@ -556,9 +572,9 @@ function PlayTab({ game, rounds, combos, headToHead, onOpponentClick, acc, soft,
                 )}
             </Section>
 
-            <Section title="PENALTY SEVERITY" hint="Cards left when someone else went out" delay=".16s" rm={rm}>
+            <Section title="PENALTY SEVERITY" hint="Cards left in the rounds you didn't win" delay=".16s" rm={rm}>
                 {penaltyRounds === 0 ? (
-                    <Empty>No scored rounds yet</Empty>
+                    <Empty>No lost rounds yet</Empty>
                 ) : (
                     <div className="flex flex-col gap-[7px]">
                         <Bar label="1–9" labelWidth={46} percentage={pct(penalty1x, penaltyRounds)} color={GOOD} right={num(penalty1x)} rm={rm} />
@@ -741,7 +757,11 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
     const optimal = awareness?.optimal_decisions || 0;
     const suboptimal = awareness?.suboptimal_decisions || 0;
     const optimalRate = pct(optimal, totalDecisions);
-    const lateAccuracy = ratio(awareness?.late_game_accuracy);
+    // Null when no late-round decisions have been taken yet, which is not the
+    // same as having scored zero on them.
+    const lateAccuracyRaw = awareness?.late_game_accuracy;
+    const lateAccuracyKnown = lateAccuracyRaw !== null && lateAccuracyRaw !== undefined;
+    const lateAccuracy = ratio(lateAccuracyRaw);
     const riskyTotal = (awareness?.risky_plays_successful || 0) + (awareness?.risky_plays_failed || 0);
     const riskyRate = pct(awareness?.risky_plays_successful || 0, riskyTotal);
 
@@ -772,7 +792,9 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
                             <Meter label="Optimal rate" value={optimalRate} color={parseFloat(optimalRate) >= 60 ? GOOD : acc} rm={rm} />
-                            <Meter label="Late game accuracy" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Positional advantage in the final stages of a round." rm={rm} />
+                            {lateAccuracyKnown && (
+                                <Meter label="Late game accuracy" value={lateAccuracy} color={parseFloat(lateAccuracy) >= 50 ? GOOD : acc} note="Share of your decisions after 60% of the deck is gone that were rated optimal." rm={rm} />
+                            )}
                             {riskyTotal > 0 && (
                                 <Meter label="Risky play success" value={riskyRate} color={parseFloat(riskyRate) >= 50 ? GOOD : BAD} note={`${riskyTotal} risky play${riskyTotal === 1 ? '' : 's'} attempted.`} rm={rm} />
                             )}
@@ -845,7 +867,7 @@ function AdvancedTab({ tier3, handStrength, acc, rm, onArchetypeClick }) {
                         <div className="mt-3 flex flex-col gap-3">
                             <Meter label="Aggression" value={ratio(behavioral.aggression_score)} color={parseFloat(ratio(behavioral.aggression_score)) > 70 ? BAD : parseFloat(ratio(behavioral.aggression_score)) < 40 ? '#7fb2ff' : acc} rm={rm} />
                             <Meter label="Risk" value={ratio(behavioral.risk_score)} color={parseFloat(ratio(behavioral.risk_score)) > 60 ? '#ffab6b' : acc} rm={rm} />
-                            <Meter label="Adaptability" value={ratio(behavioral.adaptability_score)} color={parseFloat(ratio(behavioral.adaptability_score)) > 70 ? GOOD : acc} rm={rm} />
+                            <Meter label="Adaptability" value={ratio(behavioral.adaptability_score)} color={parseFloat(ratio(behavioral.adaptability_score)) > 70 ? GOOD : acc} note="Recent placements against your earlier ones — above 50% means improving." rm={rm} />
                         </div>
 
                         <div className="mt-3 grid grid-cols-2 gap-2">

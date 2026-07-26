@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -755,40 +755,83 @@ io.on('connection', (socket) => {
             }
         }));
 
-        // Calculate placements for rating purposes (winner is 1st, all others are tied for last)
-        const placements = room.players.map(p => {
-            if (p.id === dragonWinner.id) return 1;
-            return 4; // All losers get worst placement
+        // Final scores keyed by player id: calculateNewRatings reads
+        // finalScores[p.id] to rank the table. Passing a positional array here
+        // meant every lookup missed, every player scored 0, and the dragon win
+        // rated as a four-way draw.
+        const dragonFinalScores = {};
+        room.players.forEach(p => {
+            const score = dragonScores.find(s => s.id === p.id);
+            dragonFinalScores[p.id] = score ? score.roundPoints : 0;
         });
 
-        // Update ratings for all human players (excluding mid-game joiners)
-        const newRatings = calculateNewRatings(playersWithStats, placements);
+        // Winner 1st, everyone else tied for last.
+        const dragonPlacements = {};
+        room.players.forEach(p => {
+            dragonPlacements[p.id] = p.id === dragonWinner.id ? 1 : 4;
+        });
+
+        // Update ratings for all human players (excluding mid-game joiners).
+        // calculateNewRatings returns HUMANS ONLY, so the result cannot be
+        // indexed by seat -- key it by name, as the game_over path does.
+        const newRatings = calculateNewRatings(playersWithStats, dragonFinalScores);
+        const ratingUpdates = {};
+        newRatings.forEach(r => {
+            ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
+        });
 
         await withTransaction(async () => {
-            for (let i = 0; i < room.players.length; i++) {
-                const player = room.players[i];
+            for (const player of room.players) {
                 // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
                 if (player.joinedMidGame) {
                     console.log(`Dragon win: Skipping stats for ${player.name} (joined mid-game at round ${player.joinedAtRound})`);
                 }
-                if (!player.isBot && !player.isGuest && !player.joinedMidGame && newRatings[i]) {
-                    try {
-                        const user = await lookupUser(player.name);
-                        if (user) {
-                            // Update mode-specific stats
-                            await updateUserStatsByMode(user.id, room.gameMode, {
-                                games: 1,
-                                wins: player.id === dragonWinner.id ? 1 : 0,
-                                rating_mu: newRatings[i].mu,
-                                rating_sigma: newRatings[i].sigma
-                            });
+                if (player.isBot || player.isGuest || player.joinedMidGame) continue;
 
-                            // Save placement history for variance tracking
-                            await savePlacementHistory(user.id, room.gameMode, placements[i]);
-                        }
-                    } catch (e) {
-                        console.error("Failed to update stats for", player.name, e);
+                try {
+                    const user = await lookupUser(player.name);
+                    if (!user) continue;
+
+                    const newRating = ratingUpdates[player.name];
+                    const isWinner = player.id === dragonWinner.id;
+
+                    // updateUserStatsByMode takes positional args keyed on
+                    // USERNAME. It was being called with a user id and an
+                    // options object, so it rejected 'User not found' on the
+                    // first await and a dragon win recorded nothing at all.
+                    await updateUserStatsByMode(
+                        player.name,
+                        room.gameMode,
+                        isWinner,
+                        dragonFinalScores[player.id],
+                        newRating ? newRating.mu : null,
+                        newRating ? newRating.sigma : null
+                    );
+
+                    // Keeps the placement counters in step with games_played,
+                    // which the leaderboard's average placement divides by.
+                    // A dragon round writes no round_stats, so the play/pass
+                    // totals this adds are zero.
+                    await updateAggregateStats(
+                        player.name,
+                        room.gameMode,
+                        dragonPlacements[player.id],
+                        room.gameId
+                    );
+
+                    // Save placement history for variance tracking
+                    await savePlacementHistory(
+                        user.id,
+                        room.gameMode,
+                        room.gameId,
+                        dragonPlacements[player.id]
+                    );
+
+                    if (newRating) {
+                        player.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
                     }
+                } catch (e) {
+                    console.error("Failed to update stats for", player.name, e);
                 }
             }
         }).catch(e => console.error("Dragon win stats transaction failed:", e));
@@ -822,7 +865,11 @@ io.on('connection', (socket) => {
         // that would otherwise each pay their own commit.
         await withTransaction(async () => {
             for (const scoreData of roundScoresWithPlacements) {
-                if (scoreData.isBot || scoreData.isGuest) continue;
+                // Mid-game joiners are excluded from game-level stats and
+                // ratings, so their rounds must not land in round_stats either
+                // -- otherwise the two sources disagree about how much they
+                // played. Guests have nothing to attach stats to at all.
+                if (scoreData.isBot || scoreData.isGuest || scoreData.joinedMidGame) continue;
                 try {
                     const user = await lookupUser(scoreData.name);
                     if (!user) continue;
@@ -831,6 +878,7 @@ io.on('connection', (socket) => {
                         plays: 0,
                         passes: 0,
                         leadsWon: 0,
+                        tricksContested: 0,
                         handTypes: {}
                     };
 
@@ -849,6 +897,7 @@ io.on('connection', (socket) => {
                         plays: playStats.plays,
                         passes: playStats.passes,
                         leadsWon: playStats.leadsWon,
+                        leadAttempts: playStats.tricksContested || 0,
                         handTypes: playStats.handTypes,
                         // Scored at deal time, before a card was played. Absent
                         // for rounds already in flight when the server restarted.
@@ -947,7 +996,10 @@ io.on('connection', (socket) => {
                         const player = room.players.find(pl => pl.id === p.playerId);
                         if (!player) continue;
 
-                        const roundsWon = room.roundPlayStats[p.playerId]?.roundsWon || 0;
+                        // roundPlayStats is per-round and never carried a
+                        // roundsWon field, so this was always 0. The per-game
+                        // tally lives on the room, keyed by name.
+                        const roundsWon = room.roundsWonByName[player.name] || 0;
                         const participant = player.isBot ? null : await lookupUser(player.name);
                         await saveGameParticipant({
                             gameId: room.gameId,
@@ -1059,49 +1111,40 @@ io.on('connection', (socket) => {
                                             console.error("Failed to track decisions:", err);
                                         }
 
-                                        // Get round aggregates for this player
-                                        const roundAggregates = await getRoundAggregates(user.id, room.gameMode);
-
-                                        // 1. Card Awareness Stats
-                                        const totalDecisions = tier3Data.decisions.length;
-                                        const optimalCount = tier3Data.optimalPlays || 0;
-                                        const isOptimal = optimalCount > (totalDecisions / 2);
-                                        const riskyCount = tier3Data.riskyPlays || 0;
-                                        const isRisky = riskyCount > 0;
-
-                                        // Determine risky play success (risky plays that led to good placement)
-                                        const riskSucceeded = isRisky && playerPlacement.placement <= 2;
-
-                                        // Calculate late game accuracy
-                                        const lateGameAccuracy = DecisionAnalyzer.calculateLateGameAccuracy(
-                                            room.cumulativeScores[p.id] || 0,
-                                            52 // Full deck
+                                        // This game's rounds, for the behavioural
+                                        // scores and the deal-luck read below.
+                                        const gameSummary = await getGameRoundSummary(
+                                            user.id,
+                                            room.gameId,
+                                            room.gameMode
                                         );
+
+                                        // 1. Card Awareness Stats -- real per-decision
+                                        // counts, not one increment per game.
+                                        const decisionSummary = DecisionAnalyzer.summarizeDecisions(tier3Data.decisions);
+                                        const totalDecisions = decisionSummary.total;
+                                        const optimalRate = totalDecisions > 0
+                                            ? decisionSummary.optimal / totalDecisions
+                                            : 0;
 
                                         await updateCardAwarenessStats(
                                             user.id,
                                             room.gameMode,
-                                            isOptimal,
-                                            isRisky,
-                                            riskSucceeded,
-                                            lateGameAccuracy
+                                            decisionSummary
                                         );
 
                                         // 2. Variance Stats (Streaks and Lucky/Skilled wins)
                                         const isWinner = p.id === gameWinner.id;
 
-                                        // Determine if win was lucky vs skilled
+                                        // Luck is the cards you were dealt, which
+                                        // DealStrength measures directly. Rank 1 is
+                                        // the best hand at the table, 4 the worst.
                                         let isLucky = false;
                                         if (isWinner) {
-                                            // Calculate avg cards remaining for other players
-                                            const otherPlayers = room.players.filter(pl => pl.id !== p.id);
-                                            const avgCardsRemaining = otherPlayers.reduce((sum, pl) => {
-                                                const playerScore = room.cumulativeScores[pl.id] || 0;
-                                                return sum + playerScore;
-                                            }, 0) / otherPlayers.length;
-
-                                            const optimalRate = optimalCount / totalDecisions;
-                                            isLucky = DecisionAnalyzer.isLuckyWin(avgCardsRemaining, optimalRate);
+                                            isLucky = DecisionAnalyzer.isLuckyWin(
+                                                gameSummary.avg_deal_rank,
+                                                optimalRate
+                                            );
                                         }
 
                                         await updateVarianceStats(
@@ -1125,40 +1168,46 @@ io.on('connection', (socket) => {
                                         await updateVarianceScores(user.id, room.gameMode);
 
                                         // 5. Behavioral Stats
-                                        const totalPlays = roundAggregates?.total_plays || 0;
-                                        const totalPasses = roundAggregates?.total_passes || 0;
-                                        const leadsWon = roundAggregates?.leads_won || 0;
-
+                                        //
+                                        // Scored on THIS game and then smoothed by
+                                        // updateBehavioralStats. Feeding in lifetime
+                                        // totals, as this used to, averaged an
+                                        // average and could never move.
                                         const aggressionScore = DecisionAnalyzer.calculateAggressionScore(
-                                            totalPlays,
-                                            totalPasses,
-                                            leadsWon
+                                            gameSummary.plays || 0,
+                                            gameSummary.passes || 0,
+                                            gameSummary.leads_won || 0
                                         );
 
-                                        // Get existing card awareness stats for risk score calculation
-                                        const existingAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
-                                        const riskySuccessful = existingAwareness?.risky_plays_successful || 0;
-                                        const riskyFailed = existingAwareness?.risky_plays_failed || 0;
-
+                                        // Risky plays and the decisions they are a
+                                        // fraction of have to come from the same
+                                        // population, so both are read back off the
+                                        // row just updated.
+                                        const lifetimeAwareness = await require('./db').getCardAwarenessStats(user.id, room.gameMode);
                                         const riskScore = DecisionAnalyzer.calculateRiskScore(
-                                            riskySuccessful,
-                                            riskyFailed,
-                                            totalPlays
+                                            lifetimeAwareness?.risky_plays_successful || 0,
+                                            lifetimeAwareness?.risky_plays_failed || 0,
+                                            lifetimeAwareness?.total_decisions || 0
                                         );
 
                                         // Get placement history for adaptability calculation
                                         const placementHistory = await getPlacementHistory(user.id, room.gameMode, 20);
                                         const adaptabilityScore = DecisionAnalyzer.calculateAdaptabilityScore(placementHistory);
 
-                                        // Calculate early/late game phase-specific behaviors
-                                        // Early game = decisions in first 40% of turns
-                                        // Late game = decisions in last 30% of turns
-                                        const totalTurns = tier3Data.decisions.length;
-                                        const earlyGameCutoff = Math.floor(totalTurns * 0.4);
-                                        const lateGameStart = Math.floor(totalTurns * 0.7);
-
-                                        const earlyDecisions = tier3Data.decisions.slice(0, earlyGameCutoff);
-                                        const lateDecisions = tier3Data.decisions.slice(lateGameStart);
+                                        // Calculate early/late game phase-specific behaviors.
+                                        //
+                                        // Phase is a property of the round, read from
+                                        // the deck remaining when each decision was
+                                        // taken. Slicing the game's decision list by
+                                        // index instead - as this used to - made
+                                        // "early game" mean the first rounds of the
+                                        // match rather than the opening of each round.
+                                        const earlyDecisions = tier3Data.decisions.filter(
+                                            d => DecisionAnalyzer.isEarlyGameDecision(d)
+                                        );
+                                        const lateDecisions = tier3Data.decisions.filter(
+                                            d => DecisionAnalyzer.isLateGameDecision(d)
+                                        );
 
                                         // Calculate early game aggression (play rate in early game)
                                         const earlyPlays = earlyDecisions.filter(d => d.action === 'play').length;
@@ -1194,7 +1243,10 @@ io.on('connection', (socket) => {
                 }
 
                 // 4. Update head-to-head stats for all registered human player pairs (exclude guests)
-                const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest);
+                // Same exclusions as the game-level stats above: a mid-game
+                // joiner did not play the whole game, so the result is not a
+                // head-to-head record against them.
+                const humanPlayers = room.players.filter(p => !p.isBot && !p.isGuest && !p.joinedMidGame);
                 for (let i = 0; i < humanPlayers.length; i++) {
                     for (let j = i + 1; j < humanPlayers.length; j++) {
                         try {
