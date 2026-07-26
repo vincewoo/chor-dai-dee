@@ -1122,7 +1122,12 @@ const updateCardAwarenessStats = (userId, gameMode, isOptimal, isRisky, riskSucc
                 suboptimal_decisions = suboptimal_decisions + ?,
                 risky_plays_successful = risky_plays_successful + ?,
                 risky_plays_failed = risky_plays_failed + ?,
-                late_game_accuracy = (late_game_accuracy * (total_decisions - 1) + ?) / total_decisions`;
+                -- Inside DO UPDATE, a bare column name is the value BEFORE this
+                -- statement, so the running mean has to weight by the old count
+                -- and divide by the new one. Using (total_decisions - 1) and
+                -- total_decisions meant the second write multiplied the whole
+                -- history by zero and every later one under-weighted it.
+                late_game_accuracy = (late_game_accuracy * total_decisions + ?) / (total_decisions + 1)`;
 
         const optimalVal = isOptimal ? 1 : 0;
         const suboptimalVal = !isOptimal ? 1 : 0;
@@ -1814,8 +1819,14 @@ const getLeaderboard = (options = {}) => {
                     THEN CAST(s.wins AS REAL) / s.games_played
                     ELSE 0
                 END as win_rate,
-                CASE WHEN s.total_rounds > 0
-                    THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL)
+                -- Placement counters are incremented once per GAME, so the
+                -- divisor has to be games too. Dividing by total_rounds (the
+                -- sum of rounds across all games) made this read ~0.4 instead
+                -- of ~2.5. Summing the counters rather than using games_played
+                -- keeps numerator and denominator from the same writes.
+                CASE WHEN (s.first_place + s.second_place + s.third_place + s.fourth_place) > 0
+                    THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4)
+                         / CAST(s.first_place + s.second_place + s.third_place + s.fourth_place AS REAL)
                     ELSE 0
                 END as avg_placement,
                 s.leads_won,
@@ -1842,7 +1853,10 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
 
         const RATING = '(1200 + (s.rating_mu - 3 * s.rating_sigma) * 40)';
         const WIN_RATE = 'CASE WHEN s.games_played > 0 THEN CAST(s.wins AS REAL) / s.games_played ELSE 0 END';
-        const AVG_PLACEMENT = 'CASE WHEN s.total_rounds > 0 THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.total_rounds AS REAL) ELSE 0 END';
+        // Must match getLeaderboard's expression exactly, or a player's rank
+        // disagrees with the list they are ranked in. Games, not rounds -- see
+        // the comment there.
+        const AVG_PLACEMENT = 'CASE WHEN (s.first_place + s.second_place + s.third_place + s.fourth_place) > 0 THEN (s.first_place * 1 + s.second_place * 2 + s.third_place * 3 + s.fourth_place * 4) / CAST(s.first_place + s.second_place + s.third_place + s.fourth_place AS REAL) ELSE 0 END';
 
         // Primary metric plus its tiebreaker, matching the leaderboard's ORDER BY.
         // `betterCmp` is the comparison that means "ahead of me" for the primary

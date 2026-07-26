@@ -35,6 +35,10 @@ class Room {
         this.gameMode = gameMode; // Game mode: 'short' or 'standard'
         this.pointThreshold = getPointThreshold(gameMode); // Point threshold for game over
         this.roundPlayStats = {}; // Track plays/passes per round for advanced stats
+        // Rounds won so far in the current GAME. Keyed by name, not player id:
+        // roundPlayStats is rebuilt every round and ids change on reconnect and
+        // on bot/human swaps, whereas a name is stable and unique in a room.
+        this.roundsWonByName = {};
         // Deal strength per player for the current round, keyed by player id.
         // Server-side only while the round is live: `rank` is derived from all
         // four hands and would leak opponents' holdings. See DealStrength.js.
@@ -685,6 +689,10 @@ class Room {
             this.players.forEach(p => {
                 this.cumulativeScores[p.id] = 0;
             });
+            // Per-game counters. roundNumber === 0 is the only "a new game is
+            // starting" signal a room gets -- both startRematch() and the lobby
+            // restart come back through here.
+            this.roundsWonByName = {};
         }
 
         this.roundNumber++;
@@ -1063,6 +1071,7 @@ class Room {
         // Check if player finished round
         if (player.hand.length === 0) {
             this.winners.push(player);
+            this.roundsWonByName[player.name] = (this.roundsWonByName[player.name] || 0) + 1;
             this.gameState = 'round_over';
             this.lastRoundWinnerId = player.id;
             // Don't clear cards immediately - let them be visible during delay

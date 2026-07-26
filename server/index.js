@@ -755,40 +755,83 @@ io.on('connection', (socket) => {
             }
         }));
 
-        // Calculate placements for rating purposes (winner is 1st, all others are tied for last)
-        const placements = room.players.map(p => {
-            if (p.id === dragonWinner.id) return 1;
-            return 4; // All losers get worst placement
+        // Final scores keyed by player id: calculateNewRatings reads
+        // finalScores[p.id] to rank the table. Passing a positional array here
+        // meant every lookup missed, every player scored 0, and the dragon win
+        // rated as a four-way draw.
+        const dragonFinalScores = {};
+        room.players.forEach(p => {
+            const score = dragonScores.find(s => s.id === p.id);
+            dragonFinalScores[p.id] = score ? score.roundPoints : 0;
         });
 
-        // Update ratings for all human players (excluding mid-game joiners)
-        const newRatings = calculateNewRatings(playersWithStats, placements);
+        // Winner 1st, everyone else tied for last.
+        const dragonPlacements = {};
+        room.players.forEach(p => {
+            dragonPlacements[p.id] = p.id === dragonWinner.id ? 1 : 4;
+        });
+
+        // Update ratings for all human players (excluding mid-game joiners).
+        // calculateNewRatings returns HUMANS ONLY, so the result cannot be
+        // indexed by seat -- key it by name, as the game_over path does.
+        const newRatings = calculateNewRatings(playersWithStats, dragonFinalScores);
+        const ratingUpdates = {};
+        newRatings.forEach(r => {
+            ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
+        });
 
         await withTransaction(async () => {
-            for (let i = 0; i < room.players.length; i++) {
-                const player = room.players[i];
+            for (const player of room.players) {
                 // Skip bots, guests, and mid-game joiners (no stats recorded for guests or mid-game joiners)
                 if (player.joinedMidGame) {
                     console.log(`Dragon win: Skipping stats for ${player.name} (joined mid-game at round ${player.joinedAtRound})`);
                 }
-                if (!player.isBot && !player.isGuest && !player.joinedMidGame && newRatings[i]) {
-                    try {
-                        const user = await lookupUser(player.name);
-                        if (user) {
-                            // Update mode-specific stats
-                            await updateUserStatsByMode(user.id, room.gameMode, {
-                                games: 1,
-                                wins: player.id === dragonWinner.id ? 1 : 0,
-                                rating_mu: newRatings[i].mu,
-                                rating_sigma: newRatings[i].sigma
-                            });
+                if (player.isBot || player.isGuest || player.joinedMidGame) continue;
 
-                            // Save placement history for variance tracking
-                            await savePlacementHistory(user.id, room.gameMode, placements[i]);
-                        }
-                    } catch (e) {
-                        console.error("Failed to update stats for", player.name, e);
+                try {
+                    const user = await lookupUser(player.name);
+                    if (!user) continue;
+
+                    const newRating = ratingUpdates[player.name];
+                    const isWinner = player.id === dragonWinner.id;
+
+                    // updateUserStatsByMode takes positional args keyed on
+                    // USERNAME. It was being called with a user id and an
+                    // options object, so it rejected 'User not found' on the
+                    // first await and a dragon win recorded nothing at all.
+                    await updateUserStatsByMode(
+                        player.name,
+                        room.gameMode,
+                        isWinner,
+                        dragonFinalScores[player.id],
+                        newRating ? newRating.mu : null,
+                        newRating ? newRating.sigma : null
+                    );
+
+                    // Keeps the placement counters in step with games_played,
+                    // which the leaderboard's average placement divides by.
+                    // A dragon round writes no round_stats, so the play/pass
+                    // totals this adds are zero.
+                    await updateAggregateStats(
+                        player.name,
+                        room.gameMode,
+                        dragonPlacements[player.id],
+                        room.gameId
+                    );
+
+                    // Save placement history for variance tracking
+                    await savePlacementHistory(
+                        user.id,
+                        room.gameMode,
+                        room.gameId,
+                        dragonPlacements[player.id]
+                    );
+
+                    if (newRating) {
+                        player.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
                     }
+                } catch (e) {
+                    console.error("Failed to update stats for", player.name, e);
                 }
             }
         }).catch(e => console.error("Dragon win stats transaction failed:", e));
@@ -947,7 +990,10 @@ io.on('connection', (socket) => {
                         const player = room.players.find(pl => pl.id === p.playerId);
                         if (!player) continue;
 
-                        const roundsWon = room.roundPlayStats[p.playerId]?.roundsWon || 0;
+                        // roundPlayStats is per-round and never carried a
+                        // roundsWon field, so this was always 0. The per-game
+                        // tally lives on the room, keyed by name.
+                        const roundsWon = room.roundsWonByName[player.name] || 0;
                         const participant = player.isBot ? null : await lookupUser(player.name);
                         await saveGameParticipant({
                             gameId: room.gameId,
