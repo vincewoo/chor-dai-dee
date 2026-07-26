@@ -201,6 +201,131 @@ test('a move that is not legal in the position is not graded', () => {
     assert.strictEqual(result.quality, null);
 });
 
+// --- the endgame gap ---------------------------------------------------------
+//
+// BotLogic hands off to solveEndgame at five cards, and this module deliberately
+// does not follow it there. Measured against self-play that cost 30% of all
+// small-hand decisions a false "mistake", and 96% of a strong player's flagged
+// mistakes came from this one range. What follows pins the two halves of the
+// repair: defer to search where search proves an answer, and decline to assert
+// an error where it does not.
+
+test('a forced two-move win is graded optimal, not a blunder', () => {
+    // 2S cannot be beaten, and KH KD plays out as a pair next turn. The cost
+    // model on its own hates leading a 2 and used to rank this near the bottom.
+    const myHand = hand('2S', 'KH', 'KD');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context([6, 6, 6]),
+        action: 'play', cards: hand('2S')
+    });
+
+    assert.strictEqual(result.scored, true);
+    assert.strictEqual(result.forcedWin, true);
+    assert.strictEqual(result.quality, 'optimal');
+    assert.strictEqual(result.lossFraction, 0);
+});
+
+test('every forcing move is credited, not just the first one found', () => {
+    // solveEndgame returns the first forced win it enumerates because it only
+    // needs one to play. Grading has to credit them all: 2S and 2H each leave a
+    // valid pair and neither can be beaten, so both are optimal. 2D is not -
+    // 2C is still outstanding and beats it.
+    const myHand = hand('2S', '2H', '2D');
+    const ctx = context([6, 6, 6]);
+
+    const spades = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: ctx,
+        action: 'play', cards: hand('2S')
+    });
+    const hearts = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: ctx,
+        action: 'play', cards: hand('2H')
+    });
+    const diamonds = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: ctx,
+        action: 'play', cards: hand('2D')
+    });
+
+    assert.strictEqual(spades.forcedWin, true);
+    assert.strictEqual(hearts.forcedWin, true);
+    assert.strictEqual(spades.quality, 'optimal');
+    assert.strictEqual(hearts.quality, 'optimal');
+    assert.strictEqual(diamonds.forcedWin, false, '2C outstanding beats 2D');
+});
+
+test('missing a forced win is a confident mistake', () => {
+    // The counterpart: the win was there and the player led a king instead.
+    const myHand = hand('2S', 'KH', 'KD');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context([6, 6, 6]),
+        action: 'play', cards: hand('KH')
+    });
+
+    assert.strictEqual(result.quality, 'mistake');
+    assert.strictEqual(result.confident, true, 'a proof settles this position');
+    assert.ok(result.absoluteLoss > 1e5, 'the gap is the whole win');
+});
+
+test('a small hand with no win on the board is graded but not confident', () => {
+    // solveEndgame owns this position and picks by a "power" heuristic that is
+    // neither the cost model nor a proof. Two heuristics disagreeing is not
+    // evidence of a mistake, so the score stands but nothing may call it one.
+    const myHand = hand('3D', '5C', '8H', 'TS', 'QD');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context([7, 7, 7]),
+        action: 'play', cards: hand('QD')
+    });
+
+    assert.strictEqual(result.scored, true);
+    assert.strictEqual(result.confident, false);
+    assert.notStrictEqual(result.quality, null, 'still scored for the aggregates');
+});
+
+test('the last-card emergency is graded but not confident', () => {
+    // selectBestMove abandons scoring outright to block here, and whether a
+    // given block works depends on the one card they hold - unknowable from
+    // this side of the table.
+    const myHand = hand('3D', '5C', '8H', 'TS', 'QD', 'KC', 'AH');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context([1, 7, 7]),
+        action: 'play', cards: hand('3D')
+    });
+
+    assert.strictEqual(result.scored, true);
+    assert.strictEqual(result.confident, false);
+});
+
+test('an ordinary midgame decision is confident', () => {
+    const myHand = hand('3D', '4C', '7H', '9S', 'JD', 'KC', '2S', '5H');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context([8, 8, 8]),
+        action: 'play', cards: hand('3D')
+    });
+
+    assert.strictEqual(result.confident, true);
+});
+
+test('absolute loss is carried alongside the normalized fraction', () => {
+    // lossFraction is normalized to the spread at one decision, so it cannot
+    // tell "gave up a lot" from "every option was near-identical". Ranking the
+    // worst few decisions in a game needs the raw gap.
+    const myHand = hand('3D', '4C', '7H', '9S', 'JD', 'KC', '2S', '5H');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context(),
+        action: 'play', cards: hand('2S')
+    });
+
+    assert.strictEqual(typeof result.absoluteLoss, 'number');
+    assert.ok(result.absoluteLoss >= 0);
+    assert.strictEqual(typeof result.spread, 'number');
+    // The structured form the review renders from.
+    assert.ok(Array.isArray(result.bestMoveCards));
+    assert.strictEqual(
+        result.bestMoveCards.map(c => `${c.rank}${c.suit}`).join(' '),
+        result.bestMove
+    );
+});
+
 test('every archetype is reachable, and the reference reads Balanced', () => {
     const { classifyArchetype } = DecisionAnalyzer;
 
