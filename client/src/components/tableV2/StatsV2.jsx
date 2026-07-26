@@ -368,6 +368,7 @@ function StatsV2({
                             overview={overview}
                             game={game}
                             rounds={rounds}
+                            comeback={stats?.comeback}
                             rankLabel={rankLabel}
                             acc={acc}
                             rm={rm}
@@ -404,12 +405,18 @@ function StatsV2({
     );
 }
 
-function OverviewTab({ overview, game, rounds, rankLabel, acc, rm }) {
+function OverviewTab({ overview, game, rounds, comeback, rankLabel, acc, rm }) {
     const first = game.first_place || 0;
     const second = game.second_place || 0;
     const third = game.third_place || 0;
     const fourth = game.fourth_place || 0;
     const placements = first + second + third + fourth;
+
+    // Only over games of three rounds or more, where a halfway point exists.
+    const behindAtHalf = comeback?.behind_at_half || 0;
+    const comebacks = comeback?.comebacks || 0;
+    const ledAtHalf = comeback?.led_at_half || 0;
+    const collapses = comeback?.collapses || 0;
 
     return (
         <>
@@ -454,6 +461,25 @@ function OverviewTab({ overview, game, rounds, rankLabel, acc, rm }) {
                     </div>
                 )}
             </Section>
+
+            {(behindAtHalf > 0 || ledAtHalf > 0) && (
+                <Section title="HOW GAMES TURN" hint="Where you stood at the halfway mark versus where you finished" delay=".10s" rm={rm}>
+                    <div className="grid grid-cols-2 gap-2">
+                        <Tile
+                            label="Comebacks"
+                            value={`${num(comebacks)}/${num(behindAtHalf)}`}
+                            color={GOOD}
+                            sub="won from the back half"
+                        />
+                        <Tile
+                            label="Collapses"
+                            value={`${num(collapses)}/${num(ledAtHalf)}`}
+                            color="#ffab6b"
+                            sub="led, finished 3rd or 4th"
+                        />
+                    </div>
+                </Section>
+            )}
 
             <Section title="ROUND SNAPSHOT" delay=".12s" rm={rm}>
                 <div className="grid grid-cols-3 gap-2">
@@ -647,7 +673,10 @@ function CardUsageSection({ rounds, acc, rm }) {
     const minPlays = rounds?.won_min_plays || 0;
     const usedPlays = rounds?.won_plays || 0;
 
-    if (controlRounds === 0 && shedRounds === 0) {
+    const endgameRounds = rounds?.endgame_rounds || 0;
+    const endgameWins = rounds?.endgame_wins || 0;
+
+    if (controlRounds === 0 && shedRounds === 0 && endgameRounds === 0) {
         return (
             <Section title="CARD USAGE" hint="Where your aces and 2s end up" delay=".18s" rm={rm}>
                 <Empty>No scored rounds yet</Empty>
@@ -683,6 +712,18 @@ function CardUsageSection({ rounds, acc, rm }) {
                         value={pct(minPlays, usedPlays)}
                         color={parseFloat(pct(minPlays, usedPlays)) >= 85 ? GOOD : acc}
                         note={`Over ${num(shedRounds)} round${shedRounds === 1 ? '' : 's'} you won: ${num(usedPlays)} plays used against the ${num(minPlays)} those hands needed. Breaking up a combination costs you here.`}
+                        rm={rm}
+                    />
+                </div>
+            )}
+
+            {endgameRounds > 0 && (
+                <div className="mt-3">
+                    <Meter
+                        label="Endgame conversion"
+                        value={pct(endgameWins, endgameRounds)}
+                        color={parseFloat(pct(endgameWins, endgameRounds)) >= 50 ? GOOD : acc}
+                        note={`You got within three cards of going out in ${num(endgameRounds)} round${endgameRounds === 1 ? '' : 's'} and finished ${num(endgameWins)} of them.`}
                         rm={rm}
                     />
                 </div>

@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -848,6 +848,15 @@ io.on('connection', (socket) => {
             cumulativeScore: room.cumulativeScores[s.id] || 0
         }));
 
+        // Where each player stands in the GAME after this round, by cumulative
+        // score. Distinct from the round placement below, and the only way to
+        // ask later whether someone was behind at the halfway mark: round_stats
+        // holds one player's own score, never the table's.
+        const standings = {};
+        [...scoresWithCumulative]
+            .sort((a, b) => a.cumulativeScore - b.cumulativeScore)
+            .forEach((s, index) => { standings[s.id] = index + 1; });
+
         // Calculate placements for each player (1st = winner, 2nd/3rd/4th by cards left)
         const roundScoresWithPlacements = [...roundScores].sort((a, b) => {
             if (a.isRoundWinner) return -1;
@@ -900,6 +909,8 @@ io.on('connection', (socket) => {
                         leadAttempts: playStats.tricksContested || 0,
                         controlsPlayed: playStats.controlsPlayed || 0,
                         controlsWon: playStats.controlsWon || 0,
+                        minHandSize: playStats.minHandSize,
+                        standing: standings[scoreData.id] || null,
                         handTypes: playStats.handTypes,
                         // Scored at deal time, before a card was played. Absent
                         // for rounds already in flight when the server restarted.
@@ -2597,12 +2608,16 @@ app.get('/api/stats/:username/detailed', async (req, res) => {
         // 4. Get combination type usage
         const combinationStats = await getCombinationStats(user.id, mode);
 
+        // 5. Position at the halfway mark vs where they finished
+        const comeback = await getComebackStats(user.id, mode);
+
         res.json({
             username,
             mode,
             gameStats: gameStats || {},
             roundAggregates: roundAggregates || {},
-            combinationStats: combinationStats || {}
+            combinationStats: combinationStats || {},
+            comeback: comeback || {}
         });
     } catch (err) {
         console.error('Error fetching detailed stats:', err);

@@ -153,6 +153,13 @@ function initDb() {
             controls_dealt INTEGER,
             controls_played INTEGER,
             controls_won INTEGER,
+            -- Fewest cards held at any point in the round. Reaching the endgame
+            -- and not converting is a different failure from never reaching it.
+            min_hand_size INTEGER,
+            -- Position in the GAME after this round, by cumulative score.
+            -- round_stats holds one player's own score and never the table's,
+            -- so without this there is no way to ask who was ahead when.
+            standing INTEGER,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
@@ -519,6 +526,8 @@ function initDb() {
                 addColumn('controls_dealt', 'controls_dealt INTEGER');
                 addColumn('controls_played', 'controls_played INTEGER');
                 addColumn('controls_won', 'controls_won INTEGER');
+                addColumn('min_hand_size', 'min_hand_size INTEGER');
+                addColumn('standing', 'standing INTEGER');
             }
         });
 
@@ -1009,8 +1018,9 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             quads_played, straight_flushes_played,
             deal_strength_raw, deal_tier, deal_rank,
             deal_baseline_version, human_opponents,
-            deal_plays_needed, controls_dealt, controls_played, controls_won
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            deal_plays_needed, controls_dealt, controls_played, controls_won,
+            min_hand_size, standing
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
@@ -1037,7 +1047,9 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             roundData.dealStrength ? roundData.dealStrength.playsNeeded : null,
             roundData.dealStrength ? roundData.dealStrength.controls : null,
             roundData.dealStrength ? (roundData.controlsPlayed || 0) : null,
-            roundData.dealStrength ? (roundData.controlsWon || 0) : null
+            roundData.dealStrength ? (roundData.controlsWon || 0) : null,
+            roundData.minHandSize ?? null,
+            roundData.standing ?? null
         ];
 
         db.run(query, params, (err) => {
@@ -1083,7 +1095,11 @@ const getRoundAggregates = (userId, gameMode) => {
                 SUM(controls_dealt) as controls_dealt,
                 SUM(controls_played) as controls_played,
                 SUM(controls_won) as controls_won,
-                SUM(CASE WHEN controls_dealt IS NOT NULL THEN 1 ELSE 0 END) as control_rounds
+                SUM(CASE WHEN controls_dealt IS NOT NULL THEN 1 ELSE 0 END) as control_rounds,
+                -- Endgame conversion: rounds where the player got within three
+                -- cards of going out, and how many of those they finished.
+                SUM(CASE WHEN min_hand_size IS NOT NULL AND min_hand_size <= 3 THEN 1 ELSE 0 END) as endgame_rounds,
+                SUM(CASE WHEN min_hand_size IS NOT NULL AND min_hand_size <= 3 AND placement = 1 THEN 1 ELSE 0 END) as endgame_wins
             FROM round_stats
             WHERE user_id = ? AND game_mode = ?
         `;
@@ -1091,6 +1107,50 @@ const getRoundAggregates = (userId, gameMode) => {
         db.get(query, [userId, gameMode], (err, row) => {
             if (err) reject(err);
             else resolve(row || {});
+        });
+    });
+};
+
+/**
+ * Comebacks and collapses: how a player's position at the halfway point of a
+ * game relates to where they finished.
+ *
+ * The midpoint standing comes from round_stats, the final placement from
+ * game_participants - which only carries rows for completed games, so abandoned
+ * ones fall out on their own. Games shorter than three rounds are excluded:
+ * with one or two rounds the "midpoint" is the finish, and every game would
+ * score as a held lead.
+ */
+const getComebackStats = (userId, gameMode) => {
+    return new Promise((resolve, reject) => {
+        const query = `
+            WITH game_rounds AS (
+                SELECT game_id, MAX(round_number) AS last_round
+                FROM round_stats
+                WHERE user_id = ? AND game_mode = ? AND standing IS NOT NULL
+                GROUP BY game_id
+                HAVING MAX(round_number) >= 3
+            ),
+            midpoint AS (
+                SELECT rs.game_id, rs.standing
+                FROM round_stats rs
+                JOIN game_rounds gr ON gr.game_id = rs.game_id
+                WHERE rs.user_id = ? AND rs.game_mode = ?
+                  AND rs.round_number = (gr.last_round + 1) / 2
+            )
+            SELECT
+                COUNT(*) AS games,
+                SUM(CASE WHEN m.standing >= 3 THEN 1 ELSE 0 END) AS behind_at_half,
+                SUM(CASE WHEN m.standing >= 3 AND gp.final_placement = 1 THEN 1 ELSE 0 END) AS comebacks,
+                SUM(CASE WHEN m.standing = 1 THEN 1 ELSE 0 END) AS led_at_half,
+                SUM(CASE WHEN m.standing = 1 AND gp.final_placement >= 3 THEN 1 ELSE 0 END) AS collapses
+            FROM midpoint m
+            JOIN game_participants gp ON gp.game_id = m.game_id AND gp.user_id = ?
+        `;
+
+        db.get(query, [userId, gameMode, userId, gameMode, userId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || { games: 0, behind_at_half: 0, comebacks: 0, led_at_half: 0, collapses: 0 });
         });
     });
 };
@@ -2347,6 +2407,7 @@ module.exports = {
     getUserByUsername,
     saveRoundStats,
     getRoundAggregates,
+    getComebackStats,
     getCombinationStats,
     getRecentRounds,
     updateAggregateStats,

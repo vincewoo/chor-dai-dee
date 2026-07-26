@@ -810,6 +810,10 @@ class Room {
                 // the trick they were spent on.
                 controlsPlayed: 0,
                 controlsWon: 0,
+                // Fewest cards held at any point this round. Reaching the
+                // endgame and not converting is a different failure from never
+                // getting there.
+                minHandSize: 13,
                 handTypes: {
                     SINGLE: 0,
                     PAIR: 0,
@@ -1090,6 +1094,8 @@ class Room {
                 stats.tricksContested++;
                 stats.lastTrickCounted = this.trickIndex;
             }
+
+            stats.minHandSize = Math.min(stats.minHandSize, player.hand.length);
 
             // Control cards ride on the pile until the trick resolves. Playing
             // again in the same trick means the earlier ones were beaten, so
