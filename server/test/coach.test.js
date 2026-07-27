@@ -313,3 +313,67 @@ test('reasoning is only computed when a note actually fires', () => {
     });
     assert.strictEqual(calls, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Keeping a five-card hand together
+// ---------------------------------------------------------------------------
+
+test('a hint does not break up a five-card hand to play a pair out of it', () => {
+    // Reported from a live game: six cards, a lone 8 plus a flush holding the
+    // other 8. The coach suggested the pair of 8s, which destroys the flush and
+    // leaves four singles that each need their own lead.
+    //
+    // Two mispricings put the pair on top. comboBreakPenalty scaled the loss by
+    // the rank of the card pulled out, so breaking the flush with its 8 was
+    // priced below the bonus for leading a five-card hand at all; and
+    // evaluateFollowUp's card-count ladder scored the four-card remainder above
+    // the one-card remainder the flush leaves behind.
+    const myHand = hand('8S', '3H', '8H', 'KH', 'AH', '2H');
+    const gameContext = context([5, 8, 4]);
+
+    const suggestion = Coach.suggest({ hand: myHand, lastPlayedHand: null, gameContext });
+
+    assert.strictEqual(suggestion.action, 'play');
+    assert.strictEqual(suggestion.cards.length, 5,
+        `expected the flush, got ${suggestion.cards.map(c => c.rank + c.suit).join(' ')}`);
+});
+
+test('breaking a saved combination costs the same whichever card is pulled', () => {
+    // The shape is equally destroyed either way, and the rank of the card that
+    // leaves is already charged - at full weight - by moveRetentionCost. Pricing
+    // it twice here made the cheapest card the cheapest way to wreck the hand.
+    const { BotLogic } = require('../game/BotLogic');
+    const myHand = hand('8S', '3H', '8H', 'KH', 'AH', '2H');
+    const org = BotLogic.organizeHand(myHand);
+
+    const breakWith = (code) => BotLogic.comboBreakPenalty(
+        Big2Rules.validateHand(hand(code)), org, 'mid');
+
+    // 3H, 8H and KH all sit inside the one flush; only 8S is outside it.
+    assert.ok(breakWith('3H') > 0);
+    assert.strictEqual(breakWith('3H'), breakWith('8H'));
+    assert.strictEqual(breakWith('3H'), breakWith('KH'));
+    assert.strictEqual(breakWith('8S'), 0);
+});
+
+test('follow-up strength separates remainders the old card-count ladder tied', () => {
+    // The card-count term used to be two flat steps - 100 at three cards or
+    // fewer, 50 from four to six - so leaving one card and leaving three scored
+    // identically. Held against remainders with the same structure (junk
+    // singles: no pairs, no control, no five-card hands), every card shed has to
+    // show up as an improvement, or the term is not measuring what it claims to.
+    const { BotLogic } = require('../game/BotLogic');
+
+    // Ranks two apart in four different suits: no pair, no straight, no flush
+    // and no control card, so the only legal plays are the singles themselves.
+    // Every remainder below therefore differs only in how many cards it has.
+    const junk = ['3D', '5C', '7H', '9S'];
+    const leaving = (n) => {
+        const held = hand(...junk.slice(0, n + 1));
+        const move = Big2Rules.validateHand([held[held.length - 1]]);
+        return BotLogic.evaluateFollowUp(move, held, BotLogic.organizeHand(held)).followUpScore;
+    };
+
+    assert.ok(leaving(1) > leaving(2) && leaving(2) > leaving(3),
+        `expected strictly decreasing, got ${leaving(1)} / ${leaving(2)} / ${leaving(3)}`);
+});

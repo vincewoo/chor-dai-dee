@@ -624,12 +624,23 @@ const BotLogic = {
         const moveDensity = followUpMoves.length / Math.max(1, remainingCards.length);
         followUpScore += moveDensity * 20;
 
-        // 5. Card count factor (fewer = closer to winning)
-        if (remainingCards.length <= 3) {
-            followUpScore += 100;
-        } else if (remainingCards.length <= 6) {
-            followUpScore += 50;
-        }
+        // 5. Card count factor (fewer = closer to winning).
+        //
+        // A ramp rather than the two-step ladder this used to be. The ladder
+        // flattened 1, 2 and 3 cards into one bucket and 4, 5 and 6 into
+        // another, so being three cards from home was worth exactly as much as
+        // being one card from home - and one card from home is the round on the
+        // next lead, while three is three leads that all have to be won. Those
+        // flat spots let the terms above outvote the only thing here that is
+        // monotonically good, which is how leaving four cards that happen to
+        // include an Ace and a 2 came to outscore leaving one card.
+        //
+        // The ramp keeps the old range (about 100 at three cards left, nothing
+        // from seven up) and only removes the flat spots. It does not make the
+        // function monotone on its own - the control and pair terms still scale
+        // with the size of the remainder and can outrun it - so this is a
+        // correction to a term, not a guarantee about the total.
+        followUpScore += Math.max(0, 7 - remainingCards.length) * 25;
 
         // Check if we can likely win from this position
         const canLikelyWin =
@@ -956,8 +967,25 @@ const BotLogic = {
      * Replaces a flat -150 "Breaks Organized Hand" penalty. The flat version
      * landed disproportionately on low cards (they sit inside straights far
      * more often than high cards do) and so actively pushed the bot toward
-     * spending its high cards. Scaling by what is actually lost fixes that:
-     * pulling the 3 out of a straight is cheap, pulling its Ace is not.
+     * spending its high cards.
+     *
+     * What this term prices is the SHAPE, not the card. Scaling it by the rank
+     * of the card pulled out - which is what it used to do - gets that backwards
+     * twice over. A flush is equally destroyed whether it is broken with its 8
+     * or its Ace, so the structural loss cannot depend on which card left; and
+     * the rank of that card is already charged, at full weight and on a far
+     * wider scale, by moveRetentionCost. The result was that breaking a saved
+     * five-card hand with its cheapest card cost almost nothing: pulling the 8
+     * out of 3-8-K-A-2 of hearts was priced at 34 points, less than the 60
+     * scoreLeadMove pays for leading a five-card hand at all. So the model
+     * preferred a pair of 8s to leading the flush, turning a two-move hand into
+     * a five-move one - the shape of blunder this penalty exists to prevent.
+     *
+     * Priced off the combination instead: its type (a straight flush is worth
+     * more to keep than a straight) and its own high card (a King-high flush is
+     * worth more than a 9-high one). The "cheap to break a straight with its 3"
+     * intent survives - it lives in moveRetentionCost, where the 3 costs 0 and
+     * the Ace costs 138.
      */
     comboBreakPenalty: (move, handOrganization, gamePhase) => {
         if (!handOrganization) return 0;
@@ -970,8 +998,8 @@ const BotLogic = {
             if (pulled.length === 0 || pulled.length === combo.cards.length) continue;
 
             const priority = FIVE_CARD_PRIORITY[combo.type] || 1;
-            const highestPulled = Math.max(...pulled.map(c => RANKS.indexOf(c.rank)));
-            penalty += (18 + priority * 10) * (0.5 + highestPulled / RANKS.length);
+            const comboHigh = Math.max(...combo.cards.map(c => RANKS.indexOf(c.rank)));
+            penalty += (18 + priority * 10) * (0.5 + comboHigh / RANKS.length);
         }
 
         for (const pair of handOrganization.pairs) {
@@ -1989,8 +2017,12 @@ const BotLogic = {
  *       ducking under the 10-card (2x) and 13-card (3x) penalty boundaries.
  *   3 - 2s are no longer discounted as "locked inside" a five-card hand, since
  *       a 2 can always be pulled out and played as an unbeatable single.
+ *   4 - breaking a saved five-card hand is priced by the combination lost
+ *       rather than by the rank of the card pulled out of it, and the
+ *       follow-up card-count term is monotone in cards remaining. Both made
+ *       breaking up a strong five-card hand look cheap.
  */
-const BOT_LOGIC_VERSION = 3;
+const BOT_LOGIC_VERSION = 4;
 
 /**
  * Which PPO checkpoint the advanced bot loads. Recorded per seat so a corpus
