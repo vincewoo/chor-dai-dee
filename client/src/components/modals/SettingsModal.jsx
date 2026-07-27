@@ -39,7 +39,7 @@ const SettingsModal = ({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[200] bg-black/70 flex items-center justify-center"
+                className="absolute inset-0 z-[200] bg-black/70 flex items-center justify-center p-4"
                 onClick={onClose}
                 role="dialog"
                 aria-modal="true"
@@ -49,10 +49,15 @@ const SettingsModal = ({
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.8, opacity: 0 }}
-                    className="bg-gray-800 rounded-xl shadow-2xl p-8 md:p-[2vmax] max-w-md w-full mx-4"
+                    // The panel is a fixed header + scrolling body + fixed
+                    // footer, capped at the overlay's height. The settings list
+                    // is long enough to overflow a phone on its own, and did:
+                    // as one growing block it simply ran off the bottom of the
+                    // screen, taking Close and Leave Room with it.
+                    className="bg-gray-800 rounded-xl shadow-2xl max-w-md w-full flex flex-col max-h-full overflow-hidden"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="flex justify-between items-center mb-6 md:mb-[1.5vmax]">
+                    <div className="flex shrink-0 justify-between items-center px-8 md:px-[2vmax] pt-8 md:pt-[2vmax] pb-4 md:pb-[1vmax]">
                         <h2 id="settings-title" className="text-2xl md:text-[1.8vmax] font-bold text-white">Settings</h2>
                         <button
                             onClick={onClose}
@@ -63,7 +68,9 @@ const SettingsModal = ({
                         </button>
                     </div>
 
-                    <div className="space-y-4 md:space-y-[1vmax]">
+                    {/* `min-h-0` is what actually lets this scroll: a flex child
+                        defaults to min-height:auto and would just grow instead. */}
+                    <div className="scrollbar-thin flex-1 min-h-0 overflow-y-auto overscroll-contain px-8 md:px-[2vmax] py-1 space-y-4 md:space-y-[1vmax]">
                         {/* Auto-Pass Setting */}
                         <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
                             <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
@@ -285,7 +292,7 @@ const SettingsModal = ({
                         )}
                     </div>
 
-                    <div className="mt-6 md:mt-[1.5vmax] flex justify-between items-center gap-3">
+                    <div className="flex shrink-0 justify-between items-center gap-3 px-8 md:px-[2vmax] pb-8 md:pb-[2vmax] pt-4 md:pt-[1vmax] border-t border-white/10">
                         {onLeave ? (
                             <button
                                 onClick={onLeave}

@@ -515,14 +515,21 @@ const GameRoom = ({ user, socket }) => {
     // Registered apart from the main listener block so the coach can be added
     // to or removed from a live room without tearing down every other handler.
     //
-    // A hint is only good for the turn it was asked on: it names cards you hold
-    // right now and has already selected them. A note is about a move you have
-    // already made and outlives the turn. So rather than clearing on every turn
-    // change — which would kill a note within a second of a bot moving — each
-    // message is stamped with the turn it belongs to and hints are filtered at
-    // render time. The stamp is read through a ref because the listeners below
-    // are registered once, per the same reasoning as pusoyModeRef above.
-    const coachTurnKey = `${currentTurn}:${gameState?.roundNumber}`;
+    // A hint is only good for the one decision it was asked about: it names
+    // cards you hold right now and has already selected them, so the moment you
+    // play or pass it is spent and must not come back on its own. A note is
+    // about a move already made and outlives the turn, so rather than clearing
+    // on every turn change — which would kill a note within a second of a bot
+    // moving — each message is stamped with the decision it belongs to and only
+    // hints are filtered at render time.
+    //
+    // The stamp must be the server's `turnNumber`, which increments on every
+    // play and pass. Keying on `currentTurn` does not work: that is a player id
+    // and takes the same value every time the turn comes back around, so a
+    // spent hint matched again and reappeared on the next turn with stale
+    // advice. The stamp is read through a ref because the listeners below are
+    // registered once, per the same reasoning as pusoyModeRef above.
+    const coachTurnKey = `${gameState?.roundNumber}:${gameState?.turnNumber}`;
     const coachTurnKeyRef = useRef(coachTurnKey);
     useEffect(() => { coachTurnKeyRef.current = coachTurnKey; }, [coachTurnKey]);
 
@@ -811,6 +818,11 @@ const GameRoom = ({ user, socket }) => {
     const playCards = () => {
         if (selectedCards.length === 0 || isSubmitting) return;
         setIsSubmitting(true);
+        // The hint was about this decision and the decision is now made. The
+        // turn stamp would retire it a moment later anyway, once game_update
+        // lands; clearing here means it goes the instant you commit, and leaves
+        // the slot free for the coach's note on what you just played.
+        setCoachMessage(null);
 
         // Optimistic update: immediately remove cards from hand for better responsiveness
         const newHand = myHand.filter(card =>
@@ -826,6 +838,7 @@ const GameRoom = ({ user, socket }) => {
     const passTurn = () => {
         if (isSubmitting) return;
         setIsSubmitting(true);
+        setCoachMessage(null);
         socket.emit('pass_turn', { roomId });
     };
 

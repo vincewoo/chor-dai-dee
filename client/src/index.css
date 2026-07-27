@@ -81,8 +81,12 @@ body {
 .pb-safe-104 { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
 
 /* Custom scrollbar styles */
+/* Both axes: the class started out on the horizontal quick-select chip row,
+   which only ever needed a height, and silently did nothing for the first
+   vertical scroller that used it. */
 .scrollbar-thin::-webkit-scrollbar {
   height: 6px;
+  width: 6px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {

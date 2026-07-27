@@ -1749,6 +1749,11 @@ class Room {
             lastPlayedHand: this.lastPlayedHand,
             gameState: this.gameState,
             roundNumber: this.roundNumber,
+            // Monotonic within a round, incremented on every play and pass.
+            // `currentTurn` is a player id and so repeats each time the turn
+            // comes back around; this is what a client needs to tell one
+            // decision point from the next.
+            turnNumber: this.turnNumber,
             cumulativeScores: this.cumulativeScores,
             debugMode: this.debugMode,
             gameMode: this.gameMode,
