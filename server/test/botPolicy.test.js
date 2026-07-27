@@ -3,6 +3,7 @@ const assert = require('node:assert');
 
 const {
     createBotPolicy,
+    createCoachAdvisor,
     DEFAULT_PPO_MODEL_PATH,
     PPO_POLICY_GENERATION
 } = require('../game/BotPolicy');
@@ -79,4 +80,43 @@ test('PPO debug mode returns model provenance without changing the move', () => 
     assert.strictEqual(debug.reasoning.strategy, 'ppo-policy');
     assert.strictEqual(
         debug.reasoning.policyGeneration, PPO_POLICY_GENERATION);
+});
+
+test('PPO coach advice matches the guarded runtime policy', () => {
+    const policy = createBotPolicy({
+        mode: 'ppo',
+        modelPath: DEFAULT_PPO_MODEL_PATH
+    });
+    const advisor = createCoachAdvisor({
+        mode: 'ppo',
+        modelPath: DEFAULT_PPO_MODEL_PATH,
+        minMargin: 0
+    });
+    const cards = deal(makeRng(1776))[0];
+    const context = {
+        playerCardCounts: [13, 13, 13],
+        lastPlayedByRelative: null,
+        passedPlayers: [],
+        passCount: 0,
+        playedCards: [],
+        playHistory: []
+    };
+    const move = policy.getMove(cards, null, false, context);
+    const advice = advisor.advise(cards, null, false, context);
+    const moveKey = move
+        ? move.map(card => `${card.rank}${card.suit}`).sort().join(',')
+        : 'pass';
+    assert.strictEqual(advice.key, moveKey);
+    assert.ok(advice.cards === null ||
+        advice.cards.every(card =>
+            cards.some(held =>
+                held.rank === card.rank && held.suit === card.suit)));
+    assert.ok(Number.isFinite(advice.policyMargin));
+});
+
+test('deterministic coaching remains the default', () => {
+    assert.strictEqual(
+        createCoachAdvisor({ mode: 'move_quality' }),
+        null
+    );
 });

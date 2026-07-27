@@ -2,7 +2,7 @@
 const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
 const { BotLogic } = require('./BotLogic');
-const { createBotPolicy } = require('./BotPolicy');
+const { createBotPolicy, createCoachAdvisor } = require('./BotPolicy');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
@@ -101,6 +101,9 @@ class Room {
         // Snapshotted per room so an in-flight game never changes policy when
         // configuration changes during a rolling deploy.
         this.botPolicy = createBotPolicy();
+        // Hints may use a different policy from the seats. Reactions and
+        // grading remain deterministic; this advisor is read only.
+        this.coachAdvisor = createCoachAdvisor();
         this.roundTransitionInProgress = false; // Flag to prevent multiple next_round calls
 
         // ---- Game-log recording ----
@@ -1257,8 +1260,9 @@ class Room {
                     lastPlayedHand: this.lastPlayedHand,
                     isFirstTurn,
                     // Profile-free, exactly as gradeDecision does it: the hint
-                    // and the grade that follows it have to be the same opinion.
-                    gameContext: this.buildSeatContext(seat, null)
+                    // and policy advisor see the same public observation.
+                    gameContext: this.buildSeatContext(seat, null),
+                    policyAdvisor: this.coachAdvisor
                 })
             };
         } catch (err) {

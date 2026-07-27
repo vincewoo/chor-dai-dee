@@ -3,8 +3,8 @@
 // The coach is a voice on top of MoveQuality and MoveReview, so what is pinned
 // here is the seam rather than any particular wording:
 //
-//   - a hint is the top of the same ranked list a move is graded inside, so the
-//     coach can never recommend a move it would then call a mistake;
+//   - the default hint is the top of the same ranked list a move is graded
+//     inside; a confidence-gated policy advisor is tested as an explicit seam;
 //   - a note is only ever said where MoveReview would say it after the game;
 //   - nothing the coach says names a suit, because the Pusoy Dos lens remaps
 //     suits per viewer and a server-side suit name would be wrong for half the
@@ -69,6 +69,111 @@ test('a hint never suggests a move the grader would then call a mistake', () => 
 
     assert.strictEqual(graded.rank, 1);
     assert.strictEqual(graded.quality, 'optimal');
+});
+
+test('a confident policy advisor can select a different legal hint', () => {
+    const myHand = hand('3D', '4C', '7H', '9S', 'JD', 'QC', 'KH', '2S');
+    const gameContext = context();
+    const { options } = rankOptions({
+        hand: myHand, lastPlayedHand: null, gameContext
+    });
+    const alternative = options[1];
+    const suggestion = Coach.suggest({
+        hand: myHand,
+        lastPlayedHand: null,
+        gameContext,
+        policyAdvisor: {
+            minMargin: 0.5,
+            advise: () => ({
+                key: alternative.key,
+                forced: false,
+                guardFallback: false,
+                policyMargin: 1.2,
+                probability: 0.8,
+                policyRef: 'test-policy.json'
+            })
+        }
+    });
+
+    assert.strictEqual(suggestion.source, 'ppo');
+    assert.strictEqual(key(suggestion.cards), alternative.key);
+    assert.match(suggestion.detail, /learned policy/i);
+    assert.strictEqual(suggestion.policyRef, 'test-policy.json');
+    assert.doesNotMatch(
+        `${suggestion.headline} ${suggestion.detail}`, SUIT_MENTION);
+});
+
+test('a low-margin policy hint falls back to deterministic coaching', () => {
+    const myHand = hand('3D', '4C', '7H', '9S', 'JD', 'QC', 'KH', '2S');
+    const gameContext = context();
+    const { options } = rankOptions({
+        hand: myHand, lastPlayedHand: null, gameContext
+    });
+    const suggestion = Coach.suggest({
+        hand: myHand,
+        lastPlayedHand: null,
+        gameContext,
+        policyAdvisor: {
+            minMargin: 0.5,
+            advise: () => ({
+                key: options[1].key,
+                forced: false,
+                guardFallback: false,
+                policyMargin: 0.1,
+                probability: 0.4,
+                policyRef: 'test-policy.json'
+            })
+        }
+    });
+
+    assert.strictEqual(suggestion.source, 'move_quality');
+    assert.strictEqual(suggestion.fallbackReason, 'low_margin');
+    assert.strictEqual(key(suggestion.cards), options[0].key);
+});
+
+test('policy agreement preserves the deterministic factual explanation', () => {
+    const myHand = hand('3D', '4C', '7H', '9S', 'JD', 'QC', 'KH', '2S');
+    const gameContext = context();
+    const deterministic = Coach.suggest({
+        hand: myHand, lastPlayedHand: null, gameContext
+    });
+    const suggestion = Coach.suggest({
+        hand: myHand,
+        lastPlayedHand: null,
+        gameContext,
+        policyAdvisor: {
+            minMargin: 2,
+            advise: () => ({
+                key: key(deterministic.cards),
+                forced: false,
+                guardFallback: false,
+                policyMargin: 8,
+                probability: 0.99,
+                policyRef: 'test-policy.json'
+            })
+        }
+    });
+
+    assert.strictEqual(suggestion.source, 'move_quality');
+    assert.strictEqual(suggestion.policyAgreed, true);
+    assert.strictEqual(suggestion.detail, deterministic.detail);
+});
+
+test('an unavailable policy advisor never breaks deterministic hints', () => {
+    const myHand = hand('3D', '4C', '7H', '9S', 'JD', 'QC', 'KH', '2S');
+    const suggestion = Coach.suggest({
+        hand: myHand,
+        lastPlayedHand: null,
+        gameContext: context(),
+        policyAdvisor: {
+            minMargin: 0.5,
+            advise: () => {
+                throw new Error('model unavailable');
+            }
+        }
+    });
+    assert.strictEqual(suggestion.source, 'move_quality');
+    assert.strictEqual(suggestion.fallbackReason, 'advisor_error');
 });
 
 test('suggested cards are all cards the player actually holds', () => {

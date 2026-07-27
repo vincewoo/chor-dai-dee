@@ -3,14 +3,13 @@
 // The coach: a live hint on request, and an unprompted note about the move you
 // just made.
 //
-// Nothing here decides anything. Both halves are a voice on top of machinery
-// that already exists, and that is the point:
+// Both halves are a voice on top of machinery that already exists:
 //
-//   - The hint is the top of MoveQuality.rankOptions - the same ranked list
-//     evaluateMove grades a played move inside. A coach that recommended a move
-//     on one scale while the grader marked it on another would contradict
-//     itself inside a single turn, which is exactly what sharing the ranker
-//     rules out.
+//   - The default hint is the top of MoveQuality.rankOptions. An optional PPO
+//     advisor may substitute a different action only when its policy margin
+//     clears a configured threshold. Legal actions and explanatory factors
+//     still come from rankOptions; a model failure or uncertain preference
+//     falls back to the deterministic hint.
 //   - The note is MoveReview.classify, the same function that decides which
 //     decisions are worth showing in a post-game review, run against the grade
 //     RoomManager already computes for every human move. So a mistake called
@@ -191,6 +190,31 @@ function explainPlay({ move, hand, score, isOnlyOption, minOpponentCards, factor
         : 'Cheapest card that does the job — your stronger cards keep their value for later.';
 }
 
+function explainPolicyPlay({
+    move,
+    hand,
+    score,
+    isOnlyOption,
+    minOpponentCards
+}) {
+    if (score >= WIN_SCORE && move.cards.length === hand.length) {
+        return 'That is your whole hand — play it and the round is yours.';
+    }
+    if (score >= WIN_SCORE) {
+        return 'Nothing left out there can beat this, and the rest of your hand plays out on your next turn.';
+    }
+    if (isOnlyOption) {
+        return 'It is the only legal play here, so there is nothing to weigh up.';
+    }
+    if (minOpponentCards <= PRESSURE_CARDS) {
+        return 'Someone is close to going out. The learned policy prefers this line under that pressure.';
+    }
+    if (move.cards.length === 5) {
+        return 'The learned policy prefers unloading this five-card hand while preserving the shape of what remains.';
+    }
+    return 'The learned policy prefers this line for how it leaves the rest of your hand.';
+}
+
 /**
  * What to suggest at this decision.
  *
@@ -198,20 +222,43 @@ function explainPlay({ move, hand, score, isOnlyOption, minOpponentCards, factor
  * @param {object|null} lastPlayedHand  The pile to beat, or null when leading.
  * @param {boolean} isFirstTurn     Opening turn of the game (3D must be played).
  * @param {object} gameContext      From BotContext.buildGameContext.
+ * @param {object|null} policyAdvisor Optional confidence-gated PPO advisor.
  *
  * @returns {object} { action, cards, type, headline, detail, factors,
- *                     confident, optionCount }. `cards` is null for a pass.
+ *                     confident, optionCount, source, policyMargin }.
+ *                     `cards` is null for a pass.
  *                     `confident` is false where the cost model is not the
  *                     model the bot itself uses (small hands the endgame solver
  *                     owns, and the last-card block); the hint still stands but
  *                     is presented as an opinion rather than a correction.
  */
-function suggest({ hand, lastPlayedHand = null, isFirstTurn = false, gameContext = {} }) {
+function suggest({
+    hand,
+    lastPlayedHand = null,
+    isFirstTurn = false,
+    gameContext = {},
+    policyAdvisor = null
+}) {
     const counts = gameContext.playerCardCounts || [13, 13, 13];
     const minOpponentCards = Math.min(...counts);
+    let advice = null;
+    let fallbackReason = null;
+    if (policyAdvisor) {
+        try {
+            advice = policyAdvisor.advise(
+                hand, lastPlayedHand, isFirstTurn, gameContext);
+        } catch (error) {
+            fallbackReason = 'advisor_error';
+        }
+    }
 
     const { options, candidates } = rankOptions({
-        hand, lastPlayedHand, isFirstTurn, gameContext, explain: true
+        hand,
+        lastPlayedHand,
+        isFirstTurn,
+        gameContext,
+        keepKey: advice ? advice.key : null,
+        explain: true
     });
 
     // Nothing legal. Only reachable with a pile on the table - a lead always
@@ -225,11 +272,35 @@ function suggest({ hand, lastPlayedHand = null, isFirstTurn = false, gameContext
             detail: 'No combination in your hand can answer the pile, so passing is your only move.',
             factors: [],
             confident: true,
-            optionCount: 1
+            optionCount: 1,
+            source: 'move_quality',
+            policyMargin: advice ? advice.policyMargin : null,
+            policyProbability: advice ? advice.probability : null,
+            policyRef: advice ? advice.policyRef : null,
+            fallbackReason
         };
     }
 
-    const best = options[0];
+    let best = options[0];
+    let source = 'move_quality';
+    let policyAgreed = null;
+    if (advice && !advice.forced) {
+        const advised = options.find(option => option.key === advice.key);
+        policyAgreed = Boolean(advised && advised.key === options[0].key);
+        if (!advised) {
+            fallbackReason = 'action_not_ranked';
+        } else if (policyAgreed) {
+            fallbackReason = null;
+        } else if (advice.guardFallback) {
+            fallbackReason = 'policy_guard';
+        } else if (advice.policyMargin < policyAdvisor.minMargin) {
+            fallbackReason = 'low_margin';
+        } else {
+            best = advised;
+            source = 'ppo';
+            fallbackReason = null;
+        }
+    }
     const factors = presentFactors(best.factors);
 
     // Same confidence rule as MoveQuality: a proven win settles the position
@@ -243,10 +314,19 @@ function suggest({ hand, lastPlayedHand = null, isFirstTurn = false, gameContext
             cards: null,
             type: null,
             headline: 'Sit this one out.',
-            detail: 'Everything you could play here costs you more than the trick is worth. Let it go and keep the cards.',
+            detail: source === 'ppo'
+                ? 'The learned policy prefers to concede this trick and preserve the shape of your hand.'
+                : 'Everything you could play here costs you more than the trick is worth. Let it go and keep the cards.',
             factors,
             confident,
-            optionCount: options.length
+            optionCount: options.length,
+            source,
+            policyMargin: advice ? advice.policyMargin : null,
+            policyProbability: advice ? advice.probability : null,
+            policyRef: advice ? advice.policyRef : null,
+            fallbackReason,
+            policyAgreed,
+            deterministicBestKey: options[0].key
         };
     }
 
@@ -256,17 +336,32 @@ function suggest({ hand, lastPlayedHand = null, isFirstTurn = false, gameContext
         cards: move.cards.map(c => ({ rank: c.rank, suit: c.suit, value: c.value })),
         type: move.type,
         headline: `Play ${describeMove(move)}.`,
-        detail: explainPlay({
-            move,
-            hand,
-            score: best.score,
-            isOnlyOption: candidates.length === 1,
-            minOpponentCards,
-            factors
-        }),
+        detail: source === 'ppo'
+            ? explainPolicyPlay({
+                move,
+                hand,
+                score: best.score,
+                isOnlyOption: candidates.length === 1,
+                minOpponentCards
+            })
+            : explainPlay({
+                move,
+                hand,
+                score: best.score,
+                isOnlyOption: candidates.length === 1,
+                minOpponentCards,
+                factors
+            }),
         factors,
         confident,
-        optionCount: options.length
+        optionCount: options.length,
+        source,
+        policyMargin: advice ? advice.policyMargin : null,
+        policyProbability: advice ? advice.probability : null,
+        policyRef: advice ? advice.policyRef : null,
+        fallbackReason,
+        policyAgreed,
+        deterministicBestKey: options[0].key
     };
 }
 

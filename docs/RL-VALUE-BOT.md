@@ -357,21 +357,27 @@ recorded as `bot_ppo` with the policy generation and artifact name. Set
 
 ### ML-assisted coaching
 
-Keep coaching as two layers rather than asking the neural network to invent an
-explanation:
+PPO-assisted hints are independently configurable from the seats:
 
-1. the PPO actor ranks the canonical legal alternatives using public
-   information only;
-2. `MoveQuality` and `Coach` describe concrete card facts, proven wins,
-   combination breakage, pressure, and pass economics.
+```text
+COACH_POLICY=ppo
+COACH_PPO_MIN_MARGIN=2
+COACH_PPO_OVERRIDE_MARGIN=0.02
+```
 
-The first rollout should use PPO for hints but retain the existing deterministic
-grader for reactions and player statistics. Only show a model-specific
-correction when its top-action margin clears a calibrated threshold; otherwise
-fall back to the current coach. Log policy version, margin, heuristic agreement,
-and whether the advice was followed. After those confidence buckets have enough
-real outcomes, the post-game grader can incorporate PPO disagreement without
-silently treating every neural preference as ground truth.
+`COACH_PPO_MODEL_PATH` may select another artifact; otherwise coaching uses the
+promoted checkpoint. The PPO actor ranks canonical legal alternatives using
+public information only. When its preferred action differs from the
+deterministic coach and clears the margin, the hint uses that action while
+`MoveQuality` supplies concrete card factors and `Coach` uses wording that does
+not pretend to explain neural weights. Low-margin choices, policy guard
+fallbacks, missing actions, and advisor errors all return the deterministic hint.
+When both systems agree, the existing richer deterministic explanation is kept.
+
+This setting changes requested hints only. Live reactions, decision grades,
+player statistics, and post-game highlights remain deterministic until model
+confidence has been calibrated against enough real outcomes. Set
+`COACH_POLICY=move_quality` for the original behavior.
 
 ### Human games
 
