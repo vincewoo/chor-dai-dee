@@ -371,7 +371,12 @@ function runBenchmark(contenders, { rounds = 400, seed = 12345 } = {}) {
     }));
 }
 
-async function runBenchmarkAsync(contenders, { rounds = 400, seed = 12345 } = {}) {
+async function runBenchmarkAsync(contenders, {
+    rounds = 400,
+    seed = 12345,
+    onRoundStart = null,
+    onRoundEnd = null
+} = {}) {
     const rng = makeRng(seed);
     const stats = contenders.map(c => ({
         name: c.name, wins: 0, points: 0, cardsLeft: 0, rounds: 0
@@ -381,6 +386,7 @@ async function runBenchmarkAsync(contenders, { rounds = 400, seed = 12345 } = {}
         const rotation = r % 4;
         const seats = [0, 1, 2, 3].map(s => contenders[(s + rotation) % 4]);
         const seatToContender = s => (s + rotation) % 4;
+        if (onRoundStart) onRoundStart({ round: r, rotation, seats });
         const result = await playRoundAsync(seats, deal(rng), null);
         const players = seats.map((s, i) => ({
             id: i, name: s.name, isBot: true, hand: { length: result.cardsLeft[i] }
@@ -395,6 +401,16 @@ async function runBenchmarkAsync(contenders, { rounds = 400, seed = 12345 } = {}
             stat.points += scores[s].roundPoints;
             stat.cardsLeft += result.cardsLeft[s];
             if (s === result.winnerSeat) stat.wins++;
+        }
+        if (onRoundEnd) {
+            onRoundEnd({
+                round: r,
+                rotation,
+                seats,
+                seatToContender,
+                result,
+                scores
+            });
         }
     }
     return stats.map(stat => ({

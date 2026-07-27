@@ -21,7 +21,9 @@ const {
     utilitiesByRound
 } = require('../scripts/convert-human-export');
 const {
-    parseBenchmark
+    parseBenchmark,
+    seedForWorker,
+    compareBenchmarkReports
 } = require('../scripts/run-rl-generation');
 
 function card(text) {
@@ -147,6 +149,33 @@ test('override margin can make the learned policy exactly preserve the baseline'
         const actual = learned.getBotMove(cards, null, false, ctx);
         assert.deepStrictEqual(actual, expected);
     }
+});
+
+test('value policy reports heuristic overrides and margin-guard fallbacks', () => {
+    const heuristicChoiceIndex = FEATURE_NAMES.indexOf('heuristic_choice');
+    const decisions = [];
+    const model = {
+        predict(features) {
+            return features[heuristicChoiceIndex] ? 0 : 0.5;
+        }
+    };
+    const learned = new RLValueBot(model, {
+        heuristicWeight: 0,
+        overrideMargin: Infinity,
+        onDecision: decision => decisions.push(decision)
+    });
+    learned.getBotMove(
+        hand('3D 4C 5H 6S 7D 8C 9H 10S JD QH KS AH 2S'),
+        null,
+        false,
+        context()
+    );
+    assert.strictEqual(decisions.length, 1);
+    assert.strictEqual(decisions[0].rawPreferredOverride, true);
+    assert.strictEqual(decisions[0].guardFallback, true);
+    assert.strictEqual(decisions[0].overrodeHeuristic, false);
+    assert.strictEqual(decisions[0].key, decisions[0].heuristicKey);
+    assert.ok(decisions[0].valueMargin > 0);
 });
 
 test('async harness has identical transitions for synchronous policies', async () => {
@@ -282,4 +311,50 @@ RL value benchmark [12000 rounds, 26.3s]
         averagePoints: 2.93,
         averageCardsLeft: 2.58
     });
+});
+
+test('parallel collection derives stable distinct worker seeds', () => {
+    assert.strictEqual(seedForWorker(123, 0), 123);
+    assert.strictEqual(seedForWorker(123, 1), seedForWorker(123, 1));
+    assert.notStrictEqual(seedForWorker(123, 1), seedForWorker(123, 2));
+});
+
+test('paired diagnostics isolate outcomes on policy-disagreement rounds', () => {
+    const report = (actions, outcomes, telemetry = {}) => ({
+        seed: 7,
+        rounds: actions.length,
+        telemetry,
+        traces: actions.map((roundActions, round) => ({
+            round,
+            actions: roundActions,
+            outcome: outcomes[round]
+        }))
+    });
+    const parent = report(
+        [['3D', '4D'], ['pass'], []],
+        [
+            { utility: -0.1, points: 5, cardsLeft: 5 },
+            { utility: 0.2, points: 0, cardsLeft: 0 },
+            { utility: 0.1, points: 0, cardsLeft: 0 }
+        ],
+        { overrideRate: 0.1 }
+    );
+    const candidate = report(
+        [['3D', '5D'], ['pass'], []],
+        [
+            { utility: 0.2, points: 0, cardsLeft: 0 },
+            { utility: 0.2, points: 0, cardsLeft: 0 },
+            { utility: 0.1, points: 0, cardsLeft: 0 }
+        ],
+        { overrideRate: 0.2 }
+    );
+    const result = compareBenchmarkReports(parent, candidate);
+    assert.strictEqual(result.roundsWithDecisions, 2);
+    assert.strictEqual(result.roundsWithDisagreement, 1);
+    assert.strictEqual(result.firstActionDisagreements, 1);
+    assert.strictEqual(result.sharedDecisionPositions, 3);
+    assert.strictEqual(result.disagreementRounds.rounds, 1);
+    assert.ok(Math.abs(result.disagreementRounds.meanUtilityDelta - 0.3) < 1e-12);
+    assert.strictEqual(result.disagreementRounds.meanPointsDelta, -5);
+    assert.strictEqual(result.candidateTelemetry.overrideRate, 0.2);
 });

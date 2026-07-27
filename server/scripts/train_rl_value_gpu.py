@@ -94,6 +94,8 @@ def export_artifact(model, metadata, args, device, train_loss, validation_loss):
             "experienceRows": metadata["rows"],
             "experienceKind": metadata.get("kind"),
             "experienceRounds": metadata.get("rounds"),
+            "experienceWorkerCount": metadata.get("workerCount"),
+            "experienceWorkerSeeds": metadata.get("workerSeeds"),
             "experienceTrajectories": metadata.get("trajectories"),
             "experienceSeed": metadata.get("seed"),
             "experienceSubject": metadata.get("subject"),

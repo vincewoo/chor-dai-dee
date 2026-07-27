@@ -150,11 +150,15 @@ npm run bot:rl:generation
 
 Each call performs one approximate-policy-iteration generation:
 
-1. simulate 50,000 mixed self-play/heuristic rounds with the current policy;
+1. simulate 50,000 mixed self-play/heuristic rounds with the current policy
+   across eight deterministic collection processes;
 2. fit its returns for 15 epochs on CUDA, resuming the current checkpoint;
-3. benchmark both parent and candidate for 12,000 rounds on identical unseen
-   deals;
-4. preserve the replay data, checkpoint, benchmark logs, settings, and seeds.
+3. benchmark parent and candidate concurrently for 12,000 rounds on identical
+   unseen deals;
+4. compare their first differing action on shared positions, heuristic override
+   rates, margin-guard fallbacks, and paired outcomes after disagreements;
+5. preserve the replay data, checkpoint, diagnostics, benchmark logs, settings,
+   worker seeds, and evaluation seed.
 
 The first call starts from `ai/rl-value-model-gpu-v1.json`. Later calls
 automatically use the newest completed generation:
@@ -168,19 +172,40 @@ automatically use the newest completed generation:
     experience.rl-experience.bin.json
     benchmark-parent.txt
     benchmark-candidate.txt
+    policy-diagnostics.json
   gen-002/
     ...
 ```
 
 The directory is local and ignored by Git. A run never replaces a checked-in
 checkpoint or enables it in production. Review `generation.json` after every
-run; a newer generation is not automatically stronger. To retry from a
-specific older checkpoint:
+run; a newer generation is not automatically stronger. Keep regressed
+generations as provenance rather than deleting them. To branch the next
+chronological generation from a specific older champion:
 
 ```bash
 npm run bot:rl:generation -- \
   --input .rl-generations/gen-001/model.json
 ```
+
+The new directory still receives the next chronological number, while
+`parentCheckpoint` records the older model it actually resumed. Collection
+workers use distinct deterministic seeds and write temporary shards; the
+shards are validated, merged into one replay buffer, then removed. Pin the
+worker count for reproducibility:
+
+```bash
+npm run bot:rl:generation -- --workers 8
+```
+
+`policy-diagnostics.json` reports:
+
+- the fraction of paired rounds where parent and candidate first disagree;
+- the rate at which each value policy overrides the heuristic choice;
+- how often the override-margin guard sends it back to the heuristic;
+- value-margin quantiles for attempted overrides;
+- utility, penalty, and cards-left deltas on disagreement rounds only;
+- up to 20 example first disagreements for inspection.
 
 For a short smoke test:
 

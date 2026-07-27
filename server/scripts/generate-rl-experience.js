@@ -27,7 +27,8 @@ function parseArgs(argv) {
         heuristicWeight: 0.20,
         overrideMargin: 0.02,
         opponents: 'mixed',
-        reportEvery: 10000
+        reportEvery: 10000,
+        roundOffset: 0
     };
     for (let i = 2; i < argv.length; i++) {
         const flag = argv[i];
@@ -41,6 +42,7 @@ function parseArgs(argv) {
         else if (flag === '--override-margin') args.overrideMargin = Number(argv[++i]);
         else if (flag === '--opponents') args.opponents = argv[++i];
         else if (flag === '--report-every') args.reportEvery = Number(argv[++i]);
+        else if (flag === '--round-offset') args.roundOffset = Number(argv[++i]);
         else if (flag === '--help') args.help = true;
         else throw new Error(`Unknown argument: ${flag}`);
     }
@@ -93,6 +95,9 @@ function main(argv = process.argv) {
     if (!Number.isInteger(args.rounds) || args.rounds <= 0) {
         throw new Error('--rounds must be a positive integer');
     }
+    if (!Number.isInteger(args.roundOffset) || args.roundOffset < 0) {
+        throw new Error('--round-offset must be a non-negative integer');
+    }
     if (!['selfplay', 'heuristic', 'mixed'].includes(args.opponents)) {
         throw new Error('--opponents must be selfplay, heuristic, or mixed');
     }
@@ -106,10 +111,11 @@ function main(argv = process.argv) {
 
     try {
         for (let round = 0; round < args.rounds; round++) {
+            const globalRound = args.roundOffset + round;
             const trajectories = [[], [], [], []];
             const allLearners = args.opponents === 'selfplay' ||
-                (args.opponents === 'mixed' && round % 2 === 0);
-            const learnerSeat = round % 4;
+                (args.opponents === 'mixed' && globalRound % 2 === 0);
+            const learnerSeat = globalRound % 4;
             const seats = trajectories.map((trajectory, seat) => {
                 if (!allLearners && seat !== learnerSeat) {
                     return { name: `heuristic-${seat}`, logic: BotLogic };
@@ -151,6 +157,7 @@ function main(argv = process.argv) {
         columns: [...FEATURE_NAMES, 'target'],
         rows: rowCount,
         rounds: args.rounds,
+        roundOffset: args.roundOffset,
         seed: args.seed,
         gamma: args.gamma,
         opponents: args.opponents,

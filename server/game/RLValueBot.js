@@ -181,16 +181,23 @@ class RLValueBot {
                     (Number.isFinite(option.score) ? option.score : -1000) / 250);
         }
 
+        const heuristic = options.find(option => option.isHeuristicChoice);
         let chosen;
+        let rawChoice;
+        let explored = false;
+        let guardFallback = false;
         if (this.epsilon > 0 && this.rng() < this.epsilon) {
+            explored = true;
             chosen = options[Math.floor(this.rng() * options.length)];
+            rawChoice = chosen;
         } else {
-            chosen = options.reduce((best, option) =>
+            rawChoice = options.reduce((best, option) =>
                 option.blendedScore > best.blendedScore ? option : best);
-            const heuristic = options.find(option => option.isHeuristicChoice);
-            if (heuristic && chosen !== heuristic &&
-                chosen.value < heuristic.value + this.overrideMargin) {
+            chosen = rawChoice;
+            if (heuristic && rawChoice !== heuristic &&
+                rawChoice.value < heuristic.value + this.overrideMargin) {
                 chosen = heuristic;
+                guardFallback = true;
             }
         }
 
@@ -200,7 +207,19 @@ class RLValueBot {
                 action: chosen.action,
                 key: chosen.key,
                 predictedValue: chosen.value,
-                optionCount: options.length
+                optionCount: options.length,
+                explored,
+                heuristicKey: heuristic ? heuristic.key : null,
+                rawChoiceKey: rawChoice ? rawChoice.key : null,
+                rawPreferredOverride: Boolean(heuristic && rawChoice !== heuristic),
+                overrodeHeuristic: Boolean(heuristic && chosen !== heuristic),
+                guardFallback,
+                valueMargin: heuristic && rawChoice
+                    ? rawChoice.value - heuristic.value
+                    : null,
+                blendedMargin: heuristic && rawChoice
+                    ? rawChoice.blendedScore - heuristic.blendedScore
+                    : null
             });
         }
         return chosen.action === 'pass' ? null : chosen.move.cards;
