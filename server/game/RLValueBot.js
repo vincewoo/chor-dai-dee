@@ -127,7 +127,7 @@ function decisionOptions({ hand, lastPlayedHand, isFirstTurn, gameContext }) {
         lastPlayedHand,
         isFirstTurn,
         gameContext,
-        trim: false
+        keepKey: heuristicKey
     });
     return ranked.options.map((option, optionIndex, options) => {
         const normalizedKey = option.move

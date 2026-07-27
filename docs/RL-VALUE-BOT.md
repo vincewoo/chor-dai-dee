@@ -254,6 +254,69 @@ See every tuning option with:
 npm run bot:rl:generation -- --help
 ```
 
+### PPO actor/critic generations
+
+The PPO path is separate from the value learner and does not change the live
+bot. Its actor scores the same canonical legal candidate features, while its
+critic estimates the public state value only for advantage calculation. Both
+networks export to a JSON artifact that `PPOBot.js` evaluates without Python.
+
+Create the deterministic heuristic bootstrap:
+
+```bash
+npm run bot:ppo:bootstrap
+```
+
+Run a first generation and compare it with the current value champion:
+
+```bash
+npm run bot:ppo:generation -- \
+  --baseline .rl-generations/gen-005/model.json \
+  --workers 8 \
+  --rounds 50000 \
+  --epochs 4 \
+  --selection-rounds 6000 \
+  --benchmark-rounds 24000
+```
+
+One generation:
+
+1. samples legal actions from the JavaScript actor in canonical games;
+2. records every legal candidate, the chosen action's old log probability,
+   critic value, GAE advantage, and return in compact ragged binary files;
+3. trains clipped PPO plus critic, entropy, and a small heuristic-imitation
+   anchor on CUDA;
+4. stops before excessive policy KL drift;
+5. selects a 25%, 50%, or 100% weight update on a separate seed;
+6. applies the same paired promotion gate used by value generations.
+
+PPO experience is on-policy. Do not combine arbitrary old trajectory buffers:
+their stored probabilities came from a different actor. A later generation
+collects fresh trajectories from the accepted PPO checkpoint.
+
+Artifacts are written beneath `.ppo-generations/gen-NNN/`. `model.json` is the
+selected conservative policy, `trained-model.json` is the raw PPO update, and
+`generation.json`, `selection.json`, and `policy-diagnostics.json` record the
+decision. Use `--input` to branch from an explicitly accepted PPO checkpoint;
+use `--baseline` to compare promotion against a value or PPO champion.
+
+For a CUDA smoke test:
+
+```bash
+npm run bot:ppo:generation -- \
+  --baseline .rl-generations/gen-005/model.json \
+  --rounds 100 \
+  --epochs 1 \
+  --selection-rounds 100 \
+  --benchmark-rounds 200
+```
+
+See all PPO controls with:
+
+```bash
+npm run bot:ppo:generation -- --help
+```
+
 ### Human games
 
 Real human-vs-bot games are useful for supervised warm-starting, outcome value

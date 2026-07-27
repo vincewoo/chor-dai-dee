@@ -994,6 +994,7 @@ module.exports = {
     parseBenchmark,
     seedForWorker,
     mergeExperienceShards,
+    learnedResult,
     compareBenchmarkReports,
     interpolateValueArtifacts,
     selectConservativeCandidate,

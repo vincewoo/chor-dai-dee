@@ -6,6 +6,8 @@ const path = require('path');
 const { BotLogic } = require('../game/BotLogic');
 const { RLValueModel } = require('../game/RLValueModel');
 const { RLValueBot } = require('../game/RLValueBot');
+const { PPOModel } = require('../game/PPOModel');
+const { PPOBot } = require('../game/PPOBot');
 const { runBenchmarkAsync } = require('../test/botHarness');
 
 const modelPath = path.resolve(process.argv[2] || path.join(__dirname, '../ai/rl-value-model.json'));
@@ -14,7 +16,7 @@ const heuristicWeight = process.argv[4] === undefined ? 0.20 : Number(process.ar
 const overrideMargin = process.argv[5] === undefined ? 0.05 : Number(process.argv[5]);
 const seed = process.argv[6] === undefined ? 83471 : Number(process.argv[6]);
 const jsonOutput = process.argv[7] ? path.resolve(process.argv[7]) : null;
-const model = RLValueModel.load(modelPath);
+const artifact = JSON.parse(fs.readFileSync(modelPath, 'utf8'));
 
 function quantile(sorted, fraction) {
     if (!sorted.length) return null;
@@ -72,14 +74,20 @@ function summarizeTelemetry(telemetry) {
 const telemetry = makeTelemetry();
 let currentTrace = null;
 const traces = [];
-const learned = new RLValueBot(model, {
-    heuristicWeight,
-    overrideMargin,
-    onDecision: decision => {
-        recordTelemetry(telemetry, decision);
-        if (currentTrace) currentTrace.actions.push(decision.key);
-    }
-});
+const onDecision = decision => {
+    recordTelemetry(telemetry, decision);
+    if (currentTrace) currentTrace.actions.push(decision.key);
+};
+const learned = artifact.kind === 'chor-dai-dee-ppo-policy'
+    ? new PPOBot(new PPOModel(artifact), {
+        overrideMargin,
+        onDecision
+    })
+    : new RLValueBot(RLValueModel.fromArtifact(artifact), {
+        heuristicWeight,
+        overrideMargin,
+        onDecision
+    });
 
 const contenders = [
     { name: 'value-1', logic: learned },
