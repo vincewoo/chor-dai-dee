@@ -4,10 +4,9 @@ This is the rules-faithful learning path for Chor Dai Dee. It applies the useful
 part of Dallas's Somerset work — propagate a round's delayed outcome back to
 earlier decisions — without copying its tabular state/action approximation.
 
-The legacy PPO files in `server/ai/` remain available for compatibility, but
-they are not used for training this model. Their Python game permits four-card
-hands and represents quads differently from `Big2Rules`, so a checkpoint trained
-there is not a checkpoint trained for the game this server runs.
+The current PPO path uses the same JavaScript game, legal-action enumeration,
+and public observation as production. Python only optimizes already-collected
+canonical rows and never implements or simulates the game.
 
 ## Design
 
@@ -336,6 +335,43 @@ See all PPO controls with:
 ```bash
 npm run bot:ppo:generation -- --help
 ```
+
+### Deploy the promoted PPO policy
+
+The promoted checkpoint is `server/ai/ppo-policy-gpu-v1.json`. Production
+inference is dependency-free JavaScript; Fly does not need Python, PyTorch,
+CUDA, or a GPU.
+
+Runtime selection is configuration-based:
+
+```text
+BOT_POLICY=ppo
+BOT_PPO_OVERRIDE_MARGIN=0.02
+```
+
+`BOT_PPO_MODEL_PATH` can point to a different artifact; otherwise the promoted
+checkpoint above is used. New rooms snapshot the configured policy, so rolling
+deploys cannot switch an in-progress game halfway through. Game-log seats are
+recorded as `bot_ppo` with the policy generation and artifact name. Set
+`BOT_POLICY=heuristic` to roll back without changing code.
+
+### ML-assisted coaching
+
+Keep coaching as two layers rather than asking the neural network to invent an
+explanation:
+
+1. the PPO actor ranks the canonical legal alternatives using public
+   information only;
+2. `MoveQuality` and `Coach` describe concrete card facts, proven wins,
+   combination breakage, pressure, and pass economics.
+
+The first rollout should use PPO for hints but retain the existing deterministic
+grader for reactions and player statistics. Only show a model-specific
+correction when its top-action margin clears a calibrated threshold; otherwise
+fall back to the current coach. Log policy version, margin, heuristic agreement,
+and whether the advice was followed. After those confidence buckets have enough
+real outcomes, the post-game grader can incorporate PPO disagreement without
+silently treating every neural preference as ground truth.
 
 ### Human games
 
