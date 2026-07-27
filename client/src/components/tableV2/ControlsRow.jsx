@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { findEligibleHands, findAvailableHandTypes, HAND_TYPES } from '../../utils/handFinder';
+import { CoachButton } from './CoachBubble';
 
 // The suit icons carry U+FE0E for the same reason as theme/tableTheme's
 // SUIT_SYMBOLS: without it iOS renders them as colour emoji.
@@ -27,6 +28,7 @@ function ControlsRow({
     playerHand, lastPlayedHand, isMyTurn, selectedCards, onSelectCards,
     sortMode, isCustomOrder, onSortClick,
     canPlay, canPass, playLabel, onPlay, onPass,
+    coach,
     acc, accGrad, rm,
 }) {
     const [activeType, setActiveType] = useState(null);
@@ -136,8 +138,19 @@ function ControlsRow({
                 </button>
             </div>
 
-            {/* Pass / Play */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            {/* Coach / Pass / Play. The owl is positioned rather than laid out
+                so that adding it does not shift Pass and Play off centre — the
+                two buttons players aim at with a thumb must not move because a
+                setting was turned on. */}
+            <div style={{ position: 'relative', width: '100%', display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center' }}>
+                {coach?.enabled && (
+                    <CoachButton
+                        onAsk={coach.onAsk}
+                        canAsk={coach.canAsk}
+                        busy={coach.busy}
+                        acc={acc}
+                    />
+                )}
                 <button
                     onClick={onPass}
                     disabled={!canPass}

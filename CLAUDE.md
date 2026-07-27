@@ -297,6 +297,27 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
   - Player archetype detection (Aggressive, Conservative, Balanced, Adaptive)
   - Lucky vs skilled win distinction
 - `GameModes.js` - Game mode configuration (SHORT: 50pts, STANDARD: 100pts)
+- `MoveQuality.js` - Grades one decision by ranking every legal option in
+  BotLogic's cost model. `rankOptions` is the shared primitive: `evaluateMove`
+  finds the played move inside the ranked list, and the coach takes the top of it.
+- `MoveReview.js` - Picks the handful of graded decisions worth showing a person,
+  as named situations (`missed_win`, `blunder`, `found_forced_win`, ...)
+- `Coach.js` - The owl coach. **Decides nothing of its own**: a hint is the top of
+  `MoveQuality.rankOptions`, and a live note is `MoveReview.classify` run on the
+  grade RoomManager already computes for every human move. Sharing both means the
+  coach can never recommend a move it would then call a mistake, and a mistake
+  called out at the table is the same one the post-game review lists.
+  - Live grading has **no outcome and no opponent hands**. `classify` is passed
+    `outcome: null`, which drops the two gamble kinds (the trick has not resolved
+    yet); the observation carries opponents' card *counts* only, so a hint can
+    only ever be derived from what the player can already see.
+  - **Coach prose never names a suit.** The Pusoy Dos lens remaps suits per
+    viewer, so a server string saying "the 5 of diamonds" would be wrong for half
+    the table. Moves are described in ranks and shapes ("the pair of Jacks");
+    the client draws the cards themselves with the lens-aware `PileCardGlyph`.
+    Pinned by test in `test/coach.test.js`.
+  - Corrections are unlimited; praise is rationed to `COACH_CREDITS_PER_ROUND`
+    (RoomManager) so the owl does not applaud every good move.
 
 ### REST API Endpoints
 
@@ -341,6 +362,10 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 - `next_round` - Start the next round after round ends
 - `get_room_state` - Request current room state (for reconnection)
 - `toggle_debug` - Enable/disable bot debug panel
+- `set_coach` - Turn the coach on/off for this seat (re-sent after reconnect,
+  since the server keys it on player id)
+- `coach_hint` - Ask what to play. Read-only, and answered only for the asking
+  seat on its own turn.
 
 #### Server → Client
 - `room_update` - Room state changes (players joining/leaving)
@@ -351,6 +376,9 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 - `game_over` - Game has ended with final results
 - `dragon_win` - Dragon detected, instant game win (Hong Kong variation)
 - `bot_reasoning` - Bot decision analysis (for debug panel)
+- `coach_hint` - The coach's suggested move + reasoning (to the asker only)
+- `coach_note` - The coach's unprompted reaction to the move just made (to the
+  player who made it only)
 - `reconnected` - Client successfully reconnected
 - `error` - Error messages
 
@@ -371,7 +399,7 @@ Unsetting it is the kill switch.
 
 #### Core Tables
 - `users` - User accounts (id, username, password_hash)
-- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, table theme, sound, avatar_animal/avatar_tile)
+- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, coach_enabled, table theme, sound, avatar_animal/avatar_tile)
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
 - `stats_standard` - Standard game mode statistics
@@ -449,6 +477,12 @@ Unsetting it is the kill switch.
   masks would corrupt stored tapes irreversibly. `BotDebugPanel` is dev-only and
   deliberately stays in underlying notation.
 - **Auto-Pass:** Automatically pass when no valid moves available
+- **Coach (off by default):** Adds an owl button on the left edge of the
+  Pass/Play row (`tableV2/CoachBubble.jsx`). Tapping it on your turn asks the
+  server for the best move, auto-selects those cards, and explains the choice in
+  a speech bubble; it suggests passing where passing is what the model prefers.
+  The same owl speaks up unprompted after a misplay. See `server/game/Coach.js` —
+  the client is purely presentational and never second-guesses the suggestion.
 - **Avatars:** Emoji animal on a coloured tile, picked in the v2 Avatar Picker.
   Stored on the account so every player at the table sees the same avatar; the
   choice is mirrored into localStorage for instant render and for guests, who

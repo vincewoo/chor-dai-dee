@@ -13,6 +13,7 @@ import MobileHandV2 from './MobileHandV2';
 import SpectatorHandV2 from './SpectatorHandV2';
 import RoundLogSheet from './RoundLogSheet';
 import RoundCelebration from './RoundCelebration';
+import CoachBubble from './CoachBubble';
 import VoiceControlBubble from '../VoiceControlBubble';
 import { MOBILE_LAYOUT } from './layout';
 
@@ -29,7 +30,7 @@ function GameTableMobile(props) {
         sensors, handleDragStart, handleDragEnd,
         handContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd,
         containerWidth, voiceState, voiceAudioLevels,
-        isSpectator, viewerIndex, onSelectSeat, onOpenSpectators,
+        isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
 
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
@@ -158,6 +159,12 @@ function GameTableMobile(props) {
                 stackHeight={MOBILE_LAYOUT.pile.stackHeight}
             />
 
+            {/* The mobile banner floats at a fixed offset and the coach bubble
+                lands on top of it, so a bright accent pill would sit directly
+                behind the coach's first line. The bubble says more than "Your
+                turn" does, so the banner stands down while it is up. Desktop
+                needs no such rule — there the bubble clears the banner. */}
+            {!(coach?.enabled && coach.message) && (
             <StatusBanner
                 isMyTurn={!isSpectator && isMyTurn && !trickWinPending}
                 mustBeat={!isSpectator && mustBeat}
@@ -171,6 +178,7 @@ function GameTableMobile(props) {
                 pusoyMode={pusoyMode}
                 placement={MOBILE_LAYOUT.banner}
             />
+            )}
 
             {/* Bottom controls + hand. Spectators get the watched seat's hand
                 face-up and no controls at all. */}
@@ -186,6 +194,17 @@ function GameTableMobile(props) {
                         geometry={MOBILE_LAYOUT.hand}
                     />
                 ) : (<>
+                {/* Anchored to the bottom stack, which is already positioned,
+                    so `bottom: 100%` floats the bubble just above the controls
+                    without taking any layout space from the hand. */}
+                <CoachBubble
+                    message={coach?.enabled ? coach.message : null}
+                    onDismiss={coach?.onDismiss}
+                    fourColor={fourColorMode}
+                    pusoyMode={pusoyMode}
+                    acc={acc}
+                    rm={rm}
+                />
                 <ControlsRow
                     playerHand={myHand}
                     lastPlayedHand={lastPlayedHand}
@@ -200,6 +219,7 @@ function GameTableMobile(props) {
                     playLabel={playLabel}
                     onPlay={playCards}
                     onPass={passTurn}
+                    coach={coach}
                     acc={acc}
                     accGrad={accGrad}
                     rm={rm}

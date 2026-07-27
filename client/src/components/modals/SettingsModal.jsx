@@ -11,6 +11,8 @@ const SettingsModal = ({
     onClose,
     autoPass,
     toggleAutoPass,
+    coachEnabled,
+    toggleCoach,
     fourColorMode,
     toggleFourColorMode,
     pusoyMode,
@@ -86,6 +88,35 @@ const SettingsModal = ({
                                 Automatically pass when you have no cards that can beat the played hand
                             </p>
                         </div>
+
+                        {/* Coach — adds the owl button to the Pass/Play row */}
+                        {toggleCoach && (
+                            <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">
+                                <div className="flex items-center justify-between mb-2 md:mb-[0.5vmax]">
+                                    <label
+                                        id="coach-label"
+                                        className="text-white font-semibold text-lg md:text-[1.2vmax]"
+                                    >
+                                        🦉 Coach
+                                    </label>
+                                    <button
+                                        role="switch"
+                                        aria-checked={!!coachEnabled}
+                                        aria-labelledby="coach-label"
+                                        onClick={toggleCoach}
+                                        className={`px-4 md:px-[1.2vmax] py-2 md:py-[0.6vmax] rounded-full font-bold shadow-lg transition transform hover:scale-105 text-base md:text-[1vmax] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500 focus-visible:outline-none
+                                            ${coachEnabled ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                    >
+                                        {coachEnabled ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+                                <p className="text-gray-300 text-sm md:text-[0.85vmax]">
+                                    Adds an owl beside Pass and Play. Tap it on your turn and it picks
+                                    your best move — selecting the cards for you — and says why.
+                                    It also speaks up when you misplay a hand.
+                                </p>
+                            </div>
+                        )}
 
                         {/* 4-Color Setting */}
                         <div className="bg-gray-700 rounded-lg p-4 md:p-[1vmax]">

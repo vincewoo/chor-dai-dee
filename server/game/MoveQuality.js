@@ -158,6 +158,105 @@ function isRiskyMove(move, hand, ctx, gamePhase) {
 }
 
 /**
+ * Price every option available at one decision, best first.
+ *
+ * The ranked list is the whole substance of a grade: `evaluateMove` only has to
+ * find the move that was played inside it. It is exported because the live
+ * coach (Coach.js) needs the top of the same list to make a suggestion, and a
+ * coach that recommended a move on one scale while the grader marked it on
+ * another would contradict itself within a single turn.
+ *
+ * @param {object[]} hand          The hand to decide from.
+ * @param {object|null} lastPlayedHand The pile to beat, or null when leading.
+ * @param {boolean} isFirstTurn    Opening turn of the game (3D must be played).
+ * @param {object} gameContext     From BotContext.buildGameContext.
+ * @param {string|null} keepKey    A cardKey the trim must not drop.
+ * @param {boolean} explain        Capture the per-move factor breakdown.
+ *
+ * @returns {{ ctx, candidates, options, forcedWins, gamePhase }} `options` is
+ *          empty when nothing is legal - the pass was forced. Profile is always
+ *          stripped: the yardstick has to be the same for everyone.
+ */
+function rankOptions({ hand, lastPlayedHand = null, isFirstTurn = false, gameContext = {}, keepKey = null, explain = false }) {
+    const ctx = BotLogic.buildDecisionContext(hand, { ...gameContext, profile: null });
+    const candidates = BotLogic.legalCandidates(ctx.allValidMoves, lastPlayedHand, isFirstTurn);
+    const gamePhase = BotLogic.getGamePhase(hand.length);
+
+    if (candidates.length === 0) {
+        return { ctx, candidates, options: [], forcedWins: new Set(), gamePhase };
+    }
+
+    // Trim for cost, but never drop the move the caller cares about.
+    let toScore = candidates;
+    if (candidates.length > MAX_SCORED_CANDIDATES) {
+        const half = Math.floor(MAX_SCORED_CANDIDATES / 2);
+        const sorted = [...candidates].sort((a, b) => a.value - b.value);
+        const kept = [...sorted.slice(0, half), ...sorted.slice(-half)];
+        if (keepKey && !kept.some(m => cardKey(m.cards) === keepKey)) {
+            const chosen = candidates.find(m => cardKey(m.cards) === keepKey);
+            if (chosen) kept.push(chosen);
+        }
+        const seen = new Set();
+        toScore = kept.filter(m => {
+            const key = cardKey(m.cards);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    const trickValue = lastPlayedHand
+        ? BotLogic.evaluateTrickValue(hand, ctx, gamePhase)
+        : null;
+
+    // Search settles the position where it can. Computed over the full
+    // candidate set rather than the trimmed one: a forcing move that the
+    // trim happened to drop would otherwise leave the caller ranking against
+    // a best move that was not the best available.
+    const forcedWins = forcedWinKeys(candidates, hand, ctx);
+
+    // Reasoning is off by default. It is only wanted for the handful of
+    // decisions something actually renders, and capturing it for every graded
+    // move would put the cost on the live play path, which grades every turn.
+    const options = toScore.map(move => {
+        const key = cardKey(move.cards);
+        if (forcedWins.has(key)) {
+            return {
+                action: 'play', key, move, score: WIN_SCORE,
+                factors: explain
+                    ? [{ factor: 'Cannot be beaten, and the rest plays out next turn', points: WIN_SCORE }]
+                    : null
+            };
+        }
+        const scored = lastPlayedHand
+            ? BotLogic.scoreResponseMove(move, hand, ctx, gamePhase, trickValue, explain)
+            : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase, explain);
+        return { action: 'play', key, move, score: scored.score, factors: scored.factors || null };
+    });
+
+    if (lastPlayedHand) {
+        const canSitOut = passIsAvailable(candidates, hand, ctx, gamePhase);
+        options.push({
+            action: 'pass',
+            key: 'pass',
+            move: null,
+            // Passing sits exactly at the price a response has to clear to be
+            // worth making -- the same comparison shouldStrategicPass draws.
+            score: canSitOut ? BotLogic.PASS_PRICE : -Infinity,
+            factors: explain
+                ? [canSitOut
+                    ? { factor: 'Let the trick go rather than pay for it', points: BotLogic.PASS_PRICE }
+                    : { factor: 'Passing gives up a trick that has to be contested', points: -Infinity }]
+                : null
+        });
+    }
+
+    options.sort((a, b) => b.score - a.score);
+
+    return { ctx, candidates, options, forcedWins, gamePhase };
+}
+
+/**
  * Grade one decision.
  *
  * @param {object[]} hand          The player's hand BEFORE the move.
@@ -200,87 +299,18 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
         minOpponentCards
     });
 
-    const ctx = BotLogic.buildDecisionContext(hand, { ...gameContext, profile: null });
-    const candidates = BotLogic.legalCandidates(ctx.allValidMoves, lastPlayedHand, isFirstTurn);
+    const chosenKey = action === 'play' && cards ? cardKey(cards) : null;
+
+    const { ctx, candidates, options, forcedWins, gamePhase } = rankOptions({
+        hand, lastPlayedHand, isFirstTurn, gameContext, keepKey: chosenKey, explain
+    });
 
     // Nothing beat the pile: the pass was forced, not chosen.
     if (candidates.length === 0) return unscored(true);
 
     // Leading with a single legal shape is equally forced. When there is a pile
     // there are always at least two options, since passing is one of them.
-    const optionCount = candidates.length + (lastPlayedHand ? 1 : 0);
-    if (optionCount < 2) return unscored(true);
-
-    const gamePhase = BotLogic.getGamePhase(hand.length);
-    const chosenKey = action === 'play' && cards ? cardKey(cards) : null;
-
-    // Trim for cost, but never drop the move being graded.
-    let toScore = candidates;
-    if (candidates.length > MAX_SCORED_CANDIDATES) {
-        const half = Math.floor(MAX_SCORED_CANDIDATES / 2);
-        const sorted = [...candidates].sort((a, b) => a.value - b.value);
-        const kept = [...sorted.slice(0, half), ...sorted.slice(-half)];
-        if (chosenKey && !kept.some(m => cardKey(m.cards) === chosenKey)) {
-            const chosen = candidates.find(m => cardKey(m.cards) === chosenKey);
-            if (chosen) kept.push(chosen);
-        }
-        const seen = new Set();
-        toScore = kept.filter(m => {
-            const key = cardKey(m.cards);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-    }
-
-    const trickValue = lastPlayedHand
-        ? BotLogic.evaluateTrickValue(hand, ctx, gamePhase)
-        : null;
-
-    // Search settles the position where it can. Computed over the full
-    // candidate set rather than the trimmed one: a forcing move that the
-    // trim happened to drop would otherwise leave the grader ranking against
-    // a best move that was not the best available.
-    const forcedWins = forcedWinKeys(candidates, hand, ctx);
-
-    // Off by default. Reasoning is only wanted for the handful of decisions a
-    // review actually renders, and capturing it for every graded move would put
-    // the cost on the live play path, which grades every turn.
-    const options = toScore.map(move => {
-        const key = cardKey(move.cards);
-        if (forcedWins.has(key)) {
-            return {
-                action: 'play', key, move, score: WIN_SCORE,
-                factors: explain
-                    ? [{ factor: 'Cannot be beaten, and the rest plays out next turn', points: WIN_SCORE }]
-                    : null
-            };
-        }
-        const scored = lastPlayedHand
-            ? BotLogic.scoreResponseMove(move, hand, ctx, gamePhase, trickValue, explain)
-            : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase, explain);
-        return { action: 'play', key, move, score: scored.score, factors: scored.factors || null };
-    });
-
-    if (lastPlayedHand) {
-        options.push({
-            action: 'pass',
-            key: 'pass',
-            move: null,
-            // Passing sits exactly at the price a response has to clear to be
-            // worth making -- the same comparison shouldStrategicPass draws.
-            score: passIsAvailable(candidates, hand, ctx, gamePhase)
-                ? BotLogic.PASS_PRICE
-                : -Infinity,
-            factors: explain
-                ? [passIsAvailable(candidates, hand, ctx, gamePhase)
-                    ? { factor: 'Let the trick go rather than pay for it', points: BotLogic.PASS_PRICE }
-                    : { factor: 'Passing gives up a trick that has to be contested', points: -Infinity }]
-                : null
-        });
-    }
-
-    options.sort((a, b) => b.score - a.score);
+    if (candidates.length + (lastPlayedHand ? 1 : 0) < 2) return unscored(true);
 
     const chosenIndex = options.findIndex(o =>
         action === 'pass' ? o.action === 'pass' : o.key === chosenKey);
@@ -381,6 +411,7 @@ function evaluateMove({ hand, lastPlayedHand, isFirstTurn = false, gameContext =
 
 module.exports = {
     evaluateMove,
+    rankOptions,
     forcedWinKeys,
     QUALITY_BANDS,
     MAX_SCORED_CANDIDATES,

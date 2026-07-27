@@ -17,6 +17,7 @@ import SpectatorHandV2 from './SpectatorHandV2';
 import RoundLogSheet from './RoundLogSheet';
 import RoundLogPanel from './RoundLogPanel';
 import RoundCelebration from './RoundCelebration';
+import CoachBubble from './CoachBubble';
 import VoiceControlBubble from '../VoiceControlBubble';
 import { DESKTOP_LAYOUT, SCORE_RAIL_WIDTH, LOG_RAIL_WIDTH } from './layout';
 
@@ -42,7 +43,7 @@ function GameTableDesktop(props) {
         sensors, handleDragStart, handleDragEnd,
         handContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd,
         voiceState, voiceAudioLevels,
-        isSpectator, viewerIndex, onSelectSeat, onOpenSpectators,
+        isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
 
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
@@ -206,7 +207,9 @@ function GameTableDesktop(props) {
                         so nothing needs a magic offset from the viewport edge. */}
                     <div
                         ref={handAreaRef}
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 12, flexShrink: 0 }}
+                        // `relative` only so the coach bubble can anchor to the
+                        // top of this section; nothing else here is positioned.
+                        style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 12, flexShrink: 0 }}
                     >
                         <StatusBanner
                             isMyTurn={!isSpectator && isMyTurn && !trickWinPending}
@@ -233,6 +236,14 @@ function GameTableDesktop(props) {
                                 geometry={DESKTOP_LAYOUT.hand}
                             />
                         ) : (<>
+                            <CoachBubble
+                                message={coach?.enabled ? coach.message : null}
+                                onDismiss={coach?.onDismiss}
+                                fourColor={fourColorMode}
+                                pusoyMode={pusoyMode}
+                                acc={acc}
+                                rm={rm}
+                            />
                             <ControlsRow
                                 playerHand={myHand}
                                 lastPlayedHand={lastPlayedHand}
@@ -247,6 +258,7 @@ function GameTableDesktop(props) {
                                 playLabel={playLabel}
                                 onPlay={playCards}
                                 onPass={passTurn}
+                                coach={coach}
                                 acc={acc}
                                 accGrad={accGrad}
                                 rm={rm}
