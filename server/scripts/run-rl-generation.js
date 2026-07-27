@@ -20,6 +20,9 @@ function parseArgs(argv) {
         epochs: 15,
         batchSize: 8192,
         learningRate: 0.0001,
+        replayDepth: 1,
+        selectionRounds: 6000,
+        interpolationAlphas: [0.25, 0.5, 1],
         benchmarkRounds: 12000,
         epsilon: 0.05,
         heuristicWeight: 0.20,
@@ -40,6 +43,12 @@ function parseArgs(argv) {
         else if (flag === '--epochs') args.epochs = Number(argv[++i]);
         else if (flag === '--batch-size') args.batchSize = Number(argv[++i]);
         else if (flag === '--learning-rate') args.learningRate = Number(argv[++i]);
+        else if (flag === '--replay-depth') args.replayDepth = Number(argv[++i]);
+        else if (flag === '--selection-rounds') {
+            args.selectionRounds = Number(argv[++i]);
+        } else if (flag === '--interpolation-alphas') {
+            args.interpolationAlphas = argv[++i].split(',').map(Number);
+        }
         else if (flag === '--benchmark-rounds') args.benchmarkRounds = Number(argv[++i]);
         else if (flag === '--epsilon') args.epsilon = Number(argv[++i]);
         else if (flag === '--heuristic-weight') args.heuristicWeight = Number(argv[++i]);
@@ -68,6 +77,9 @@ Later calls automatically resume from the newest completed generation.
   --epochs N               optimizer passes (default 15)
   --batch-size N           GPU batch size (default 8192)
   --learning-rate N        AdamW rate (default 0.0001)
+  --replay-depth N         ancestor experience buffers to replay (default 1)
+  --selection-rounds N     held-out rounds for update-size selection (default 6000)
+  --interpolation-alphas A comma-separated parent-to-trained steps (default .25,.5,1)
   --benchmark-rounds N     held-out rounds per checkpoint (default 12000)
   --opponents MODE         mixed, selfplay, or heuristic (default mixed)
   --epsilon N              collection exploration (default 0.05)
@@ -113,6 +125,69 @@ function resolveGeneration(args) {
     const input = args.input ||
         (previous ? path.join(previous.directory, 'model.json') : DEFAULT_BASE);
     return { number, input };
+}
+
+function resolveReplayExperiences(parentCheckpoint, depth) {
+    const experiences = [];
+    const seen = new Set();
+    let checkpoint = path.resolve(parentCheckpoint);
+    for (let level = 0; level < depth; level++) {
+        const directory = path.dirname(checkpoint);
+        const experience = path.join(
+            directory, 'experience.rl-experience.bin');
+        const generationMetadata = path.join(directory, 'generation.json');
+        if (fs.existsSync(experience) &&
+            fs.existsSync(`${experience}.json`) &&
+            !seen.has(experience)) {
+            experiences.push(experience);
+            seen.add(experience);
+        }
+        if (!fs.existsSync(generationMetadata)) break;
+        const metadata = JSON.parse(
+            fs.readFileSync(generationMetadata, 'utf8'));
+        if (!metadata.parentCheckpoint) break;
+        checkpoint = path.resolve(metadata.parentCheckpoint);
+    }
+    return experiences;
+}
+
+function interpolateParameter(parent, candidate, alpha) {
+    if (typeof parent === 'number' && typeof candidate === 'number') {
+        return parent + alpha * (candidate - parent);
+    }
+    if (Array.isArray(parent) && Array.isArray(candidate) &&
+        parent.length === candidate.length) {
+        return parent.map((value, index) =>
+            interpolateParameter(value, candidate[index], alpha));
+    }
+    throw new Error('Cannot interpolate mismatched model parameters');
+}
+
+function interpolateValueArtifacts(parent, candidate, alpha) {
+    if (parent.kind !== candidate.kind ||
+        parent.hiddenSize !== candidate.hiddenSize ||
+        JSON.stringify(parent.featureNames) !==
+            JSON.stringify(candidate.featureNames)) {
+        throw new Error('Parent and trained candidate model schemas differ');
+    }
+    const parameters = {};
+    for (const key of ['w1', 'b1', 'w2', 'b2']) {
+        parameters[key] = interpolateParameter(
+            parent.parameters[key], candidate.parameters[key], alpha);
+    }
+    return {
+        ...candidate,
+        parameters,
+        metadata: {
+            ...candidate.metadata,
+            conservativeAlpha: alpha,
+            interpolationParent: parent.metadata?.trainedAt || null
+        }
+    };
+}
+
+function alphaLabel(alpha) {
+    return String(alpha).replace('.', 'p');
 }
 
 function writePrefixed(stream, prefix, state, chunk) {
@@ -453,6 +528,77 @@ function compareBenchmarkReports(parent, candidate) {
     };
 }
 
+function compactDiagnostics(diagnostics) {
+    return {
+        roundsWithDisagreement: diagnostics.roundsWithDisagreement,
+        roundDisagreementRate: diagnostics.roundDisagreementRate,
+        firstActionDisagreementRate:
+            diagnostics.firstActionDisagreementRate,
+        candidateOverrideRate:
+            diagnostics.candidateTelemetry.overrideRate,
+        candidateGuardFallbackRate:
+            diagnostics.candidateTelemetry.guardFallbackRate,
+        allRoundMeanUtilityDelta:
+            diagnostics.allPairedRounds.meanUtilityDelta,
+        disagreementRoundMeanUtilityDelta:
+            diagnostics.disagreementRounds.meanUtilityDelta,
+        disagreementRoundMeanPointsDelta:
+            diagnostics.disagreementRounds.meanPointsDelta,
+        candidateBetter: diagnostics.disagreementRounds.candidateBetter,
+        parentBetter: diagnostics.disagreementRounds.parentBetter,
+        tied: diagnostics.disagreementRounds.tied
+    };
+}
+
+function selectConservativeCandidate(candidates) {
+    return [...candidates].sort((a, b) => {
+        const utility = b.diagnostics.allPairedRounds.meanUtilityDelta -
+            a.diagnostics.allPairedRounds.meanUtilityDelta;
+        if (Math.abs(utility) > 1e-15) return utility;
+        const points = a.result.averagePoints - b.result.averagePoints;
+        if (Math.abs(points) > 1e-15) return points;
+        return b.result.winRatePercent - a.result.winRatePercent;
+    })[0];
+}
+
+function wilsonLowerBound(successes, total, z = 1.96) {
+    if (!total) return 0;
+    const proportion = successes / total;
+    const denominator = 1 + z * z / total;
+    const center = proportion + z * z / (2 * total);
+    const spread = z * Math.sqrt(
+        proportion * (1 - proportion) / total +
+        z * z / (4 * total * total)
+    );
+    return (center - spread) / denominator;
+}
+
+function promotionDecision(parentResult, candidateResult, diagnostics) {
+    const outcome = diagnostics.disagreementRounds;
+    const nonTied = outcome.candidateBetter + outcome.parentBetter;
+    const betterShare = nonTied ? outcome.candidateBetter / nonTied : 0;
+    const betterShareLower95 = wilsonLowerBound(
+        outcome.candidateBetter, nonTied);
+    const winRateDeltaPoints =
+        candidateResult.winRatePercent - parentResult.winRatePercent;
+    const averagePointsDelta =
+        candidateResult.averagePoints - parentResult.averagePoints;
+    const checks = {
+        positiveUtility:
+            diagnostics.allPairedRounds.meanUtilityDelta > 0,
+        lowerPenalty: averagePointsDelta <= 0,
+        nonDecreasingWinRate: winRateDeltaPoints >= 0,
+        convincingChangedOutcomes: betterShareLower95 > 0.5
+    };
+    return {
+        accepted: Object.values(checks).every(Boolean),
+        checks,
+        nonTiedDisagreementRounds: nonTied,
+        candidateBetterShare: betterShare,
+        candidateBetterShareLower95: betterShareLower95
+    };
+}
+
 async function main(argv = process.argv) {
     const args = parseArgs(argv);
     if (args.help) {
@@ -463,7 +609,19 @@ async function main(argv = process.argv) {
     validatePositiveInteger('--workers', args.workers);
     validatePositiveInteger('--epochs', args.epochs);
     validatePositiveInteger('--batch-size', args.batchSize);
+    validatePositiveInteger('--selection-rounds', args.selectionRounds);
     validatePositiveInteger('--benchmark-rounds', args.benchmarkRounds);
+    if (!Number.isInteger(args.replayDepth) || args.replayDepth < 0) {
+        throw new Error('--replay-depth must be a non-negative integer');
+    }
+    if (!args.interpolationAlphas.length ||
+        args.interpolationAlphas.some(alpha =>
+            !Number.isFinite(alpha) || alpha <= 0 || alpha > 1)) {
+        throw new Error(
+            '--interpolation-alphas must contain values greater than 0 and at most 1');
+    }
+    args.interpolationAlphas = [...new Set(args.interpolationAlphas)]
+        .sort((a, b) => a - b);
     if (!['mixed', 'selfplay', 'heuristic'].includes(args.opponents)) {
         throw new Error('--opponents must be mixed, selfplay, or heuristic');
     }
@@ -493,7 +651,9 @@ async function main(argv = process.argv) {
     const trainingSeed = args.trainingSeed ?? 228 + generation.number;
     const benchmarkSeed = args.benchmarkSeed ??
         83471 + generation.number * 1009;
+    const selectionSeed = (benchmarkSeed ^ 0xA5A5A5A5) >>> 0;
     const experience = path.join(workDir, 'experience.rl-experience.bin');
+    const rawCandidate = path.join(workDir, 'trained-model.json');
     const candidate = path.join(workDir, 'model.json');
 
     const started = Date.now();
@@ -510,38 +670,162 @@ async function main(argv = process.argv) {
         workDir
     });
 
-    console.log(`\n=== ${label}: train on ${args.device} ===`);
-    await run(python, [
+    const replayExperiences = resolveReplayExperiences(
+        generation.input, args.replayDepth);
+    console.log(
+        `\n=== ${label}: train on ${args.device} with ` +
+        `${replayExperiences.length} replay buffer(s) ===`
+    );
+    for (const replay of replayExperiences) {
+        console.log(`replay=${replay}`);
+    }
+    const trainingArgs = [
         path.join(__dirname, 'train_rl_value_gpu.py'),
         '--experience', experience,
         '--resume', generation.input,
-        '--output', candidate,
+        '--output', rawCandidate,
         '--hidden', String(hidden),
         '--epochs', String(args.epochs),
         '--batch-size', String(args.batchSize),
         '--learning-rate', String(args.learningRate),
         '--seed', String(trainingSeed),
         '--device', args.device
-    ]);
+    ];
+    for (const replay of replayExperiences) {
+        trainingArgs.push('--experience', replay);
+    }
+    await run(python, trainingArgs);
 
     const benchmarkScript = path.join(__dirname, 'bench-rl-value-bot.js');
-    const parentReportPath = path.join(workDir, 'benchmark-parent.json.tmp');
-    const candidateReportPath = path.join(workDir, 'benchmark-candidate.json.tmp');
-    const benchmarkArgs = (checkpoint, reportPath) => [
+    const benchmarkArgs = (checkpoint, rounds, seed, reportPath) => [
         benchmarkScript,
         checkpoint,
-        String(args.benchmarkRounds),
+        String(rounds),
         String(args.heuristicWeight),
         String(args.overrideMargin),
-        String(benchmarkSeed),
+        String(seed),
         reportPath
     ];
-    console.log(`\n=== ${label}: benchmark parent and candidate concurrently ===`);
+    const candidateDir = path.join(workDir, 'candidates');
+    const selectionDir = path.join(workDir, 'selection');
+    fs.mkdirSync(candidateDir);
+    fs.mkdirSync(selectionDir);
+    const trainedArtifact = JSON.parse(fs.readFileSync(rawCandidate, 'utf8'));
+    if (trainedArtifact.metadata?.experienceSources) {
+        trainedArtifact.metadata.experienceSources =
+            trainedArtifact.metadata.experienceSources.map(source => ({
+                ...source,
+                path: path.resolve(source.path) === path.resolve(experience)
+                    ? path.basename(experience)
+                    : source.path
+            }));
+        fs.writeFileSync(
+            rawCandidate, `${JSON.stringify(trainedArtifact)}\n`);
+    }
+    const conservativeCandidates = args.interpolationAlphas.map(alpha => {
+        const checkpoint = path.join(
+            candidateDir, `alpha-${alphaLabel(alpha)}.json`);
+        const artifact = interpolateValueArtifacts(
+            parentArtifact, trainedArtifact, alpha);
+        artifact.metadata.interpolationParent =
+            path.resolve(generation.input);
+        fs.writeFileSync(checkpoint, `${JSON.stringify(artifact)}\n`);
+        return { alpha, checkpoint };
+    });
+
+    console.log(
+        `\n=== ${label}: select conservative update on ` +
+        `${args.selectionRounds} held-out rounds ===`
+    );
+    const selectionParentReportPath = path.join(
+        selectionDir, 'parent.json.tmp');
+    const selectionJobs = [{
+        label: 'parent',
+        checkpoint: generation.input,
+        reportPath: selectionParentReportPath
+    }, ...conservativeCandidates.map(item => ({
+        ...item,
+        label: `alpha=${item.alpha}`,
+        reportPath: path.join(
+            selectionDir, `alpha-${alphaLabel(item.alpha)}.json.tmp`)
+    }))];
+    const selectionRuns = await Promise.all(selectionJobs.map(job =>
+        run(process.execPath, benchmarkArgs(
+            job.checkpoint,
+            args.selectionRounds,
+            selectionSeed,
+            job.reportPath
+        ), { stream: false })
+    ));
+    const selectionParentReport = JSON.parse(
+        fs.readFileSync(selectionParentReportPath, 'utf8'));
+    fs.writeFileSync(
+        path.join(selectionDir, 'parent.txt'), selectionRuns[0].stdout);
+    const selectionCandidates = conservativeCandidates.map((item, index) => {
+        const job = selectionJobs[index + 1];
+        const report = JSON.parse(fs.readFileSync(job.reportPath, 'utf8'));
+        const diagnostics = compareBenchmarkReports(
+            selectionParentReport, report);
+        fs.writeFileSync(
+            path.join(
+                selectionDir, `alpha-${alphaLabel(item.alpha)}.txt`),
+            selectionRuns[index + 1].stdout
+        );
+        return {
+            ...item,
+            result: learnedResult(report),
+            diagnostics
+        };
+    });
+    const selected = selectConservativeCandidate(selectionCandidates);
+    const selectionSummary = {
+        schemaVersion: 1,
+        rounds: args.selectionRounds,
+        seed: selectionSeed,
+        selectedAlpha: selected.alpha,
+        candidates: selectionCandidates.map(item => ({
+            alpha: item.alpha,
+            result: item.result,
+            diagnostics: compactDiagnostics(item.diagnostics)
+        }))
+    };
+    fs.writeFileSync(
+        path.join(workDir, 'selection.json'),
+        `${JSON.stringify(selectionSummary, null, 2)}\n`
+    );
+    for (const job of selectionJobs) fs.unlinkSync(job.reportPath);
+    fs.copyFileSync(selected.checkpoint, candidate);
+    for (const item of selectionCandidates) {
+        const delta = item.diagnostics.allPairedRounds.meanUtilityDelta;
+        console.log(
+            `alpha=${item.alpha.toFixed(2)} ` +
+            `utility=${delta >= 0 ? '+' : ''}${delta.toFixed(6)} ` +
+            `better=${item.diagnostics.disagreementRounds.candidateBetter} ` +
+            `worse=${item.diagnostics.disagreementRounds.parentBetter}`
+        );
+    }
+    console.log(`selected-alpha=${selected.alpha}`);
+
+    const parentReportPath = path.join(workDir, 'benchmark-parent.json.tmp');
+    const candidateReportPath = path.join(workDir, 'benchmark-candidate.json.tmp');
+    console.log(
+        `\n=== ${label}: promotion benchmark parent vs alpha=${selected.alpha} ===`
+    );
     const [parentRun, candidateRun] = await Promise.all([
-        run(process.execPath, benchmarkArgs(generation.input, parentReportPath), {
+        run(process.execPath, benchmarkArgs(
+            generation.input,
+            args.benchmarkRounds,
+            benchmarkSeed,
+            parentReportPath
+        ), {
             stream: false
         }),
-        run(process.execPath, benchmarkArgs(candidate, candidateReportPath), {
+        run(process.execPath, benchmarkArgs(
+            candidate,
+            args.benchmarkRounds,
+            benchmarkSeed,
+            candidateReportPath
+        ), {
             stream: false
         })
     ]);
@@ -554,6 +838,8 @@ async function main(argv = process.argv) {
     const parentResult = learnedResult(parentReport);
     const candidateResult = learnedResult(candidateReport);
     const diagnostics = compareBenchmarkReports(parentReport, candidateReport);
+    const promotion = promotionDecision(
+        parentResult, candidateResult, diagnostics);
     fs.writeFileSync(path.join(workDir, 'benchmark-parent.txt'), parentRun.stdout);
     fs.writeFileSync(path.join(workDir, 'benchmark-candidate.txt'), candidateRun.stdout);
     fs.writeFileSync(
@@ -572,6 +858,13 @@ async function main(argv = process.argv) {
             epochs: args.epochs,
             batchSize: args.batchSize,
             learningRate: args.learningRate,
+            replayDepth: args.replayDepth,
+            replayExperiences: replayExperiences.map(item =>
+                path.resolve(item)),
+            selectionRounds: args.selectionRounds,
+            selectionSeed,
+            interpolationAlphas: args.interpolationAlphas,
+            selectedAlpha: selected.alpha,
             benchmarkRounds: args.benchmarkRounds,
             workers: experienceMetadata.workerCount,
             epsilon: args.epsilon,
@@ -592,20 +885,8 @@ async function main(argv = process.argv) {
             averagePointsDelta:
                 candidateResult.averagePoints - parentResult.averagePoints
         },
-        diagnostics: {
-            roundsWithDisagreement: diagnostics.roundsWithDisagreement,
-            roundDisagreementRate: diagnostics.roundDisagreementRate,
-            firstActionDisagreementRate:
-                diagnostics.firstActionDisagreementRate,
-            candidateOverrideRate:
-                diagnostics.candidateTelemetry.overrideRate,
-            candidateGuardFallbackRate:
-                diagnostics.candidateTelemetry.guardFallbackRate,
-            disagreementRoundMeanUtilityDelta:
-                diagnostics.disagreementRounds.meanUtilityDelta,
-            disagreementRoundMeanPointsDelta:
-                diagnostics.disagreementRounds.meanPointsDelta
-        },
+        diagnostics: compactDiagnostics(diagnostics),
+        promotion,
         elapsedSeconds: (Date.now() - started) / 1000,
         completedAt: new Date().toISOString()
     };
@@ -618,6 +899,7 @@ async function main(argv = process.argv) {
     console.log(`\n=== ${label}: complete ===`);
     console.log(`trained-from=${generation.input}`);
     console.log(`candidate=${path.join(finalDir, 'model.json')}`);
+    console.log(`selected-alpha=${selected.alpha}`);
     console.log(
         `win-rate delta=${metadata.benchmark.winRateDeltaPoints >= 0 ? '+' : ''}` +
         `${metadata.benchmark.winRateDeltaPoints.toFixed(3)} percentage points`
@@ -630,6 +912,11 @@ async function main(argv = process.argv) {
         `policy disagreement=${(diagnostics.roundDisagreementRate * 100).toFixed(2)}% ` +
         `of paired rounds; candidate heuristic override=` +
         `${(diagnostics.candidateTelemetry.overrideRate * 100).toFixed(2)}%`
+    );
+    console.log(
+        `promotion=${promotion.accepted ? 'ACCEPT' : 'REJECT'} ` +
+        `better-share=${(promotion.candidateBetterShare * 100).toFixed(2)}% ` +
+        `lower95=${(promotion.candidateBetterShareLower95 * 100).toFixed(2)}%`
     );
     return 0;
 }
@@ -648,8 +935,12 @@ module.exports = {
     parseArgs,
     completedGenerations,
     resolveGeneration,
+    resolveReplayExperiences,
     parseBenchmark,
     seedForWorker,
     mergeExperienceShards,
-    compareBenchmarkReports
+    compareBenchmarkReports,
+    interpolateValueArtifacts,
+    selectConservativeCandidate,
+    promotionDecision
 };

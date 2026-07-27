@@ -23,7 +23,10 @@ const {
 const {
     parseBenchmark,
     seedForWorker,
-    compareBenchmarkReports
+    compareBenchmarkReports,
+    interpolateValueArtifacts,
+    selectConservativeCandidate,
+    promotionDecision
 } = require('../scripts/run-rl-generation');
 
 function card(text) {
@@ -357,4 +360,67 @@ test('paired diagnostics isolate outcomes on policy-disagreement rounds', () => 
     assert.ok(Math.abs(result.disagreementRounds.meanUtilityDelta - 0.3) < 1e-12);
     assert.strictEqual(result.disagreementRounds.meanPointsDelta, -5);
     assert.strictEqual(result.candidateTelemetry.overrideRate, 0.2);
+});
+
+test('conservative interpolation preserves schema and scales the trained update', () => {
+    const artifact = value => ({
+        kind: 'chor-dai-dee-candidate-value',
+        hiddenSize: 1,
+        featureNames: ['bias'],
+        parameters: {
+            w1: [[value]],
+            b1: [value],
+            w2: [value],
+            b2: value
+        },
+        metadata: { trainedAt: `time-${value}` }
+    });
+    const interpolated = interpolateValueArtifacts(
+        artifact(2), artifact(6), 0.25);
+    assert.deepStrictEqual(interpolated.parameters, {
+        w1: [[3]],
+        b1: [3],
+        w2: [3],
+        b2: 3
+    });
+    assert.strictEqual(interpolated.metadata.conservativeAlpha, 0.25);
+});
+
+test('candidate selection prioritizes paired utility over headline win rate', () => {
+    const candidate = (alpha, utility, points, wins) => ({
+        alpha,
+        result: {
+            averagePoints: points,
+            winRatePercent: wins
+        },
+        diagnostics: {
+            allPairedRounds: { meanUtilityDelta: utility }
+        }
+    });
+    const selected = selectConservativeCandidate([
+        candidate(0.25, 0.002, 2.9, 26.0),
+        candidate(0.5, -0.001, 2.8, 27.0),
+        candidate(1, 0.001, 2.7, 28.0)
+    ]);
+    assert.strictEqual(selected.alpha, 0.25);
+});
+
+test('promotion requires a convincing paired improvement on the final holdout', () => {
+    const parent = { winRatePercent: 26, averagePoints: 3 };
+    const candidate = { winRatePercent: 26.1, averagePoints: 2.9 };
+    const diagnostics = {
+        allPairedRounds: { meanUtilityDelta: 0.001 },
+        disagreementRounds: {
+            candidateBetter: 80,
+            parentBetter: 20
+        }
+    };
+    assert.strictEqual(
+        promotionDecision(parent, candidate, diagnostics).accepted, true);
+    diagnostics.disagreementRounds = {
+        candidateBetter: 52,
+        parentBetter: 48
+    };
+    assert.strictEqual(
+        promotionDecision(parent, candidate, diagnostics).accepted, false);
 });

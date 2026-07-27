@@ -26,7 +26,12 @@ class CandidateValueNetwork(nn.Module):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--experience", required=True)
+    parser.add_argument(
+        "--experience",
+        required=True,
+        action="append",
+        help="replay buffer; repeat to train on multiple buffers",
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument("--resume")
     parser.add_argument("--hidden", type=int, default=256)
@@ -66,7 +71,58 @@ def load_experience(path: str):
     return metadata, features, targets
 
 
-def export_artifact(model, metadata, args, device, train_loss, validation_loss):
+def load_experiences(paths):
+    loaded = [load_experience(path) for path in paths]
+    first = loaded[0][0]
+    for path, (metadata, _, _) in zip(paths[1:], loaded[1:]):
+        for key in (
+            "kind",
+            "dtype",
+            "featureNames",
+            "columns",
+            "rulesVersion",
+            "heuristicBotVersion",
+        ):
+            if metadata.get(key) != first.get(key):
+                raise ValueError(f"experience {key} mismatch in {path}")
+
+    metadata = dict(first)
+    metadata["rows"] = sum(item[0]["rows"] for item in loaded)
+    rounds = [item[0].get("rounds") for item in loaded]
+    metadata["rounds"] = sum(rounds) if all(
+        isinstance(value, int) for value in rounds
+    ) else None
+    metadata["workerCount"] = sum(
+        item[0].get("workerCount") or 0 for item in loaded
+    ) or None
+    metadata["workerSeeds"] = [
+        seed
+        for item in loaded
+        for seed in (item[0].get("workerSeeds") or [])
+    ] or None
+    metadata["sources"] = [
+        {
+            "path": os.path.abspath(path),
+            "rows": item[0]["rows"],
+            "rounds": item[0].get("rounds"),
+            "policy": item[0].get("policy"),
+        }
+        for path, item in zip(paths, loaded)
+    ]
+    features = torch.cat([item[1] for item in loaded], dim=0)
+    targets = torch.cat([item[2] for item in loaded], dim=0)
+    return metadata, features, targets
+
+
+def export_artifact(
+    model,
+    metadata,
+    args,
+    device,
+    train_loss,
+    validation_loss,
+    selected_epoch,
+):
     fc1_weight = model.fc1.weight.detach().cpu().tolist()
     fc1_bias = model.fc1.bias.detach().cpu().tolist()
     out_weight = model.out.weight.detach().cpu().squeeze(0).tolist()
@@ -86,12 +142,14 @@ def export_artifact(model, metadata, args, device, train_loss, validation_loss):
             "trainedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "optimizer": "AdamW",
             "epochs": args.epochs,
+            "selectedEpoch": selected_epoch,
             "batchSize": args.batch_size,
             "learningRate": args.learning_rate,
             "seed": args.seed,
             "device": str(device),
             "torchVersion": torch.__version__,
             "experienceRows": metadata["rows"],
+            "experienceSources": metadata.get("sources"),
             "experienceKind": metadata.get("kind"),
             "experienceRounds": metadata.get("rounds"),
             "experienceWorkerCount": metadata.get("workerCount"),
@@ -138,9 +196,12 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    metadata, features, targets = load_experience(args.experience)
+    metadata, features, targets = load_experiences(args.experience)
     device = select_device(args.device)
-    print(f"device={device} rows={len(features)} torch={torch.__version__}")
+    print(
+        f"device={device} rows={len(features)} "
+        f"buffers={len(args.experience)} torch={torch.__version__}"
+    )
     if device.type == "cuda":
         print(f"gpu={torch.cuda.get_device_name(0)}")
 
@@ -169,6 +230,10 @@ def main():
     loss_function = nn.MSELoss()
     final_train_loss = float("nan")
     final_validation_loss = float("nan")
+    best_train_loss = float("nan")
+    best_validation_loss = float("inf")
+    best_epoch = 0
+    best_state = None
 
     for epoch in range(args.epochs):
         epoch_started = time.perf_counter()
@@ -210,9 +275,28 @@ def main():
             f"seconds={time.perf_counter() - epoch_started:.2f}",
             flush=True,
         )
+        if final_validation_loss < best_validation_loss:
+            best_validation_loss = final_validation_loss
+            best_train_loss = final_train_loss
+            best_epoch = epoch + 1
+            best_state = {
+                name: value.detach().cpu().clone()
+                for name, value in model.state_dict().items()
+            }
 
+    model.load_state_dict(best_state)
+    print(
+        f"selected-epoch={best_epoch:03d} "
+        f"train={best_train_loss:.6f} validation={best_validation_loss:.6f}"
+    )
     artifact = export_artifact(
-        model, metadata, args, device, final_train_loss, final_validation_loss
+        model,
+        metadata,
+        args,
+        device,
+        best_train_loss,
+        best_validation_loss,
+        best_epoch,
     )
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     temporary = f"{args.output}.tmp"
