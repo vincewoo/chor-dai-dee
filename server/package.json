@@ -16,6 +16,8 @@
     "bot:ppo:bootstrap": "node scripts/create-ppo-bootstrap.js",
     "bot:ppo:distill": "node scripts/run-ppo-distillation.js",
     "bot:ppo:experience": "node scripts/generate-ppo-experience.js",
+    "bot:ppo:human": "node scripts/convert-human-ppo-export.js",
+    "bot:ppo:human:train": "../.venv-rl/bin/python scripts/train_ppo_imitation_gpu.py",
     "bot:ppo:train": "../.venv-rl/bin/python scripts/train_ppo_gpu.py",
     "bot:ppo:generation": "node scripts/run-ppo-generation.js",
     "gamelog:verify": "node scripts/verify-gamelog.js",

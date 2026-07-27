@@ -80,7 +80,7 @@ function actionKey(record) {
         .join(',');
 }
 
-function reconstructDecision(record) {
+function reconstructActionSet(record) {
     const hand = cards(record.obs.hand);
     const playedCards = cards(record.obs.played);
     const pileCards = record.obs.pile ? cards(record.obs.pile.cards) : null;
@@ -108,8 +108,16 @@ function reconstructDecision(record) {
         hand, lastPlayedHand, isFirstTurn, gameContext
     });
     const key = actionKey(record);
-    const chosen = options.find(option => option.key === key);
-    if (chosen) return chosen.features;
+    let chosenIndex = options.findIndex(option => option.key === key);
+    if (chosenIndex !== -1) {
+        return {
+            actionFeatures: options.map(option => [...option.features]),
+            chosenIndex,
+            heuristicIndex: options.findIndex(
+                option => option.isHeuristicChoice),
+            exactActionAdded: false
+        };
+    }
 
     // BotLogic deliberately abstracts large action sets to a few strategic
     // representatives. Humans can legally choose another suit allocation of
@@ -136,27 +144,56 @@ function reconstructDecision(record) {
                 BotLogic.evaluateTrickValue(hand, ctx, gamePhase), false)
             : BotLogic.scoreLeadMove(move, hand, ctx, gamePhase, false);
         const heuristic = options.find(option => option.isHeuristicChoice);
-        return encodeCandidate({
-            hand,
-            lastPlayedHand,
-            isFirstTurn,
-            gameContext,
-            option: {
+        const heuristicKey = heuristic ? heuristic.key : null;
+        const expanded = [
+            ...options.map(option => ({
+                action: option.action,
+                key: option.key,
+                move: option.move,
+                score: option.score
+            })),
+            {
                 action: 'play',
                 key,
                 move,
                 score: scored.score
-            },
-            optionIndex: options.length,
-            optionCount: options.length + 1,
-            heuristicKey: heuristic ? heuristic.key : null
+            }
+        ].sort((left, right) => {
+            const leftScore = Number.isFinite(left.score)
+                ? left.score : -Number.MAX_VALUE;
+            const rightScore = Number.isFinite(right.score)
+                ? right.score : -Number.MAX_VALUE;
+            return rightScore - leftScore;
         });
+        chosenIndex = expanded.findIndex(option => option.key === key);
+        return {
+            actionFeatures: expanded.map((option, optionIndex) =>
+                encodeCandidate({
+                    hand,
+                    lastPlayedHand,
+                    isFirstTurn,
+                    gameContext,
+                    option,
+                    optionIndex,
+                    optionCount: expanded.length,
+                    heuristicKey
+                })),
+            chosenIndex,
+            heuristicIndex: expanded.findIndex(
+                option => option.key === heuristicKey),
+            exactActionAdded: true
+        };
     }
 
     throw new Error(
         `${record.game} round ${record.round} ply ${record.ply}: ` +
         `chosen action ${key} absent from reconstructed candidates`
     );
+}
+
+function reconstructDecision(record) {
+    const decision = reconstructActionSet(record);
+    return decision.actionFeatures[decision.chosenIndex];
 }
 
 function roundKey(record) {
@@ -299,6 +336,7 @@ module.exports = {
     parseArgs,
     readShards,
     reconstructDecision,
+    reconstructActionSet,
     utilitiesByRound,
     convert
 };

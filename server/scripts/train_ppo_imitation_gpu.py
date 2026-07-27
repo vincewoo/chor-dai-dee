@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Distill an RL value policy's decisions into the deployable PPO actor."""
+"""Supervised fine-tuning for the deployable PPO actor.
+
+Supports both synthetic teacher decisions and pseudonymized human decisions.
+Human data carries a preassigned whole-game validation flag so decisions from
+one game can never leak across the training and validation sets.
+"""
 
 import argparse
 import copy
@@ -27,7 +32,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
-    parser.add_argument("--override-weight", type=float, default=12)
+    parser.add_argument("--override-weight", type=float)
     parser.add_argument("--entropy-coef", type=float, default=0.001)
     parser.add_argument("--validation-fraction", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=7331)
@@ -144,6 +149,32 @@ def evaluate(
     }
 
 
+def split_indices(metadata, decisions, rng, validation_fraction):
+    validation_mask = metadata.get("flagMasks", {}).get("validation")
+    if validation_mask is not None:
+        flags = decisions["flags"].astype(np.uint16)
+        validation_indices = np.flatnonzero(
+            (flags & np.uint16(validation_mask)) != 0
+        )
+        training_indices = np.flatnonzero(
+            (flags & np.uint16(validation_mask)) == 0
+        )
+        strategy = metadata.get("splitStrategy", "preassigned")
+    else:
+        permutation = rng.permutation(len(decisions))
+        validation_count = max(
+            1, int(len(permutation) * validation_fraction)
+        )
+        validation_indices = permutation[:validation_count]
+        training_indices = permutation[validation_count:]
+        strategy = "random-decisions"
+    if not len(training_indices) or not len(validation_indices):
+        raise ValueError(
+            "imitation experience needs non-empty training and validation sets"
+        )
+    return training_indices, validation_indices, strategy
+
+
 def export_artifact(model, source, metadata, args, epoch, validation):
     def values(tensor):
         return tensor.detach().cpu().tolist()
@@ -170,19 +201,29 @@ def export_artifact(model, source, metadata, args, epoch, validation):
                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
             ),
             "algorithm": "behavior-cloning",
-            "teacher": metadata["teacher"],
-            "teacherHeuristicWeight": metadata["teacherHeuristicWeight"],
-            "teacherOverrideMargin": metadata["teacherOverrideMargin"],
+            "datasetKind": metadata["kind"],
+            "teacher": metadata.get("teacher"),
+            "teacherHeuristicWeight": metadata.get("teacherHeuristicWeight"),
+            "teacherOverrideMargin": metadata.get("teacherOverrideMargin"),
             "epochsRequested": args.epochs,
             "selectedEpoch": epoch,
             "batchSize": args.batch_size,
             "learningRate": args.learning_rate,
             "overrideWeight": args.override_weight,
             "entropyCoefficient": args.entropy_coef,
-            "experienceRounds": metadata["rounds"],
+            "experienceRounds": metadata.get("rounds"),
+            "experienceGames": metadata.get("sourceGames"),
             "experienceDecisions": metadata["decisions"],
             "experienceActionRows": metadata["actionRows"],
-            "teacherOverrides": metadata["teacherOverrides"],
+            "teacherOverrides": metadata.get(
+                "teacherOverrides", metadata.get("humanOverrides", 0)
+            ),
+            "trainingDecisions": metadata.get("trainingDecisions"),
+            "validationDecisions": metadata.get("validationDecisions"),
+            "splitStrategy": metadata.get(
+                "splitStrategy", "random-decisions"
+            ),
+            "baselineValidation": metadata.get("_baselineValidation"),
             "validation": validation,
             "resumedFrom": os.path.basename(args.resume),
         },
@@ -198,8 +239,17 @@ def main():
     device = select_device(args.device)
     metadata, actions, decisions, offsets = load_data(
         args.experience,
-        expected_kinds=("chor-dai-dee-ppo-imitation-experience",),
+        expected_kinds=(
+            "chor-dai-dee-ppo-imitation-experience",
+            "chor-dai-dee-human-ppo-imitation-experience",
+        ),
     )
+    override_weight = args.override_weight
+    if override_weight is None:
+        override_weight = metadata.get("recommendedOverrideWeight", 12)
+    if not np.isfinite(override_weight) or override_weight <= 0:
+        raise ValueError("--override-weight must be positive")
+    args.override_weight = override_weight
     source, model = load_model(args.resume, metadata["featureNames"])
     model = model.to(device)
     for parameter in list(model.critic1.parameters()) + \
@@ -213,20 +263,44 @@ def main():
     )
 
     rng = np.random.default_rng(args.seed)
-    permutation = rng.permutation(len(decisions))
-    validation_count = max(
-        1, int(len(permutation) * args.validation_fraction)
+    training_indices, validation_indices, split_strategy = split_indices(
+        metadata,
+        decisions,
+        rng,
+        args.validation_fraction,
     )
-    validation_indices = permutation[:validation_count]
-    training_indices = permutation[validation_count:]
+    teacher_overrides = metadata.get(
+        "teacherOverrides", metadata.get("humanOverrides", 0)
+    )
     print(
         f"device={device} decisions={len(decisions)} "
         f"actions={metadata['actionRows']} "
-        f"teacher_overrides={metadata['teacherOverrides']} "
+        f"teacher_overrides={teacher_overrides} "
+        f"train={len(training_indices)} validation={len(validation_indices)} "
+        f"split={split_strategy} override_weight={override_weight:g} "
         f"torch={torch.__version__}"
     )
     if device.type == "cuda":
         print(f"gpu={torch.cuda.get_device_name(0)}")
+
+    baseline_validation = evaluate(
+        model,
+        actions,
+        decisions,
+        offsets,
+        validation_indices,
+        device,
+        args.batch_size,
+        override_weight,
+    )
+    metadata["_baselineValidation"] = baseline_validation
+    print(
+        f"baseline validation={baseline_validation['loss']:.5f} "
+        f"agreement={baseline_validation['agreement'] * 100:.2f}% "
+        f"override_agreement="
+        f"{baseline_validation['overrideAgreement'] * 100:.2f}%",
+        flush=True,
+    )
 
     best_state = copy.deepcopy(model.state_dict())
     best_validation = None
@@ -276,16 +350,29 @@ def main():
             f"seconds={time.perf_counter() - started:.2f}",
             flush=True,
         )
-        score = (
-            validation["overrideAgreement"],
-            validation["agreement"],
-            -validation["loss"],
-        )
-        best_score = None if best_validation is None else (
-            best_validation["overrideAgreement"],
-            best_validation["agreement"],
-            -best_validation["loss"],
-        )
+        if metadata["kind"] == \
+                "chor-dai-dee-human-ppo-imitation-experience":
+            score = (
+                -validation["loss"],
+                validation["agreement"],
+                validation["overrideAgreement"],
+            )
+            best_score = None if best_validation is None else (
+                -best_validation["loss"],
+                best_validation["agreement"],
+                best_validation["overrideAgreement"],
+            )
+        else:
+            score = (
+                validation["overrideAgreement"],
+                validation["agreement"],
+                -validation["loss"],
+            )
+            best_score = None if best_validation is None else (
+                best_validation["overrideAgreement"],
+                best_validation["agreement"],
+                -best_validation["loss"],
+            )
         if best_score is None or score > best_score:
             best_state = copy.deepcopy(model.state_dict())
             best_validation = validation

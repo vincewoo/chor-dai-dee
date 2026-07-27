@@ -394,49 +394,63 @@ The game-log exporter already emits the observation, legal set, chosen action,
 policy provenance, and round labels needed for this adapter. Do not mix hidden
 opponent hands into policy features.
 
-Convert one pseudonymized player with:
+Convert every pseudonymized human in an export into PPO action groups with:
 
 ```bash
-npm run bot:rl:human -- \
+npm run bot:ppo:human -- \
   --input ../fly-export/2026-07-27 \
-  --subject h:YOUR_PSEUDONYMIZED_SUBJECT \
-  --output /tmp/vince-human.rl-experience.bin
+  --all-subjects \
+  --output /tmp/human.ppo \
+  --validation-fraction 0.20
 ```
 
-The first production export contained 2,176 eligible decisions for this subject
-across 318 player-round trajectories after automatic passes and disconnected
-turns were removed. The converter reads all seats only to reconstruct zero-sum
-round utility; `hidden.hands` is never accessed. It also preserves a legal human
-play when the heuristic bot's intentionally compressed action enumeration does
-not contain that exact card allocation.
+Use one or more repeated `--subject h:...` flags instead of `--all-subjects` to
+select particular players. The converter filters automatic passes, fallbacks,
+disconnected turns, joined-mid-game seats, and incomplete rounds. It assigns
+whole games to a deterministic training or validation split, never reads
+`hidden.hands`, and preserves a legal human action when the bot's intentionally
+compressed action enumeration does not contain that exact card allocation.
 
-Fine-tune a copy of the GPU candidate with a deliberately small learning rate:
+Fine-tune a disposable copy of the promoted actor with a deliberately small
+learning rate:
 
 ```bash
-npm run bot:rl:gpu -- \
-  --experience /tmp/vince-human.rl-experience.bin \
-  --resume ai/rl-value-model-gpu-v1.json \
-  --output /tmp/rl-value-human-candidate.json \
-  --hidden 256 \
+npm run bot:ppo:human:train -- \
+  --experience /tmp/human.ppo \
+  --resume ai/ppo-policy-gpu-v1.json \
+  --output /tmp/ppo-human-candidate.json \
   --epochs 3 \
   --batch-size 512 \
   --learning-rate 0.00001 \
   --device cuda
 ```
 
-This adapter fits the eventual round value of actions the human actually chose.
-It is not behavior cloning: unchosen candidates do not have counterfactual
-human labels. On a first 12,000-round held-out self-play benchmark (seed 777),
-the fine-tuned copy won 26.2% versus 26.3% for its base checkpoint, while its
-average penalty improved from 2.93 to 2.92. That is neutral evidence, so the
-personal-data checkpoint remains in `/tmp` and is not a versioned promotion.
+This is behavior cloning, not PPO: recorded human action probabilities are
+unknown, so old human trajectories must never be passed to the clipped PPO
+optimizer. The trainer updates the actor only, leaves the critic frozen, honors
+the converter's whole-game split, and reports the base and fine-tuned model on
+the same held-out human games.
+
+The 2026-07-27 validation corpus produced 2,473 deliberate decisions from 37
+games: 2,067 decisions from 30 games for training and 406 decisions from seven
+games for validation. Eleven legal human actions were outside the compressed
+bot action set and were retained. A three-epoch generation-8 adapter reduced
+held-out negative log likelihood from 2.62756 to 2.62231 while top-choice
+agreement remained 68.97%. On 48,000 paired self-play rounds, the candidate and
+generation 8 both rounded to 26.9% wins, 2.75 average points, and 2.44 cards
+left. They disagreed on 0.175% of rounds, with the human candidate better on 28
+and generation 8 better on 27. This validates the pipeline but is not evidence
+for promotion; the candidate remains in `/tmp`.
+
+The older `bot:rl:human` command remains available for outcome-value experiments
+with the pre-PPO learner.
 
 The 6.8 GB `.venv-rl` is ignored by Git and deliberately not part of the base
 server install or Docker image.
 
 ## Current boundary
 
-The model and benchmark are experimental and are not wired to the live
-`useAdvancedBots` toggle yet. That toggle is logged as `bot_ppo` with the legacy
-checkpoint name. Reusing it would silently mislabel training data. Live rollout
-needs a distinct policy family/checkpoint in the game-log schema first.
+The promoted PPO actor is wired to live bots and coaching through the explicit
+environment settings above. Human behavior cloning remains offline and
+experimental: a candidate must recover through fresh self-play PPO and pass the
+same paired promotion gates before replacing the versioned runtime checkpoint.
