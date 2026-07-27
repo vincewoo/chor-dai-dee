@@ -227,6 +227,26 @@ test('missing a round-winning play is called out, with the move that was there',
     assert.doesNotMatch(note.bestMoveLabel, SUIT_MENTION);
 });
 
+test('a note names passing as the alternative, not just the plays', () => {
+    // Answering a low single by breaking up a pair of 2s: the model would
+    // rather sit the trick out, and a note that omits that is half a
+    // correction - there are no cards to draw, so the label has to say it.
+    const myHand = hand('3D', '3C', '4H', '4S', 'KH', 'KS', 'AD', 'AC', '2H', '2S');
+    const quality = evaluateMove({
+        hand: myHand, lastPlayedHand: pile('QS'), gameContext: context([11, 11, 11]),
+        action: 'play', cards: [card('2', 'S')]
+    });
+
+    assert.strictEqual(quality.bestMove, 'pass');
+    assert.strictEqual(quality.bestMoveCards, null);
+
+    const note = Coach.react({ quality, action: 'play', handSize: myHand.length });
+    assert.ok(note, 'spending a 2 where the model would pass must be worth a word');
+    assert.strictEqual(note.bestAction, 'pass');
+    assert.match(note.bestMoveLabel, /pass/i);
+    assert.doesNotMatch(note.bestMoveLabel, SUIT_MENTION);
+});
+
 test('finding the forced win is credited, and only while credit is in budget', () => {
     // 2S is unbeatable as a single and leaves a pair that plays out next turn.
     const myHand = hand('2S', '5D', '5C');

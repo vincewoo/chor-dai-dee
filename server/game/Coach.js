@@ -312,11 +312,20 @@ function react({ quality, action, handSize, playedOut = false, allowCredit = tru
         action,
         // What the coach would have done instead. Null when the player already
         // found the best move, which is every credit kind.
+        //
+        // Passing gets named too. It is a real alternative and often the one
+        // being missed - a note that says the move was expensive without saying
+        // what to do instead is only half a correction - but it has no cards to
+        // draw, so the label carries it alone.
         bestAction: quality.rank === 1 ? null : (quality.bestMove === 'pass' ? 'pass' : 'play'),
         bestMoveCards: quality.rank === 1 ? null : quality.bestMoveCards,
-        bestMoveLabel: quality.rank === 1 || !quality.bestMoveCards
+        bestMoveLabel: quality.rank === 1
             ? null
-            : describeMove({ type: quality.bestMoveType, cards: quality.bestMoveCards }),
+            : (quality.bestMove === 'pass'
+                ? 'pass — let the trick go'
+                : (quality.bestMoveCards
+                    ? describeMove({ type: quality.bestMoveType, cards: quality.bestMoveCards })
+                    : null)),
         factors: presentFactors(explained ? explained.bestMoveFactors : null)
     };
 }
