@@ -28,6 +28,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--experience", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--resume")
     parser.add_argument("--hidden", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=8192)
@@ -91,14 +92,40 @@ def export_artifact(model, metadata, args, device, train_loss, validation_loss):
             "device": str(device),
             "torchVersion": torch.__version__,
             "experienceRows": metadata["rows"],
-            "experienceRounds": metadata["rounds"],
-            "experienceSeed": metadata["seed"],
-            "rulesVersion": metadata["rulesVersion"],
-            "heuristicBotVersion": metadata["heuristicBotVersion"],
+            "experienceKind": metadata.get("kind"),
+            "experienceRounds": metadata.get("rounds"),
+            "experienceTrajectories": metadata.get("trajectories"),
+            "experienceSeed": metadata.get("seed"),
+            "experienceSubject": metadata.get("subject"),
+            "rulesVersion": metadata.get("rulesVersion"),
+            "heuristicBotVersion": metadata.get("heuristicBotVersion"),
             "trainingLoss": train_loss,
             "validationLoss": validation_loss,
+            "resumedFrom": os.path.basename(args.resume) if args.resume else None,
         },
     }
+
+
+def load_artifact(model, artifact_path, feature_names):
+    with open(artifact_path, "r", encoding="utf-8") as handle:
+        artifact = json.load(handle)
+    if artifact.get("kind") != "chor-dai-dee-candidate-value":
+        raise ValueError("resume artifact is not a candidate-value model")
+    if artifact.get("featureNames") != feature_names:
+        raise ValueError("resume artifact feature schema does not match experience")
+    if artifact.get("hiddenSize") != model.fc1.out_features:
+        raise ValueError(
+            f"resume hidden size {artifact.get('hiddenSize')} does not match "
+            f"--hidden {model.fc1.out_features}"
+        )
+    parameters = artifact["parameters"]
+    with torch.no_grad():
+        model.fc1.weight.copy_(torch.tensor(parameters["w1"], dtype=torch.float32))
+        model.fc1.bias.copy_(torch.tensor(parameters["b1"], dtype=torch.float32))
+        model.out.weight.copy_(
+            torch.tensor(parameters["w2"], dtype=torch.float32).unsqueeze(0)
+        )
+        model.out.bias.copy_(torch.tensor([parameters["b2"]], dtype=torch.float32))
 
 
 def main():
@@ -129,7 +156,11 @@ def main():
     features = features.to(device)
     targets = targets.to(device)
 
-    model = CandidateValueNetwork(features.shape[1], args.hidden).to(device)
+    model = CandidateValueNetwork(features.shape[1], args.hidden)
+    if args.resume:
+        load_artifact(model, args.resume, metadata["featureNames"])
+        print(f"resumed={args.resume}")
+    model = model.to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.learning_rate, weight_decay=1e-5
     )

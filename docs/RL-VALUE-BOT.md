@@ -155,6 +155,43 @@ The game-log exporter already emits the observation, legal set, chosen action,
 policy provenance, and round labels needed for this adapter. Do not mix hidden
 opponent hands into policy features.
 
+Convert one pseudonymized player with:
+
+```bash
+npm run bot:rl:human -- \
+  --input ../fly-export/2026-07-27 \
+  --subject h:YOUR_PSEUDONYMIZED_SUBJECT \
+  --output /tmp/vince-human.rl-experience.bin
+```
+
+The first production export contained 2,176 eligible decisions for this subject
+across 318 player-round trajectories after automatic passes and disconnected
+turns were removed. The converter reads all seats only to reconstruct zero-sum
+round utility; `hidden.hands` is never accessed. It also preserves a legal human
+play when the heuristic bot's intentionally compressed action enumeration does
+not contain that exact card allocation.
+
+Fine-tune a copy of the GPU candidate with a deliberately small learning rate:
+
+```bash
+npm run bot:rl:gpu -- \
+  --experience /tmp/vince-human.rl-experience.bin \
+  --resume ai/rl-value-model-gpu-v1.json \
+  --output /tmp/rl-value-human-candidate.json \
+  --hidden 256 \
+  --epochs 3 \
+  --batch-size 512 \
+  --learning-rate 0.00001 \
+  --device cuda
+```
+
+This adapter fits the eventual round value of actions the human actually chose.
+It is not behavior cloning: unchosen candidates do not have counterfactual
+human labels. On a first 12,000-round held-out self-play benchmark (seed 777),
+the fine-tuned copy won 26.2% versus 26.3% for its base checkpoint, while its
+average penalty improved from 2.93 to 2.92. That is neutral evidence, so the
+personal-data checkpoint remains in `/tmp` and is not a versioned promotion.
+
 The 6.8 GB `.venv-rl` is ignored by Git and deliberately not part of the base
 server install or Docker image.
 

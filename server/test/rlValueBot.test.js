@@ -16,6 +16,10 @@ const {
     main: trainMain, roundUtilities, saveCheckpoint
 } = require('../scripts/train-rl-value-bot');
 const { main: experienceMain } = require('../scripts/generate-rl-experience');
+const {
+    reconstructDecision,
+    utilitiesByRound
+} = require('../scripts/convert-human-export');
 
 function card(text) {
     const suit = text.slice(-1);
@@ -219,4 +223,46 @@ test('experience generator writes a shape-pinned float32 replay buffer', () => {
         fs.statSync(output).size,
         metadata.rows * (FEATURE_NAMES.length + 1) * 4
     );
+});
+
+test('human export reconstructs zero-sum utility from all four seat labels', () => {
+    const records = [0, 1, 2, 3].map(seat => ({
+        game: 'g1',
+        round: 2,
+        seat,
+        labels: {
+            round_points: [0, 5, 20, 9][seat],
+            won_round: seat === 0
+        }
+    }));
+    const utility = utilitiesByRound(records).get('g1:2');
+    assert.strictEqual(utility.get(0), 34 / 117);
+    assert.strictEqual(utility.get(1), -5 / 117);
+    assert.strictEqual(utility.get(2), -20 / 117);
+    assert.strictEqual(utility.get(3), -9 / 117);
+});
+
+test('human export preserves legal plays outside the bot action abstraction', () => {
+    // BotLogic keeps only low/high suit representatives for a straight. This
+    // mixed-suit allocation is server-legal and was observed in the real
+    // corpus, so conversion must encode it instead of silently dropping it.
+    const record = {
+        game: 'human-fixture',
+        round: 3,
+        ply: 0,
+        action: { type: 'play', cards: [0, 6, 10, 13, 16] },
+        obs: {
+            hand: [0, 6, 9, 10, 11, 13, 16, 17, 23, 26, 36, 40, 49],
+            pile: null,
+            pile_owner_rel: null,
+            counts_rel: [13, 13, 13],
+            passed_rel: [],
+            pass_count: 0,
+            played: [],
+            history: []
+        }
+    };
+    const features = reconstructDecision(record);
+    assert.strictEqual(features.length, FEATURE_NAMES.length);
+    assert.ok(features.every(Number.isFinite));
 });

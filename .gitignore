@@ -38,6 +38,7 @@ __pycache__/
 # Generated reinforcement-learning corpora (checkpoints are versioned explicitly)
 *.rl-experience.bin
 *.rl-experience.bin.json
+fly-export/
 
 # OS files
 .DS_Store
