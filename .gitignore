@@ -33,6 +33,11 @@ server/database.sqlite3
 # Python
 *.pyc
 __pycache__/
+.venv-rl/
+
+# Generated reinforcement-learning corpora (checkpoints are versioned explicitly)
+*.rl-experience.bin
+*.rl-experience.bin.json
 
 # OS files
 .DS_Store
