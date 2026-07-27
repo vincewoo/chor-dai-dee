@@ -14,6 +14,7 @@ const {
     encodeDecisions,
     DECISION_BYTES
 } = require('../scripts/generate-ppo-experience');
+const { selectPPOCandidate } = require('../scripts/run-ppo-generation');
 
 function card(text) {
     const suit = text.slice(-1);
@@ -129,4 +130,24 @@ test('GAE trajectories and ragged binary records retain decision grouping', () =
     assert.strictEqual(decisions.readUInt16LE(0), 2);
     assert.strictEqual(decisions.readUInt16LE(2), 1);
     assert.strictEqual(decisions.readUInt16LE(DECISION_BYTES), 1);
+});
+
+test('PPO selection retains the full update when behavior is tied', () => {
+    const candidate = alpha => ({
+        alpha,
+        result: {
+            averagePoints: 3,
+            winRatePercent: 25
+        },
+        diagnostics: {
+            allPairedRounds: {
+                meanUtilityDelta: 0
+            }
+        }
+    });
+    assert.strictEqual(
+        selectPPOCandidate([candidate(0.25), candidate(0.5), candidate(1)])
+            .alpha,
+        1
+    );
 });

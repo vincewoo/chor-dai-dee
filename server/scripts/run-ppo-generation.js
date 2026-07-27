@@ -279,6 +279,30 @@ function compact(diagnostics) {
     };
 }
 
+function selectPPOCandidate(candidates) {
+    const selected = selectConservativeCandidate(candidates);
+    const selectedUtility =
+        selected.diagnostics.allPairedRounds.meanUtilityDelta;
+    const behaviorallyTied = candidates.filter(candidate =>
+        Math.abs(
+            candidate.diagnostics.allPairedRounds.meanUtilityDelta -
+            selectedUtility
+        ) <= 1e-15 &&
+        Math.abs(
+            candidate.result.averagePoints -
+            selected.result.averagePoints
+        ) <= 1e-15 &&
+        Math.abs(
+            candidate.result.winRatePercent -
+            selected.result.winRatePercent
+        ) <= 1e-15
+    );
+    return behaviorallyTied.reduce(
+        (best, candidate) => candidate.alpha > best.alpha ? candidate : best,
+        behaviorallyTied[0]
+    );
+}
+
 async function benchmark(checkpoint, rounds, seed, reportPath, overrideMargin) {
     return run(process.execPath, [
         path.join(__dirname, 'bench-rl-value-bot.js'),
@@ -414,7 +438,7 @@ async function main(argv = process.argv) {
         };
     });
     fs.unlinkSync(selectionParentPath);
-    const selected = selectConservativeCandidate(evaluated);
+    const selected = selectPPOCandidate(evaluated);
     fs.writeFileSync(path.join(workDir, 'selection.json'), `${JSON.stringify({
         rounds: args.selectionRounds,
         seed: selectionSeed,
@@ -520,5 +544,6 @@ module.exports = {
     main,
     parseArgs,
     mergeShards,
-    interpolate
+    interpolate,
+    selectPPOCandidate
 };
