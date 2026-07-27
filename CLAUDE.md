@@ -29,6 +29,12 @@ Tests (server, uses Node's built-in runner):
 cd server/
 npm test             # regression tests (bot logic, game log, replay, export)
 npm run bench        # bot self-play benchmark + behavioural metrics
+npm run bot:rl:train # train the candidate-value policy with canonical JS rules
+npm run bot:rl:bench # held-out learned-vs-heuristic evaluation
+npm run bot:rl:experience # generate canonical replay rows for batched training
+npm run bot:rl:generation # parallel collect, CUDA-train, paired benchmark + diagnose
+npm run bot:rl:human # convert exported human games to public-state replay rows
+npm run bot:rl:gpu   # optimize replay rows with project-local CUDA PyTorch
 ```
 
 Game log tooling (all off unless `GAMELOG_ENABLED=1`):
@@ -286,6 +292,10 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 - `BotContext.js` - Builds the observation a bot reasons over. Shared by live
   play, the self-play benchmark, and the game-log replayer so all three see
   identical features. Takes plain seat-indexed state, never a Room.
+- `RLValueModel.js` / `RLValueBot.js` - Experimental variable-action value
+  policy. Server-generated legal candidates are scored from public information,
+  with a margin-gated heuristic fallback. Training and promotion instructions
+  are in `docs/RL-VALUE-BOT.md`; it is not yet the live advanced-bot policy.
 - `TapeCodec.js` - Game-log encodings: 52-byte deal blob, 52-bit card masks
   (built with BigInt - JS bitwise operators truncate to 32 bits), action/source
   /flag codes, `think_ms` clamping

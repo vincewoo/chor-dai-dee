@@ -1,7 +1,8 @@
 // server/game/RoomManager.js
 const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
-const { BotLogic, BOT_LOGIC_VERSION } = require('./BotLogic');
+const { BotLogic } = require('./BotLogic');
+const { createBotPolicy, createCoachAdvisor } = require('./BotPolicy');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
@@ -97,6 +98,12 @@ class Room {
         this.pendingTimeouts = new Map(); // Map of timeout type -> timeout ID
         this.trickWinGeneration = 0; // Generation counter for trick win timeouts
         this.isBotThinking = false; // Flag to prevent multiple bot turn calculations
+        // Snapshotted per room so an in-flight game never changes policy when
+        // configuration changes during a rolling deploy.
+        this.botPolicy = createBotPolicy();
+        // Hints may use a different policy from the seats. Reactions and
+        // grading remain deterministic; this advisor is read only.
+        this.coachAdvisor = createCoachAdvisor();
         this.roundTransitionInProgress = false; // Flag to prevent multiple next_round calls
 
         // ---- Game-log recording ----
@@ -1253,8 +1260,9 @@ class Room {
                     lastPlayedHand: this.lastPlayedHand,
                     isFirstTurn,
                     // Profile-free, exactly as gradeDecision does it: the hint
-                    // and the grade that follows it have to be the same opinion.
-                    gameContext: this.buildSeatContext(seat, null)
+                    // and policy advisor see the same public observation.
+                    gameContext: this.buildSeatContext(seat, null),
+                    policyAdvisor: this.coachAdvisor
                 })
             };
         } catch (err) {
@@ -1589,11 +1597,14 @@ class Room {
             // the game-log replayer and the move-quality evaluator so all of
             // them see identical features - see BotContext.js.
             //
-            // Per-bot temperament, so four bots at one table do not all play
-            // identically. Grading passes null here instead.
+            // Per-bot temperament belongs to the heuristic policy. PPO was
+            // trained profile-free and deliberately sees the canonical public
+            // observation used by replay and grading.
             const gameContext = this.buildSeatContext(
                 this.currentTurnIndex,
-                BotLogic.getBotProfile(currentPlayer.name)
+                this.botPolicy.kind === 'heuristic'
+                    ? BotLogic.getBotProfile(currentPlayer.name)
+                    : null
             );
 
             const handleBotMove = (move, reasoning) => {
@@ -1651,12 +1662,12 @@ class Room {
             };
 
             try {
-                const result = BotLogic.getBotMove(
+                const result = this.botPolicy.getMove(
                     currentPlayer.hand,
                     this.lastPlayedHand,
                     isFirstTurn,
                     gameContext,
-                    this.debugMode // Pass debug mode flag
+                    { captureReasoning: this.debugMode }
                 );
 
                 // Extract move and reasoning based on debug mode
@@ -1710,9 +1721,8 @@ class Room {
     /**
      * Describes each seat for the game log.
      *
-     * Every bot seat is the heuristic policy: it is the only one there is.
-     * `bot_ppo` survives in the store's occupant vocabulary for games logged
-     * while the PPO bot existed, but nothing writes it any more.
+     * The room snapshots one configured bot policy, so its seat provenance is
+     * stable even across a rolling deploy.
      */
     describeSeats(fromRound = this.roundNumber) {
         return this.players.map((p, seat) => {
@@ -1720,13 +1730,12 @@ class Room {
                 return {
                     seat,
                     fromRound,
-                    occupant: 'bot_heuristic',
-                    // The bot's name is a policy parameter, not a label:
-                    // getBotProfile derives temperament from it, so two bots at
-                    // one table play measurably differently.
+                    occupant: this.botPolicy.occupant,
+                    // Stable seat label for heuristic profiles and corpus
+                    // attribution. policyRef identifies the PPO artifact.
                     subjectKey: p.name,
-                    policyGen: BOT_LOGIC_VERSION,
-                    policyRef: null
+                    policyGen: this.botPolicy.policyGen,
+                    policyRef: this.botPolicy.policyRef
                 };
             }
             return {

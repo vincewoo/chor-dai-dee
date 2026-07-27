@@ -59,12 +59,10 @@ test('schema is created and a game round-trips', async () => {
     assert.strictEqual(row.point_threshold, 50);
     assert.strictEqual(row.schema_version, gamelog.SCHEMA_VERSION);
     assert.ok(row.rules_version > 0);
+    assert.strictEqual(row.advanced_bots, 0);
     assert.strictEqual(row.ended_at, null, 'a new game must be open');
 });
 
-// 'bot_ppo' is no longer written by the server -- the advanced bot is gone --
-// but the store must keep accepting it so games logged before the removal stay
-// readable and re-insertable.
 test('seats record which policy generation played', async () => {
     const gameKey = await gamelog.openGame(baseGame(), [
         { seat: 0, fromRound: 1, occupant: 'human', subjectKey: 'alice', userId: 7,
@@ -85,6 +83,10 @@ test('seats record which policy generation played', async () => {
     assert.strictEqual(rows[1].occupant, 'bot_ppo');
     assert.strictEqual(rows[1].policy_gen, 136500);
     assert.strictEqual(rows[2].policy_gen, 1);
+    const { get } = await gamelog.openForRead();
+    const game = await get(
+        'SELECT advanced_bots FROM mlog_game WHERE game_key = ?', [gameKey]);
+    assert.strictEqual(game.advanced_bots, 1);
 });
 
 test('a seat swap closes one segment and opens the next', async () => {

@@ -19,6 +19,14 @@ primary_region = 'lax'
   # or a machine restart. Must be exactly "1" -- "true" leaves recording off.
   # See docs/GAME-STATE-HISTORY-STORE.md.
   GAMELOG_ENABLED = "1"
+  # Promoted generation-6 PPO policy. Inference is pure JavaScript; Fly does
+  # not need Python, CUDA, or a GPU. Set BOT_POLICY back to "heuristic" and
+  # COACH_POLICY back to "move_quality" for a configuration-only rollback.
+  BOT_POLICY = "ppo"
+  BOT_PPO_OVERRIDE_MARGIN = "0.02"
+  COACH_POLICY = "ppo"
+  COACH_PPO_MIN_MARGIN = "2"
+  COACH_PPO_OVERRIDE_MARGIN = "0.02"
   # The server exits itself once it has been continuously idle -- no rooms and
   # no sockets -- for this many minutes, and Fly starts it again on the next
   # request (auto_start_machines). This is the knob that controls scale-to-zero,

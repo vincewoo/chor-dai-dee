@@ -172,12 +172,22 @@ function isRiskyMove(move, hand, ctx, gamePhase) {
  * @param {object} gameContext     From BotContext.buildGameContext.
  * @param {string|null} keepKey    A cardKey the trim must not drop.
  * @param {boolean} explain        Capture the per-move factor breakdown.
+ * @param {boolean} trim           Bound work for UI grading. Learning policies
+ *                                 set false so every legal action is scored.
  *
  * @returns {{ ctx, candidates, options, forcedWins, gamePhase }} `options` is
  *          empty when nothing is legal - the pass was forced. Profile is always
  *          stripped: the yardstick has to be the same for everyone.
  */
-function rankOptions({ hand, lastPlayedHand = null, isFirstTurn = false, gameContext = {}, keepKey = null, explain = false }) {
+function rankOptions({
+    hand,
+    lastPlayedHand = null,
+    isFirstTurn = false,
+    gameContext = {},
+    keepKey = null,
+    explain = false,
+    trim = true
+}) {
     const ctx = BotLogic.buildDecisionContext(hand, { ...gameContext, profile: null });
     const candidates = BotLogic.legalCandidates(ctx.allValidMoves, lastPlayedHand, isFirstTurn);
     const gamePhase = BotLogic.getGamePhase(hand.length);
@@ -188,7 +198,7 @@ function rankOptions({ hand, lastPlayedHand = null, isFirstTurn = false, gameCon
 
     // Trim for cost, but never drop the move the caller cares about.
     let toScore = candidates;
-    if (candidates.length > MAX_SCORED_CANDIDATES) {
+    if (trim && candidates.length > MAX_SCORED_CANDIDATES) {
         const half = Math.floor(MAX_SCORED_CANDIDATES / 2);
         const sorted = [...candidates].sort((a, b) => a.value - b.value);
         const kept = [...sorted.slice(0, half), ...sorted.slice(-half)];

@@ -12,7 +12,7 @@
 
 const { Big2Rules } = require('../game/Big2Rules');
 const { SUITS, RANKS } = require('../game/Deck');
-const { calculateRoundScores } = require('../game/Scoring');
+const { calculateRoundScores, calculateDragonScores } = require('../game/Scoring');
 const { buildGameContext } = require('../game/BotContext');
 const { HAND_TYPE_ORDINALS } = require('../game/Big2Rules');
 const { ACTION, encodeCards } = require('../game/TapeCodec');
@@ -60,6 +60,20 @@ function deal(rng) {
  */
 function playRound(seats, hands, startingSeat = null, onPly = null) {
     hands = hands.map(h => [...h]);
+
+    // Match RoomManager's immediate Hong Kong dragon resolution. Training on
+    // the ordinary play loop for a deal production would end before the first
+    // decision teaches a different game.
+    const dragonSeat = hands.findIndex(hand => Big2Rules.isDragon(hand));
+    if (dragonSeat !== -1) {
+        return {
+            winnerSeat: dragonSeat,
+            cardsLeft: hands.map((_, seat) => seat === dragonSeat ? 0 : 13),
+            tricks: 0,
+            plays: 0,
+            dragon: true
+        };
+    }
     let ply = 0;
     const record = (entry) => { if (onPly) onPly({ ply: ply++, ...entry }); };
 
@@ -179,7 +193,136 @@ function playRound(seats, hands, startingSeat = null, onPly = null) {
         winnerSeat: winnerSeat === -1 ? 0 : winnerSeat,
         cardsLeft: hands.map(h => h.length),
         tricks,
-        plays
+        plays,
+        dragon: false
+    };
+}
+
+/**
+ * Async counterpart used to compare process-backed or remote policies against
+ * the synchronous heuristic baseline. The transition rules intentionally
+ * mirror playRound; only the policy call is awaited.
+ */
+async function playRoundAsync(seats, hands, startingSeat = null, onPly = null) {
+    hands = hands.map(h => [...h]);
+    const dragonSeat = hands.findIndex(hand => Big2Rules.isDragon(hand));
+    if (dragonSeat !== -1) {
+        return {
+            winnerSeat: dragonSeat,
+            cardsLeft: hands.map((_, seat) => seat === dragonSeat ? 0 : 13),
+            tricks: 0,
+            plays: 0,
+            dragon: true
+        };
+    }
+
+    let ply = 0;
+    const record = (entry) => { if (onPly) onPly({ ply: ply++, ...entry }); };
+    let turn = startingSeat;
+    if (turn === null) {
+        turn = hands.findIndex(h => h.some(c => c.rank === '3' && c.suit === 'D'));
+    }
+    const isOpeningRound = startingSeat === null;
+    let lastPlayedHand = null;
+    let passedSeats = new Set();
+    let consecutivePasses = 0;
+    const playedCards = [];
+    const trickHistory = [];
+    let tricks = 0;
+    let plays = 0;
+    let guard = 0;
+
+    while (guard++ < 2000) {
+        if (hands[turn].length === 0) break;
+        const isFirstTurn = isOpeningRound && playedCards.length === 0;
+        const gameContext = buildGameContext({
+            hands,
+            seat: turn,
+            passedSeats,
+            passCount: consecutivePasses,
+            playedCards,
+            trickHistory,
+            lastPlayedHand,
+            profile: seats[turn].profile || null,
+            rng: seats[turn].rng || undefined
+        });
+        const logic = seats[turn].logic;
+        const move = await Promise.resolve(
+            logic.getBotMove(hands[turn], lastPlayedHand, isFirstTurn, gameContext, false));
+
+        if (move && move.length) {
+            const validated = Big2Rules.validateHand(move);
+            if (!validated) throw new Error(`${seats[turn].name} produced an invalid hand: ${JSON.stringify(move)}`);
+            if (lastPlayedHand && !Big2Rules.canBeat(validated, lastPlayedHand)) {
+                throw new Error(`${seats[turn].name} produced a hand that cannot beat the pile`);
+            }
+            if (isFirstTurn && !move.some(c => c.rank === '3' && c.suit === 'D')) {
+                throw new Error(`${seats[turn].name} opened without the 3 of Diamonds`);
+            }
+            for (const card of move) {
+                const idx = hands[turn].findIndex(c => c.rank === card.rank && c.suit === card.suit);
+                if (idx === -1) throw new Error(`${seats[turn].name} played a card it does not hold`);
+                hands[turn].splice(idx, 1);
+                playedCards.push({ rank: card.rank, suit: card.suit, value: card.value });
+            }
+            plays++;
+            record({
+                seat: turn,
+                action: ACTION.PLAY,
+                cards_mask: encodeCards(validated.cards),
+                hand_type: HAND_TYPE_ORDINALS[validated.type],
+                hand_value: validated.value,
+                obs: gameContext
+            });
+            trickHistory.push({ seat: turn, action: 'play', hand: validated });
+            lastPlayedHand = { ...validated, seat: turn };
+            if (hands[turn].length === 0) break;
+
+            const isSingleBig2 = validated.type === 'SINGLE' &&
+                validated.cards[0].rank === '2' && validated.cards[0].suit === 'S';
+            if (isSingleBig2) {
+                passedSeats = new Set([0, 1, 2, 3].filter(s => s !== turn));
+                consecutivePasses = 3;
+                for (const seat of [1, 2, 3].map(i => (turn + i) % 4)) {
+                    record({ seat, action: ACTION.AUTO_PASS, cards_mask: 0 });
+                }
+            } else {
+                passedSeats = new Set();
+                consecutivePasses = 0;
+            }
+        } else {
+            record({ seat: turn, action: ACTION.PASS, cards_mask: 0, obs: gameContext });
+            const { seat: _pileSeat, ...pileHand } = lastPlayedHand;
+            trickHistory.push({ seat: turn, action: 'pass', hand: pileHand });
+            passedSeats.add(turn);
+            consecutivePasses++;
+        }
+
+        if (lastPlayedHand) {
+            const others = [0, 1, 2, 3].filter(s => s !== lastPlayedHand.seat);
+            if (others.every(s => passedSeats.has(s))) {
+                turn = lastPlayedHand.seat;
+                lastPlayedHand = null;
+                passedSeats = new Set();
+                consecutivePasses = 0;
+                tricks++;
+                continue;
+            }
+        }
+        let attempts = 0;
+        do {
+            turn = (turn + 1) % 4;
+            attempts++;
+        } while (passedSeats.has(turn) && attempts < 4);
+    }
+
+    const winnerSeat = hands.findIndex(h => h.length === 0);
+    return {
+        winnerSeat: winnerSeat === -1 ? 0 : winnerSeat,
+        cardsLeft: hands.map(h => h.length),
+        tricks,
+        plays,
+        dragon: false
     };
 }
 
@@ -205,7 +348,9 @@ function runBenchmark(contenders, { rounds = 400, seed = 12345 } = {}) {
         const result = playRound(seats, hands, null);
 
         const players = seats.map((s, i) => ({ id: i, name: s.name, isBot: true, hand: { length: result.cardsLeft[i] } }));
-        const scores = calculateRoundScores({ id: result.winnerSeat }, players);
+        const scores = result.dragon
+            ? calculateDragonScores({ id: result.winnerSeat }, players)
+            : calculateRoundScores({ id: result.winnerSeat }, players);
 
         for (let s = 0; s < 4; s++) {
             const st = stats[seatToContender(s)];
@@ -223,6 +368,58 @@ function runBenchmark(contenders, { rounds = 400, seed = 12345 } = {}) {
         winRate: s.wins / s.rounds,
         avgPoints: s.points / s.rounds,
         avgCardsLeft: s.cardsLeft / s.rounds
+    }));
+}
+
+async function runBenchmarkAsync(contenders, {
+    rounds = 400,
+    seed = 12345,
+    onRoundStart = null,
+    onRoundEnd = null
+} = {}) {
+    const rng = makeRng(seed);
+    const stats = contenders.map(c => ({
+        name: c.name, wins: 0, points: 0, cardsLeft: 0, rounds: 0
+    }));
+
+    for (let r = 0; r < rounds; r++) {
+        const rotation = r % 4;
+        const seats = [0, 1, 2, 3].map(s => contenders[(s + rotation) % 4]);
+        const seatToContender = s => (s + rotation) % 4;
+        if (onRoundStart) onRoundStart({ round: r, rotation, seats });
+        const result = await playRoundAsync(seats, deal(rng), null);
+        const players = seats.map((s, i) => ({
+            id: i, name: s.name, isBot: true, hand: { length: result.cardsLeft[i] }
+        }));
+        const scores = result.dragon
+            ? calculateDragonScores({ id: result.winnerSeat }, players)
+            : calculateRoundScores({ id: result.winnerSeat }, players);
+
+        for (let s = 0; s < 4; s++) {
+            const stat = stats[seatToContender(s)];
+            stat.rounds++;
+            stat.points += scores[s].roundPoints;
+            stat.cardsLeft += result.cardsLeft[s];
+            if (s === result.winnerSeat) stat.wins++;
+        }
+        if (onRoundEnd) {
+            onRoundEnd({
+                round: r,
+                rotation,
+                seats,
+                seatToContender,
+                result,
+                scores
+            });
+        }
+    }
+    return stats.map(stat => ({
+        name: stat.name,
+        rounds: stat.rounds,
+        wins: stat.wins,
+        winRate: stat.wins / stat.rounds,
+        avgPoints: stat.points / stat.rounds,
+        avgCardsLeft: stat.cardsLeft / stat.rounds
     }));
 }
 
@@ -259,4 +456,13 @@ function measureHighCardLeakage(logic, { handSize = 9, samples = 400, seed = 7 }
     return { trials, burned, rate: trials ? burned / trials : 0 };
 }
 
-module.exports = { makeRng, buildDeck, deal, playRound, runBenchmark, measureHighCardLeakage };
+module.exports = {
+    makeRng,
+    buildDeck,
+    deal,
+    playRound,
+    playRoundAsync,
+    runBenchmark,
+    runBenchmarkAsync,
+    measureHighCardLeakage
+};

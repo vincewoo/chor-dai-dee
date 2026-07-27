@@ -30,6 +30,22 @@ server/database.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
 
+# Python
+*.pyc
+__pycache__/
+.venv-rl/
+
+# Generated reinforcement-learning corpora (checkpoints are versioned explicitly)
+*.rl-experience.bin
+*.rl-experience.bin.json
+*.ppo.actions.bin
+*.ppo.decisions.bin
+*.ppo.json
+fly-export/
+server/.rl-generations/
+server/.ppo-generations/
+server/.ppo-distillation/
+
 # OS files
 .DS_Store
 Thumbs.db
