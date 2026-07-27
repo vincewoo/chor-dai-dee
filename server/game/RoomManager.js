@@ -432,7 +432,17 @@ class Room {
             rating_sigma: DEFAULT_SIGMA,
             rating: calculateDisplayRating(DEFAULT_MU, DEFAULT_SIGMA),
             hand: oldPlayer.hand, // Keep the same hand
-            isDisconnected: false
+            isDisconnected: false,
+            // Who this seat belonged to before the swap. The bot's name carries
+            // it for display, but a display string is not an identity: without
+            // this, a game abandoned after the last human walked out recorded
+            // four bots and nobody to attribute the walkout to. describeParticipants()
+            // is the consumer. Structured, not parsed back out of the name.
+            replacedHuman: {
+                name: oldPlayer.name,
+                isGuest: !!oldPlayer.isGuest,
+                joinedMidGame: !!oldPlayer.joinedMidGame
+            }
         };
 
         // Replace the player in the array
@@ -1758,6 +1768,39 @@ class Room {
                 ratingMu: p.rating_mu ?? null,
                 ratingSigma: p.rating_sigma ?? null,
                 joinedMidGame: Boolean(p.joinedMidGame)
+            };
+        });
+    }
+
+    /**
+     * Who to credit each seat to in game_participants, with their score so far.
+     *
+     * A seat vacated mid-game is overwritten by a bot (replaceWithBot), so by
+     * the time a game is abandoned the humans who were playing it may all be
+     * gone from `players`. Attributing the seat to the bot would record a rage
+     * quit with nobody in it: no user_id, so the game never appears in the
+     * quitter's history, and rounds_won reading 0 because roundsWonByName is
+     * keyed on the human's name.
+     *
+     * The bot keeps playing the seat, but the person who owned it is who the
+     * row is about, so `isBot` reports the occupant this row describes, not
+     * whatever is sitting there at teardown.
+     *
+     * Scores come from cumulativeScores, which replaceWithBot migrates to the
+     * bot's id -- so the score is correct under either attribution and is read
+     * off the live seat regardless.
+     *
+     * Returns plain data; index.js resolves account ids and writes the rows.
+     */
+    describeParticipants() {
+        return this.players.map((p) => {
+            const human = p.isBot ? p.replacedHuman : null;
+            return {
+                username: human ? human.name : p.name,
+                isBot: p.isBot && !human,
+                isGuest: human ? human.isGuest : Boolean(p.isGuest),
+                score: this.cumulativeScores[p.id] || 0,
+                roundsWon: this.roundsWonByName[human ? human.name : p.name] || 0
             };
         });
     }

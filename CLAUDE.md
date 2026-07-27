@@ -448,6 +448,14 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   since an unfinished game has no standings. Anything reading placements must
   filter `final_placement IS NOT NULL` rather than assume abandoned games have
   no rows.
+  Abandoned rows are attributed to whoever *owned* each seat, not to whoever sat
+  in it at teardown: leaving mid-game swaps the seat for a bot
+  (`replaceWithBot`, which stashes the displaced player on `replacedHuman`), so
+  reading `room.players` recorded a rage quit containing four bots and nobody to
+  attribute it to. `Room.describeParticipants()` resolves this and is the only
+  place that should. Completed games deliberately keep the opposite rule — those
+  rows carry a real placement, and someone who left half a game ago should not
+  be credited with one a bot earned.
 
 #### Core Tables
 - `users` - User accounts (id, username, password_hash)

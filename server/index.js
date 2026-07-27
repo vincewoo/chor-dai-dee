@@ -193,6 +193,14 @@ const IN_PLAY_STATES = new Set(['playing', 'round_over']);
  * that read placements must exclude NULLs rather than assume abandoned games
  * have no participant rows (see getComebackStats).
  *
+ * They are also attributed to whoever owned each seat rather than to whatever
+ * is sitting in it (room.describeParticipants), since a walkout botifies the
+ * seat before this runs. The completed-game path deliberately does not do this:
+ * there the row carries a final placement, and a player who left half a game
+ * ago should not be credited with one a bot finished for them. An abandoned
+ * game has no placement to mis-award, so the only question its rows answer is
+ * who was in it.
+ *
  * Never throws: this runs on room teardown, where the room is going away
  * regardless and a failed write must not take the sweep or a socket handler
  * down with it.
@@ -226,16 +234,19 @@ async function recordAbandonedGame(room, abandonReason) {
                 maxPoints: room.pointThreshold
             });
 
-            for (const player of room.players) {
-                const participant = player.isBot ? null : await lookupUser(player.name);
+            // Seats, not the players currently sitting in them: a human who
+            // walked out has already been swapped for a bot, and they are who
+            // this game is a rage quit by.
+            for (const seat of room.describeParticipants()) {
+                const participant = (seat.isBot || seat.isGuest) ? null : await lookupUser(seat.username);
                 await saveGameParticipant({
                     gameId: room.gameId,
                     userId: participant ? participant.id : null,
-                    username: player.name,
-                    isBot: player.isBot,
+                    username: seat.username,
+                    isBot: seat.isBot,
                     finalPlacement: null,
-                    finalScore: room.cumulativeScores[player.id] || 0,
-                    roundsWon: room.roundsWonByName[player.name] || 0
+                    finalScore: seat.score,
+                    roundsWon: seat.roundsWon
                 });
             }
         });

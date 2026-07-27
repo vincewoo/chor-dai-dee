@@ -1,8 +1,10 @@
 // server/test/roomLifecycle.test.js
 //
-// Room bookkeeping that outlives a single round. A room is not a game: it waits
-// in the lobby before anyone presses Start, and it is reused for rematches and
-// lobby restarts, so a game's duration cannot be measured from the room.
+// Room bookkeeping that outlives a single round: when the current game started,
+// and who each seat belongs to once players have been swapped out of it. Both
+// feed game_history, and both used to be read off the wrong field -- duration
+// from the room's creation rather than the game's start, and participants from
+// whoever happened to be sitting in the seat at teardown.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -72,4 +74,74 @@ test('a lobby restart restamps gameStartedAt too', async () => {
     room.startGame();
 
     assert.ok(room.gameStartedAt > firstGameStartedAt);
+});
+
+test('describeParticipants credits a seat to the human who left it', () => {
+    const { room } = startedRoom(['Alice', 'Bob', 'Cara', 'Dan']);
+    room.roundsWonByName = { Alice: 2, Bob: 1 };
+    room.cumulativeScores[room.players[0].id] = 17;
+
+    const alice = room.players[0];
+    assert.strictEqual(alice.name, 'Alice');
+    room.replaceWithBot(alice.id);
+
+    // The seat is played by a bot now, and its display name says so.
+    assert.strictEqual(room.players[0].isBot, true);
+    assert.strictEqual(room.players[0].name, 'Bot (Alice)');
+
+    // But the row is about Alice, who is the one who quit.
+    const seats = room.describeParticipants();
+    assert.strictEqual(seats[0].username, 'Alice');
+    assert.strictEqual(seats[0].isBot, false);
+
+    // Score survives the id migration replaceWithBot performs...
+    assert.strictEqual(seats[0].score, 17);
+    // ...and rounds won resolve, since roundsWonByName is keyed on the human's
+    // name and would read 0 against 'Bot (Alice)'.
+    assert.strictEqual(seats[0].roundsWon, 2);
+});
+
+test('describeParticipants reports genuine bots as bots', () => {
+    const { room } = startedRoom(['Alice']);
+
+    const seats = room.describeParticipants();
+    assert.strictEqual(seats.length, 4);
+    assert.strictEqual(seats[0].username, 'Alice');
+    assert.strictEqual(seats[0].isBot, false);
+
+    // Auto-filled seats were never anyone's.
+    for (const seat of seats.slice(1)) {
+        assert.strictEqual(seat.isBot, true);
+        assert.ok(seat.username.startsWith('Bot '));
+    }
+});
+
+test('describeParticipants keeps a departed guest un-attributable', () => {
+    const { room } = startedRoom(['Alice', 'Guest123']);
+    const guest = room.players.find(p => p.name === 'Guest123');
+    guest.isGuest = true;
+
+    room.replaceWithBot(guest.id);
+
+    const seat = room.describeParticipants().find(s => s.username === 'Guest123');
+    // Recorded as a person rather than a bot, but flagged so index.js does not
+    // try to resolve an account for a name that never had one.
+    assert.strictEqual(seat.isBot, false);
+    assert.strictEqual(seat.isGuest, true);
+});
+
+// The whole point of the last_human_left abandon path: every seat is a bot by
+// the time the room is torn down, so reading room.players directly recorded a
+// rage quit with nobody in it.
+test('a room emptied of humans still names them in describeParticipants', () => {
+    const { room } = startedRoom(['Alice', 'Bob']);
+
+    for (const name of ['Alice', 'Bob']) {
+        room.replaceWithBot(room.players.find(p => p.name === name).id);
+    }
+
+    assert.strictEqual(room.hasOnlyBots(), true);
+
+    const named = room.describeParticipants().filter(s => !s.isBot).map(s => s.username);
+    assert.deepStrictEqual(named.sort(), ['Alice', 'Bob']);
 });
