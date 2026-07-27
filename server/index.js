@@ -97,6 +97,21 @@ const createUserLookup = () => {
     };
 };
 
+// When the game currently in a room began. Not room.createdAt: a room waits in
+// the lobby before anyone presses Start, and the same room is reused for
+// rematches and lobby restarts, so createdAt charged every game for the wait
+// before it and charged a rematch for the whole previous game.
+//
+// This is also what game_history.start_time already holds -- it is written by
+// start_game and saveGameHistory's ON CONFLICT clause never updates it -- so
+// reading it here is what makes duration_seconds agree with end_time minus
+// start_time instead of contradicting it.
+//
+// The fallback is defensive. Every path that reports a duration runs after
+// startGame() has stamped gameStartedAt; without it a missed case would report
+// a duration measured from 1970 rather than an obviously wrong small number.
+const gameStartTime = (room) => new Date(room.gameStartedAt ?? room.createdAt);
+
 // Voice Chat WebRTC Signaling - Global voice rooms tracker
 const voiceRooms = {}; // Track voice participants by room
 
@@ -192,7 +207,7 @@ async function recordAbandonedGame(room, abandonReason) {
 
     try {
         const endTime = new Date();
-        const startTime = new Date(room.createdAt);
+        const startTime = gameStartTime(room);
         const lookupUser = createUserLookup();
 
         await withTransaction(async () => {
@@ -765,7 +780,7 @@ io.on('connection', (socket) => {
         // Save game history for dragon win
         try {
             const endTime = new Date();
-            const startTime = new Date(room.createdAt);
+            const startTime = gameStartTime(room);
             const durationSeconds = Math.floor((endTime - startTime) / 1000);
             const winner = dragonWinner.isBot ? null : await lookupUser(dragonWinner.name);
 
@@ -1075,7 +1090,7 @@ io.on('connection', (socket) => {
             // Save game history when game completes
             try {
                 const endTime = new Date();
-                const startTime = new Date(room.createdAt);
+                const startTime = gameStartTime(room);
                 const durationSeconds = Math.floor((endTime - startTime) / 1000);
                 const winner = gameWinner.isBot ? null : await lookupUser(gameWinner.name);
 

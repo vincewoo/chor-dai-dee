@@ -621,6 +621,13 @@ or `fly machine restart`.
 
 ### Game Implementation Details
 - Rooms are stored in-memory (lost on server restart)
+- A room outlives the games played in it (rematches, lobby restarts), so
+  `room.createdAt` and `room.gameStartedAt` are different questions. Anything
+  reporting a *game's* duration reads `gameStartedAt`, stamped by `startGame()`
+  where `roundNumber === 0` — the one "a new game is starting" signal a room
+  gets, and the same place both reuse paths mint a new `gameId`. Reading
+  `createdAt` charged every game for the lobby wait before it and charged a
+  rematch for the whole previous game.
 - Card value encoding: `rankIndex * 4 + suitIndex` for comparison
 - Reconnection handling: players can rejoin in-progress games
 - Bot decisions captured with reasoning for debug panel

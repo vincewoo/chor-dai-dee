@@ -78,7 +78,14 @@ class Room {
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
-        this.createdAt = Date.now(); // Track when room was created
+        this.createdAt = Date.now(); // Track when the ROOM was created
+        // When the current GAME started, which is not when the room was created:
+        // a room sits in the lobby before anyone presses Start, and it is reused
+        // for rematches and lobby restarts. Set by startGame(). Everything that
+        // reports a game's duration reads this; using createdAt charged each
+        // game for the lobby wait before it, and charged a rematch for the
+        // entire previous game.
+        this.gameStartedAt = null;
         this.trickWinPending = false; // Flag to indicate a trick win is pending (delay before clearing)
         this.trickWinner = null; // The player who won the current trick
         this.trickIndex = 0; // Tricks resolved this round, for tricks-contested counting
@@ -707,6 +714,10 @@ class Room {
             // starting" signal a room gets -- both startRematch() and the lobby
             // restart come back through here.
             this.roundsWonByName = {};
+            // Stamped here for the same reason, and in lockstep with the new
+            // gameId those two paths mint: this is the moment the game whose
+            // duration we report actually begins.
+            this.gameStartedAt = Date.now();
             // Decisions accumulate across the rounds of one game and are
             // flushed at game end. Nothing cleared them between games, so a
             // rematch re-counted the previous game's decisions and re-inserted
