@@ -45,6 +45,19 @@ export const SUIT_SYMBOLS = { D: '♦︎', C: '♣︎', H: '♥︎', S: '♠︎'
 // Face-card center emoji (kept for readability, matching the desktop Card.jsx).
 export const FACE_EMOJI = { K: '🫅', Q: '👸', J: '🤴' };
 
+// The one warm-red the table uses for "this is about to go badly for you":
+// disconnects, a score near the threshold, and an opponent about to go out.
+export const ALERT_RED = '#ff8d96';
+
+// An opponent this close to emptying their hand changes how everyone else
+// should be playing — hold a 2 for one more trick and it scores against you.
+// At and below the threshold the card count is drawn as an alert, not a stat.
+export const LOW_CARD_THRESHOLD = 3;
+
+// `count` is 0 both before the deal and after a player goes out, so a low-card
+// alert needs at least one card left to be about anything.
+export const isLowCards = (count) => count > 0 && count <= LOW_CARD_THRESHOLD;
+
 const RANK_PLURAL = (rank) => (rank === '6' ? '6es' : rank + 's');
 
 // Human-readable description of a played hand, given the server hand type.

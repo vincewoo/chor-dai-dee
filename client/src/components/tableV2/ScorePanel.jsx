@@ -1,4 +1,5 @@
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
+import { ALERT_RED, isLowCards } from '../../theme/tableTheme';
 
 // Persistent scoreboard rail for the desktop table. On mobile the same numbers
 // live behind the HUD's Info toggle (ScoreStrip); here there is room to keep
@@ -27,6 +28,9 @@ function ScorePanel({ players, myPlayerId, currentTurn, pointThreshold, acc }) {
                 {ranked.map((p, i) => {
                     const isMe = p.id === myPlayerId;
                     const isTurn = p.id === currentTurn;
+                    // Only an *opponent* running out is a warning; your own
+                    // short hand is the thing you were playing for.
+                    const lowCards = !isMe && isLowCards(p.cardCount);
                     // Colour the score by how close it is to ending the game.
                     const scoreColor = p.cumulativeScore >= threshold * 0.8
                         ? '#ff8d96'
@@ -52,7 +56,13 @@ function ScorePanel({ players, myPlayerId, currentTurn, pointThreshold, acc }) {
                                     {p.name}{isMe ? ' (You)' : ''}
                                 </div>
                                 <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 10, fontWeight: 600 }}>
-                                    {p.cardCount} {p.cardCount === 1 ? 'card' : 'cards'}
+                                    {/* No extra "left" here: the rail is 244px
+                                        and the added word wraps the line. The
+                                        alert colour is the signal; the seat
+                                        badge carries the wording. */}
+                                    <span style={lowCards ? { color: ALERT_RED, fontWeight: 800 } : undefined}>
+                                        {p.cardCount} {p.cardCount === 1 ? 'card' : 'cards'}
+                                    </span>
                                     {p.rating !== undefined && ` · ${p.rating}`}
                                     {p.isDisconnected && ' · DC'}
                                 </div>

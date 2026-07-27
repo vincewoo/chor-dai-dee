@@ -475,6 +475,13 @@ Unsetting it is the kill switch.
 - Seats are positioned relative to the viewer, so you are always at the bottom.
 - Opponent card counts show on each seat; on desktop the score rail repeats
   them alongside ratings.
+- **Low-card alert:** at or below `LOW_CARD_THRESHOLD` (3) cards an opponent's
+  seat switches to `ALERT_RED` — warmed badge, red ring (`cddAlertRing`, off
+  under reduced motion) and a "N LEFT" chip in place of the plain count — and
+  the score rail reddens their card line. The colour is deliberately fixed
+  rather than accent-driven, so it never collides with the accent turn glow and
+  never gets themed away. Only opponents alert: your own short hand is the goal,
+  not a warning (`isLowCards` + the `!isMe` guard in `ScorePanel`).
 
 ### Visual Features
 - Custom logo and favicon

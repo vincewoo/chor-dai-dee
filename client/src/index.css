@@ -113,6 +113,13 @@ body {
   0%, 100% { box-shadow: 0 0 0 0 var(--cdd-acc-soft, rgba(110, 231, 168, .5)); }
   50%      { box-shadow: 0 0 0 9px rgba(0, 0, 0, 0); }
 }
+/* The low-card alert ring on an opponent seat. Deliberately not accent-driven:
+   "someone is about to go out" must not change colour with the user's theme,
+   and must stay distinguishable from the accent turn glow. */
+@keyframes cddAlertRing {
+  0%, 100% { box-shadow: 0 8px 18px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .09), 0 0 0 0 rgba(255, 141, 150, .45); }
+  50%      { box-shadow: 0 8px 18px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .09), 0 0 0 7px rgba(255, 141, 150, 0); }
+}
 @keyframes cddGlow {
   0%, 100% { box-shadow: 0 0 0 2px var(--cdd-acc, #6ee7a8), 0 0 16px 3px var(--cdd-acc-soft, rgba(110, 231, 168, .5)); }
   50%      { box-shadow: 0 0 0 2px var(--cdd-acc, #6ee7a8), 0 0 5px 1px var(--cdd-acc-soft, rgba(110, 231, 168, .25)); }
