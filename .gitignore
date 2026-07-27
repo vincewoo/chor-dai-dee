@@ -44,6 +44,7 @@ __pycache__/
 fly-export/
 server/.rl-generations/
 server/.ppo-generations/
+server/.ppo-distillation/
 
 # OS files
 .DS_Store

@@ -15,6 +15,9 @@ const {
     DECISION_BYTES
 } = require('../scripts/generate-ppo-experience');
 const { selectPPOCandidate } = require('../scripts/run-ppo-generation');
+const {
+    encodeTeacherDecisions
+} = require('../scripts/generate-ppo-imitation-experience');
 
 function card(text) {
     const suit = text.slice(-1);
@@ -150,4 +153,20 @@ test('PPO selection retains the full update when behavior is tied', () => {
             .alpha,
         1
     );
+});
+
+test('imitation records preserve teacher overrides', () => {
+    const buffer = encodeTeacherDecisions([{
+        actionFeatures: [
+            Array(FEATURE_NAMES.length).fill(0),
+            Array(FEATURE_NAMES.length).fill(1)
+        ],
+        chosenIndex: 1,
+        heuristicIndex: 0
+    }]);
+    assert.strictEqual(buffer.length, DECISION_BYTES);
+    assert.strictEqual(buffer.readUInt16LE(0), 2);
+    assert.strictEqual(buffer.readUInt16LE(2), 1);
+    assert.strictEqual(buffer.readUInt16LE(4), 0);
+    assert.strictEqual(buffer.readUInt16LE(6), 1);
 });

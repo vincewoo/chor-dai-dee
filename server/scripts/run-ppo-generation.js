@@ -199,6 +199,14 @@ function mergeShards(shards, output) {
             (sum, item) => sum + item.metadata.rounds, 0),
         learnerTrajectories: items.reduce(
             (sum, item) => sum + item.metadata.learnerTrajectories, 0),
+        ...(items.some(item =>
+            Number.isFinite(item.metadata.teacherOverrides)) ? {
+                teacherOverrides: items.reduce(
+                    (sum, item) =>
+                        sum + (item.metadata.teacherOverrides || 0),
+                    0
+                )
+            } : {}),
         seed: null,
         workerCount: items.length,
         workerSeeds: items.map(item => item.seed),

@@ -69,6 +69,30 @@ test('candidate encoder returns the pinned finite feature schema', () => {
     }
 });
 
+test('value policy can capture every candidate for policy distillation', () => {
+    const decisions = [];
+    const bot = new RLValueBot(new RLValueModel({
+        hiddenSize: 7,
+        seed: 19
+    }), {
+        captureTrajectory: true,
+        onDecision: decision => decisions.push(decision)
+    });
+    bot.getBotMove(
+        hand('3D 3C 4D 5D 6D 7D 8D AS 2S'),
+        null,
+        true,
+        context()
+    );
+    assert.strictEqual(decisions.length, 1);
+    assert.ok(decisions[0].actionFeatures.length > 1);
+    assert.strictEqual(
+        decisions[0].actionFeatures[decisions[0].chosenIndex].length,
+        FEATURE_NAMES.length
+    );
+    assert.ok(decisions[0].heuristicIndex >= 0);
+});
+
 test('opening action set is rules-faithful and always contains 3D', () => {
     const options = decisionOptions({
         hand: hand('3D 3C 4D 5D 6D 7D 8D 9S AS 2S'),

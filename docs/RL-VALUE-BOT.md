@@ -267,10 +267,30 @@ Create the deterministic heuristic bootstrap:
 npm run bot:ppo:bootstrap
 ```
 
+To start PPO from a trained value champion instead, distill its action choices
+into the actor first:
+
+```bash
+npm run bot:ppo:distill -- \
+  --teacher .rl-generations/gen-005/model.json \
+  --workers 8 \
+  --rounds 100000 \
+  --epochs 8 \
+  --benchmark-rounds 24000
+```
+
+This writes `ai/ppo-policy-value-bootstrap.json`. The collector records every
+legal candidate and the value teacher's choice. CUDA behavior cloning gives
+extra weight to the relatively rare decisions where the value policy overrides
+the heuristic, reports both overall and override agreement on a held-out set,
+and finishes with a paired fidelity benchmark. Its temporary corpus and reports
+live under `.ppo-distillation/` and are ignored by Git.
+
 Run a first generation and compare it with the current value champion:
 
 ```bash
 npm run bot:ppo:generation -- \
+  --input ai/ppo-policy-value-bootstrap.json \
   --baseline .rl-generations/gen-005/model.json \
   --workers 8 \
   --rounds 50000 \

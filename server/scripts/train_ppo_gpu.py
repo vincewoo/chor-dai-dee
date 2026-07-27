@@ -74,11 +74,16 @@ def select_device(requested):
     return torch.device(requested)
 
 
-def load_data(prefix):
+def load_data(
+    prefix,
+    expected_kinds=("chor-dai-dee-ppo-experience",),
+):
     with open(f"{prefix}.json", "r", encoding="utf-8") as handle:
         metadata = json.load(handle)
-    if metadata.get("kind") != "chor-dai-dee-ppo-experience":
-        raise ValueError("experience is not a PPO trajectory buffer")
+    if metadata.get("kind") not in expected_kinds:
+        raise ValueError(
+            f"unexpected experience kind: {metadata.get('kind')}"
+        )
     width = len(metadata["featureNames"])
     actions = np.memmap(
         f"{prefix}.actions.bin", dtype="<f4", mode="r"

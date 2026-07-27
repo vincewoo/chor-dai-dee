@@ -158,6 +158,7 @@ class RLValueBot {
         overrideMargin = 0.05,
         epsilon = 0,
         rng = Math.random,
+        captureTrajectory = false,
         onDecision = null
     } = {}) {
         this.model = model;
@@ -166,6 +167,7 @@ class RLValueBot {
         this.overrideMargin = overrideMargin;
         this.epsilon = epsilon;
         this.rng = rng;
+        this.captureTrajectory = captureTrajectory;
         this.onDecision = onDecision;
     }
 
@@ -202,10 +204,12 @@ class RLValueBot {
         }
 
         if (this.onDecision) {
-            this.onDecision({
+            const decision = {
                 features: [...chosen.features],
                 action: chosen.action,
                 key: chosen.key,
+                chosenIndex: options.indexOf(chosen),
+                heuristicIndex: heuristic ? options.indexOf(heuristic) : -1,
                 predictedValue: chosen.value,
                 maxPredictedValue: Math.max(
                     ...options.map(option => option.value)),
@@ -222,7 +226,12 @@ class RLValueBot {
                 blendedMargin: heuristic && rawChoice
                     ? rawChoice.blendedScore - heuristic.blendedScore
                     : null
-            });
+            };
+            if (this.captureTrajectory) {
+                decision.actionFeatures =
+                    options.map(option => [...option.features]);
+            }
+            this.onDecision(decision);
         }
         return chosen.action === 'pass' ? null : chosen.move.cards;
     }
