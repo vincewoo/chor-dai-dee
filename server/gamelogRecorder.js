@@ -55,7 +55,6 @@ async function recordGameStart(room) {
         roomId: room.id,
         gameMode: room.gameMode,
         pointThreshold: room.pointThreshold,
-        advancedBots: room.settings.useAdvancedBots,
         startedAt: Date.now(),
         previousGameId: room.previousGameId,
         chainKind: room.chainKind

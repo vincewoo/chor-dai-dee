@@ -458,23 +458,6 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Click and drag cards to reorder</p>
                                 </div>
 
-                                {/* <div className="border-l-4 border-yellow-500 bg-[#ffc94d]/10 p-4 rounded-r-lg mb-3">
-                                    <h4 className="font-bold text-[#f4f5f7] mb-2 flex items-center">
-                                        <span className="text-xl mr-2">🤖</span>
-                                        Advanced Bot AI
-                                    </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
-                                        Choose between simple and advanced bot difficulty. Advanced bots use sophisticated strategies.
-                                    </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
-                                        <li>"Poker First" strategy - preserves strong 5-card hands</li>
-                                        <li>Card counting and strategic passing</li>
-                                        <li>Combo-breaking heuristics</li>
-                                        <li>Optional debug panel to see bot reasoning</li>
-                                    </ul>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Access via settings gear icon in-game</p>
-                                </div>  */}
-
                                 <div className="border-l-4 border-yellow-500 bg-[#ffc94d]/10 p-4 rounded-r-lg mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2 flex items-center">
                                         <span className="text-xl mr-2">👥</span>
