@@ -241,3 +241,41 @@ test('human PPO eligibility requires a deliberate completed-round decision', () 
         false
     );
 });
+
+test('guest seats are excluded unless --include-guests asks for them', () => {
+    const guest = {
+        occupant: 'guest',
+        subject: null,
+        joined_mid_game: false,
+        forced_pass: false,
+        policy_fallback: false,
+        turn_disconnected: false,
+        action: { type: 'play', cards: [0] },
+        labels: { round_points: 3 }
+    };
+
+    assert.strictEqual(isHumanPPOEligible(guest, new Set(['h:test'])), false);
+    assert.strictEqual(
+        isHumanPPOEligible(guest, new Set(['h:test']), true), true);
+    // Guests are a pool, not a subject: an empty subject set still takes them.
+    assert.strictEqual(isHumanPPOEligible(guest, new Set(), true), true);
+
+    // Every other deliberateness filter still applies to a guest decision.
+    assert.strictEqual(
+        isHumanPPOEligible({ ...guest, forced_pass: true }, new Set(), true),
+        false
+    );
+    assert.strictEqual(
+        isHumanPPOEligible(
+            { ...guest, labels: { round_points: null } }, new Set(), true),
+        false
+    );
+
+    // An account seat whose user_id was missing at export time also has a null
+    // subject. Including guests must not sweep it in.
+    assert.strictEqual(
+        isHumanPPOEligible(
+            { ...guest, occupant: 'human' }, new Set(), true),
+        false
+    );
+});

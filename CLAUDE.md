@@ -34,6 +34,7 @@ npm run bot:rl:bench # held-out learned-vs-heuristic evaluation
 npm run bot:rl:experience # generate canonical replay rows for batched training
 npm run bot:rl:generation # parallel collect, CUDA-train, paired benchmark + diagnose
 npm run bot:rl:human # convert exported human games to public-state replay rows
+                     # (--include-guests to add guest seats as an anonymous pool)
 npm run bot:rl:gpu   # optimize replay rows with project-local CUDA PyTorch
 ```
 
@@ -423,6 +424,13 @@ outcome labels), `mlog_action` (the tape).
 
 Recording requires `GAMELOG_ENABLED=1` (there is no per-player opt-out).
 Unsetting it is the kill switch.
+
+Guest seats are recorded like any other - the tape is keyed on seat, not on who
+occupies it - but anonymously: `occupant` is `guest`, with no `subject_key`,
+`user_id` or rating. They are therefore selectable for training only as one
+undifferentiated pool, via `--include-guests` on either human converter (off by
+default). Their round labels are load-bearing regardless of whether you train on
+them, because a four-seat zero-sum utility cannot be reconstructed without them.
 
 ### Database Schema
 
