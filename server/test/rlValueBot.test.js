@@ -20,6 +20,9 @@ const {
     reconstructDecision,
     utilitiesByRound
 } = require('../scripts/convert-human-export');
+const {
+    parseBenchmark
+} = require('../scripts/run-rl-generation');
 
 function card(text) {
     const suit = text.slice(-1);
@@ -265,4 +268,18 @@ test('human export preserves legal plays outside the bot action abstraction', ()
     const features = reconstructDecision(record);
     assert.strictEqual(features.length, FEATURE_NAMES.length);
     assert.ok(features.every(Number.isFinite));
+});
+
+test('generation runner parses the learned seat from benchmark output', () => {
+    const result = parseBenchmark(`
+RL value benchmark [12000 rounds, 26.3s]
+   name          win rate   avg points   avg cards left
+   value-1         26.3%       2.93           2.58
+   heuristic-1     24.7%       3.10           2.72
+`);
+    assert.deepStrictEqual(result, {
+        winRatePercent: 26.3,
+        averagePoints: 2.93,
+        averageCardsLeft: 2.58
+    });
 });

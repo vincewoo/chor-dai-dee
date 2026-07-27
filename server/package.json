@@ -9,6 +9,7 @@
     "bot:rl:train": "node scripts/train-rl-value-bot.js",
     "bot:rl:bench": "node scripts/bench-rl-value-bot.js",
     "bot:rl:experience": "node scripts/generate-rl-experience.js",
+    "bot:rl:generation": "node scripts/run-rl-generation.js",
     "bot:rl:human": "node scripts/convert-human-export.js",
     "bot:rl:gpu": "../.venv-rl/bin/python scripts/train_rl_value_gpu.py",
     "gamelog:verify": "node scripts/verify-gamelog.js",

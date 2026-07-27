@@ -39,6 +39,7 @@ __pycache__/
 *.rl-experience.bin
 *.rl-experience.bin.json
 fly-export/
+server/.rl-generations/
 
 # OS files
 .DS_Store

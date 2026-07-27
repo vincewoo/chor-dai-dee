@@ -140,6 +140,63 @@ full-round returns. A JSON sidecar pins their shape, source policy, rules
 version, heuristic generation, and collection seed. Python never reimplements
 the game.
 
+### Run complete generations
+
+The convenient path is one command from `server/`:
+
+```bash
+npm run bot:rl:generation
+```
+
+Each call performs one approximate-policy-iteration generation:
+
+1. simulate 50,000 mixed self-play/heuristic rounds with the current policy;
+2. fit its returns for 15 epochs on CUDA, resuming the current checkpoint;
+3. benchmark both parent and candidate for 12,000 rounds on identical unseen
+   deals;
+4. preserve the replay data, checkpoint, benchmark logs, settings, and seeds.
+
+The first call starts from `ai/rl-value-model-gpu-v1.json`. Later calls
+automatically use the newest completed generation:
+
+```text
+.rl-generations/
+  gen-001/
+    model.json
+    generation.json
+    experience.rl-experience.bin
+    experience.rl-experience.bin.json
+    benchmark-parent.txt
+    benchmark-candidate.txt
+  gen-002/
+    ...
+```
+
+The directory is local and ignored by Git. A run never replaces a checked-in
+checkpoint or enables it in production. Review `generation.json` after every
+run; a newer generation is not automatically stronger. To retry from a
+specific older checkpoint:
+
+```bash
+npm run bot:rl:generation -- \
+  --input .rl-generations/gen-001/model.json
+```
+
+For a short smoke test:
+
+```bash
+npm run bot:rl:generation -- \
+  --rounds 1000 \
+  --epochs 3 \
+  --benchmark-rounds 1000
+```
+
+See every tuning option with:
+
+```bash
+npm run bot:rl:generation -- --help
+```
+
 ### Human games
 
 Real human-vs-bot games are useful for supervised warm-starting, outcome value

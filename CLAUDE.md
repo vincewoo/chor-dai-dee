@@ -32,6 +32,7 @@ npm run bench        # bot self-play benchmark + behavioural metrics
 npm run bot:rl:train # train the candidate-value policy with canonical JS rules
 npm run bot:rl:bench # held-out learned-vs-heuristic evaluation
 npm run bot:rl:experience # generate canonical replay rows for batched training
+npm run bot:rl:generation # collect, CUDA-train, and benchmark one numbered generation
 npm run bot:rl:human # convert exported human games to public-state replay rows
 npm run bot:rl:gpu   # optimize replay rows with project-local CUDA PyTorch
 ```
