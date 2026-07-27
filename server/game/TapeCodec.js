@@ -129,7 +129,10 @@ const SOURCE = {
     AUTO_PASS_PREF: 1,  // the player's auto-pass setting acted for them
     BOT: 2,
     SERVER_RULE: 3,     // 2S auto-pass
-    BOT_FALLBACK: 4     // advanced bot errored; heuristic answered this ply only
+    // Historical: the advanced (PPO) bot errored and the heuristic answered
+    // that ply. The advanced bot is gone, so nothing writes this any more --
+    // the code stays reserved so old tapes keep decoding.
+    BOT_FALLBACK: 4
 };
 
 // Bit flags on mlog_action.flags. Append only.

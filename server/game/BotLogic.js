@@ -1,7 +1,6 @@
 // server/game/BotLogic.js
 const { Big2Rules, HAND_TYPES } = require('./Big2Rules');
 const { RANKS, SUITS } = require('./Deck');
-const { worker: advancedBotWorker } = require('./AdvancedBotWorker');
 
 // Hand type priorities for 5-card hands (higher = stronger)
 const FIVE_CARD_PRIORITY = {
@@ -312,65 +311,6 @@ const BotLogic = {
         }
 
         return captureReasoning ? { cards: selectedMove.cards, reasoning } : selectedMove.cards;
-    },
-
-    /**
-     * Get the best move using the Advanced Python PPO Bot
-     * @returns {Promise<Array|Object>} - Returns Promise resolving to cards array
-     */
-    getAdvancedBotMove: async (hand, lastPlayedHand, isFirstTurn, gameContext = {}) => {
-        const fallback = () => BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext);
-
-        if (advancedBotWorker.isDisabled()) {
-            return fallback();
-        }
-
-        let result;
-        try {
-            result = await advancedBotWorker.request({
-                hand: hand,
-                lastPlayedHand: lastPlayedHand,
-                isFirstTurn: isFirstTurn,
-                // Pass count
-                passCount: gameContext.passCount || 0,
-                // Opponent cards (Next, Across, Previous)
-                opponentCardCounts: gameContext.playerCardCounts || [13, 13, 13],
-                // Played cards history
-                playedCards: gameContext.playedCards || [],
-                // Who played last relative to us (for context reconstruction)
-                lastPlayedByRelative: gameContext.lastPlayedByRelative
-            });
-        } catch (err) {
-            console.warn('Advanced bot unavailable, falling back to legacy bot:', err.message);
-            return fallback();
-        }
-
-        if (result.action === 'pass') {
-            return null;
-        }
-
-        if (result.action !== 'play') {
-            return fallback();
-        }
-
-        // Validate the move against our own rules engine so a hallucinated action
-        // can never put the game into an illegal state.
-        const moveCards = result.cards;
-        const validMoves = BotLogic.getAllValidMoves(hand);
-
-        const match = validMoves.find(m => {
-            if (m.cards.length !== moveCards.length) return false;
-            return m.cards.every(c =>
-                moveCards.some(mc => mc.rank === c.rank && mc.suit === c.suit)
-            );
-        });
-
-        if (!match) {
-            console.warn('ML Bot suggested invalid move:', moveCards);
-            return fallback();
-        }
-
-        return match.cards;
     },
 
     /**
@@ -2073,12 +2013,4 @@ const BotLogic = {
  */
 const BOT_LOGIC_VERSION = 5;
 
-/**
- * Which PPO checkpoint the advanced bot loads. Recorded per seat so a corpus
- * spanning a checkpoint swap stays interpretable -- once a second checkpoint
- * exists, games logged before it are otherwise ambiguous forever.
- */
-const PPO_CHECKPOINT = 'modelParameters136500';
-const PPO_CHECKPOINT_GEN = 136500; // training step, a natural generation number
-
-module.exports = { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN };
+module.exports = { BotLogic, BOT_LOGIC_VERSION };

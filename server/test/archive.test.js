@@ -32,7 +32,7 @@ async function seedGame({ ageDays, open = false }) {
 
     const gameKey = await gamelog.openGame({
         gameId, roomId: 'ARCH', gameMode: 'short', pointThreshold: 50,
-        advancedBots: false, startedAt
+        startedAt
     }, [0, 1, 2, 3].map(seat => ({
         seat, fromRound: 1, occupant: 'bot_heuristic',
         subjectKey: `Bot ${seat + 1}`, policyGen: 1

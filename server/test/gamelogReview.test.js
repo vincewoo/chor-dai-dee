@@ -45,7 +45,7 @@ async function logGame(gameId, { close = true, userSeat = 0, rounds = 6, seatOve
 
     const gameKey = await gamelog.openGame({
         gameId, roomId: 'ROOM1', gameMode: 'standard', pointThreshold: 100,
-        advancedBots: false, startedAt: Date.now()
+        startedAt: Date.now()
     }, seatRows);
 
     for (let r = 1; r <= rounds; r++) {

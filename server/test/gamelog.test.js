@@ -34,7 +34,6 @@ const baseGame = (overrides = {}) => ({
     roomId: 'ROOM1',
     gameMode: 'short',
     pointThreshold: 50,
-    advancedBots: false,
     startedAt: Date.now(),
     ...overrides
 });
@@ -63,6 +62,9 @@ test('schema is created and a game round-trips', async () => {
     assert.strictEqual(row.ended_at, null, 'a new game must be open');
 });
 
+// 'bot_ppo' is no longer written by the server -- the advanced bot is gone --
+// but the store must keep accepting it so games logged before the removal stay
+// readable and re-insertable.
 test('seats record which policy generation played', async () => {
     const gameKey = await gamelog.openGame(baseGame(), [
         { seat: 0, fromRound: 1, occupant: 'human', subjectKey: 'alice', userId: 7,

@@ -203,7 +203,8 @@ CREATE TABLE mlog_game (
     room_id         TEXT    NOT NULL,
     game_mode       TEXT    NOT NULL,          -- 'short' | 'standard'
     point_threshold INTEGER NOT NULL,
-    advanced_bots   INTEGER NOT NULL DEFAULT 0,
+    advanced_bots   INTEGER NOT NULL DEFAULT 0,  -- historical; see the note below
+
     schema_version  INTEGER NOT NULL,
     rules_version   INTEGER NOT NULL,
     server_build    TEXT,                      -- git sha, for post-hoc triage
@@ -228,7 +229,7 @@ CREATE TABLE mlog_seat (
     from_round      INTEGER NOT NULL,
     to_round        INTEGER,                   -- NULL = still occupied at game end
     occupant        TEXT    NOT NULL CHECK(occupant IN
-                       ('human','guest','bot_heuristic','bot_ppo')),
+                       ('human','guest','bot_heuristic','bot_ppo')),  -- bot_ppo: historical
     subject_key     TEXT,                      -- pseudonymous human id, or bot profile name
     policy_gen      INTEGER,                   -- bot logic generation; NULL for humans
     policy_ref      TEXT,                      -- legible policy id, e.g. 'modelParameters136500'
@@ -292,21 +293,30 @@ should not duplicate what they do well. The gaps are why it exists:
 |---|---|---|
 | Short vs standard | `game_mode`, `max_points` — complete | `game_mode`, `point_threshold` |
 | Player is a bot | `is_bot`, binary only | `mlog_seat.occupant`, 4-way |
-| *Which* bot policy | **absent** | `advanced_bots` + `occupant` |
+| *Which* bot policy | **absent** | `occupant` (`advanced_bots` while a second policy existed) |
 | Bot logic generation | **absent** | `policy_gen`, `policy_ref` |
-| Per-ply policy fallback | **absent** | `mlog_action.source = 4` |
+| Per-ply policy fallback | **absent** | `mlog_action.source = 4` (historical) |
 | Bot personality | name string only, unmarked | `subject_key` |
 | Seat identity across swaps | **lost** | seat + segment |
 | Rule-set in force | **absent** | `rules_version`, `server_build` |
 
 Three of those gaps matter enough to call out:
 
-**Bot policy is not recorded anywhere today.** `useAdvancedBots` is a
-`start_game` parameter that lands in `room.settings`, and each bot carries
-`difficulty: 'easy' | 'advanced'`. Neither is persisted. A corpus that cannot
-separate heuristic-bot games from PPO-bot games is pooling two unrelated
-policies under one label, which corrupts opponent modelling and any evaluation
-that conditions on opponent strength.
+**Bot policy is not recorded anywhere today.** Neither the room's bot setting
+nor the per-bot `difficulty` field was persisted. A corpus that cannot separate
+one bot policy from another is pooling unrelated policies under one label, which
+corrupts opponent modelling and any evaluation that conditions on opponent
+strength. That is what `occupant` and `policy_gen` are for, and the argument
+outlives the specific policies: the heuristic itself is versioned by
+`BOT_LOGIC_VERSION` and has already been through five generations.
+
+> **Amended.** The advanced (PPO) bot has since been removed — it did not
+> outplay the heuristic and its Python/TensorFlow worker did not survive on
+> Fly.io. Every bot seat written from that point on is `bot_heuristic`, and
+> `advanced_bots` is left at its default. `bot_ppo`, `advanced_bots` and
+> `source = 4` remain in the schema so games logged before the removal stay
+> readable; nothing writes them. The passages below describing the two-policy
+> code are kept because they explain why those columns exist.
 
 **Bot names are policy parameters, not labels.** `BotLogic.getBotProfile(name)`
 derives variability, patience, and aggression from the bot's name, so `Bot 2`
@@ -442,23 +452,24 @@ the first logged game", and do not try to reconstruct what came before.
 
 Three implementation notes, each a way this gets recorded wrongly:
 
-**Do not read `player.difficulty` to label the policy.** It is decorative at
-decision time. `checkBotTurn` branches on the room-wide
-`settings.useAdvancedBots` (`RoomManager.js:1250`) and never consults
-`difficulty`. `replaceWithBot` hardcodes `difficulty: 'advanced'`
-(`RoomManager.js:330`), so a bot replacing a departed human in a heuristic room
-is labelled "advanced" while actually running the heuristic policy. Read
-`settings.useAdvancedBots`. The inconsistency in the game code is arguably worth
-fixing on its own, but the log must not depend on that happening first.
+**Do not read `player.difficulty` to label the policy.** It was decorative at
+decision time: `checkBotTurn` branched on the room-wide `settings.useAdvancedBots`
+and never consulted `difficulty`, while `replaceWithBot` hardcoded
+`difficulty: 'advanced'` — so a bot replacing a departed human in a heuristic
+room was labelled "advanced" while actually running the heuristic policy. The
+log read the room setting instead. *(Both fields are gone with the advanced bot;
+`describeSeats` now labels every bot seat `bot_heuristic` directly. The general
+rule stands: label a seat from what actually answers for it, not from a field
+set where the bot was created.)*
 
-**Policy is not stable within a seat.** If `getAdvancedBotMove` rejects, the
-catch block silently falls back to `BotLogic.getBotMove` **for that ply only**
-(`RoomManager.js:1265`) and the game continues on the PPO policy afterwards. A
-seat-level `policy_gen` would quietly mislabel those plies as PPO decisions when
-a different policy produced them. Hence `source = 4` on the action row: the seat
-carries the intended policy, the ply records when something else actually
-answered. Fallbacks should be rare, so a non-trivial count of `source = 4` is
-also a useful health signal that the PPO worker is failing in production.
+**Policy is not stable within a seat.** If `getAdvancedBotMove` rejected, the
+catch block fell back to `BotLogic.getBotMove` **for that ply only** and the
+game continued on the PPO policy afterwards. A seat-level `policy_gen` would
+have quietly mislabelled those plies as PPO decisions when a different policy
+produced them. Hence `source = 4` on the action row: the seat carries the
+intended policy, the ply records when something else actually answered. *(With
+one policy left there is nothing to fall back to, so `source = 4` is never
+written now. Reintroduce it, not a new code, if a second policy ever returns.)*
 
 **`BotLogic.js` is not the whole behavioural surface.** `checkBotTurn` builds the
 `gameContext` the bot reasons over — card counts, the relative re-indexing of

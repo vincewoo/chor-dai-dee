@@ -108,6 +108,8 @@ const SCHEMA = [
         room_id           TEXT    NOT NULL,
         game_mode         TEXT    NOT NULL,
         point_threshold   INTEGER NOT NULL,
+        -- Historical: set on games played while the advanced (PPO) bot existed.
+        -- Nothing writes it now; kept so those rows stay readable.
         advanced_bots     INTEGER NOT NULL DEFAULT 0,
         schema_version    INTEGER NOT NULL,
         rules_version     INTEGER NOT NULL,
@@ -130,6 +132,9 @@ const SCHEMA = [
         segment         INTEGER NOT NULL DEFAULT 0,
         from_round      INTEGER NOT NULL,
         to_round        INTEGER,
+        -- 'bot_ppo' is historical; the advanced bot is gone and every bot seat
+        -- written today is 'bot_heuristic'. The value stays in the constraint
+        -- so games logged before the removal remain valid.
         occupant        TEXT    NOT NULL CHECK(occupant IN
                            ('human','guest','bot_heuristic','bot_ppo')),
         subject_key     TEXT,
@@ -253,16 +258,19 @@ const openGame = guard('openGame', async (game, seats) => {
             previousKey = row ? row.game_key : null;
         }
 
+        // advanced_bots is left to its column default: the advanced bot is gone
+        // and every bot seat is now heuristic. Old rows keep whatever they
+        // recorded, which is the only reason the column still exists.
         const res = await run(
             `INSERT INTO mlog_game
-                (game_id, room_id, game_mode, point_threshold, advanced_bots,
+                (game_id, room_id, game_mode, point_threshold,
                  schema_version, rules_version, server_build, started_at,
                  previous_game_key, chain_kind)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             VALUES (?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT(game_id) DO NOTHING`,
             [
                 game.gameId, game.roomId, game.gameMode, game.pointThreshold,
-                game.advancedBots ? 1 : 0, SCHEMA_VERSION, RULES_VERSION,
+                SCHEMA_VERSION, RULES_VERSION,
                 serverBuild, game.startedAt,
                 previousKey, previousKey === null ? null : (game.chainKind || null)
             ]

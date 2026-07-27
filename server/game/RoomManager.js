@@ -1,7 +1,7 @@
 // server/game/RoomManager.js
 const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
-const { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN } = require('./BotLogic');
+const { BotLogic, BOT_LOGIC_VERSION } = require('./BotLogic');
 const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
 const { getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
@@ -53,7 +53,6 @@ class Room {
         // noise, so credit kinds are rationed. See Coach.react.
         this.coachCredits = {};
         this.playersByUsername = {}; // Map username -> player for reconnection
-        this.settings = { useAdvancedBots: false }; // Room settings
         this.gameMode = gameMode; // Game mode: 'short' or 'standard'
         this.pointThreshold = getPointThreshold(gameMode); // Point threshold for game over
         this.roundPlayStats = {}; // Track plays/passes per round for advanced stats
@@ -112,7 +111,6 @@ class Room {
         this.turnStartedAt = Date.now();
         this.turnDisconnectBaseline = 0;
         this.turnStartedDisconnected = false;
-        this.botFallbackActive = false; // advanced bot errored; heuristic answered this ply
     }
 
     /**
@@ -410,20 +408,15 @@ class Room {
         const oldPlayer = this.players[playerIndex];
         if (oldPlayer.isBot) return null; // Already a bot
 
-        // Create a bot with Advanced difficulty to replace the player
         const botId = `bot_${Date.now()}_replacement`;
-        const mu = 35; // Advanced bot rating
-        const sigma = 3;
-        const displayRating = calculateDisplayRating(mu, sigma);
 
         const botPlayer = {
             id: botId,
             name: `Bot (${oldPlayer.name})`,
             isBot: true,
-            difficulty: 'advanced',
-            rating_mu: mu,
-            rating_sigma: sigma,
-            rating: displayRating,
+            rating_mu: DEFAULT_MU,
+            rating_sigma: DEFAULT_SIGMA,
+            rating: calculateDisplayRating(DEFAULT_MU, DEFAULT_SIGMA),
             hand: oldPlayer.hand, // Keep the same hand
             isDisconnected: false
         };
@@ -676,9 +669,7 @@ class Room {
         }
     }
 
-    startGame(useAdvancedBots = false) {
-        this.settings.useAdvancedBots = useAdvancedBots;
-
+    startGame() {
         // Update activity timestamp
         this.updateActivity();
 
@@ -687,29 +678,15 @@ class Room {
             while (this.players.length < 4) {
                 const botId = `bot_${Date.now()}_${this.players.length}`;
 
-                // Set ratings based on bot type
-                // Regular bot: Default rating (conservatively 0 -> 1200)
-                // Advanced bot: Higher rating. mu=35, sigma=3 -> conservative 26 -> 2240
-
-                let mu, sigma;
-                if (useAdvancedBots) {
-                    mu = 35;
-                    sigma = 3;
-                } else {
-                    mu = DEFAULT_MU;
-                    sigma = DEFAULT_SIGMA;
-                }
-
-                const displayRating = calculateDisplayRating(mu, sigma);
-
                 this.players.push({
                     id: botId,
-                    name: `${useAdvancedBots ? 'Advanced ' : ''}Bot ${this.players.length + 1}`,
+                    // The bot's name is a policy parameter, not a label:
+                    // BotLogic.getBotProfile derives its temperament from it.
+                    name: `Bot ${this.players.length + 1}`,
                     isBot: true,
-                    difficulty: useAdvancedBots ? 'advanced' : 'easy',
-                    rating_mu: mu,
-                    rating_sigma: sigma,
-                    rating: displayRating
+                    rating_mu: DEFAULT_MU,
+                    rating_sigma: DEFAULT_SIGMA,
+                    rating: calculateDisplayRating(DEFAULT_MU, DEFAULT_SIGMA)
                 });
             }
         }
@@ -1031,9 +1008,7 @@ class Room {
             validated: validatedHand,
             thinkMs: timing.thinkMs,
             flags: timing.flags,
-            source: player.isBot
-                ? (this.botFallbackActive ? SOURCE.BOT_FALLBACK : SOURCE.BOT)
-                : SOURCE.HUMAN
+            source: player.isBot ? SOURCE.BOT : SOURCE.HUMAN
         });
 
         // Grade the decision BEFORE anything is mutated. The hand, the pile,
@@ -1452,7 +1427,7 @@ class Room {
             thinkMs: auto ? null : passTiming.thinkMs,
             flags: passTiming.flags,
             source: passingPlayer.isBot
-                ? (this.botFallbackActive ? SOURCE.BOT_FALLBACK : SOURCE.BOT)
+                ? SOURCE.BOT
                 : (auto ? SOURCE.AUTO_PASS_PREF : SOURCE.HUMAN)
         });
 
@@ -1605,9 +1580,6 @@ class Room {
         if (currentPlayer && currentPlayer.isBot && this.gameState === 'playing') {
             // Set flag to indicate bot is calculating/playing
             this.isBotThinking = true;
-            // Cleared per turn; the catch path below sets it for the one ply
-            // the heuristic answered on the advanced bot's behalf.
-            this.botFallbackActive = false;
 
             // Determine if first turn of the entire game (round 1 only)
             const everyoneFull = this.players.every(p => p.hand.length === 13);
@@ -1678,55 +1650,22 @@ class Room {
                 this.registerTimeout('botMove', timeoutId);
             };
 
-            // Choose bot logic based on settings
-            if (this.settings.useAdvancedBots) {
-                BotLogic.getAdvancedBotMove(
+            try {
+                const result = BotLogic.getBotMove(
                     currentPlayer.hand,
                     this.lastPlayedHand,
                     isFirstTurn,
-                    gameContext
-                ).then(move => {
-                    // Advanced bot currently doesn't return detailed reasoning structure in the same way
-                    handleBotMove(move, { model: 'PPO-Big2', note: 'Advanced Bot Decision' });
-                }).catch(err => {
-                    console.error('Error getting advanced bot move:', err);
-                    // Reset flag on error
-                    this.isBotThinking = false;
+                    gameContext,
+                    this.debugMode // Pass debug mode flag
+                );
 
-                    // Fallback to basic bot. Tagged so the log does not
-                    // attribute this ply to the PPO policy: the seat's declared
-                    // policy is not what actually answered here, and a corpus
-                    // that mislabels these teaches the wrong opponent model.
-                    // A non-trivial count of these also signals that the PPO
-                    // worker is failing in production.
-                    this.botFallbackActive = true;
-                    const result = BotLogic.getBotMove(currentPlayer.hand, this.lastPlayedHand, isFirstTurn, gameContext, this.debugMode);
-                    const move = this.debugMode ? result.cards : result;
-                    const reasoning = this.debugMode ? result.reasoning : null;
-
-                    // Re-set flag because we are proceeding to handleBotMove
-                    this.isBotThinking = true;
-                    handleBotMove(move, reasoning);
-                });
-            } else {
-                try {
-                    // Legacy Bot
-                    const result = BotLogic.getBotMove(
-                        currentPlayer.hand,
-                        this.lastPlayedHand,
-                        isFirstTurn,
-                        gameContext,
-                        this.debugMode // Pass debug mode flag
-                    );
-
-                    // Extract move and reasoning based on debug mode
-                    const move = this.debugMode ? result.cards : result;
-                    const reasoning = this.debugMode ? result.reasoning : null;
-                    handleBotMove(move, reasoning);
-                } catch (e) {
-                    console.error('Error in legacy bot move:', e);
-                    this.isBotThinking = false;
-                }
+                // Extract move and reasoning based on debug mode
+                const move = this.debugMode ? result.cards : result;
+                const reasoning = this.debugMode ? result.reasoning : null;
+                handleBotMove(move, reasoning);
+            } catch (e) {
+                console.error('Error getting bot move:', e);
+                this.isBotThinking = false;
             }
         }
     }
@@ -1771,26 +1710,23 @@ class Room {
     /**
      * Describes each seat for the game log.
      *
-     * `occupant` comes from settings.useAdvancedBots, never from
-     * player.difficulty. difficulty is decorative at decision time -
-     * checkBotTurn branches on the room-wide setting and never reads it, while
-     * replaceWithBot hardcodes 'advanced'. Reading difficulty would label a
-     * replacement bot in a heuristic room as PPO.
+     * Every bot seat is the heuristic policy: it is the only one there is.
+     * `bot_ppo` survives in the store's occupant vocabulary for games logged
+     * while the PPO bot existed, but nothing writes it any more.
      */
     describeSeats(fromRound = this.roundNumber) {
-        const usingPpo = Boolean(this.settings.useAdvancedBots);
         return this.players.map((p, seat) => {
             if (p.isBot) {
                 return {
                     seat,
                     fromRound,
-                    occupant: usingPpo ? 'bot_ppo' : 'bot_heuristic',
+                    occupant: 'bot_heuristic',
                     // The bot's name is a policy parameter, not a label:
                     // getBotProfile derives temperament from it, so two bots at
                     // one table play measurably differently.
-                    subjectKey: usingPpo ? PPO_CHECKPOINT : p.name,
-                    policyGen: usingPpo ? PPO_CHECKPOINT_GEN : BOT_LOGIC_VERSION,
-                    policyRef: usingPpo ? PPO_CHECKPOINT : null
+                    subjectKey: p.name,
+                    policyGen: BOT_LOGIC_VERSION,
+                    policyRef: null
                 };
             }
             return {
@@ -1918,7 +1854,7 @@ class Room {
     }
 
     // Start a rematch - reset game state and start new game immediately
-    startRematch(useAdvancedBots = null) {
+    startRematch() {
         // Only allow from finished state
         if (this.gameState !== 'finished') {
             return { error: 'Can only start rematch from finished state' };
@@ -1949,11 +1885,8 @@ class Room {
         // Generate new game ID
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-        // Use previous bot setting if not specified
-        const useBots = useAdvancedBots !== null ? useAdvancedBots : this.settings.useAdvancedBots;
-
         // Start the game (this will auto-fill bots)
-        return this.startGame(useBots);
+        return this.startGame();
     }
 
     // Transfer host to another player

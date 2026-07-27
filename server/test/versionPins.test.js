@@ -55,12 +55,11 @@ const RULES_PIN = '679109ebc4aa29579533a88cb687fe067d6b66b6c8724f9ad8870212e056a
 // BotLogic.js is the heuristics; BotContext.js is the observation they run on.
 // Changing either changes what the bot plays.
 const BOT_FILES = ['game/BotLogic.js', 'game/BotContext.js'];
-// Re-pinned for BOT_LOGIC_VERSION 5: organizeHand stops building a full house
-// out of a second triple, so a hand holding two triples keeps both instead of
-// having one cannibalised and the other charged for "breaking" the result.
-// evaluateFollowUp now counts triples. Both change what the bot plays, so the
-// constant moved with the pin.
-const BOT_PIN = 'cc4b570c3b5321277dad3ef3ba80caaeefeb85d2f52b9b1d478834f38ac06af3';
+// Re-pinned when the advanced (PPO) bot was removed: getAdvancedBotMove and the
+// worker it called are gone, and with them the PPO checkpoint constants. That
+// code never ran inside the heuristic path -- it was an alternative to it -- so
+// what the bot plays is unchanged and BOT_LOGIC_VERSION stays at 5.
+const BOT_PIN = '6689a9ef86b635f2fcb433ec3cb31a408841f0e55093d30695a8b97f20f656a2';
 
 const explain = (label, constant, version, actual, pin) => `
 ${label} changed but ${constant} is still ${version}.
