@@ -246,6 +246,14 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
     `moveRetentionCost`. Scaling by the departing card made the cheapest card
     the cheapest way to wreck the hand, so the model would break a flush to lead
     a pair. See `docs/BOT-HEURISTICS-REVIEW.md` § 16.
+  - **A full house is never built out of a second triple** - `organizeHand`'s
+    greedy five-card pass skips a full house whose *pair* half comes from a rank
+    the hand holds exactly three of, so two triples stay two triples. Without
+    that guard `organized.triples` came back empty in exactly those hands, and
+    `comboBreakPenalty` then charged every alternative - including leading either
+    triple whole - for breaking a combination that only existed because a triple
+    had been dismantled to build it. The organizer's pick was the one move paying
+    nothing, so it was scored twice. See `docs/BOT-HEURISTICS-REVIEW.md` § 17.
   - **2s are never "locked" in a combination** - `standaloneControlSurcharge`
     charges back the `COST_WEIGHT_BY_SIZE` discount for 2s, which can always be
     pulled out and played as an unbeatable single. Without it the bot dumped 2s

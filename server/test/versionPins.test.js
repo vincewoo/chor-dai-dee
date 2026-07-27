@@ -55,12 +55,12 @@ const RULES_PIN = '679109ebc4aa29579533a88cb687fe067d6b66b6c8724f9ad8870212e056a
 // BotLogic.js is the heuristics; BotContext.js is the observation they run on.
 // Changing either changes what the bot plays.
 const BOT_FILES = ['game/BotLogic.js', 'game/BotContext.js'];
-// Re-pinned for BOT_LOGIC_VERSION 4: comboBreakPenalty now prices the
-// combination destroyed rather than the rank of the card pulled out of it, and
-// evaluateFollowUp's card-count term is a ramp rather than a two-step ladder
-// that ranked four cards left above one. Both change what the bot plays, so the
+// Re-pinned for BOT_LOGIC_VERSION 5: organizeHand stops building a full house
+// out of a second triple, so a hand holding two triples keeps both instead of
+// having one cannibalised and the other charged for "breaking" the result.
+// evaluateFollowUp now counts triples. Both change what the bot plays, so the
 // constant moved with the pin.
-const BOT_PIN = '41f4e1ac4e13fb88e98e65e152cb6e9ebe354e4a467bb683ea57394cc58e8155';
+const BOT_PIN = 'cc4b570c3b5321277dad3ef3ba80caaeefeb85d2f52b9b1d478834f38ac06af3';
 
 const explain = (label, constant, version, actual, pin) => `
 ${label} changed but ${constant} is still ${version}.

@@ -402,3 +402,69 @@ test('bots burn far fewer 2s inside five-card hands than they used to', () => {
     const burned = inCombo / (inCombo + alone) * 100;
     assert.ok(burned < 18, `${burned.toFixed(1)}% of 2s spent inside five-card hands (was 23.5%)`);
 });
+
+test('a full house is never built by breaking a second triple', () => {
+    // Reported from a live table: holding 444 and 888, the coach recommended
+    // the full house 8s-over-4s, which dismantles the 444 and orphans the 4S.
+    const h = hand('3S 4D 4C 4S 6H 7H 8D 8C 8S KH KS');
+    const org = BotLogic.organizeHand(h);
+
+    for (const combo of org.fiveCardHands) {
+        if (combo.type !== HAND_TYPES.FULL_HOUSE) continue;
+        const tripleRank = combo.cards[2].rank;
+        const pairRank = combo.cards[0].rank === tripleRank ? combo.cards[4].rank : combo.cards[0].rank;
+        const heldOfPairRank = h.filter(c => c.rank === pairRank).length;
+        assert.notStrictEqual(heldOfPairRank, 3,
+            `full house ${combo.cards.map(c => c.rank + c.suit).join(' ')} borrows its pair from a triple`);
+    }
+
+    // The 444 survives as a triple in its own right.
+    assert.ok(org.triples.some(t => t.rank === '4'), 'the triple of 4s should still be organized as a triple');
+});
+
+test('two triples and nothing else stay two triples', () => {
+    const org = BotLogic.organizeHand(hand('5D 5C 5H 9D 9C 9H'));
+    assert.strictEqual(org.fiveCardHands.length, 0, 'no five-card hand can be built without breaking a triple');
+    assert.deepStrictEqual(org.triples.map(t => t.rank).sort(), ['5', '9']);
+});
+
+test('a full house drawing its pair from a real pair is still preserved', () => {
+    // The rule must only block borrowing from a TRIPLE, not full houses generally.
+    const org = BotLogic.organizeHand(hand('8D 8C 8S KH KS 3S 6H'));
+    assert.strictEqual(org.fiveCardHands.length, 1);
+    assert.strictEqual(org.fiveCardHands[0].type, HAND_TYPES.FULL_HOUSE);
+    assert.strictEqual(org.triples.length, 0, 'the 888 is spent inside the full house, not left over');
+});
+
+test('leading a triple intact is not charged for breaking a combination', () => {
+    // The circular penalty: the organizer built a full house out of a triple,
+    // then comboBreakPenalty charged the intact triple for destroying it.
+    const h = hand('3S 4D 4C 4S 6H 7H 8D 8C 8S KH KS');
+    const org = BotLogic.organizeHand(h);
+    const triple4s = Big2Rules.validateHand(hand('4D 4C 4S'));
+
+    assert.strictEqual(BotLogic.comboBreakPenalty(triple4s, org, 'early'), 0,
+        'a triple that is played whole breaks nothing');
+});
+
+test('organizeHand always reports triples as an array', () => {
+    // It used to be created lazily and left undefined, so every consumer had
+    // to remember `|| []`.
+    assert.deepStrictEqual(BotLogic.organizeHand(hand('3S 5H 9D')).triples, []);
+});
+
+test('a triple left behind is worth more than a pair left behind', () => {
+    // evaluateFollowUp counted pairs and five-card hands but not triples, so a
+    // remainder of 4D 4C 4S scored below a remainder of 4D 4C.
+    const single = { type: HAND_TYPES.SINGLE, cards: [card('9S')] };
+    const withPair = hand('9S 4D 4C');
+    const withTriple = hand('9S 4D 4C 4S');
+
+    const pairScore = BotLogic.evaluateFollowUp(
+        single, withPair, BotLogic.organizeHand(withPair)).followUpScore;
+    const tripleScore = BotLogic.evaluateFollowUp(
+        single, withTriple, BotLogic.organizeHand(withTriple)).followUpScore;
+
+    assert.ok(tripleScore > pairScore,
+        `leaving a triple (${tripleScore}) should beat leaving a pair (${pairScore})`);
+});
