@@ -21,6 +21,7 @@ const {
 } = require('../scripts/generate-rl-experience');
 const {
     reconstructDecision,
+    reconstructActionSet,
     utilitiesByRound
 } = require('../scripts/convert-human-export');
 const {
@@ -344,6 +345,18 @@ test('human export preserves legal plays outside the bot action abstraction', ()
     const features = reconstructDecision(record);
     assert.strictEqual(features.length, FEATURE_NAMES.length);
     assert.ok(features.every(Number.isFinite));
+    const actionSet = reconstructActionSet(record);
+    assert.strictEqual(actionSet.exactActionAdded, true);
+    assert.ok(actionSet.actionFeatures.length > 1);
+    assert.ok(actionSet.chosenIndex >= 0);
+    assert.ok(actionSet.heuristicIndex >= 0);
+    assert.deepStrictEqual(
+        actionSet.actionFeatures[actionSet.chosenIndex],
+        features
+    );
+    assert.ok(actionSet.actionFeatures.every(row =>
+        row.length === FEATURE_NAMES.length &&
+        row.every(Number.isFinite)));
 });
 
 test('generation runner parses the learned seat from benchmark output', () => {

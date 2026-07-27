@@ -18,6 +18,13 @@ const { selectPPOCandidate } = require('../scripts/run-ppo-generation');
 const {
     encodeTeacherDecisions
 } = require('../scripts/generate-ppo-imitation-experience');
+const {
+    isEligible: isHumanPPOEligible,
+    splitGames,
+    encodeDecision: encodeHumanDecision,
+    FLAG_HUMAN_OVERRIDE,
+    FLAG_VALIDATION
+} = require('../scripts/convert-human-ppo-export');
 
 function card(text) {
     const suit = text.slice(-1);
@@ -169,4 +176,68 @@ test('imitation records preserve teacher overrides', () => {
     assert.strictEqual(buffer.readUInt16LE(2), 1);
     assert.strictEqual(buffer.readUInt16LE(4), 0);
     assert.strictEqual(buffer.readUInt16LE(6), 1);
+});
+
+test('human PPO validation split keeps complete games together', () => {
+    const games = Array.from({ length: 10 }, (_, index) => `game-${index}`);
+    const first = splitGames(games, 0.2, 17);
+    const second = splitGames([...games].reverse(), 0.2, 17);
+    assert.strictEqual(first.validation.size, 2);
+    assert.strictEqual(first.training.size, 8);
+    assert.deepStrictEqual(
+        [...first.validation].sort(),
+        [...second.validation].sort()
+    );
+    assert.ok([...first.validation].every(game =>
+        !first.training.has(game)));
+});
+
+test('human PPO records mark overrides and held-out decisions', () => {
+    const buffer = encodeHumanDecision({
+        actionFeatures: [
+            Array(FEATURE_NAMES.length).fill(0),
+            Array(FEATURE_NAMES.length).fill(1)
+        ],
+        chosenIndex: 1,
+        heuristicIndex: 0
+    }, true);
+    assert.strictEqual(buffer.length, DECISION_BYTES);
+    assert.strictEqual(buffer.readUInt16LE(0), 2);
+    assert.strictEqual(buffer.readUInt16LE(2), 1);
+    assert.strictEqual(buffer.readUInt16LE(4), 0);
+    assert.strictEqual(
+        buffer.readUInt16LE(6),
+        FLAG_HUMAN_OVERRIDE | FLAG_VALIDATION
+    );
+});
+
+test('human PPO eligibility requires a deliberate completed-round decision', () => {
+    const record = {
+        occupant: 'human',
+        subject: 'h:test',
+        joined_mid_game: false,
+        forced_pass: false,
+        policy_fallback: false,
+        turn_disconnected: false,
+        action: { type: 'play', cards: [0] },
+        labels: { round_points: 3 }
+    };
+    assert.strictEqual(
+        isHumanPPOEligible(record, new Set(['h:test'])),
+        true
+    );
+    assert.strictEqual(
+        isHumanPPOEligible({
+            ...record,
+            labels: { round_points: null }
+        }, new Set(['h:test'])),
+        false
+    );
+    assert.strictEqual(
+        isHumanPPOEligible({
+            ...record,
+            turn_disconnected: true
+        }, new Set(['h:test'])),
+        false
+    );
 });
