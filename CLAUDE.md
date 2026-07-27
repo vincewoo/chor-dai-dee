@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Chor Dai Dee is a multiplayer Big 2 card game with a React frontend and Express/Socket.io backend. The project features comprehensive statistics tracking, advanced bot AI, a skill-based rating system, and extensive accessibility options. The project is organized as a monorepo with separate `client/` and `server/` directories.
+Chor Dai Dee is a multiplayer Big 2 card game with a React frontend and Express/Socket.io backend. The project features comprehensive statistics tracking, heuristic bot AI, a skill-based rating system, and extensive accessibility options. The project is organized as a monorepo with separate `client/` and `server/` directories.
 
 ## Development Commands
 
@@ -252,6 +252,14 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
     `moveRetentionCost`. Scaling by the departing card made the cheapest card
     the cheapest way to wreck the hand, so the model would break a flush to lead
     a pair. See `docs/BOT-HEURISTICS-REVIEW.md` § 16.
+  - **A full house is never built out of a second triple** - `organizeHand`'s
+    greedy five-card pass skips a full house whose *pair* half comes from a rank
+    the hand holds exactly three of, so two triples stay two triples. Without
+    that guard `organized.triples` came back empty in exactly those hands, and
+    `comboBreakPenalty` then charged every alternative - including leading either
+    triple whole - for breaking a combination that only existed because a triple
+    had been dismantled to build it. The organizer's pick was the one move paying
+    nothing, so it was scored twice. See `docs/BOT-HEURISTICS-REVIEW.md` § 17.
   - **2s are never "locked" in a combination** - `standaloneControlSurcharge`
     charges back the `COST_WEIGHT_BY_SIZE` discount for 2s, which can always be
     pulled out and played as an unbeatable single. Without it the bot dumped 2s
@@ -274,7 +282,13 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
     patience and aggression from the bot's name; `pickScoredMove` samples near
     the top move rather than always taking the argmax, so bots at one table do
     not play identically. Bots with no profile are fully deterministic.
-  - Configurable difficulty (heuristic vs advanced PPO bot)
+  - **One bot policy, not a difficulty setting** - the heuristic is what every
+    bot seat plays. A second "advanced" bot (a PPO network served by a Python
+    worker) was removed: it never beat the heuristic and the TensorFlow runtime
+    it needed did not survive on Fly.io, so in practice it errored and fell back
+    to the heuristic anyway. `SOURCE.BOT_FALLBACK` and the game log's
+    `bot_ppo` / `advanced_bots` columns are the fossils of it — reserved so old
+    tapes decode, written by nothing.
 - `BotContext.js` - Builds the observation a bot reasons over. Shared by live
   play, the self-play benchmark, and the game-log replayer so all three see
   identical features. Takes plain seat-indexed state, never a Room.
@@ -507,7 +521,6 @@ Unsetting it is the kill switch.
 - **Settings Panel:** In-game gear icon for preferences
   - Toggle four-color deck
   - Toggle auto-pass
-  - Toggle advanced bots
 
 ### Gameplay Helpers
 - **Quick Select** (`tableV2/ControlsRow.jsx`, backed by `utils/handFinder.js`):

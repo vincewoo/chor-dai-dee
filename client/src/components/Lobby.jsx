@@ -113,7 +113,7 @@ const Lobby = ({ user, socket, setUser }) => {
     // Handle starting game from room lobby
     const handleStartGameFromLobby = useCallback(() => {
         if (roomLobbyData) {
-            socket.emit('start_game', { roomId: roomLobbyData.roomId, useAdvancedBots: true });
+            socket.emit('start_game', { roomId: roomLobbyData.roomId });
         }
     }, [roomLobbyData, socket]);
 

@@ -1,7 +1,6 @@
 // server/game/BotLogic.js
 const { Big2Rules, HAND_TYPES } = require('./Big2Rules');
 const { RANKS, SUITS } = require('./Deck');
-const { worker: advancedBotWorker } = require('./AdvancedBotWorker');
 
 // Hand type priorities for 5-card hands (higher = stronger)
 const FIVE_CARD_PRIORITY = {
@@ -228,6 +227,7 @@ const BotLogic = {
                 } : null,
                 organization: {
                     fiveCardHands: ctx.handOrganization.fiveCardHands.map(h => h.type),
+                    triples: ctx.handOrganization.triples.length,
                     pairs: ctx.handOrganization.pairs.length,
                     singles: ctx.handOrganization.singles.length
                 }
@@ -314,65 +314,6 @@ const BotLogic = {
     },
 
     /**
-     * Get the best move using the Advanced Python PPO Bot
-     * @returns {Promise<Array|Object>} - Returns Promise resolving to cards array
-     */
-    getAdvancedBotMove: async (hand, lastPlayedHand, isFirstTurn, gameContext = {}) => {
-        const fallback = () => BotLogic.getBotMove(hand, lastPlayedHand, isFirstTurn, gameContext);
-
-        if (advancedBotWorker.isDisabled()) {
-            return fallback();
-        }
-
-        let result;
-        try {
-            result = await advancedBotWorker.request({
-                hand: hand,
-                lastPlayedHand: lastPlayedHand,
-                isFirstTurn: isFirstTurn,
-                // Pass count
-                passCount: gameContext.passCount || 0,
-                // Opponent cards (Next, Across, Previous)
-                opponentCardCounts: gameContext.playerCardCounts || [13, 13, 13],
-                // Played cards history
-                playedCards: gameContext.playedCards || [],
-                // Who played last relative to us (for context reconstruction)
-                lastPlayedByRelative: gameContext.lastPlayedByRelative
-            });
-        } catch (err) {
-            console.warn('Advanced bot unavailable, falling back to legacy bot:', err.message);
-            return fallback();
-        }
-
-        if (result.action === 'pass') {
-            return null;
-        }
-
-        if (result.action !== 'play') {
-            return fallback();
-        }
-
-        // Validate the move against our own rules engine so a hallucinated action
-        // can never put the game into an illegal state.
-        const moveCards = result.cards;
-        const validMoves = BotLogic.getAllValidMoves(hand);
-
-        const match = validMoves.find(m => {
-            if (m.cards.length !== moveCards.length) return false;
-            return m.cards.every(c =>
-                moveCards.some(mc => mc.rank === c.rank && mc.suit === c.suit)
-            );
-        });
-
-        if (!match) {
-            console.warn('ML Bot suggested invalid move:', moveCards);
-            return fallback();
-        }
-
-        return match.cards;
-    },
-
-    /**
      * Organize the hand according to "Poker First, Pairs Second" heuristic.
      * Identify "Control" (2s, As) and "Trash" (3-6 singles).
      * @param {Array} hand - The cards to organize
@@ -383,6 +324,7 @@ const BotLogic = {
         const organized = {
             fiveCardHands: [],
             pairs: [],
+            triples: [],
             singles: [],
             trash: [], // Singles 3-6
             control: [] // Aces and 2s
@@ -458,12 +400,44 @@ const BotLogic = {
             return b.value - a.value; // Higher value preferred
         });
 
+        // A full house is a triple plus a pair. When the pair half is taken
+        // from a SECOND triple, this pass is not preserving a shape - it is
+        // dismantling one to build another, and orphaning the odd card.
+        //
+        // That was a self-justifying loop rather than a judgement. The greedy
+        // pass would turn 444 + 888 into one full house, `triples` came back
+        // empty, and then comboBreakPenalty charged every OTHER move for
+        // "breaking a saved combination" - including leading either triple
+        // intact, whose only crime was destroying a full house that existed
+        // solely because a triple had been broken to make it. The invented
+        // shape was the one move that paid nothing, so the organizer's choice
+        // scored twice and the triple loop below was dead code in exactly the
+        // hands it was written for.
+        //
+        // Two triples are two plays that only a higher triple can answer; a
+        // low full house is one play plus a dead card. Leave both standing and
+        // let scoreLeadMove price them.
+        const availableOfRank = (rank) =>
+            remainingHand.reduce((n, c) => n + (c.rank === rank ? 1 : 0), 0);
+
+        const borrowsPairFromTriple = (move) => {
+            if (move.type !== HAND_TYPES.FULL_HOUSE) return false;
+            // Sorted by value, so the middle card is always part of the triple.
+            const tripleRank = move.cards[2].rank;
+            const pairRank = move.cards[0].rank === tripleRank
+                ? move.cards[4].rank
+                : move.cards[0].rank;
+            // Exactly three: borrowing two of four still leaves a pair behind,
+            // which is a shape rather than an orphan.
+            return availableOfRank(pairRank) === 3;
+        };
+
         // Greedily pick
         for (const move of fiveCardMoves) {
-            if (isAvailable(move.cards)) {
-                organized.fiveCardHands.push(move);
-                removeCards(move.cards);
-            }
+            if (!isAvailable(move.cards)) continue;
+            if (borrowsPairFromTriple(move)) continue;
+            organized.fiveCardHands.push(move);
+            removeCards(move.cards);
         }
 
         // 2. Identify Pairs from remaining
@@ -518,14 +492,9 @@ const BotLogic = {
         for (const rank in byRank2) {
              const cards = byRank2[rank];
              if (cards.length === 3) {
-                 // It's a triple
-                 // We can add to pairs list as a "Triple" (hacky) or just leave it?
-                 // Let's remove it from singles consideration
+                 // A triple is a play in its own right, not trash and not a
+                 // pair with a spare card. Keep it whole.
                  removeCards(cards);
-                 // We can treat it as a pair + single for "Trash" analysis?
-                 // Or better: Triples are strong. Not trash.
-                 // We'll add to a "triples" list (custom)
-                 if (!organized.triples) organized.triples = [];
                  organized.triples.push(Big2Rules.validateHand(cards));
              }
         }
@@ -616,6 +585,18 @@ const BotLogic = {
 
         // 2. Do we have pairs remaining?
         followUpScore += followUpOrg.pairs.length * 30;
+
+        // 2b. Triples, priced between a pair and a five-card hand: three cards
+        // in one play, and only a higher triple answers it.
+        //
+        // This is an ordering repair, not a tuning knob. The function counted
+        // pairs and five-card hands and nothing else, so a remainder of
+        // 4D 4C 4S scored 147 against 4D 4C's 185 - strictly more cards in a
+        // strictly better shape scoring less. It is worth saying plainly that
+        // the term is benchmark-neutral: the organizer fix above measures the
+        // same win rate with it and without it (§ 17). It is here for the
+        // ordering, not for a win-rate claim.
+        followUpScore += followUpOrg.triples.length * 50;
 
         // 3. Do we have control cards (2s, As) remaining?
         followUpScore += followUpOrg.control.length * 40;
@@ -2021,15 +2002,15 @@ const BotLogic = {
  *       rather than by the rank of the card pulled out of it, and the
  *       follow-up card-count term is monotone in cards remaining. Both made
  *       breaking up a strong five-card hand look cheap.
+ *   5 - organizeHand no longer builds a full house by taking its pair out of a
+ *       second triple, so two triples stay two triples. The greedy five-card
+ *       pass used to leave `triples` empty in exactly those hands, which then
+ *       had comboBreakPenalty charging every alternative - including leading
+ *       either triple whole - for breaking a combination that only existed
+ *       because a triple had been dismantled to make it. evaluateFollowUp
+ *       counts triples for the same reason: without it a remainder of 444
+ *       scored below a remainder of 44.
  */
-const BOT_LOGIC_VERSION = 4;
+const BOT_LOGIC_VERSION = 5;
 
-/**
- * Which PPO checkpoint the advanced bot loads. Recorded per seat so a corpus
- * spanning a checkpoint swap stays interpretable -- once a second checkpoint
- * exists, games logged before it are otherwise ambiguous forever.
- */
-const PPO_CHECKPOINT = 'modelParameters136500';
-const PPO_CHECKPOINT_GEN = 136500; // training step, a natural generation number
-
-module.exports = { BotLogic, BOT_LOGIC_VERSION, PPO_CHECKPOINT, PPO_CHECKPOINT_GEN };
+module.exports = { BotLogic, BOT_LOGIC_VERSION };

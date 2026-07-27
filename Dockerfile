@@ -46,26 +46,18 @@ RUN npm install --omit=dev
 
 
 # Production stage
-# Use Debian-based image (bookworm) instead of Alpine to ensure glibc compatibility for TensorFlow and other native modules
+# Use Debian-based image (bookworm) instead of Alpine so the native modules
+# built above (bcrypt, sqlite3) link against the same glibc.
 FROM node:20-bookworm
 
 WORKDIR /app
 
-# Runtime-only dependencies: python3 for the advanced-bot worker, sqlite3 for
-# operational inspection, wget for the healthcheck. No compilers.
+# Runtime-only dependencies: sqlite3 for operational inspection, wget for the
+# healthcheck. No compilers, and no Python -- the bots are pure JS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
     sqlite3 \
     wget \
     && rm -rf /var/lib/apt/lists/*
-
-# Install python dependencies for AI features
-# Using --break-system-packages because we are in a container/venv-like env.
-# The CPU-only TensorFlow build is a fraction of the size of the default wheel,
-# which drags in CUDA libraries this app never uses.
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    tensorflow-cpu==2.16.1 numpy joblib
 
 # Bring in the prebuilt server dependencies
 COPY --from=server-builder /app/node_modules ./node_modules

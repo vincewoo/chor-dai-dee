@@ -19,13 +19,12 @@ const { ACTION, SOURCE, FLAG, decodeCards, decodeDeal } = require('../game/TapeC
 const { BOT_LOGIC_VERSION } = require('../game/BotLogic');
 
 /** A room of four bots, started and played to the end of round 1, synchronously. */
-function playBotRound({ advancedBots = false } = {}) {
+function playBotRound() {
     const room = new Room('TEST1', 'short');
-    room.settings.useAdvancedBots = advancedBots;
     for (let i = 0; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(advancedBots);
+    room.startGame();
 
     // Drive turns directly rather than through checkBotTurn, whose 250ms
     // setTimeout would make this test slow and racy. The instrumentation lives
@@ -103,7 +102,7 @@ test('the recorded deal matches the hands actually dealt', () => {
     for (let i = 0; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);
+    room.startGame();
 
     const dealt = room.players.map(p => p.hand.map(c => c.value).sort((a, b) => a - b));
     const decoded = decodeDeal(room.tape.round.deal)
@@ -117,7 +116,7 @@ test('the opening seat is recorded as the holder of the 3 of Diamonds', () => {
     for (let i = 0; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);
+    room.startGame();
 
     const expected = room.players.findIndex(p =>
         p.hand.some(c => c.rank === '3' && c.suit === 'D'));
@@ -190,7 +189,7 @@ test('a human ply records think time and a disconnect flag', () => {
     for (let i = 1; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);
+    room.startGame();
 
     // Force the human to lead so we can drive one deterministic ply. Round 2,
     // because the 3-of-Diamonds opening rule applies only to the first turn of
@@ -217,7 +216,7 @@ test('think_ms is clamped and flagged when a player stalls', () => {
     for (let i = 1; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);
+    room.startGame();
 
     room.roundNumber = 2;   // past the 3-of-Diamonds opening rule
     room.currentTurnIndex = 0;
@@ -241,7 +240,7 @@ test('a disconnect during the turn is flagged even after reconnecting', () => {
     for (let i = 1; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);
+    room.startGame();
 
     room.roundNumber = 2;   // past the 3-of-Diamonds opening rule
     room.currentTurnIndex = 0;
@@ -265,7 +264,7 @@ test('an auto-pass is distinguished from a deliberate pass', () => {
     for (let i = 1; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);
+    room.startGame();
 
     // Put a pile up so passing is legal, and give the human the turn.
     const { Big2Rules } = require('../game/Big2Rules');
@@ -287,46 +286,35 @@ test('an auto-pass is distinguished from a deliberate pass', () => {
 });
 
 test('seats report the policy generation that played them', () => {
-    const heuristic = new Room('TEST8', 'short');
+    const room = new Room('TEST8', 'short');
     for (let i = 0; i < 4; i++) {
-        heuristic.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
+        room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    heuristic.startGame(false);
+    room.startGame();
 
-    for (const seat of heuristic.describeSeats()) {
+    for (const seat of room.describeSeats()) {
         assert.strictEqual(seat.occupant, 'bot_heuristic');
         assert.strictEqual(seat.policyGen, BOT_LOGIC_VERSION);
-    }
-
-    const ppo = new Room('TEST9', 'short');
-    for (let i = 0; i < 4; i++) {
-        ppo.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
-    }
-    ppo.startGame(true);
-
-    for (const seat of ppo.describeSeats()) {
-        assert.strictEqual(seat.occupant, 'bot_ppo');
-        assert.strictEqual(seat.policyRef, 'modelParameters136500');
+        // The bot's name, because getBotProfile derives its temperament from it.
+        assert.strictEqual(seat.subjectKey, room.players[seat.seat].name);
     }
 });
 
-test('a replacement bot is labelled by the room policy, not by difficulty', () => {
-    // replaceWithBot hardcodes difficulty:'advanced' regardless of the room
-    // setting, so reading that field would label this seat as PPO while the
-    // heuristic is what actually plays it.
+test('a bot replacing a human is logged as a heuristic seat', () => {
+    // The replacement inherits the departed human's seat and hand, so the seat
+    // segment has to switch to the policy that now answers for it.
     const room = new Room('TEST10', 'short');
     room.addPlayer({ id: 'human_0', name: 'alice', isBot: false });
     for (let i = 1; i < 4; i++) {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
-    room.startGame(false);   // heuristic room
+    room.startGame();
 
     const replaced = room.replaceWithBot('human_0');
     assert.ok(replaced);
-    assert.strictEqual(replaced.botPlayer.difficulty, 'advanced', 'precondition');
 
     const seat = room.describeSeats()[0];
-    assert.strictEqual(seat.occupant, 'bot_heuristic', 'must follow the room policy');
+    assert.strictEqual(seat.occupant, 'bot_heuristic');
     assert.strictEqual(seat.policyGen, BOT_LOGIC_VERSION);
 });
 
@@ -336,11 +324,11 @@ test('rematch and lobby restart stash the previous game id', () => {
         room.addPlayer({ id: `bot_${i}`, name: `Bot ${i + 1}`, isBot: true });
     }
     room.addPlayer({ id: 'human_0', name: 'alice', isBot: false });
-    room.startGame(false);
+    room.startGame();
 
     const firstId = room.gameId;
     room.gameState = 'finished';
-    room.startRematch(false);
+    room.startRematch();
 
     assert.strictEqual(room.previousGameId, firstId);
     assert.strictEqual(room.chainKind, 'rematch');
@@ -373,7 +361,7 @@ test('a dragon deal is recorded even though no ply is ever played', () => {
         this.cards = [...rest.slice(0, 26), ...dragon, ...rest.slice(26)];
     };
 
-    room.startGame(false);
+    room.startGame();
 
     if (room.gameState !== 'dragon_win') {
         // The stacking above is best-effort; skip rather than assert on a

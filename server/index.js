@@ -1504,7 +1504,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('room_update', room.getGameState());
     });
 
-    socket.on('start_game', async ({ roomId, useAdvancedBots }) => {
+    socket.on('start_game', async ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
             // Verify that the requesting player is the host
@@ -1514,7 +1514,7 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            room.startGame(useAdvancedBots);
+            room.startGame();
 
             // Save game history entry when game starts
             try {

@@ -1,15 +1,15 @@
 # Chor Dai Dee (Big 2)
 
-A feature-rich multiplayer Big 2 card game with comprehensive statistics tracking, advanced AI opponents, and accessibility options. Built with React frontend and Express/Socket.io backend.
+A feature-rich multiplayer Big 2 card game with comprehensive statistics tracking, strong AI opponents, and accessibility options. Built with React frontend and Express/Socket.io backend.
 
 ## Features
 
 ### Core Gameplay
 - **Multiplayer support**: Play with up to 4 players in real-time via Socket.io
-- **Advanced bot players**: Intelligent AI opponents with heuristic-based decision-making
+- **Bot players**: Intelligent AI opponents with heuristic-based decision-making
   - "Poker First" strategy to preserve strong 5-card hands
-  - Card counting and strategic passing
-  - Toggle between simple and advanced bot difficulty
+  - Card counting, strategic passing and per-round opponent modelling
+  - Per-bot personality, so four bots at one table do not play identically
 - **Voice Chat**: Real-time voice communication with other players (toggleable)
 - **Game modes**: Choose between Short Game (50 points, default) or Standard Game (100 points)
 - **Reconnection support**: Seamlessly rejoin in-progress games if disconnected
@@ -194,7 +194,6 @@ Access settings via the gear icon in-game:
   cards you hold, or what other players at the table see, and each player can
   set it independently.
 - **Auto-Pass**: Automatically pass when you have no valid moves
-- **Advanced Bots**: Toggle between simple and heuristic-based AI opponents
 - **Bot Debug Panel**: View real-time bot decision analysis (for developers)
 
 ## Tech Stack

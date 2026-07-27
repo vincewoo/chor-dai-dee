@@ -36,7 +36,7 @@ async function persistRound(roomId, { endReason = 'normal' } = {}) {
 
     const gameKey = await gamelog.openGame({
         gameId: room.gameId, roomId: room.id, gameMode: room.gameMode,
-        pointThreshold: room.pointThreshold, advancedBots: false, startedAt: Date.now()
+        pointThreshold: room.pointThreshold, startedAt: Date.now()
     }, room.describeSeats(1));
 
     let guard = 0;

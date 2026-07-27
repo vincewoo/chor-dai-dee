@@ -30,6 +30,7 @@ server/database.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
 
+<<<<<<< HEAD
 # Python
 *.pyc
 __pycache__/
@@ -41,6 +42,8 @@ __pycache__/
 fly-export/
 server/.rl-generations/
 
+=======
+>>>>>>> main
 # OS files
 .DS_Store
 Thumbs.db
