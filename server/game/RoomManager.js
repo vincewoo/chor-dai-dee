@@ -78,7 +78,14 @@ class Room {
         this.playOrder = 0; // Incrementing counter for z-index stacking order
         this.isPrivate = false; // Whether room is private (prevents random joins)
         this.lastActivityTimestamp = Date.now(); // Track last activity for cleanup
-        this.createdAt = Date.now(); // Track when room was created
+        this.createdAt = Date.now(); // Track when the ROOM was created
+        // When the current GAME started, which is not when the room was created:
+        // a room sits in the lobby before anyone presses Start, and it is reused
+        // for rematches and lobby restarts. Set by startGame(). Everything that
+        // reports a game's duration reads this; using createdAt charged each
+        // game for the lobby wait before it, and charged a rematch for the
+        // entire previous game.
+        this.gameStartedAt = null;
         this.trickWinPending = false; // Flag to indicate a trick win is pending (delay before clearing)
         this.trickWinner = null; // The player who won the current trick
         this.trickIndex = 0; // Tricks resolved this round, for tricks-contested counting
@@ -425,7 +432,17 @@ class Room {
             rating_sigma: DEFAULT_SIGMA,
             rating: calculateDisplayRating(DEFAULT_MU, DEFAULT_SIGMA),
             hand: oldPlayer.hand, // Keep the same hand
-            isDisconnected: false
+            isDisconnected: false,
+            // Who this seat belonged to before the swap. The bot's name carries
+            // it for display, but a display string is not an identity: without
+            // this, a game abandoned after the last human walked out recorded
+            // four bots and nobody to attribute the walkout to. describeParticipants()
+            // is the consumer. Structured, not parsed back out of the name.
+            replacedHuman: {
+                name: oldPlayer.name,
+                isGuest: !!oldPlayer.isGuest,
+                joinedMidGame: !!oldPlayer.joinedMidGame
+            }
         };
 
         // Replace the player in the array
@@ -707,6 +724,10 @@ class Room {
             // starting" signal a room gets -- both startRematch() and the lobby
             // restart come back through here.
             this.roundsWonByName = {};
+            // Stamped here for the same reason, and in lockstep with the new
+            // gameId those two paths mint: this is the moment the game whose
+            // duration we report actually begins.
+            this.gameStartedAt = Date.now();
             // Decisions accumulate across the rounds of one game and are
             // flushed at game end. Nothing cleared them between games, so a
             // rematch re-counted the previous game's decisions and re-inserted
@@ -1751,6 +1772,39 @@ class Room {
         });
     }
 
+    /**
+     * Who to credit each seat to in game_participants, with their score so far.
+     *
+     * A seat vacated mid-game is overwritten by a bot (replaceWithBot), so by
+     * the time a game is abandoned the humans who were playing it may all be
+     * gone from `players`. Attributing the seat to the bot would record a rage
+     * quit with nobody in it: no user_id, so the game never appears in the
+     * quitter's history, and rounds_won reading 0 because roundsWonByName is
+     * keyed on the human's name.
+     *
+     * The bot keeps playing the seat, but the person who owned it is who the
+     * row is about, so `isBot` reports the occupant this row describes, not
+     * whatever is sitting there at teardown.
+     *
+     * Scores come from cumulativeScores, which replaceWithBot migrates to the
+     * bot's id -- so the score is correct under either attribution and is read
+     * off the live seat regardless.
+     *
+     * Returns plain data; index.js resolves account ids and writes the rows.
+     */
+    describeParticipants() {
+        return this.players.map((p) => {
+            const human = p.isBot ? p.replacedHuman : null;
+            return {
+                username: human ? human.name : p.name,
+                isBot: p.isBot && !human,
+                isGuest: human ? human.isGuest : Boolean(p.isGuest),
+                score: this.cumulativeScores[p.id] || 0,
+                roundsWon: this.roundsWonByName[human ? human.name : p.name] || 0
+            };
+        });
+    }
+
     /** Seat index for a socket id, or -1. */
     seatOf(playerId) {
         return this.players.findIndex(p => p.id === playerId);
@@ -2062,11 +2116,20 @@ class RoomManager {
             // already-finished game was not abandoned mid-play.
             let abandonReason = null;
 
+            // A game only counts as abandoned from these states. Deleting a
+            // waiting room abandons nothing (no game was ever started), and a
+            // finished game already has its real ending recorded.
+            const inPlay = room.gameState === 'playing' || room.gameState === 'round_over';
+
             // Rule 1: All bots - delete immediately
             if (room.hasOnlyBots()) {
                 shouldDelete = true;
                 reason = 'all bots';
-                abandonReason = 'all_bots';
+                // Rule 1 fires from any state, so this is the one rule that has
+                // to ask. Without the check an all-bot room that had already
+                // finished its game would be reported as abandoned, overwriting
+                // a completed game's ending.
+                abandonReason = inPlay ? 'all_bots' : null;
             }
             // Rule 2: Finished games - delete after 5 minutes
             else if (room.gameState === 'finished' && inactiveDuration > FINISHED_GAME_TIMEOUT) {
@@ -2082,10 +2145,10 @@ class RoomManager {
             else if (room.isSinglePlayer() && inactiveDuration > SINGLE_PLAYER_TIMEOUT) {
                 shouldDelete = true;
                 reason = 'single-player timeout (24h)';
-                abandonReason = 'single_player_timeout';
+                abandonReason = inPlay ? 'single_player_timeout' : null;
             }
             // Rule 5: Multiplayer games - delete after 30 minutes
-            else if (!room.isSinglePlayer() && (room.gameState === 'playing' || room.gameState === 'round_over') && inactiveDuration > MULTIPLAYER_TIMEOUT) {
+            else if (!room.isSinglePlayer() && inPlay && inactiveDuration > MULTIPLAYER_TIMEOUT) {
                 shouldDelete = true;
                 reason = 'multiplayer timeout (30min)';
                 abandonReason = 'multiplayer_timeout';
