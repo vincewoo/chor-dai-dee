@@ -2062,11 +2062,20 @@ class RoomManager {
             // already-finished game was not abandoned mid-play.
             let abandonReason = null;
 
+            // A game only counts as abandoned from these states. Deleting a
+            // waiting room abandons nothing (no game was ever started), and a
+            // finished game already has its real ending recorded.
+            const inPlay = room.gameState === 'playing' || room.gameState === 'round_over';
+
             // Rule 1: All bots - delete immediately
             if (room.hasOnlyBots()) {
                 shouldDelete = true;
                 reason = 'all bots';
-                abandonReason = 'all_bots';
+                // Rule 1 fires from any state, so this is the one rule that has
+                // to ask. Without the check an all-bot room that had already
+                // finished its game would be reported as abandoned, overwriting
+                // a completed game's ending.
+                abandonReason = inPlay ? 'all_bots' : null;
             }
             // Rule 2: Finished games - delete after 5 minutes
             else if (room.gameState === 'finished' && inactiveDuration > FINISHED_GAME_TIMEOUT) {
@@ -2082,10 +2091,10 @@ class RoomManager {
             else if (room.isSinglePlayer() && inactiveDuration > SINGLE_PLAYER_TIMEOUT) {
                 shouldDelete = true;
                 reason = 'single-player timeout (24h)';
-                abandonReason = 'single_player_timeout';
+                abandonReason = inPlay ? 'single_player_timeout' : null;
             }
             // Rule 5: Multiplayer games - delete after 30 minutes
-            else if (!room.isSinglePlayer() && (room.gameState === 'playing' || room.gameState === 'round_over') && inactiveDuration > MULTIPLAYER_TIMEOUT) {
+            else if (!room.isSinglePlayer() && inPlay && inactiveDuration > MULTIPLAYER_TIMEOUT) {
                 shouldDelete = true;
                 reason = 'multiplayer timeout (30min)';
                 abandonReason = 'multiplayer_timeout';

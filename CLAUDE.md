@@ -27,7 +27,7 @@ node index.js        # Start server on port 3000
 Tests (server, uses Node's built-in runner):
 ```bash
 cd server/
-npm test             # regression tests (bot logic, game log, replay, export)
+npm test             # regression tests (bot logic, game log, replay, export, activity feed)
 npm run bench        # bot self-play benchmark + behavioural metrics
 npm run bot:rl:train # train the candidate-value policy with canonical JS rules
 npm run bot:rl:bench # held-out learned-vs-heuristic evaluation
@@ -45,8 +45,9 @@ npm run gamelog:export -- --out data/ --humans-only # JSONL training shards
 npm run gamelog:archive -- --out archive/ --dry-run # archival + retention
 ```
 
-Note: bot logic and the game-history store are covered by tests; the socket
-layer and REST endpoints are not.
+Note: bot logic, the game-history store, and the activity feed's SQL are
+covered by tests; the socket layer and REST endpoints are not. Tests that need
+`db.js` set `DATABASE_PATH` to a scratch file *before* requiring it.
 
 ### Deployment (Fly.io)
 ```bash
@@ -434,6 +435,20 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
 
 ### Database Schema
 
+#### Activity Feed Tables
+- `game_history` - One row per game, `status` in `completed` / `abandoned` /
+  `in_progress`. A game is opened `in_progress` by `start_game` and reaches a
+  terminal status two ways: `completed` at game over, or `abandoned` via
+  `recordAbandonedGame()` (`index.js`) when the room is destroyed mid-play —
+  the inactivity sweep, or the last human walking out. `in_progress` is
+  therefore a *live* game and no feed filter selects it; a row stuck there is a
+  bug, and `db.sweepAbandonedGames()` converts any survivors at boot.
+- `game_participants` - Who was in each game. Abandoned games carry rows too
+  (scores at the moment the game died) but with a **NULL `final_placement`**,
+  since an unfinished game has no standings. Anything reading placements must
+  filter `final_placement IS NOT NULL` rather than assume abandoned games have
+  no rows.
+
 #### Core Tables
 - `users` - User accounts (id, username, password_hash)
 - `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, coach_enabled, table theme, sound, avatar_animal/avatar_tile)
@@ -591,6 +606,7 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
 |---|---|---|
 | `PORT` | `3000` | |
 | `NODE_ENV` | — | `production` switches DB path to `/data` and tightens CORS |
+| `DATABASE_PATH` | `/data/database.sqlite` prod, `server/database.sqlite` dev | Overrides both. Exists so tests can point `db.js` at a scratch file — requiring it opens and migrates whatever path it resolves. |
 | `IDLE_SHUTDOWN_MINUTES` | `360` (6h) | The process exits once it has been continuously idle — no rooms and no connected sockets — for this long, letting Fly scale to zero. Any room or socket resets the clock. Fly restarts the machine on the next request. |
 | `CLIENT_URL` | — | Allowed CORS origin in production |
 | `GOOGLE_CLIENT_ID` | — | Google OAuth |

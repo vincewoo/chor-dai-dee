@@ -4,11 +4,13 @@ const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
 const bcrypt = require('bcrypt');
 const path = require('path');
 
-// Use /data directory in production (Docker volume mount), local directory otherwise
+// Use /data directory in production (Docker volume mount), local directory otherwise.
+// DATABASE_PATH overrides both, so a test can point this module at a scratch file
+// instead of the developer's real database -- requiring db.js has always created
+// and migrated whatever path it resolved, which is why nothing here had tests.
 const isProduction = process.env.NODE_ENV === 'production';
-const dbPath = isProduction
-    ? '/data/database.sqlite'
-    : path.join(__dirname, 'database.sqlite');
+const dbPath = process.env.DATABASE_PATH
+    || (isProduction ? '/data/database.sqlite' : path.join(__dirname, 'database.sqlite'));
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
@@ -1124,10 +1126,15 @@ const getRoundAggregates = (userId, gameMode) => {
  * game relates to where they finished.
  *
  * The midpoint standing comes from round_stats, the final placement from
- * game_participants - which only carries rows for completed games, so abandoned
- * ones fall out on their own. Games shorter than three rounds are excluded:
- * with one or two rounds the "midpoint" is the finish, and every game would
- * score as a held lead.
+ * game_participants. Abandoned games are excluded on final_placement IS NOT
+ * NULL: they now carry participant rows too (scores at the moment the game
+ * died), but no placements, because an unfinished game has no standings. This
+ * used to fall out on its own because nothing wrote participants for abandoned
+ * games at all - relying on that again would count every walkout as a game the
+ * player led at halfway and then failed to convert.
+ *
+ * Games shorter than three rounds are excluded: with one or two rounds the
+ * "midpoint" is the finish, and every game would score as a held lead.
  */
 const getComebackStats = (userId, gameMode) => {
     return new Promise((resolve, reject) => {
@@ -1153,7 +1160,8 @@ const getComebackStats = (userId, gameMode) => {
                 SUM(CASE WHEN m.standing = 1 THEN 1 ELSE 0 END) AS led_at_half,
                 SUM(CASE WHEN m.standing = 1 AND gp.final_placement >= 3 THEN 1 ELSE 0 END) AS collapses
             FROM midpoint m
-            JOIN game_participants gp ON gp.game_id = m.game_id AND gp.user_id = ?
+            JOIN game_participants gp
+              ON gp.game_id = m.game_id AND gp.user_id = ? AND gp.final_placement IS NOT NULL
         `;
 
         db.get(query, [userId, gameMode, userId, gameMode, userId], (err, row) => {
@@ -2097,6 +2105,57 @@ const getActivityFeed = (options = {}) => {
     });
 };
 
+/**
+ * Marks games still reading 'in_progress' as abandoned.
+ *
+ * Rooms live in memory only, so a process restart destroys every game in flight
+ * and nothing ever revisits its game_history row. Until the abandon path
+ * existed, no writer ever set 'abandoned' at all: the status was in the CHECK
+ * constraint and had its own index and activity-feed filter, but the "Rage
+ * quits" tab was permanently empty, and abandoned games were invisible in the
+ * feed entirely -- 'in_progress' appears in no filter's status list.
+ *
+ * Runs at boot, before connections are accepted, mirroring gamelog.sweepOrphans.
+ * Safe at exactly that moment: no row in this database can legitimately be in
+ * progress when the process has only just started.
+ *
+ * end_time is unknown for these rows -- nothing recorded when the game stopped
+ * -- so it is recovered from the last round the game actually persisted, and
+ * falls back to start_time for games that died before finishing a round. Using
+ * "now" instead would stack every game ever abandoned on top of today's real
+ * ones, since the feed pages on end_time DESC. total_rounds is recovered the
+ * same way. duration_seconds is left alone rather than derived from a
+ * reconstructed end, so a card shows no duration instead of a wrong one.
+ *
+ * round_stats.timestamp is SQLite's CURRENT_TIMESTAMP ('YYYY-MM-DD HH:MM:SS',
+ * UTC), while every other time column here is an ISO-8601 string. It is
+ * reformatted on the way in: JS parses the space-separated form as *local*
+ * time, which would shift each recovered end_time by the viewer's UTC offset.
+ */
+const sweepAbandonedGames = () => {
+    return new Promise((resolve, reject) => {
+        // Only humans get round_stats rows, so an all-guest game recovers
+        // nothing here and keeps its start_time. That is the fallback working,
+        // not a failure.
+        const lastRound = (column) => `
+            (SELECT ${column} FROM round_stats rs WHERE rs.game_id = game_history.game_id)`;
+
+        const query = `
+            UPDATE game_history
+               SET status = 'abandoned',
+                   total_rounds = COALESCE(${lastRound('MAX(rs.round_number)')}, total_rounds),
+                   end_time = COALESCE(
+                       ${lastRound("strftime('%Y-%m-%dT%H:%M:%S.000Z', MAX(rs.timestamp))")},
+                       start_time)
+             WHERE status = 'in_progress'`;
+
+        db.run(query, [], function (err) {
+            if (err) return reject(err);
+            resolve(this.changes);
+        });
+    });
+};
+
 // Get game events for a specific game
 const getGameEvents = (gameId) => {
     return new Promise((resolve, reject) => {
@@ -2448,6 +2507,7 @@ module.exports = {
     getActivityFeed,
     getGameEvents,
     getActivityFeedCount,
+    sweepAbandonedGames,
     // Google OAuth
     getUserByGoogleId,
     createGoogleUser,

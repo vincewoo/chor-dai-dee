@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -154,6 +154,87 @@ function dropSpectatorEverywhere(username, socket) {
     }
 }
 
+// ============ Abandoned Games ============
+
+// A room is only "abandoned" from these two states. A waiting room has no
+// game_history row yet (one is written by start_game), and a finished game
+// already has a terminal one -- marking either would be wrong in both stores.
+const IN_PLAY_STATES = new Set(['playing', 'round_over']);
+
+/**
+ * Closes out a game whose room is being destroyed mid-play.
+ *
+ * Every store that records a game gets the same terminal write: game_history
+ * flips to 'abandoned' (which is what puts the game in the activity feed's
+ * "Rage quits" filter, and what stops it from sitting at 'in_progress' where no
+ * filter can see it at all), and the game log flushes its partial round.
+ *
+ * Both live behind one function because the two used to disagree: the cleanup
+ * sweep flushed the game log only, and the paths where the last human walks out
+ * mid-game -- the most literal rage quit there is -- recorded nothing anywhere.
+ *
+ * Participants are written with their scores at the moment the game died but
+ * with a NULL placement, because an unfinished game has no standings. Callers
+ * that read placements must exclude NULLs rather than assume abandoned games
+ * have no participant rows (see getComebackStats).
+ *
+ * Never throws: this runs on room teardown, where the room is going away
+ * regardless and a failed write must not take the sweep or a socket handler
+ * down with it.
+ */
+async function recordAbandonedGame(room, abandonReason) {
+    if (!room || !room.gameId || !IN_PLAY_STATES.has(room.gameState)) return;
+
+    // Guard the flag itself so re-entry can't write a second terminal state for
+    // one game -- a room can be reaped on the same tick a handler deletes it.
+    if (room._abandonRecorded) return;
+    room._abandonRecorded = true;
+
+    try {
+        const endTime = new Date();
+        const startTime = new Date(room.createdAt);
+        const lookupUser = createUserLookup();
+
+        await withTransaction(async () => {
+            await saveGameHistory({
+                gameId: room.gameId,
+                roomName: room.id,
+                gameMode: room.gameMode,
+                isPublic: !room.isPrivate,
+                status: 'abandoned',
+                winnerId: null,
+                winnerUsername: null,
+                startTime: startTime.toISOString(),
+                endTime: endTime.toISOString(),
+                durationSeconds: Math.floor((endTime - startTime) / 1000),
+                totalRounds: room.roundNumber,
+                maxPoints: room.pointThreshold
+            });
+
+            for (const player of room.players) {
+                const participant = player.isBot ? null : await lookupUser(player.name);
+                await saveGameParticipant({
+                    gameId: room.gameId,
+                    userId: participant ? participant.id : null,
+                    username: player.name,
+                    isBot: player.isBot,
+                    finalPlacement: null,
+                    finalScore: room.cumulativeScores[player.id] || 0,
+                    roundsWon: room.roundsWonByName[player.name] || 0
+                });
+            }
+        });
+    } catch (e) {
+        console.error('Failed to save game history on abandon:', e);
+    }
+
+    try {
+        await gamelogRecorder.recordAbandon(room, abandonReason);
+    } catch (e) {
+        console.error('[gamelog] abandon flush failed:', e.message);
+    }
+}
+
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id} from ${socket.handshake.headers['user-agent']?.substring(0, 50)}`);
 
@@ -277,6 +358,10 @@ io.on('connection', (socket) => {
                         // Check if room now has only bots
                         if (existingRoom.hasOnlyBots()) {
                             console.log(`Room ${existingRoomId} now has only bots, deleting room`);
+                            // The last human left a game in progress by joining
+                            // another room. Record it before the room is gone --
+                            // the cleanup sweep will never see this one.
+                            await recordAbandonedGame(existingRoom, 'last_human_left');
                             evictSpectators(existingRoom, existingRoomId, 'All players left');
                             roomManager.deleteRoom(existingRoomId);
                         } else {
@@ -1791,7 +1876,7 @@ io.on('connection', (socket) => {
         console.log(`Player ${result.kickedPlayer.name} was kicked from room ${roomId}`);
     });
 
-    socket.on('leave_room', ({ roomId }) => {
+    socket.on('leave_room', async ({ roomId }) => {
         console.log(`User ${socket.id} leaving room ${roomId}`);
 
         const room = roomManager.getRoom(roomId);
@@ -1832,6 +1917,10 @@ io.on('connection', (socket) => {
                 // Check if the room now has only bots - if so, delete it
                 if (room.hasOnlyBots()) {
                     console.log(`Room ${roomId} now has only bots, deleting room`);
+                    // The last human walked out of a game in progress. Record it
+                    // here: the room is deleted on this tick, so the cleanup
+                    // sweep never gets a chance to.
+                    await recordAbandonedGame(room, 'last_human_left');
                     evictSpectators(room, roomId, 'All players left');
                     roomManager.deleteRoom(roomId);
                     return;
@@ -2969,14 +3058,21 @@ server.listen(PORT, HOST, () => {
 // Close out games left open by a process death, before any new game can start.
 //
 // Rooms live in memory only, so a restart silently destroys every game in
-// progress. Without this sweep those rows keep a NULL ended_at forever and are
-// indistinguishable from live games -- the exact state game_history is in
-// today, where nothing has ever written 'abandoned' and every abandoned game
-// since launch still reads 'in_progress'.
+// progress. Without these sweeps those rows stay indistinguishable from live
+// games forever: a NULL ended_at in the game log, and status 'in_progress' in
+// game_history, which no activity-feed filter selects.
 //
-// Safe at this moment specifically: no game in this database can legitimately
+// Safe at this moment specifically: no game in either database can legitimately
 // be in progress when the process has only just started.
 gamelog.sweepOrphans();
+
+sweepAbandonedGames()
+    .then(changed => {
+        if (changed > 0) {
+            console.log(`[Cleanup] Marked ${changed} stranded game(s) as abandoned`);
+        }
+    })
+    .catch(err => console.error('[Cleanup] Failed to sweep abandoned games:', err.message));
 
 // Retention sweep for decision_tracking.
 //
@@ -3036,14 +3132,17 @@ setInterval(() => {
     if (reaped.length > 0) {
         console.log(`[Cleanup] Removed ${reaped.length} inactive room(s)`);
     }
-    // Persist whatever those rooms had in flight before it is lost with them.
-    // Without this, every abandoned game would be invisible to the corpus --
-    // which is exactly the state game_history is in, where nothing has ever
-    // written 'abandoned'.
+    // Persist whatever those rooms had in flight before it is lost with them --
+    // to game_history, so the game shows up in the feed's "Rage quits" filter
+    // instead of being stranded at 'in_progress' where nothing displays it, and
+    // to the game log, so the partial round reaches the training corpus.
     for (const { room, abandonReason } of reaped) {
         if (abandonReason) {
-            gamelogRecorder.recordAbandon(room, abandonReason)
-                .catch(e => console.error('[gamelog] abandon flush failed:', e.message));
+            // Not awaited: this tick also runs the autostop check, and a slow
+            // write must not delay it. recordAbandonedGame handles its own
+            // failures; the catch is for anything thrown before it gets there.
+            recordAbandonedGame(room, abandonReason)
+                .catch(e => console.error('[Cleanup] Abandon flush failed:', e.message));
         }
     }
 
