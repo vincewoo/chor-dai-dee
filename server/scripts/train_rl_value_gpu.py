@@ -82,6 +82,9 @@ def load_experiences(paths):
             "columns",
             "rulesVersion",
             "heuristicBotVersion",
+            "gamma",
+            "targetMode",
+            "traceLambda",
         ):
             if metadata.get(key) != first.get(key):
                 raise ValueError(f"experience {key} mismatch in {path}")
@@ -151,6 +154,8 @@ def export_artifact(
             "experienceRows": metadata["rows"],
             "experienceSources": metadata.get("sources"),
             "experienceKind": metadata.get("kind"),
+            "experienceTargetMode": metadata.get("targetMode"),
+            "experienceTraceLambda": metadata.get("traceLambda"),
             "experienceRounds": metadata.get("rounds"),
             "experienceWorkerCount": metadata.get("workerCount"),
             "experienceWorkerSeeds": metadata.get("workerSeeds"),

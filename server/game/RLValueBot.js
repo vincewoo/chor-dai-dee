@@ -207,6 +207,8 @@ class RLValueBot {
                 action: chosen.action,
                 key: chosen.key,
                 predictedValue: chosen.value,
+                maxPredictedValue: Math.max(
+                    ...options.map(option => option.value)),
                 optionCount: options.length,
                 explored,
                 heuristicKey: heuristic ? heuristic.key : null,

@@ -20,6 +20,7 @@ function parseArgs(argv) {
         epochs: 15,
         batchSize: 8192,
         learningRate: 0.0001,
+        traceLambda: 0.8,
         replayDepth: 1,
         selectionRounds: 6000,
         interpolationAlphas: [0.25, 0.5, 1],
@@ -43,6 +44,7 @@ function parseArgs(argv) {
         else if (flag === '--epochs') args.epochs = Number(argv[++i]);
         else if (flag === '--batch-size') args.batchSize = Number(argv[++i]);
         else if (flag === '--learning-rate') args.learningRate = Number(argv[++i]);
+        else if (flag === '--trace-lambda') args.traceLambda = Number(argv[++i]);
         else if (flag === '--replay-depth') args.replayDepth = Number(argv[++i]);
         else if (flag === '--selection-rounds') {
             args.selectionRounds = Number(argv[++i]);
@@ -77,6 +79,7 @@ Later calls automatically resume from the newest completed generation.
   --epochs N               optimizer passes (default 15)
   --batch-size N           GPU batch size (default 8192)
   --learning-rate N        AdamW rate (default 0.0001)
+  --trace-lambda N         fitted TD(lambda) mixture (default 0.8)
   --replay-depth N         ancestor experience buffers to replay (default 1)
   --selection-rounds N     held-out rounds for update-size selection (default 6000)
   --interpolation-alphas A comma-separated parent-to-trained steps (default .25,.5,1)
@@ -149,6 +152,35 @@ function resolveReplayExperiences(parentCheckpoint, depth) {
         checkpoint = path.resolve(metadata.parentCheckpoint);
     }
     return experiences;
+}
+
+function filterCompatibleReplayExperiences(experience, candidates) {
+    const current = JSON.parse(
+        fs.readFileSync(`${experience}.json`, 'utf8'));
+    const keys = [
+        'kind',
+        'dtype',
+        'columns',
+        'rulesVersion',
+        'heuristicBotVersion',
+        'gamma',
+        'targetMode',
+        'traceLambda'
+    ];
+    const compatible = [];
+    const skipped = [];
+    for (const candidate of candidates) {
+        const metadata = JSON.parse(
+            fs.readFileSync(`${candidate}.json`, 'utf8'));
+        const mismatches = keys.filter(key =>
+            JSON.stringify(metadata[key]) !== JSON.stringify(current[key]));
+        if (mismatches.length) {
+            skipped.push({ path: candidate, mismatches });
+        } else {
+            compatible.push(candidate);
+        }
+    }
+    return { compatible, skipped };
 }
 
 function interpolateParameter(parent, candidate, alpha) {
@@ -282,7 +314,8 @@ function mergeExperienceShards(shards, output) {
         }
         for (const key of [
             'kind', 'dtype', 'policy', 'rulesVersion',
-            'heuristicBotVersion', 'gamma', 'opponents'
+            'heuristicBotVersion', 'gamma', 'opponents',
+            'targetMode', 'traceLambda'
         ]) {
             if (shard.metadata[key] !== first[key]) {
                 throw new Error(`Experience ${key} mismatch in ${shard.path}`);
@@ -318,6 +351,8 @@ function mergeExperienceShards(shards, output) {
             roundOffset: shard.metadata.roundOffset
         })),
         gamma: first.gamma,
+        targetMode: first.targetMode,
+        traceLambda: first.traceLambda,
         opponents: first.opponents,
         policy: first.policy,
         rulesVersion: first.rulesVersion,
@@ -366,6 +401,7 @@ async function collectExperience({
             '--model', generation.input,
             '--output', shard.path,
             '--seed', String(seed),
+            '--trace-lambda', String(args.traceLambda),
             '--epsilon', String(args.epsilon),
             '--heuristic-weight', String(args.heuristicWeight),
             '--override-margin', String(args.overrideMargin),
@@ -614,6 +650,10 @@ async function main(argv = process.argv) {
     if (!Number.isInteger(args.replayDepth) || args.replayDepth < 0) {
         throw new Error('--replay-depth must be a non-negative integer');
     }
+    if (!Number.isFinite(args.traceLambda) ||
+        args.traceLambda < 0 || args.traceLambda > 1) {
+        throw new Error('--trace-lambda must be between 0 and 1');
+    }
     if (!args.interpolationAlphas.length ||
         args.interpolationAlphas.some(alpha =>
             !Number.isFinite(alpha) || alpha <= 0 || alpha > 1)) {
@@ -670,12 +710,21 @@ async function main(argv = process.argv) {
         workDir
     });
 
-    const replayExperiences = resolveReplayExperiences(
-        generation.input, args.replayDepth);
+    const replayResolution = filterCompatibleReplayExperiences(
+        experience,
+        resolveReplayExperiences(generation.input, args.replayDepth)
+    );
+    const replayExperiences = replayResolution.compatible;
     console.log(
         `\n=== ${label}: train on ${args.device} with ` +
         `${replayExperiences.length} replay buffer(s) ===`
     );
+    for (const skipped of replayResolution.skipped) {
+        console.log(
+            `skip-replay=${skipped.path} ` +
+            `mismatch=${skipped.mismatches.join(',')}`
+        );
+    }
     for (const replay of replayExperiences) {
         console.log(`replay=${replay}`);
     }
@@ -858,9 +907,14 @@ async function main(argv = process.argv) {
             epochs: args.epochs,
             batchSize: args.batchSize,
             learningRate: args.learningRate,
+            traceLambda: args.traceLambda,
             replayDepth: args.replayDepth,
             replayExperiences: replayExperiences.map(item =>
                 path.resolve(item)),
+            skippedReplayExperiences: replayResolution.skipped.map(item => ({
+                path: path.resolve(item.path),
+                mismatches: item.mismatches
+            })),
             selectionRounds: args.selectionRounds,
             selectionSeed,
             interpolationAlphas: args.interpolationAlphas,
@@ -936,6 +990,7 @@ module.exports = {
     completedGenerations,
     resolveGeneration,
     resolveReplayExperiences,
+    filterCompatibleReplayExperiences,
     parseBenchmark,
     seedForWorker,
     mergeExperienceShards,

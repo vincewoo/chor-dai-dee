@@ -23,6 +23,7 @@ function parseArgs(argv) {
         model: path.resolve('ai/rl-value-model-v1.json'),
         seed: 9128,
         gamma: 0.995,
+        traceLambda: 0.8,
         epsilon: 0.05,
         heuristicWeight: 0.20,
         overrideMargin: 0.02,
@@ -37,6 +38,7 @@ function parseArgs(argv) {
         else if (flag === '--model') args.model = path.resolve(argv[++i]);
         else if (flag === '--seed') args.seed = Number(argv[++i]);
         else if (flag === '--gamma') args.gamma = Number(argv[++i]);
+        else if (flag === '--trace-lambda') args.traceLambda = Number(argv[++i]);
         else if (flag === '--epsilon') args.epsilon = Number(argv[++i]);
         else if (flag === '--heuristic-weight') args.heuristicWeight = Number(argv[++i]);
         else if (flag === '--override-margin') args.overrideMargin = Number(argv[++i]);
@@ -57,17 +59,34 @@ Usage: node scripts/generate-rl-experience.js [options]
   --model FILE        policy checkpoint used to collect experience
   --opponents MODE    selfplay, heuristic, or mixed
   --epsilon N         collection exploration probability
+  --trace-lambda N    TD(lambda) terminal-return mixture (default 0.8)
   --seed N            deterministic generation seed
 `;
 
-function rowsForRound(trajectories, utilities, gamma) {
+function rowsForRound(trajectories, utilities, gamma, traceLambda = 1) {
     const rows = [];
     for (let seat = 0; seat < 4; seat++) {
         const trajectory = trajectories[seat];
+        const targets = Array(trajectory.length);
+        for (let i = trajectory.length - 1; i >= 0; i--) {
+            if (i === trajectory.length - 1) {
+                targets[i] = utilities[seat];
+            } else {
+                const nextValue = trajectory[i + 1].maxPredictedValue;
+                if (traceLambda < 1 && !Number.isFinite(nextValue)) {
+                    throw new Error(
+                        'trajectory is missing its next-state bootstrap value');
+                }
+                targets[i] = gamma * (
+                    (1 - traceLambda) * (nextValue || 0) +
+                    traceLambda * targets[i + 1]
+                );
+            }
+        }
         for (let i = 0; i < trajectory.length; i++) {
             rows.push({
                 features: trajectory[i].features,
-                target: utilities[seat] * Math.pow(gamma, trajectory.length - i - 1)
+                target: targets[i]
             });
         }
     }
@@ -97,6 +116,10 @@ function main(argv = process.argv) {
     }
     if (!Number.isInteger(args.roundOffset) || args.roundOffset < 0) {
         throw new Error('--round-offset must be a non-negative integer');
+    }
+    if (!Number.isFinite(args.traceLambda) ||
+        args.traceLambda < 0 || args.traceLambda > 1) {
+        throw new Error('--trace-lambda must be between 0 and 1');
     }
     if (!['selfplay', 'heuristic', 'mixed'].includes(args.opponents)) {
         throw new Error('--opponents must be selfplay, heuristic, or mixed');
@@ -132,7 +155,12 @@ function main(argv = process.argv) {
                 };
             });
             const result = playRound(seats, deal(rng));
-            const rows = rowsForRound(trajectories, roundUtilities(result), args.gamma);
+            const rows = rowsForRound(
+                trajectories,
+                roundUtilities(result),
+                args.gamma,
+                args.traceLambda
+            );
             writeRows(fd, rows);
             rowCount += rows.length;
 
@@ -160,6 +188,8 @@ function main(argv = process.argv) {
         roundOffset: args.roundOffset,
         seed: args.seed,
         gamma: args.gamma,
+        targetMode: 'td-lambda',
+        traceLambda: args.traceLambda,
         opponents: args.opponents,
         policy: path.basename(args.model),
         rulesVersion: RULES_VERSION,

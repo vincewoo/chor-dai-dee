@@ -152,15 +152,17 @@ Each call performs one approximate-policy-iteration generation:
 
 1. simulate 50,000 mixed self-play/heuristic rounds with the current policy
    across eight deterministic collection processes;
-2. fit the new buffer plus the parent's replay buffer on CUDA, restoring the
-   epoch with the best validation loss;
-3. create 25%, 50%, and 100% weight updates between the parent and trained
+2. construct fitted TD(λ) targets that blend terminal round utility with the
+   parent model's next-state value;
+3. fit the new buffer plus any target-compatible parent replay buffer on CUDA,
+   restoring the epoch with the best validation loss;
+4. create 25%, 50%, and 100% weight updates between the parent and trained
    network, then select one on a separate 6,000-round holdout;
-4. benchmark the selected update against its parent for 12,000 rounds on
+5. benchmark the selected update against its parent for 12,000 rounds on
    identical unseen deals;
-5. compare their first differing action on shared positions, heuristic override
+6. compare their first differing action on shared positions, heuristic override
    rates, margin-guard fallbacks, and paired outcomes after disagreements;
-6. preserve the replay data, checkpoints, diagnostics, selection logs, settings,
+7. preserve the replay data, checkpoints, diagnostics, selection logs, settings,
    worker seeds, and evaluation seed.
 
 The first call starts from `ai/rl-value-model-gpu-v1.json`. Later calls
@@ -224,13 +226,15 @@ not reduce win rate, and have a 95% Wilson lower bound above 50% among non-tied
 disagreement outcomes. A rejected generation remains useful provenance but
 should not become the next parent.
 
-By default, one ancestor replay buffer is mixed with newly collected
-experience to reduce forgetting. The conservative candidate tournament and
-replay depth can be tuned explicitly:
+By default, one compatible ancestor replay buffer is mixed with newly collected
+experience to reduce forgetting. Buffers made with older target definitions are
+reported and skipped rather than mixed silently. The TD trace, conservative
+candidate tournament, and replay depth can be tuned explicitly:
 
 ```bash
 npm run bot:rl:generation -- \
   --replay-depth 1 \
+  --trace-lambda 0.8 \
   --selection-rounds 6000 \
   --interpolation-alphas 0.25,0.5,1
 ```

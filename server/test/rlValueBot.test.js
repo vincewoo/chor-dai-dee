@@ -15,7 +15,10 @@ const {
 const {
     main: trainMain, roundUtilities, saveCheckpoint
 } = require('../scripts/train-rl-value-bot');
-const { main: experienceMain } = require('../scripts/generate-rl-experience');
+const {
+    main: experienceMain,
+    rowsForRound
+} = require('../scripts/generate-rl-experience');
 const {
     reconstructDecision,
     utilitiesByRound
@@ -124,6 +127,23 @@ test('round utility matches penalty tiers and is zero-sum', () => {
     assert.strictEqual(utility[2], -20 / 117);
     assert.strictEqual(utility[3], -9 / 117);
     assert.strictEqual(utility[0], 68 / 117);
+});
+
+test('TD(lambda) targets blend the next-state value with terminal utility', () => {
+    const trajectories = [
+        [
+            { features: [1], maxPredictedValue: 0.1 },
+            { features: [2], maxPredictedValue: 0.4 },
+            { features: [3], maxPredictedValue: 0.6 }
+        ],
+        [],
+        [],
+        []
+    ];
+    const rows = rowsForRound(trajectories, [1, 0, 0, 0], 1, 0.5);
+    assert.ok(Math.abs(rows[0].target - 0.6) < 1e-12);
+    assert.ok(Math.abs(rows[1].target - 0.8) < 1e-12);
+    assert.strictEqual(rows[2].target, 1);
 });
 
 test('value policy completes seeded rounds without an illegal action', () => {
