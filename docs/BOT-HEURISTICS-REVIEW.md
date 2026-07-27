@@ -744,3 +744,98 @@ it is pricing will actually stand up. Fixing it properly needs
 `estimateControlProbability` to read a five-card hand's rank rather than only its type
 (today a 2-high flush and a 7-high flush score identically), which is a policy change on a
 measured baseline and wants its own experiment. Left alone deliberately.
+
+## 17. Shipped from a playtest report: a full house built out of a second triple
+
+Reported from play, and reported as a pattern rather than a single hand: *"when I have two
+triples the coach suggests making a full house by breaking up one of the sets of triples."*
+The board was eleven cards — `3S 4D 4C 4S 6H 7H 8D 8C 8S KH KS` — with the lead. The coach
+suggested the full house **8s over 4s**, which dismantles the 444 and orphans the `4S`.
+
+The player's objection was that a triple is only beatable by a higher triple, which is rare,
+whereas a full house also loses to quads and straight flushes. On that specific board the
+objection was stronger than stated: of the 27 unseen cards, every rank above 8 was already
+too depleted to form a triple except Aces and 2s, so **triple 8s could only be beaten by
+trip Aces or trip 2s**, while the full house additionally lost to quad A/2 and a still-live
+J-Q-K-A-2 of diamonds.
+
+### The cause: the organizer and the penalty justifying each other
+
+`organizeHand` extracts five-card hands greedily and to exhaustion *before* it scans the
+leftovers for triples. Given two triples it always spends one as the pair half of a full
+house, so `organized.triples` came back **empty**:
+
+```
+fiveCardHands: FULL_HOUSE[4D 4C 8D 8C 8S]
+triples      : (none)
+pairs        : K[KH KS]
+singles      : 3S 4S 6H 7H
+```
+
+`comboBreakPenalty` then charges anything that disturbs a `fiveCardHands` entry. So leading
+either triple **whole** was charged −42 for "breaking a saved combination" — the combination
+being the full house that only existed because a triple had been broken to build it. The
+recommended move was the only one paying nothing, which meant the organizer's choice was
+scored a second time as a bonus:
+
+| Score | Lead | Break penalty |
+|---|---|---|
+| **242.6** | `4D 4C 8D 8C 8S` (suggested) | 0 |
+| 204.3 | `4D 4C 4S 8D 8C` | −42 |
+| 140.7 | `4D 4C 4S` (triple) | −42 |
+| 115.5 | `8D 8C 8S` (triple) | −42 |
+
+The whole 38-point margin over the runner-up is that penalty. As a side effect the triple
+loop in `comboBreakPenalty` was dead code in precisely the hands it was written for.
+
+This is the same failure mode as section 16 — a term pricing something it did not mean to
+price — but one layer earlier: there the penalty was miscalculated, here its *input* was.
+
+### The fix
+
+The greedy pass now skips a full house whose pair half comes from a rank the hand holds
+exactly three of. Exactly three, not three-or-more: borrowing two from four leaves a pair,
+which is a shape rather than an orphan. Nothing else about the preservation hierarchy moves,
+and a full house drawing its pair from a genuine pair is preserved as before.
+
+`evaluateFollowUp` also now counts triples, at 50 — between a pair's 30 and a five-card
+hand's 80. This is not a tuning knob but an ordering repair: it counted pairs and five-card
+hands and nothing else, so a remainder of `4D 4C 4S` scored **147** against `4D 4C`'s
+**185**. Strictly more cards in a strictly better shape scored less.
+
+### Measurements
+
+How often it bites — 160,000 sampled hands:
+
+| Population | Organization changes |
+|---|---|
+| Fresh 13-card deals | 3.54% (7.10% hold two triples) |
+| Mid-round hands, 5-13 cards | 1.05% |
+
+New logic seated opposite the old, 100,000 rounds per seed (200,000 hands per side):
+
+| Seed | Win rate | Round points | Cards left |
+|---|---|---|---|
+| 999 | +0.30pp (2.2σ) | −0.020 | −0.014 |
+| 4242 | +0.33pp (2.4σ) | −0.031 | −0.025 |
+| 7777 | +0.50pp (3.6σ) | −0.008 | −0.018 |
+
+Unlike sections 14 and 16 this one is **not** benchmark-neutral: it improves win rate and
+round points on every seed, which is notable given it only changes the organization of
+about 1% of mid-round hands. A pooled 200,000-round run on seed 999 put the win-rate delta
+at +0.28pp (2.9σ).
+
+The `evaluateFollowUp` triple term contributes none of that — the organizer fix alone
+measures +0.28pp and −0.021 round points, identical within noise. It is kept for the
+ordering defect above, not for a win-rate claim.
+
+High-card leakage and decision cost are unchanged.
+
+### What still misprices
+
+Unchanged from section 16, and this report is a second sighting of it: `scoreLeadMove` has
+no hold-probability term outside `dangerLevel >= 2`. It computes
+`estimateControlProbability` for a lead and never reads it, which is why leading a junk
+`4S` at 44% hold sat only 8 points behind the pair of Kings on the round-7 board from the
+same session. The player's instinct in both reports — "what does this lead do to my ability
+to win later" — is the term the lead path does not have.
