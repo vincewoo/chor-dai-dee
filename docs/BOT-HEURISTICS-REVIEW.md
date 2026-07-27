@@ -651,3 +651,96 @@ one card is worth one point whichever card it is, so answering with the cheapest
 card and keeping the 2 preserves the ability to take a later trick and shed again. Holding
 the 2 there is the correct play, not a bug — which is why it survives measurement while
 every attempt to "fix" it does not.
+
+## 16. Shipped from a playtest report: breaking a five-card hand for a pair
+
+Reported from play. Six cards held: a lone 8 and a five-card flush containing the other 8,
+with the lead. The coach suggested the **pair of 8s** — which destroys the flush and leaves
+four singles that each need their own lead. The player ignored it, led the flush, took the
+trick and played the last card for the round.
+
+The coach decides nothing of its own (`Coach.suggest` is the top of
+`MoveQuality.rankOptions`), so this was a bot-scoring bug wearing a coaching surface.
+
+### Reproducing it
+
+Sweep every six-card hand of that shape — a lone card of rank X plus a five-card flush
+containing the other X, 6,435 of them — and ask the ranker what it leads:
+
+| Opponent card counts | Prefers breaking the flush |
+|---|---|
+| 13/13/13 through 5/8/4 | **362 / 6,435** |
+| 4/8/3 and below | 0 / 6,435 |
+
+The cutoff is `dangerLevel`: once an opponent is near going out the blocking-lead term
+rescues the flush for the wrong reason. Everywhere else the mispricing stands.
+
+### Two causes, both of them terms that price the wrong thing
+
+**`comboBreakPenalty` scaled the loss by the rank of the card pulled out.**
+
+```js
+const highestPulled = Math.max(...pulled.map(c => RANKS.indexOf(c.rank)));
+penalty += (18 + priority * 10) * (0.5 + highestPulled / RANKS.length);
+```
+
+This term exists to price the *shape* destroyed, and a flush is equally destroyed whether
+it is broken with its 8 or its Ace. Worse, the rank of the departing card is already
+charged — at full weight, on the far wider `RANK_RETENTION_COST` scale — by
+`moveRetentionCost`, so the rank was being paid for twice and the structure not at all.
+
+The consequence is that **the cheapest card is the cheapest way to wreck the hand**.
+Pulling the 8 out of `3-8-K-A-2` of hearts cost 34 points, less than the 60 `scoreLeadMove`
+pays for leading a five-card hand at all. Pulling the 2 out of the same flush cost 54.
+
+Priced off the combination instead — its type and its own high card. The original intent
+this replaced ("pulling the 3 out of a straight is cheap, pulling its Ace is not") is
+untouched: it lives in `moveRetentionCost`, where the 3 costs 0 and the Ace costs 138.
+
+**`evaluateFollowUp`'s card-count term was a two-step ladder.**
+
+`+100` at three cards or fewer, `+50` at four to six. So being one card from home scored
+the same as being three from home — and one card from home is the round on your next lead.
+Those flat spots let the control term (`+40` per remaining 2 or A) outvote the only thing
+in the function that is monotonically good. Leaving `3H KH AH 2H` scored **150**; leaving a
+single `8S` scored **120**.
+
+Replaced with a ramp over the same range, `max(0, 7 − remaining) × 25`. This does not make
+the function monotone by itself — control and pair terms still scale with remainder size
+and can outrun it — so it is a correction to a term, not a guarantee about the total.
+
+### Measured
+
+| | Prefers breaking the flush |
+|---|---|
+| Before | 362 / 6,435 |
+| `comboBreakPenalty` alone | 83 / 6,435 |
+| Both | **40 / 6,435** |
+
+New logic seated opposite the old, 25,000 rounds per seed:
+
+| Seed | Win rate | Round points |
+|---|---|---|
+| 999 | −0.46pp | −0.004 |
+| 4242 | +0.12pp | −0.012 |
+| 7777 | −0.01pp | −0.021 |
+
+Pooled win-rate delta −0.12pp (z ≈ −0.8, not significant). Round points improve on all
+three seeds, which is the currency that actually decides a game. Same conclusion as section
+14: **benchmark-neutral, and the argument is that the code was pricing something it did not
+mean to price.** High-card leakage and decision cost are unchanged.
+
+### What still misprices
+
+The residual 40 hands all share one shape: the flush holds **both the ace and the 2** of its
+suit. There the model charges full retention cost for the A and the 2 (plus
+`standaloneControlSurcharge` on the 2, ~110 points) while crediting the flush a flat `+60`
+for being a five-card hand, with no credit for the fact that those two cards are what make
+it nearly unbeatable.
+
+The asymmetry is structural: `scoreResponseMove` adds `trickValue × estimateControlProbability`,
+and `scoreLeadMove` has **no hold-probability term at all** — it never asks whether the lead
+it is pricing will actually stand up. Fixing it properly needs
+`estimateControlProbability` to read a five-card hand's rank rather than only its type
+(today a 2-high flush and a 7-high flush score identically), which is a policy change on a
+measured baseline and wants its own experiment. Left alone deliberately.

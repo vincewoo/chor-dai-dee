@@ -239,8 +239,13 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
     Most historic bot bugs were lead heuristics leaking into responses.
   - **Price of the trick** - a card is spent only when the lead it buys is worth
     more than the card (`evaluateTrickValue`, `shouldStrategicPass`)
-  - "Poker First" hand organisation - preserves strong 5-card hands, with the
-    break penalty scaled by what is actually lost (`comboBreakPenalty`)
+  - "Poker First" hand organisation - preserves strong 5-card hands.
+    `comboBreakPenalty` prices the **combination destroyed**, never the rank of
+    the card pulled out of it: a flush is equally wrecked whether it is broken
+    with its 8 or its Ace, and that card's rank is already charged in full by
+    `moveRetentionCost`. Scaling by the departing card made the cheapest card
+    the cheapest way to wreck the hand, so the model would break a flush to lead
+    a pair. See `docs/BOT-HEURISTICS-REVIEW.md` § 16.
   - **2s are never "locked" in a combination** - `standaloneControlSurcharge`
     charges back the `COST_WEIGHT_BY_SIZE` discount for 2s, which can always be
     pulled out and played as an unbeatable single. Without it the bot dumped 2s
