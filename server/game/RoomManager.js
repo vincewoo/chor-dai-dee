@@ -8,8 +8,14 @@ const { DecisionAnalyzer } = require('./DecisionAnalyzer');
 const { rankTable, playsNeeded, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
 const { evaluateMove } = require('./MoveQuality');
+const Coach = require('./Coach');
 const { GameTape } = require('./GameTape');
 const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
+
+// Praise notes the coach may hand one player in one round. Corrections are
+// unlimited - a mistake is worth hearing about whenever it happens - but an owl
+// that applauds every good move stops being read after the second one.
+const COACH_CREDITS_PER_ROUND = 1;
 
 // Aces and 2s: the cards that buy tricks. BotLogic's retention model prices
 // them far above everything else, so where a player's copies end up is the
@@ -37,6 +43,15 @@ class Room {
         this.trickHistory = []; // Ordered plays/passes this round, for bot opponent modelling
         this.debugMode = false; // Enable bot reasoning capture
         this.lastBotReasoning = null; // Store the most recent bot decision reasoning
+        // Players with the coach turned on, by player id. Held per-room rather
+        // than read from the account preference so it follows the socket: the
+        // preference says what a player wants, this says which live seats are
+        // currently paying for the extra evaluation.
+        this.coachSeats = new Set();
+        // Praise notes still in budget this round, by player id. Errors are
+        // always worth a word; congratulation repeated every few turns is
+        // noise, so credit kinds are rationed. See Coach.react.
+        this.coachCredits = {};
         this.playersByUsername = {}; // Map username -> player for reconnection
         this.settings = { useAdvancedBots: false }; // Room settings
         this.gameMode = gameMode; // Game mode: 'short' or 'standard'
@@ -785,6 +800,9 @@ class Room {
         // most useful read available and previously discarded at trick end.
         this.trickHistory = [];
         this.turnNumber = 0; // Reset turn counter for new round
+        // Praise budget is per round, so a long game does not accumulate one
+        // silent owl who used its only compliment in round one.
+        this.coachCredits = {};
         this.playOrder = 0; // Reset play order for z-index stacking
         // DON'T reset tier3DecisionTracking - accumulate across all rounds in the game
 
@@ -1029,6 +1047,16 @@ class Room {
                 isFirstTurn: isFirstTurnOfGame
             });
 
+        // Same constraint, same reason: the coach re-reads this position to
+        // explain itself, so it has to run while the position still exists.
+        const coachNote = this.coachReaction(playerIndex, moveQuality, {
+            action: 'play',
+            cards: validatedHand.cards,
+            isFirstTurn: isFirstTurnOfGame,
+            handSize: player.hand.length,
+            playedOut: newPlayerHand.length === 0
+        });
+
         player.hand = newPlayerHand; // Update hand
 
         // This play beats whatever was on the pile, so if its owner was
@@ -1133,7 +1161,7 @@ class Room {
             this.lastRoundWinnerId = player.id;
             // Don't clear cards immediately - let them be visible during delay
             // Cards will be cleared when handleRoundOver is called after delay
-            return { success: true, roundOver: true, roundWinner: player, roundWinDelay: true };
+            return { success: true, roundOver: true, roundWinner: player, roundWinDelay: true, coachNote };
         }
 
         // If Big 2 was played, all others auto-passed, so give control back to this player
@@ -1157,11 +1185,11 @@ class Room {
             // a new turn, so think_ms restarts from here rather than measuring
             // back to whenever they last acquired the turn.
             this.markTurnStart();
-            return { success: true, wonTrick: true, trickWinDelay: true };
+            return { success: true, wonTrick: true, trickWinDelay: true, coachNote };
         }
 
         this.advanceTurn();
-        return { success: true };
+        return { success: true, coachNote };
     }
 
     /**
@@ -1213,6 +1241,90 @@ class Room {
             });
         } catch (err) {
             console.error('Move quality evaluation failed:', err.message);
+            return null;
+        }
+    }
+
+    /** Turn the coach on or off for one seat. */
+    setCoachEnabled(playerId, enabled) {
+        if (enabled) this.coachSeats.add(playerId);
+        else this.coachSeats.delete(playerId);
+    }
+
+    /**
+     * What the coach would play right now, for the player asking.
+     *
+     * Read-only: it grades the position and mutates nothing, so asking twice
+     * costs nothing but CPU and never affects the game. The observation is
+     * built for the asking seat, which carries opponents' card counts and no
+     * card of theirs (see BotContext), so a hint can only ever be derived from
+     * what the player can already see.
+     */
+    coachSuggestion(playerId) {
+        if (this.gameState !== 'playing') return { error: 'Game not active' };
+        if (this.trickWinPending) return { error: 'Wait for current trick to clear' };
+
+        const seat = this.players.findIndex(p => p.id === playerId);
+        if (seat === -1) return { error: 'You are not in this room' };
+        if (seat !== this.currentTurnIndex) return { error: 'Not your turn' };
+
+        const everyoneFull = this.players.every(p => p.hand.length === 13);
+        const isFirstTurn = this.roundNumber === 1 && everyoneFull && this.winners.length === 0;
+
+        try {
+            return {
+                suggestion: Coach.suggest({
+                    hand: this.players[seat].hand,
+                    lastPlayedHand: this.lastPlayedHand,
+                    isFirstTurn,
+                    // Profile-free, exactly as gradeDecision does it: the hint
+                    // and the grade that follows it have to be the same opinion.
+                    gameContext: this.buildSeatContext(seat, null)
+                })
+            };
+        } catch (err) {
+            console.error('Coach suggestion failed:', err.message);
+            return { error: 'The coach is stumped right now' };
+        }
+    }
+
+    /**
+     * The coach's reaction to a move that was just made, or null.
+     *
+     * MUST be handed the grade taken BEFORE the move was applied - it is the
+     * same `moveQuality` the Tier 3 tracking already computes, so a note costs
+     * nothing extra unless it actually fires, at which point the decision is
+     * re-graded once with reasoning on.
+     *
+     * Never allowed to break a turn: a coach that throws must cost the player
+     * nothing, so failures degrade to silence.
+     */
+    coachReaction(seat, quality, { action, cards = null, isFirstTurn = false, handSize, playedOut = false }) {
+        const player = this.players[seat];
+        if (!player || player.isBot || !this.coachSeats.has(player.id)) return null;
+
+        try {
+            const spent = this.coachCredits[player.id] || 0;
+            const note = Coach.react({
+                quality,
+                action,
+                handSize,
+                playedOut,
+                allowCredit: spent < COACH_CREDITS_PER_ROUND,
+                explainer: () => evaluateMove({
+                    hand: this.players[seat].hand,
+                    lastPlayedHand: this.lastPlayedHand,
+                    isFirstTurn,
+                    gameContext: this.buildSeatContext(seat, null),
+                    action,
+                    cards,
+                    explain: true
+                })
+            });
+            if (note && note.tone === 'good') this.coachCredits[player.id] = spent + 1;
+            return note;
+        } catch (err) {
+            console.error('Coach reaction failed:', err.message);
             return null;
         }
     }
@@ -1321,6 +1433,13 @@ class Room {
             ? null
             : this.gradeDecision(playerIndex, { action: 'pass' });
 
+        // Also before the mutations below, for the same reason. An auto-pass is
+        // the preference acting, not the player, so there is nobody to coach.
+        const coachNote = auto ? null : this.coachReaction(playerIndex, passQuality, {
+            action: 'pass',
+            handSize: this.players[playerIndex].hand.length
+        });
+
         // Record that this player passed
         const passingPlayer = this.players[playerIndex];
         const passTiming = this.turnTiming(passingPlayer);
@@ -1394,12 +1513,12 @@ class Room {
             // Set turn to the player who won the trick
             this.currentTurnIndex = this.players.findIndex(p => p.id === lastPlayerId);
             this.markTurnStart();
-            return { success: true, trickWon: true, trickWinDelay: true };
+            return { success: true, trickWon: true, trickWinDelay: true, coachNote };
         } else {
             this.advanceTurn();
         }
 
-        return { success: true };
+        return { success: true, coachNote };
     }
 
     advanceTurn() {

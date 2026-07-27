@@ -26,6 +26,7 @@ const GameRoom = ({ user, socket }) => {
     const { fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode } = useSuitColors();
     const {
         autoPass, toggleAutoPass,
+        coachEnabled, toggleCoach,
         tableTheme, setTableTheme,
         accentColor, setAccentColor,
         reducedMotion, toggleReducedMotion,
@@ -84,6 +85,15 @@ const GameRoom = ({ user, socket }) => {
     const [playerToKick, setPlayerToKick] = useState(null); // Player being kicked
     const [showSpectators, setShowSpectators] = useState(false); // Spectator roster panel
     const [voiceState, setVoiceState] = useState(null); // Voice state from VoiceChat component
+
+    // ---- Coach ----
+    // One slot, whatever the owl last said: a hint you asked for or a note
+    // about the move you just made. Two bubbles from one character would be a
+    // conversation the player never had, so the newer message replaces the
+    // older one. `id` only exists to re-key the animation.
+    const [coachMessage, setCoachMessage] = useState(null);
+    const [coachBusy, setCoachBusy] = useState(false);
+    const coachMessageId = useRef(0);
 
     // Post-game state for rematch/lobby flow
     const [readyStatus, setReadyStatus] = useState(null); // { ready: [], notReady: [], host: 'username', allReady: bool }
@@ -500,6 +510,103 @@ const GameRoom = ({ user, socket }) => {
         }
     }, [autoPass, currentTurn, currentGameState, trickWinPending, lastPlayedHand, hasOtherHumans, myHand, myPlayerId, socket, roomId]);
 
+    // ---- Coach wiring ----
+    //
+    // Registered apart from the main listener block so the coach can be added
+    // to or removed from a live room without tearing down every other handler.
+    //
+    // A hint is only good for the turn it was asked on: it names cards you hold
+    // right now and has already selected them. A note is about a move you have
+    // already made and outlives the turn. So rather than clearing on every turn
+    // change — which would kill a note within a second of a bot moving — each
+    // message is stamped with the turn it belongs to and hints are filtered at
+    // render time. The stamp is read through a ref because the listeners below
+    // are registered once, per the same reasoning as pusoyModeRef above.
+    const coachTurnKey = `${currentTurn}:${gameState?.roundNumber}`;
+    const coachTurnKeyRef = useRef(coachTurnKey);
+    useEffect(() => { coachTurnKeyRef.current = coachTurnKey; }, [coachTurnKey]);
+
+    useEffect(() => {
+        const say = (message) => {
+            coachMessageId.current += 1;
+            setCoachMessage({ ...message, id: coachMessageId.current, turnKey: coachTurnKeyRef.current });
+        };
+
+        const handleHint = (hint) => {
+            setCoachBusy(false);
+            if (!hint || hint.error) {
+                return say({
+                    source: 'hint', tone: 'good',
+                    headline: 'Not right now.',
+                    detail: hint?.error || 'The coach could not read this position.',
+                });
+            }
+            // The whole point of the button: the hint arrives already selected,
+            // so the next tap is Play. A pass suggestion clears the selection
+            // instead — being told to pass while cards sit selected invites
+            // playing them by accident.
+            setSelectedCards(hint.action === 'play' ? hint.cards : []);
+            say({
+                source: 'hint',
+                tone: 'good',
+                headline: hint.headline,
+                detail: hint.detail,
+                factors: hint.factors,
+                confident: hint.confident,
+            });
+        };
+
+        const handleNote = (note) => {
+            if (!note) return;
+            say({
+                source: 'note',
+                tone: note.tone,
+                headline: note.headline,
+                detail: note.detail,
+                factors: note.factors,
+                bestMoveCards: note.bestMoveCards,
+                bestMoveLabel: note.bestMoveLabel,
+            });
+        };
+
+        socket.on('coach_hint', handleHint);
+        socket.on('coach_note', handleNote);
+        return () => {
+            socket.off('coach_hint', handleHint);
+            socket.off('coach_note', handleNote);
+        };
+    }, [socket]);
+
+    // Tell the room which seats want coaching. Re-sent whenever the player id
+    // changes, because a reconnect issues a new one and the server keys the
+    // set on it. Spectators are rejected server-side and have no button anyway.
+    useEffect(() => {
+        if (isSpectator || !myPlayerId) return;
+        socket.emit('set_coach', { roomId, enabled: coachEnabled });
+    }, [socket, roomId, coachEnabled, myPlayerId, isSpectator]);
+
+    // Notes arrive unprompted, so they time out. Hints were asked for and stay
+    // until dismissed or until the turn moves on (see the turn stamp above).
+    useEffect(() => {
+        if (coachMessage?.source !== 'note') return;
+        const timer = setTimeout(() => setCoachMessage(null), 9000);
+        return () => clearTimeout(timer);
+    }, [coachMessage]);
+
+    const askCoach = useCallback(() => {
+        setCoachBusy(true);
+        socket.emit('coach_hint', { roomId });
+        // The reply always clears this, but a room that vanished mid-request
+        // would otherwise leave the owl greyed out for good.
+        setTimeout(() => setCoachBusy(false), 4000);
+    }, [socket, roomId]);
+
+    // A stale hint is worse than no hint: its cards may already be played.
+    const visibleCoachMessage =
+        coachMessage && (coachMessage.source !== 'hint' || coachMessage.turnKey === coachTurnKey)
+            ? coachMessage
+            : null;
+
     const startGame = () => {
         socket.emit('start_game', { roomId });
     };
@@ -838,6 +945,17 @@ const GameRoom = ({ user, socket }) => {
         isSpectator, viewerIndex,
         onSelectSeat: (player) => setSpectatorSeatId(player?.id ?? null),
         onOpenSpectators: () => setShowSpectators(true),
+        // One bundle for both coach surfaces: the owl button in ControlsRow and
+        // the speech bubble above it. Spectators never see either — they have
+        // no move to be coached on.
+        coach: {
+            enabled: coachEnabled && !isSpectator,
+            canAsk: isMyTurn && !gameState.trickWinPending && !isSubmitting,
+            busy: coachBusy,
+            onAsk: askCoach,
+            message: visibleCoachMessage,
+            onDismiss: () => setCoachMessage(null),
+        },
     };
 
     return (
@@ -1103,6 +1221,8 @@ const GameRoom = ({ user, socket }) => {
                 onClose={() => setShowSettings(false)}
                 autoPass={autoPass}
                 toggleAutoPass={toggleAutoPass}
+                coachEnabled={coachEnabled}
+                toggleCoach={toggleCoach}
                 fourColorMode={fourColorMode}
                 toggleFourColorMode={toggleFourColorMode}
                 pusoyMode={pusoyMode}

@@ -1604,6 +1604,10 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('game_update', room.getGameState());
                 socket.emit('hand_update', room.getPlayerHand(socket.id));
                 emitSpectatorHands(room, roomId);
+                // The coach speaks only to the player who moved. Nothing in the
+                // note is derived from another hand, but a note about your
+                // blunder is still yours alone.
+                if (result.coachNote) socket.emit('coach_note', result.coachNote);
 
                 if (result.roundOver) {
                     // Add delay to show final winning card before round ends
@@ -1672,6 +1676,7 @@ io.on('connection', (socket) => {
                 socket.emit('error', result.error);
             } else {
                 io.to(roomId).emit('game_update', room.getGameState());
+                if (result.coachNote) socket.emit('coach_note', result.coachNote);
                 if (result.trickWinDelay) {
                     // Trick was won by passing - delay before clearing state
                     // This gives players time to see all the passes before the trick clears
@@ -1695,6 +1700,30 @@ io.on('connection', (socket) => {
                 }
             }
         }
+    });
+
+    // Coach on/off for this seat. Room-scoped rather than read from the account
+    // preference: it tells the room which live seats are paying for the extra
+    // evaluation, and it has to be re-sent after a reconnect because the
+    // player id changes with the socket.
+    socket.on('set_coach', ({ roomId, enabled }) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room) return;
+        // Requires a seat, like toggle_debug: a spectator has no move to coach.
+        if (!room.players.some(p => p.id === socket.id)) return;
+        room.setCoachEnabled(socket.id, Boolean(enabled));
+    });
+
+    // "What should I play?" Read-only, and answerable only for the seat asking
+    // on its own turn.
+    socket.on('coach_hint', ({ roomId }) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room) return socket.emit('coach_hint', { error: 'Room not found' });
+        if (room.isSpectator(socket.id)) {
+            return socket.emit('coach_hint', { error: 'Spectators have nothing to play' });
+        }
+        const result = room.coachSuggestion(socket.id);
+        socket.emit('coach_hint', result.error ? { error: result.error } : result.suggestion);
     });
 
     // Debug mode toggle
@@ -2498,6 +2527,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
             // Display-only Pusoy Dos suit lens; off when the column predates it.
             pusoyMode: (preferences.pusoy_mode ?? 0) === 1,
             autoPass: preferences.auto_pass === 1,
+            // The owl coach defaults to off, so a missing column is not "on".
+            coachEnabled: (preferences.coach_enabled ?? 0) === 1,
             tableTheme: preferences.table_theme || 'felt',
             accentColor: preferences.accent_color || 'gold',
             reducedMotion: preferences.reduced_motion === 1,
@@ -2517,8 +2548,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, pusoyMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
+        const { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);

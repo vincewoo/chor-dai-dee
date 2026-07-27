@@ -30,6 +30,13 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return saved === 'true';
     });
 
+    // The owl coach: hint-on-request plus a note on your own mistakes. Off by
+    // default — it is an assist, so it has to be asked for.
+    const [coachEnabled, setCoachEnabled] = useState(() => {
+        const saved = localStorage.getItem('coachEnabled');
+        return saved === 'true';
+    });
+
     const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
         const saved = localStorage.getItem('voiceChatEnabled');
         return saved !== 'false'; // Default to true
@@ -82,6 +89,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
                     if (!cancelled) {
                         setFourColorMode(data.fourColorMode);
                         setAutoPass(data.autoPass);
+                        if (data.coachEnabled !== undefined) {
+                            setCoachEnabled(data.coachEnabled);
+                        }
                         if (data.pusoyMode !== undefined) {
                             setPusoyMode(data.pusoyMode);
                         }
@@ -106,6 +116,9 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         // Also update localStorage
                         localStorage.setItem('fourColorMode', data.fourColorMode);
                         localStorage.setItem('autoPass', data.autoPass);
+                        if (data.coachEnabled !== undefined) {
+                            localStorage.setItem('coachEnabled', data.coachEnabled);
+                        }
                         if (data.pusoyMode !== undefined) {
                             localStorage.setItem('pusoyMode', data.pusoyMode);
                         }
@@ -154,7 +167,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
+                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -167,13 +180,14 @@ export const UserPreferencesProvider = ({ children, user }) => {
         localStorage.setItem('fourColorMode', fourColorMode);
         localStorage.setItem('pusoyMode', pusoyMode);
         localStorage.setItem('autoPass', autoPass);
+        localStorage.setItem('coachEnabled', coachEnabled);
         localStorage.setItem('voiceChatEnabled', voiceChatEnabled);
         localStorage.setItem('tableTheme', tableTheme);
         localStorage.setItem('accentColor', accentColor);
         localStorage.setItem('reducedMotion', reducedMotion);
         localStorage.setItem('soundEnabled', soundEnabled);
         localStorage.setItem('soundVolume', soundVolume);
-    }, [fourColorMode, pusoyMode, autoPass, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
+    }, [fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
 
     // Mirror sound settings into the audio engine, which keeps its own state so
     // that playSound() callers don't have to thread preferences through props.
@@ -197,6 +211,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
         setAutoPass(prev => !prev);
     };
 
+    const toggleCoach = () => {
+        setCoachEnabled(prev => !prev);
+    };
+
     const toggleVoiceChat = () => {
         setVoiceChatEnabled(prev => !prev);
     };
@@ -215,6 +233,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
             fourColorMode,
             pusoyMode,
             autoPass,
+            coachEnabled,
             voiceChatEnabled,
             tableTheme,
             accentColor,
@@ -224,6 +243,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
             toggleFourColorMode,
             togglePusoyMode,
             toggleAutoPass,
+            toggleCoach,
             toggleVoiceChat,
             toggleReducedMotion,
             toggleSound,

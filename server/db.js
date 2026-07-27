@@ -482,6 +482,11 @@ function initDb() {
                 addColumn('sound_volume', 'sound_volume REAL DEFAULT 0.6');
                 // Display-only Pusoy Dos suit lens; never affects card values.
                 addColumn('pusoy_mode', 'pusoy_mode INTEGER DEFAULT 0');
+                // The owl coach: hint-on-request plus a note on your own
+                // mistakes. Off by default - it is an assist, and an unasked-for
+                // one would change how the table plays for everyone already
+                // using it.
+                addColumn('coach_enabled', 'coach_enabled INTEGER DEFAULT 0');
                 // Avatar chosen in the Avatar Picker. NULL means "never chose
                 // one", which is what tells clients to fall back to the
                 // deterministic name-derived avatar.
@@ -1760,6 +1765,8 @@ const updateUserPreferences = async (userId, preferences) => {
     const fourColorValue = toInt(pick(preferences.fourColorMode, existing.four_color_mode));
     const pusoyModeValue = toInt(pick(preferences.pusoyMode, existing.pusoy_mode));
     const autoPassValue = toInt(pick(preferences.autoPass, existing.auto_pass));
+    // Coach defaults to OFF, so a missing column reads as off rather than on.
+    const coachEnabledValue = toInt(pick(preferences.coachEnabled, existing.coach_enabled ?? 0));
     const tableThemeValue = pick(preferences.tableTheme, existing.table_theme ?? 'felt');
     const accentColorValue = pick(preferences.accentColor, existing.accent_color ?? 'gold');
     const reducedMotionValue = toInt(pick(preferences.reducedMotion, existing.reduced_motion));
@@ -1776,12 +1783,13 @@ const updateUserPreferences = async (userId, preferences) => {
 
     return new Promise((resolve, reject) => {
         const query = `INSERT INTO user_preferences
-                           (user_id, four_color_mode, pusoy_mode, auto_pass, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, avatar_animal, avatar_tile)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           (user_id, four_color_mode, pusoy_mode, auto_pass, coach_enabled, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, avatar_animal, avatar_tile)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
                            pusoy_mode = ?,
                            auto_pass = ?,
+                           coach_enabled = ?,
                            table_theme = ?,
                            accent_color = ?,
                            reduced_motion = ?,
@@ -1791,8 +1799,8 @@ const updateUserPreferences = async (userId, preferences) => {
                            avatar_tile = ?`;
 
         const values = [
-            userId, fourColorValue, pusoyModeValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue,
-            fourColorValue, pusoyModeValue, autoPassValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue
+            userId, fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue,
+            fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue
         ];
 
         db.run(query, values, (err) => {
