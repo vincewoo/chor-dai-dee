@@ -221,17 +221,35 @@ test('replay rejects a play the seat does not hold', () => {
 
 test('replay rejects a hand that does not beat the pile', () => {
     const { tape, round } = recordRound(401);
-    // Find a play answering a pile, and replace it with the lowest single its
-    // seat holds -- which cannot beat whatever it originally played over.
+    // Find a play answering a pile and replace it with a single its seat holds
+    // that cannot legally beat that pile.
+    //
+    // The card has to be chosen against the pile rather than assumed: the first
+    // answering play in a round is often the answer to the opening 3D, and
+    // almost every single in a hand beats a 3D. Picking the seat's lowest card
+    // and trusting it to be an illegal answer made this test a hostage to bot
+    // play - any change to which plies exist could silently turn the corruption
+    // into a legal move and the assertion into a false pass.
     const result = replayRound(round, tape);
-    const answering = result.snapshots.find(s =>
-        s.action.action === ACTION.PLAY && s.pile && s.hands[s.seat].length > 1);
-    assert.ok(answering, 'fixture produced no answering play');
 
-    const weakest = answering.hands[answering.seat]
-        .slice().sort((a, b) => a.value - b.value)[0];
+    let answering = null;
+    let illegal = null;
+    for (const s of result.snapshots) {
+        if (s.action.action !== ACTION.PLAY || !s.pile || s.hands[s.seat].length <= 1) continue;
+        // A single can never beat a multi-card pile; against a single it has to
+        // be the lower card.
+        const candidate = s.hands[s.seat]
+            .find(c => s.pile.cards.length > 1 || c.value < s.pile.value);
+        if (candidate) {
+            answering = s;
+            illegal = candidate;
+            break;
+        }
+    }
+    assert.ok(answering, 'fixture produced no answering play with an illegal single available');
+
     const corrupt = tape.map(p => p.ply === answering.ply
-        ? { ...p, cards_mask: encodeCards([weakest]), hand_type: null, hand_value: null }
+        ? { ...p, cards_mask: encodeCards([illegal]), hand_type: null, hand_value: null }
         : p);
 
     assert.throws(() => replayRound(round, corrupt), /does not beat|without holding/);

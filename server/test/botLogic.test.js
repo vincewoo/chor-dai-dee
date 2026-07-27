@@ -100,6 +100,57 @@ test('does spend the 2 of Spades when the next player is about to go out', () =>
     assert.strictEqual(move[0].rank, '2');
 });
 
+// --- why the block emergency is next-player-only ---------------------------
+// selectBestMove overrides the cost model on playerCardCounts[0] === 1 and
+// nothing else, which reads like it is ignoring the other two opponents. It is
+// not: it is the exact set of positions where our pass ends the trick. This
+// test pins the seating fact the branch rests on, because the branch is only
+// correct for as long as it holds -- a rules change to turn order or to when
+// the pass set clears would silently invalidate it.
+//
+// Extending the branch to every opponent on one card was measured at -4.8pp of
+// win rate. See docs/BOT-HEURISTICS-REVIEW.md section 15.
+
+test('we are the last line of defence exactly when the next player holds the pile', () => {
+    const seats = [0, 1, 2, 3].map(i => ({ name: `Bot ${i + 1}`, logic: BotLogic }));
+    const rng = makeRng(4242);
+
+    const tally = { 1: { seen: 0, lastToAct: 0 }, 2: { seen: 0, lastToAct: 0 }, 3: { seen: 0, lastToAct: 0 } };
+
+    const original = BotLogic.selectBestMove;
+    BotLogic.selectBestMove = function (candidates, hand, lastPlayedHand, isFirstTurn, ctx = {}, capture = false) {
+        const owner = ctx.lastPlayedByRelative;
+        if (owner >= 1 && owner <= 3) {
+            tally[owner].seen++;
+            // Our pass ends the trick only if both opponents who are not
+            // holding the pile have already passed.
+            const others = [1, 2, 3].filter(x => x !== owner);
+            if (others.every(x => (ctx.passedPlayers || []).includes(x - 1))) {
+                tally[owner].lastToAct++;
+            }
+        }
+        return original.call(this, candidates, hand, lastPlayedHand, isFirstTurn, ctx, capture);
+    };
+
+    try {
+        for (let r = 0; r < 200; r++) playRound(seats, deal(rng), null);
+    } finally {
+        BotLogic.selectBestMove = original;
+    }
+
+    assert.ok(tally[1].seen > 0 && tally[2].seen + tally[3].seen > 0, 'fixture covered both cases');
+
+    // Next player holds the pile: across and previous sit between them and us,
+    // so both have necessarily acted -- and passed, or the pile would be theirs.
+    assert.strictEqual(tally[1].lastToAct, tally[1].seen,
+        'with the next player on the pile we are always the last to act');
+
+    // Across or previous holds it: the next player still acts after us, so our
+    // pass can never be the one that ends the trick.
+    assert.strictEqual(tally[2].lastToAct, 0, 'across on the pile - next player still to act');
+    assert.strictEqual(tally[3].lastToAct, 0, 'previous on the pile - next player still to act');
+});
+
 test('isUnbeatable only claims a forced result', () => {
     const all = [];
     for (const r of RANKS) for (const s of SUITS) all.push(card(`${r}${s}`));

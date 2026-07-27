@@ -557,3 +557,97 @@ benchmark-neutral; the round-win gain and the play-feel improvement come free.
 
 Worth remembering as a limit of the harness: bot-vs-bot round statistics found nothing
 here, and a human noticed it in an evening of play.
+
+## 15. Tried and rejected: blocking every opponent on their last card
+
+Reported from play: a bot held a 2 while the player *across the table* was on one card
+and holding the pile. `selectBestMove` overrides the cost model on
+`playerCardCounts[0] === 1` — the next player — and nothing else, which reads like it is
+ignoring two thirds of the table.
+
+It reproduces. With a one-card opponent holding the pile, and the bot holding both a 2
+and a cheaper answer, the bot spends the 2 in 100% of positions when that opponent is the
+next player and in 2.3% when it is across or previous.
+
+### Why the narrow test is exactly right
+
+Turn order is us → next → across → previous. A trick passes out to whoever holds the
+pile, so the seat decides whether we are the last line of defence:
+
+- **Next player holds the pile.** Across and previous sit between them and us, so by the
+  time it is our turn they have both acted — and passed, or the pile would be theirs. Our
+  pass ends the trick and they lead their last card. We are the last player who can stop
+  them, always.
+- **Across or previous holds it.** The next player still acts after us, so our pass cannot
+  end the trick. We are never the last line of defence, and blocking is a priced decision
+  rather than a forced one.
+
+Measured over 56,831 self-play decisions: with the next player on the pile, both other
+opponents had passed in **1616 of 1616** positions; with across or previous on the pile,
+in **0 of 35,465**. `playerCardCounts[0] === 1` is not shorthand for "somebody is about to
+go out" — it is precisely the set of positions where passing loses the round outright.
+
+`test/botLogic.test.js` pins this seating fact, because the branch is only correct while
+it holds: a change to turn order, or to when the pass set clears, would invalidate it
+silently.
+
+### What extending it costs
+
+Head-to-head against the current bot, 12,000 rounds per cell, old logic seated alternately
+with new:
+
+| Variant | Win rate |
+|---|---|
+| Emergency deleted entirely | −2.29pp (−4.2σ) |
+| Extended to any opponent on one card | **−4.77pp (−8.8σ)** |
+| Extended to the pile holder only | −0.71pp (−1.3σ) |
+| Endgame solver hoisted above the emergency | −2.14pp (−3.9σ) |
+
+Two things worth keeping from that table. Deleting the emergency costs 2.3pp, so the
+override earns its keep — it is narrow, not vestigial. And hoisting the endgame solver
+above it costs almost as much, so the emergency preempting `solveEndgame` is deliberate:
+blocking a player on their last card beats the solver's "power" heuristic.
+
+Extending it fires the override on 13.4% of decisions instead of 5.2%, and pays a control
+card for a block it cannot buy, because the seats between us and the target still act.
+
+### The related idea: minimise the loss once the round is gone
+
+A second reading of the same report: once an opponent is on one card the round is probably
+lost, so the objective should switch from winning to limiting points — and you cannot shed
+at all unless you take the trick. The principle is right, and already in the code
+(`roundLostness`, `penaltyTierValue`, section 12). Two attempts to strengthen it:
+
+| Variant | Win rate | Round points |
+|---|---|---|
+| Retention cost scaled by `1 − lostness` (full relief) | −1.30pp | +0.008 |
+| Trick value raised by what the next lead would shed | −0.48pp | −0.004 |
+
+Both got monotonically worse as the effect was turned up. The principle is sound and
+already priced; strengthening it trades rounds the bot could still have won for points it
+was not going to pay.
+
+### How strongly the principle holds, and why the bot already satisfies it
+
+Aggregate win rate cannot settle this — it mixes the decision under test with every other
+decision in the round. So instead: fork the same seeded round at the first position where
+an opponent is on one card and we hold more than five, force each alternative, and play
+both out with the standard policy. 634 rounds where the alternatives diverged:
+
+| Forced action | Avg round points | Round win rate |
+|---|---|---|
+| The bot's own policy | **4.484** | **9.78%** |
+| Always pass | 7.685 | 4.42% |
+| Always beat it, cheapest card | 4.697 | 8.68% |
+| Always beat it, shed the most | 4.697 | 8.68% |
+
+Passing is indeed disastrous — three round points worse than contesting, which is the
+report's instinct confirmed. But the bot's own policy beats *every* fixed rule, including
+"always contest", and lands on the pass outcome in only 3.2% of these positions. It is
+already doing the thing the principle asks for, and doing it selectively.
+
+That also resolves the original observation. Under a minimise-the-loss objective, shedding
+one card is worth one point whichever card it is, so answering with the cheapest sufficient
+card and keeping the 2 preserves the ability to take a later trick and shed again. Holding
+the 2 there is the correct play, not a bug — which is why it survives measurement while
+every attempt to "fix" it does not.
