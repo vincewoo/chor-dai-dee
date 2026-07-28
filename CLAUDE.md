@@ -45,9 +45,10 @@ npm run gamelog:export -- --out data/ --humans-only # JSONL training shards
 npm run gamelog:archive -- --out archive/ --dry-run # archival + retention
 ```
 
-Note: bot logic, the game-history store, and the activity feed's SQL are
-covered by tests; the socket layer and REST endpoints are not. Tests that need
-`db.js` set `DATABASE_PATH` to a scratch file *before* requiring it.
+Note: bot logic, the game-history store, the activity feed's SQL, and the
+account/rename helpers are covered by tests; the socket layer and REST endpoints
+are not. Tests that need `db.js` set `DATABASE_PATH` to a scratch file *before*
+requiring it.
 
 ### Deployment (Fly.io)
 ```bash
@@ -139,12 +140,19 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 
 #### Core App Files
 - `main.jsx` - Entry point
-- `App.jsx` - Router with routes: `/` (Login), `/lobby`, `/game/:roomId`, `/stats`
+- `App.jsx` - Router with routes: `/` (Login), `/lobby`, `/game/:roomId`, `/stats`,
+  `/profile` (account settings; guests are redirected, having no account row)
 - Socket.io connection initialized in App and passed as prop to children
 
 #### Components (`components/`)
 - **Game Components:**
-  - `Login.jsx` - User authentication
+  - `Login.jsx` - User authentication. Owns the state, validation and network
+    calls for all five auth flows; `tableV2/LoginV2.jsx` only says how they look.
+  - `Profile.jsx` - Account settings (rename, password, Google link/unlink),
+    split the same way against `tableV2/ProfileV2.jsx`. Each card is its own form
+    with its own status line, so a success in one is not read as a success in the
+    one below it. Reached from the username on the home screen — the bottom nav
+    has to hold one line at 320px, so a fifth destination does not go there.
   - `Lobby.jsx` - Room creation/joining, game mode selection
   - `GameRoom.jsx` - Owns all in-game state, socket wiring and player actions,
     then hands one prop bundle to a v2 table orchestrator. It renders no table
@@ -226,6 +234,14 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 #### Core Server Files
 - `index.js` - Express server with REST endpoints and Socket.io event handlers
 - `db.js` - SQLite database layer with comprehensive schema
+- `username.js` - The username and password rules, shared by registration, the
+  Google signup flow and the profile rename. They used to live inline in two
+  endpoints and nowhere at all in a third, so which rules applied depended on
+  which door you came through. Reserves the `Guest_` prefix: guest seats are
+  auto-named `Guest_1234` and recorded in `game_participants` with a NULL
+  `user_id`, sharing the `UNIQUE(game_id, username)` key with account rows, so an
+  account allowed to hold that shape could collide with its own history on
+  rename (and impersonate a guest besides).
 - `gamelog.js` - Append-only game-history store for offline ML, in its own
   `gamelog.sqlite`. Every write is guarded so a store failure can never surface
   to a player or abort a round.
@@ -355,6 +371,30 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 #### Authentication & User
 - `POST /api/register` - User registration
 - `POST /api/login` - User login
+- `POST /api/auth/google` - Google sign-in; unknown Google accounts get
+  `needsAction` and choose between creating an account and linking one
+- `POST /api/auth/google/register` / `POST /api/auth/google/link` - the two
+  arms of that choice
+
+#### Account (profile page)
+There are no sessions or tokens in this app — the client holds `{id, username}`
+in localStorage — so **every account mutation carries its own proof of ownership
+in the body**: the current password, or a Google ID token whose `sub` is already
+on the row. The second form exists because a Google-only account has no password
+to offer and would otherwise be locked out of its own settings.
+- `GET /api/account/:userId` - username, whether a password exists, whether
+  Google is linked. The email is **masked** here, since this GET is
+  unauthenticated like `/api/preferences/:userId`.
+- `POST /api/account/:userId/username` - rename + history backfill (below)
+- `POST /api/account/:userId/password` - set a first password or change one.
+  An account that *has* a password must prove it with that password, never with
+  a Google token — otherwise linking Google would be a way to take over an
+  account whose owner only wanted it as a second way in.
+- `POST /api/account/:userId/google/link` - link from inside a session. Proof is
+  the password specifically: the token being linked proves nothing about this
+  account yet.
+- `POST /api/account/:userId/google/unlink` - refused unless a password is set,
+  or you would clear the account's only credential.
 
 #### Statistics
 - `GET /api/stats/:username` - Basic user stats
@@ -443,6 +483,15 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   the inactivity sweep, or the last human walking out. `in_progress` is
   therefore a *live* game and no feed filter selects it; a row stuck there is a
   bug, and `db.sweepAbandonedGames()` converts any survivors at boot.
+  Note both this table and `game_participants` store the **username**, not just
+  the id — they are the only two places in the schema that do, and therefore the
+  only two a rename has to backfill (`db.renameUser`, one transaction with the
+  `users` update). Everything else — every `stats*` table, `round_stats`,
+  `head_to_head_stats`, `placement_history`, the avatar lookup, the leaderboard —
+  keys on `user_id` and joins the name at read time, so it follows a rename for
+  free. The ML game log stores no username at all. A rename that landed in
+  `users` but not here would be worse than one that never happened: the stale
+  rows become indistinguishable from another player's.
 - `game_participants` - Who was in each game. Abandoned games carry rows too
   (scores at the moment the game died) but with a **NULL `final_placement`**,
   since an unfinished game has no standings. Anything reading placements must
@@ -458,7 +507,13 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   be credited with one a bot earned.
 
 #### Core Tables
-- `users` - User accounts (id, username, password_hash)
+- `users` - User accounts (id, username, password_hash, google_id, google_email).
+  A Google-created account has **no `password_hash`**; anything comparing one
+  must guard for that, since bcrypt rejects on a null hash.
+- `username_history` - One row per rename. Renaming rewrites the two columns that
+  denormalize a username, so a retired name leaves no trace anywhere else — and
+  once free it can be registered by somebody else. This is the record of which
+  account used to hold it.
 - `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, coach_enabled, table theme, sound, avatar_animal/avatar_tile)
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
