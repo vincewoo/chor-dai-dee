@@ -75,6 +75,7 @@ body {
 .pt-safe-16 { padding-top: calc(4rem + env(safe-area-inset-top)); } /* Tailwind pt-16 */
 .pt-safe-18 { padding-top: calc(18px + env(safe-area-inset-top)); }
 .pb-safe-6 { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+.pb-safe-26 { padding-bottom: calc(26px + env(safe-area-inset-bottom)); }
 .pb-safe-36 { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
 .pb-safe-88 { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 .pb-safe-92 { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }

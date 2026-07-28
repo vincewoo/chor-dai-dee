@@ -90,7 +90,7 @@ function LeaderboardV2({
             <SuitWatermark suit="C" size={150} rotate={-14} style={{ top: 200, left: -46 }} />
             <SuitWatermark suit="D" size={165} rotate={12} opacity={0.03} style={{ top: 540, right: -52 }} />
 
-            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-104 pt-safe-18 md:max-w-[1000px] md:px-8">
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-26 pt-safe-18 md:max-w-[1000px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -228,31 +228,41 @@ function LeaderboardV2({
                         </div>
                     </>
                 )}
-            </div>
 
-            {/* Pinned "you" row */}
-            {me && (
-                <div
-                    className="absolute inset-x-0 z-20 mx-auto flex max-w-[440px] items-center gap-[11px] px-[22px] md:max-w-[1000px] md:px-8"
-                    style={{ bottom: 26 }}
-                >
+                {/* Pinned "you" row. Sticky *inside* the scroller and last in the
+                    flow, not absolute: an absolutely-positioned child of a scroll
+                    container is placed against the scrolled padding box, so it
+                    only lands at the bottom edge at scrollTop 0 and rides up into
+                    the middle of the list from there. Sticky also means it comes
+                    to rest after the last row at the end of the scroll instead of
+                    covering it, so the list needs no reserved bottom gutter. */}
+                {me && (
                     <div
-                        className="flex w-full items-center gap-[11px]"
-                        style={{ background: 'linear-gradient(160deg,rgba(0,0,0,.6),rgba(0,0,0,.42))', border: `1px solid ${acc}66`, borderRadius: 16, padding: '11px 13px', boxShadow: `0 12px 28px rgba(0,0,0,.5),0 0 18px ${soft}` }}
+                        className="sticky z-20 mt-auto pt-3"
+                        // Held the same distance off the bottom edge as the
+                        // column's own bottom padding, so the stuck position and
+                        // the resting position at the end of the scroll are the
+                        // same place and the row never jumps.
+                        style={{ bottom: 'calc(26px + env(safe-area-inset-bottom))' }}
                     >
-                        <div style={{ width: 24, textAlign: 'center', color: acc, fontWeight: 800, fontSize: 13 }}>{me.rank}</div>
-                        <div style={{ width: 40, height: 40, borderRadius: 12, background: getAvatarTile(me.username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 23 }}>{getAvatarEmoji(me.username)}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span className="truncate">{me.username}</span>
-                                <span style={{ background: accGrad, color: '#0b0d10', fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: '2px 6px', borderRadius: 6 }}>YOU</span>
+                        <div
+                            className="flex w-full items-center gap-[11px]"
+                            style={{ background: 'linear-gradient(160deg,rgba(0,0,0,.6),rgba(0,0,0,.42))', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: `1px solid ${acc}66`, borderRadius: 16, padding: '11px 13px', boxShadow: `0 12px 28px rgba(0,0,0,.5),0 0 18px ${soft}` }}
+                        >
+                            <div style={{ width: 24, textAlign: 'center', color: acc, fontWeight: 800, fontSize: 13 }}>{me.rank}</div>
+                            <div style={{ width: 40, height: 40, borderRadius: 12, background: getAvatarTile(me.username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 23 }}>{getAvatarEmoji(me.username)}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span className="truncate">{me.username}</span>
+                                    <span style={{ background: accGrad, color: '#0b0d10', fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: '2px 6px', borderRadius: 6 }}>YOU</span>
+                                </div>
+                                <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>{me.first_place} rounds won</div>
                             </div>
-                            <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>{me.first_place} rounds won</div>
+                            <div style={{ color: acc, fontWeight: 800, fontSize: 16, whiteSpace: 'nowrap' }}>{fmt(me.rating_display)}</div>
                         </div>
-                        <div style={{ color: acc, fontWeight: 800, fontSize: 16, whiteSpace: 'nowrap' }}>{fmt(me.rating_display)}</div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }
