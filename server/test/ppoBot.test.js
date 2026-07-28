@@ -12,9 +12,16 @@ const {
     finishTrajectory,
     encodeActions,
     encodeDecisions,
+    leagueRoundType,
     DECISION_BYTES
 } = require('../scripts/generate-ppo-experience');
-const { selectPPOCandidate } = require('../scripts/run-ppo-generation');
+const {
+    parseArgs: parsePPOGenerationArgs,
+    selectPPOCandidate
+} = require('../scripts/run-ppo-generation');
+const {
+    leagueOpponentIndex
+} = require('../scripts/bench-ppo-league');
 const {
     encodeTeacherDecisions
 } = require('../scripts/generate-ppo-imitation-experience');
@@ -239,5 +246,45 @@ test('human PPO eligibility requires a deliberate completed-round decision', () 
             turn_disconnected: true
         }, new Set(['h:test'])),
         false
+    );
+});
+
+test('PPO league schedule has the pinned 40/30/20/10 mixture', () => {
+    const counts = {
+        selfplay: 0,
+        historical: 0,
+        heuristic: 0,
+        mixed: 0
+    };
+    for (let round = 0; round < 100; round++) {
+        counts[leagueRoundType(round)]++;
+    }
+    assert.deepStrictEqual(counts, {
+        selfplay: 40,
+        historical: 30,
+        heuristic: 20,
+        mixed: 10
+    });
+});
+
+test('league benchmark rotates every opponent through every learner seat', () => {
+    assert.deepStrictEqual(
+        Array.from({ length: 12 }, (_, round) =>
+            leagueOpponentIndex(round, 3)),
+        [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]
+    );
+});
+
+test('PPO generation accepts repeated historical opponent pools', () => {
+    const args = parsePPOGenerationArgs([
+        'node', 'runner',
+        '--opponents', 'league',
+        '--opponent-pool', 'gen-008.json,gen-011.json',
+        '--opponent-pool', 'gen-013.json'
+    ]);
+    assert.strictEqual(args.opponents, 'league');
+    assert.deepStrictEqual(
+        args.opponentPool.map(file => file.split('/').at(-1)),
+        ['gen-008.json', 'gen-011.json', 'gen-013.json']
     );
 });

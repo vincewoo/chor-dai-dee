@@ -37,6 +37,7 @@ function parseArgs(argv) {
         gaeLambda: 0.95,
         temperature: 1,
         opponents: 'mixed',
+        opponentPool: [],
         selectionRounds: 6000,
         benchmarkRounds: 12000,
         interpolationAlphas: [0.25, 0.5, 1],
@@ -63,6 +64,11 @@ function parseArgs(argv) {
         else if (flag === '--gae-lambda') args.gaeLambda = Number(argv[++i]);
         else if (flag === '--temperature') args.temperature = Number(argv[++i]);
         else if (flag === '--opponents') args.opponents = argv[++i];
+        else if (flag === '--opponent-pool') {
+            args.opponentPool.push(...argv[++i].split(',')
+                .filter(Boolean)
+                .map(file => path.resolve(file)));
+        }
         else if (flag === '--selection-rounds') {
             args.selectionRounds = Number(argv[++i]);
         } else if (flag === '--benchmark-rounds') {
@@ -91,6 +97,8 @@ Usage: npm run bot:ppo:generation -- [options]
   --clip-ratio N             PPO ratio clip (default 0.2)
   --entropy-coef N           entropy bonus (default 0.01)
   --imitation-coef N         heuristic anchor (default 0.005)
+  --opponents MODE           mixed, selfplay, heuristic, or league
+  --opponent-pool FILES      comma-separated historical PPO checkpoints
   --target-kl N              early-stop KL (default 0.02)
   --selection-rounds N       update-size tournament rounds (default 6000)
   --benchmark-rounds N       promotion rounds (default 12000)
@@ -162,7 +170,7 @@ function mergeShards(shards, output) {
         for (const key of [
             'kind', 'featureNames', 'decisionColumns', 'gamma', 'gaeLambda',
             'temperature', 'opponents', 'policy', 'rulesVersion',
-            'heuristicBotVersion'
+            'heuristicBotVersion', 'opponentPool', 'leagueSchedule'
         ]) {
             if (JSON.stringify(item.metadata[key]) !==
                 JSON.stringify(first[key])) {
@@ -199,6 +207,15 @@ function mergeShards(shards, output) {
             (sum, item) => sum + item.metadata.rounds, 0),
         learnerTrajectories: items.reduce(
             (sum, item) => sum + item.metadata.learnerTrajectories, 0),
+        ...(first.leagueMatchups ? {
+            leagueMatchups: Object.fromEntries(
+                Object.keys(first.leagueMatchups).map(key => [
+                    key,
+                    items.reduce((sum, item) =>
+                        sum + item.metadata.leagueMatchups[key], 0)
+                ])
+            )
+        } : {}),
         ...(items.some(item =>
             Number.isFinite(item.metadata.teacherOverrides)) ? {
                 teacherOverrides: items.reduce(
@@ -243,6 +260,8 @@ async function collect(args, input, number, workDir) {
             '--gae-lambda', String(args.gaeLambda),
             '--temperature', String(args.temperature),
             '--opponents', args.opponents,
+            ...args.opponentPool.flatMap(file =>
+                ['--opponent-pool', file]),
             '--report-every', String(Math.min(10000, rounds))
         ], { prefix: `[collector ${worker + 1}] ` }));
         offset += rounds;
@@ -323,6 +342,25 @@ async function benchmark(checkpoint, rounds, seed, reportPath, overrideMargin) {
     ], { stream: false });
 }
 
+async function benchmarkLeague(
+    checkpoint,
+    opponentPool,
+    rounds,
+    seed,
+    reportPath,
+    overrideMargin
+) {
+    return run(process.execPath, [
+        path.join(__dirname, 'bench-ppo-league.js'),
+        '--model', checkpoint,
+        '--opponent-pool', opponentPool.join(','),
+        '--rounds', String(rounds),
+        '--seed', String(seed),
+        '--override-margin', String(overrideMargin),
+        '--output', reportPath
+    ], { stream: false });
+}
+
 async function main(argv = process.argv) {
     const args = parseArgs(argv);
     if (args.help) {
@@ -339,6 +377,19 @@ async function main(argv = process.argv) {
     ]) {
         if (!Number.isInteger(value) || value <= 0) {
             throw new Error(`${name} must be a positive integer`);
+        }
+    }
+    if (!['mixed', 'selfplay', 'heuristic', 'league'].includes(args.opponents)) {
+        throw new Error(
+            '--opponents must be mixed, selfplay, heuristic, or league');
+    }
+    args.opponentPool = [...new Set(args.opponentPool)];
+    if (args.opponents === 'league' && !args.opponentPool.length) {
+        throw new Error('--opponents league requires --opponent-pool');
+    }
+    for (const file of args.opponentPool) {
+        if (!fs.existsSync(file)) {
+            throw new Error(`Opponent checkpoint not found: ${file}`);
         }
     }
     fs.mkdirSync(args.outputDir, { recursive: true });
@@ -485,7 +536,7 @@ async function main(argv = process.argv) {
     const candidateResult = learnedResult(candidateReport);
     const diagnostics = compareBenchmarkReports(
         baselineReport, candidateReport);
-    const promotion = promotionDecision(
+    const heuristicPromotion = promotionDecision(
         baselineResult, candidateResult, diagnostics);
     fs.writeFileSync(
         path.join(workDir, 'policy-diagnostics.json'),
@@ -497,6 +548,86 @@ async function main(argv = process.argv) {
         path.join(workDir, 'benchmark-candidate.txt'), candidateRun.stdout);
     fs.unlinkSync(baselineReportPath);
     fs.unlinkSync(candidateReportPath);
+
+    let leagueBenchmark = null;
+    let promotion = heuristicPromotion;
+    if (args.opponentPool.length) {
+        const leagueSeed = (418273 + number * 3011) >>> 0;
+        const leagueParentPath =
+            path.join(workDir, 'league-parent.json.tmp');
+        const leagueCandidatePath =
+            path.join(workDir, 'league-candidate.json.tmp');
+        console.log(
+            `\n=== ${label}: historical league promotion benchmark ===`);
+        const [leagueParentRun, leagueCandidateRun] = await Promise.all([
+            benchmarkLeague(
+                baseline,
+                args.opponentPool,
+                args.benchmarkRounds,
+                leagueSeed,
+                leagueParentPath,
+                args.overrideMargin
+            ),
+            benchmarkLeague(
+                modelPath,
+                args.opponentPool,
+                args.benchmarkRounds,
+                leagueSeed,
+                leagueCandidatePath,
+                args.overrideMargin
+            )
+        ]);
+        process.stdout.write(
+            `\n--- league baseline ---\n${leagueParentRun.stdout}`);
+        process.stdout.write(
+            `\n--- league candidate ---\n${leagueCandidateRun.stdout}`);
+        const leagueParentReport = JSON.parse(
+            fs.readFileSync(leagueParentPath, 'utf8'));
+        const leagueCandidateReport = JSON.parse(
+            fs.readFileSync(leagueCandidatePath, 'utf8'));
+        const leagueParentResult = learnedResult(leagueParentReport);
+        const leagueCandidateResult = learnedResult(leagueCandidateReport);
+        const leagueDiagnostics = compareBenchmarkReports(
+            leagueParentReport, leagueCandidateReport);
+        const leaguePromotion = promotionDecision(
+            leagueParentResult,
+            leagueCandidateResult,
+            leagueDiagnostics
+        );
+        leagueBenchmark = {
+            seed: leagueSeed,
+            parent: leagueParentResult,
+            candidate: leagueCandidateResult,
+            diagnostics: compact(leagueDiagnostics),
+            byOpponent: {
+                parent: leagueParentReport.byOpponent,
+                candidate: leagueCandidateReport.byOpponent
+            },
+            promotion: leaguePromotion
+        };
+        promotion = {
+            ...heuristicPromotion,
+            accepted:
+                heuristicPromotion.accepted && leaguePromotion.accepted,
+            checks: {
+                ...heuristicPromotion.checks,
+                leagueAccepted: leaguePromotion.accepted
+            },
+            heuristicAccepted: heuristicPromotion.accepted,
+            league: leaguePromotion
+        };
+        fs.writeFileSync(
+            path.join(workDir, 'league-diagnostics.json'),
+            `${JSON.stringify(leagueDiagnostics, null, 2)}\n`);
+        fs.writeFileSync(
+            path.join(workDir, 'league-parent.txt'),
+            leagueParentRun.stdout);
+        fs.writeFileSync(
+            path.join(workDir, 'league-candidate.txt'),
+            leagueCandidateRun.stdout);
+        fs.unlinkSync(leagueParentPath);
+        fs.unlinkSync(leagueCandidatePath);
+    }
 
     const generation = {
         schemaVersion: 1,
@@ -523,6 +654,7 @@ async function main(argv = process.argv) {
                 candidateResult.averagePoints - baselineResult.averagePoints
         },
         diagnostics: compact(diagnostics),
+        leagueBenchmark,
         promotion,
         elapsedSeconds: (Date.now() - started) / 1000,
         completedAt: new Date().toISOString()
@@ -553,5 +685,6 @@ module.exports = {
     parseArgs,
     mergeShards,
     interpolate,
-    selectPPOCandidate
+    selectPPOCandidate,
+    benchmarkLeague
 };

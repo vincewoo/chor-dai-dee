@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const { BotLogic, BOT_LOGIC_VERSION } = require('../game/BotLogic');
 const { RULES_VERSION } = require('../game/Big2Rules');
@@ -31,6 +32,7 @@ function parseArgs(argv) {
         gaeLambda: 0.95,
         temperature: 1,
         opponents: 'mixed',
+        opponentPool: [],
         reportEvery: 10000,
         roundOffset: 0
     };
@@ -44,12 +46,38 @@ function parseArgs(argv) {
         else if (flag === '--gae-lambda') args.gaeLambda = Number(argv[++i]);
         else if (flag === '--temperature') args.temperature = Number(argv[++i]);
         else if (flag === '--opponents') args.opponents = argv[++i];
+        else if (flag === '--opponent-pool') {
+            args.opponentPool.push(...argv[++i].split(',')
+                .filter(Boolean)
+                .map(file => path.resolve(file)));
+        }
         else if (flag === '--report-every') args.reportEvery = Number(argv[++i]);
         else if (flag === '--round-offset') args.roundOffset = Number(argv[++i]);
         else if (flag === '--help') args.help = true;
         else throw new Error(`Unknown argument: ${flag}`);
     }
     return args;
+}
+
+function leagueRoundType(round) {
+    const bucket = round % 10;
+    if (bucket < 4) return 'selfplay';
+    if (bucket < 7) return 'historical';
+    if (bucket < 9) return 'heuristic';
+    return 'mixed';
+}
+
+function fileSha256(filePath) {
+    return crypto.createHash('sha256')
+        .update(fs.readFileSync(filePath))
+        .digest('hex');
+}
+
+function opponentPoolProvenance(files) {
+    return files.map(file => ({
+        reference: path.relative(path.resolve(__dirname, '..'), file),
+        sha256: fileSha256(file)
+    }));
 }
 
 function finishTrajectory(trajectory, utility, gamma, gaeLambda) {
@@ -129,11 +157,23 @@ function main(argv = process.argv) {
         args.gaeLambda < 0 || args.gaeLambda > 1) {
         throw new Error('--gae-lambda must be between 0 and 1');
     }
-    if (!['mixed', 'selfplay', 'heuristic'].includes(args.opponents)) {
-        throw new Error('--opponents must be mixed, selfplay, or heuristic');
+    if (!['mixed', 'selfplay', 'heuristic', 'league'].includes(args.opponents)) {
+        throw new Error(
+            '--opponents must be mixed, selfplay, heuristic, or league');
+    }
+    args.opponentPool = [...new Set(args.opponentPool)];
+    if (args.opponents === 'league' && !args.opponentPool.length) {
+        throw new Error('--opponents league requires --opponent-pool');
+    }
+    for (const file of args.opponentPool) {
+        if (!fs.existsSync(file)) {
+            throw new Error(`Opponent checkpoint not found: ${file}`);
+        }
     }
 
     const model = PPOModel.load(args.model);
+    const historicalModels = args.opponentPool.map(file => PPOModel.load(file));
+    const poolProvenance = opponentPoolProvenance(args.opponentPool);
     const rng = makeRng(args.seed);
     fs.mkdirSync(path.dirname(args.output), { recursive: true });
     const actionPath = `${args.output}.actions.bin`;
@@ -143,28 +183,58 @@ function main(argv = process.argv) {
     let actionRows = 0;
     let decisions = 0;
     let learnerTrajectories = 0;
+    const leagueMatchups = {
+        selfplay: 0,
+        historical: 0,
+        heuristic: 0,
+        mixed: 0
+    };
     const started = Date.now();
 
     try {
         for (let round = 0; round < args.rounds; round++) {
             const globalRound = args.roundOffset + round;
             const trajectories = [[], [], [], []];
-            const allLearners = args.opponents === 'selfplay' ||
-                (args.opponents === 'mixed' && globalRound % 2 === 0);
             const learnerSeat = globalRound % 4;
+            const leagueType = args.opponents === 'league'
+                ? leagueRoundType(globalRound)
+                : null;
+            if (leagueType) leagueMatchups[leagueType]++;
+            const allLearners = args.opponents === 'selfplay' ||
+                (args.opponents === 'mixed' && globalRound % 2 === 0) ||
+                leagueType === 'selfplay';
             const seats = trajectories.map((trajectory, seat) => {
-                if (!allLearners && seat !== learnerSeat) {
+                const isLearner = allLearners || seat === learnerSeat;
+                if (isLearner) {
+                    learnerTrajectories++;
+                    return {
+                        name: `ppo-${seat}`,
+                        logic: new PPOBot(model, {
+                            sample: true,
+                            temperature: args.temperature,
+                            rng,
+                            captureTrajectory: true,
+                            onDecision: decision => trajectory.push(decision)
+                        })
+                    };
+                }
+                if (args.opponents !== 'league' ||
+                    leagueType === 'heuristic') {
                     return { name: `heuristic-${seat}`, logic: BotLogic };
                 }
-                learnerTrajectories++;
+                const relativeSeat = (seat - learnerSeat + 4) % 4;
+                if (leagueType === 'mixed' && relativeSeat === 1) {
+                    return { name: `heuristic-${seat}`, logic: BotLogic };
+                }
+                const historyIndex =
+                    (Math.floor(globalRound / 10) * 3 +
+                        relativeSeat - 1) % historicalModels.length;
                 return {
-                    name: `ppo-${seat}`,
-                    logic: new PPOBot(model, {
+                    name: `historical-${historyIndex}-${seat}`,
+                    logic: new PPOBot(historicalModels[historyIndex], {
                         sample: true,
                         temperature: args.temperature,
-                        rng,
-                        captureTrajectory: true,
-                        onDecision: decision => trajectory.push(decision)
+                        rng
                     })
                 };
             });
@@ -228,6 +298,14 @@ function main(argv = process.argv) {
         gaeLambda: args.gaeLambda,
         temperature: args.temperature,
         opponents: args.opponents,
+        opponentPool: poolProvenance,
+        leagueSchedule: args.opponents === 'league' ? {
+            selfplay: 0.40,
+            historical: 0.30,
+            heuristic: 0.20,
+            mixed: 0.10
+        } : null,
+        leagueMatchups: args.opponents === 'league' ? leagueMatchups : null,
         policy: path.basename(args.model),
         rulesVersion: RULES_VERSION,
         heuristicBotVersion: BOT_LOGIC_VERSION,
@@ -254,6 +332,8 @@ module.exports = {
     finishTrajectory,
     encodeActions,
     encodeDecisions,
+    leagueRoundType,
+    opponentPoolProvenance,
     DECISION_BYTES,
     NO_HEURISTIC_INDEX
 };
