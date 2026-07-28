@@ -20,6 +20,7 @@ const Training = lazy(() => import('./components/Training'));
 const AvatarPickerV2 = lazy(() =>
   import('./components/tableV2').then(m => ({ default: m.AvatarPickerV2 }))
 );
+const Profile = lazy(() => import('./components/Profile'));
 
 // Route-level fallback. These chunks are small and usually warm from the service
 // worker, so this is a brief flash at worst.
@@ -105,6 +106,9 @@ function App() {
                   <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
                   <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} user={user} /> : <Navigate to="/" />} />
                   <Route path="/avatar" element={user ? <AvatarPickerV2 user={user} /> : <Navigate to="/" />} />
+                  {/* Guests have no account row to edit, so this one is not just
+                      "logged in" -- it needs a real user id. */}
+                  <Route path="/profile" element={user && !user.isGuest ? <Profile user={user} setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
                   <Route path="/review/:gameId" element={user ? <GameReview user={user} /> : <Navigate to="/" />} />
                   <Route path="/training" element={user ? <Training user={user} /> : <Navigate to="/" />} />
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />

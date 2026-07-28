@@ -425,6 +425,22 @@ function initDb() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_placement_history_user
                 ON placement_history(user_id, game_mode)`);
 
+        // Every rename this account has been through. `renameUser` rewrites the
+        // two denormalized username columns so history reads under the new name,
+        // which means the old name leaves no trace anywhere else -- and once it
+        // is free, somebody else can register it. This is the record that says
+        // which account a retired name used to belong to.
+        db.run(`CREATE TABLE IF NOT EXISTS username_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            old_username TEXT NOT NULL,
+            new_username TEXT NOT NULL,
+            changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_username_history_user
+                ON username_history(user_id)`);
+
         // Check if users table needs google_id column (migration for Google OAuth)
         db.all("PRAGMA table_info(users)", (err, columns) => {
             if (err) {
@@ -887,9 +903,36 @@ const verifyUser = async (username, password) => {
         db.get(`SELECT * FROM users WHERE username = ?`, [username], async (err, row) => {
             if (err) return reject(err);
             if (!row) return resolve(null);
-            const match = await bcrypt.compare(password, row.password_hash);
-            if (match) resolve({ id: row.id, username: row.username });
-            else resolve(null);
+            // A Google-created account has no password_hash, and bcrypt.compare
+            // rejects on a null hash. That rejection used to escape this async
+            // callback without settling the promise, so /api/login simply hung
+            // for anyone who typed a Google user's name. No password on the row
+            // means password login is not available for it -- that is a failed
+            // login, not an error.
+            if (!row.password_hash) return resolve(null);
+            try {
+                const match = await bcrypt.compare(password, row.password_hash);
+                resolve(match ? { id: row.id, username: row.username } : null);
+            } catch (compareErr) {
+                reject(compareErr);
+            }
+        });
+    });
+};
+
+// Same check keyed on the account id, for callers that already know who they
+// are and are proving it (the profile page) rather than looking themselves up.
+const verifyUserById = async (userId, password) => {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM users WHERE id = ?`, [userId], async (err, row) => {
+            if (err) return reject(err);
+            if (!row || !row.password_hash) return resolve(null);
+            try {
+                const match = await bcrypt.compare(password, row.password_hash);
+                resolve(match ? { id: row.id, username: row.username } : null);
+            } catch (compareErr) {
+                reject(compareErr);
+            }
         });
     });
 };
@@ -2457,6 +2500,87 @@ const isUsernameAvailable = (username) => {
     });
 };
 
+// ========== ACCOUNT MANAGEMENT (profile page) ==========
+
+// Promise wrappers scoped to this section. The callback style everywhere else
+// predates these; account changes are multi-statement and read much better
+// sequenced, especially inside a transaction.
+const getRow = (sql, params) => new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+});
+const allRows = (sql, params) => new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+});
+const runSql = (sql, params) => new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) { return err ? reject(err) : resolve(this); });
+});
+
+// The whole account row, for the profile page and for the ownership checks in
+// front of every mutation. `password_hash` is returned so callers can ask
+// whether one exists -- it must never leave the server.
+const getAccountById = (userId) =>
+    getRow('SELECT id, username, password_hash, google_id, google_email FROM users WHERE id = ?', [userId]);
+
+// Rename an account, rewriting the history that stored the name rather than the
+// id. Almost every table keys on user_id and follows a rename for free; these
+// two denormalize the name and would otherwise keep pointing at a string this
+// account no longer owns -- and that somebody else may later register.
+//
+// All of it in one transaction, deliberately: a rename that lands in `users` but
+// not in the activity feed is worse than one that does not happen, because the
+// stale rows are then indistinguishable from another player's.
+const renameUser = (userId, newUsername) => withTransaction(async () => {
+    const user = await getRow('SELECT id, username FROM users WHERE id = ?', [userId]);
+    if (!user) {
+        throw Object.assign(new Error('Account not found'), { code: 'ACCOUNT_NOT_FOUND' });
+    }
+    if (user.username === newUsername) {
+        return { id: user.id, username: user.username, changed: false };
+    }
+
+    // Matched exactly, the same way `isUsernameAvailable` and the UNIQUE index
+    // match. Case-insensitive here would reject names that registration accepts.
+    const taken = await getRow('SELECT id FROM users WHERE username = ? AND id != ?', [newUsername, userId]);
+    if (taken) {
+        throw Object.assign(new Error('Username already taken'), { code: 'USERNAME_TAKEN' });
+    }
+
+    await runSql('UPDATE users SET username = ? WHERE id = ?', [newUsername, userId]);
+    await runSql('UPDATE game_history SET winner_username = ? WHERE winner_id = ?', [newUsername, userId]);
+    // Can fail on UNIQUE(game_id, username) if a guest row in one of this
+    // account's own games already carries the new name. Reserving the `Guest_`
+    // prefix (server/username.js) is what makes that unreachable; the
+    // transaction is what keeps it harmless if it ever becomes reachable again.
+    await runSql('UPDATE game_participants SET username = ? WHERE user_id = ?', [newUsername, userId]);
+    await runSql(
+        'INSERT INTO username_history (user_id, old_username, new_username) VALUES (?, ?, ?)',
+        [userId, user.username, newUsername]
+    );
+
+    return { id: userId, username: newUsername, changed: true };
+});
+
+const getUsernameHistory = (userId) =>
+    allRows(
+        'SELECT old_username, new_username, changed_at FROM username_history WHERE user_id = ? ORDER BY changed_at DESC, id DESC',
+        [userId]
+    );
+
+// Set or replace the password. Also the way a Google-only account gains one, so
+// linking Google is not a one-way trip into an account you cannot unlink.
+const setUserPassword = async (userId, password) => {
+    const hash = await bcrypt.hash(password, 10);
+    const result = await runSql('UPDATE users SET password_hash = ? WHERE id = ?', [hash, userId]);
+    return { success: result.changes > 0 };
+};
+
+// Detach Google from an account. The caller is responsible for refusing this
+// when no password is set -- clearing the only credential locks the account out.
+const unlinkGoogleAccount = async (userId) => {
+    const result = await runSql('UPDATE users SET google_id = NULL, google_email = NULL WHERE id = ?', [userId]);
+    return { success: result.changes > 0 };
+};
+
 module.exports = {
     db,
     createUser,
@@ -2512,5 +2636,12 @@ module.exports = {
     getUserByGoogleId,
     createGoogleUser,
     linkGoogleAccount,
-    isUsernameAvailable
+    isUsernameAvailable,
+    // Account management
+    verifyUserById,
+    getAccountById,
+    renameUser,
+    getUsernameHistory,
+    setUserPassword,
+    unlinkGoogleAccount
 };

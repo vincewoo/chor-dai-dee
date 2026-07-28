@@ -5,7 +5,8 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
+const { validateUsername, validatePassword } = require('./username');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
 const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
@@ -2420,8 +2421,17 @@ app.get('/api/activity', async (req, res) => {
 app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
+
+    // Registration validated nothing before -- the 3-20 / charset rules existed
+    // only on the Google signup path, so the two doors into the users table
+    // disagreed about what a username is.
+    const name = validateUsername(username);
+    if (!name.ok) return res.status(400).json({ error: name.error });
+    const pass = validatePassword(password);
+    if (!pass.ok) return res.status(400).json({ error: pass.error });
+
     try {
-        const user = await createUser(username, password);
+        const user = await createUser(name.username, password);
         res.json({ success: true, user });
     } catch (err) {
         res.status(400).json({ error: 'Username taken or invalid' });
@@ -2549,18 +2559,14 @@ app.post('/api/auth/google/register', async (req, res) => {
         const payload = await verifyGoogleToken(idToken);
         const { sub: googleId, email } = payload;
 
-        // Validate username
-        if (username.length < 3 || username.length > 20) {
-            return res.status(400).json({ error: 'Username must be 3-20 characters' });
-        }
-
-        // Check for invalid characters
-        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-            return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
+        // Validate username (shared with /api/register and the profile rename)
+        const name = validateUsername(username);
+        if (!name.ok) {
+            return res.status(400).json({ error: name.error });
         }
 
         // Check username availability
-        const available = await isUsernameAvailable(username);
+        const available = await isUsernameAvailable(name.username);
         if (!available) {
             return res.status(400).json({ error: 'Username already taken' });
         }
@@ -2572,7 +2578,7 @@ app.post('/api/auth/google/register', async (req, res) => {
         }
 
         // Create the user
-        const user = await createGoogleUser(username, googleId, email);
+        const user = await createGoogleUser(name.username, googleId, email);
         res.json({ success: true, user: { id: user.id, username: user.username } });
 
     } catch (err) {
@@ -2629,6 +2635,207 @@ app.post('/api/auth/google/link', async (req, res) => {
     } catch (err) {
         console.error('Google link error:', err);
         res.status(400).json({ error: 'Failed to link account' });
+    }
+});
+
+// ========== ACCOUNT / PROFILE ROUTES ==========
+
+// This app has no sessions and no tokens -- the client holds `{id, username}`
+// in localStorage, and endpoints like /api/preferences/:userId trust the id in
+// the URL. That is tolerable for a colour-scheme toggle and not for changing a
+// credential, so every mutation below carries its own proof of ownership in the
+// request body: the account's current password, or a fresh Google ID token
+// whose `sub` is already on the row. The second form is not a convenience -- a
+// Google-only account has no password to offer, and would otherwise be locked
+// out of its own settings.
+//
+// Throws `{ status, error }` shaped rejections; callers map them straight onto
+// the response.
+async function proveAccountOwner(userId, { password, idToken } = {}) {
+    const account = await getAccountById(userId);
+    if (!account) {
+        throw { status: 404, error: 'Account not found' };
+    }
+
+    if (password) {
+        const verified = await verifyUserById(userId, password);
+        if (!verified) throw { status: 401, error: 'Incorrect password' };
+        return account;
+    }
+
+    if (idToken) {
+        if (!googleClient) throw { status: 500, error: 'Google OAuth not configured on server' };
+        let payload;
+        try {
+            payload = await verifyGoogleToken(idToken);
+        } catch (err) {
+            throw { status: 401, error: 'Invalid Google token' };
+        }
+        // The token proves control of a Google account; it only proves control
+        // of *this* account if the two are already linked.
+        if (!account.google_id || account.google_id !== payload.sub) {
+            throw { status: 401, error: 'That Google account is not linked to this profile' };
+        }
+        return account;
+    }
+
+    throw { status: 401, error: 'Confirm your password to make this change' };
+}
+
+// Enough of the address to be recognisable, not enough to harvest. The profile
+// GET is unauthenticated (same as preferences), so it must not hand out the
+// email itself to anyone who can guess a user id.
+function maskEmail(email) {
+    if (typeof email !== 'string' || !email.includes('@')) return null;
+    const [local, domain] = email.split('@');
+    const head = local.slice(0, 1) || '*';
+    return `${head}${'*'.repeat(Math.max(3, local.length - 1))}@${domain}`;
+}
+
+const respondWithError = (res, err, fallback) => {
+    if (err && typeof err.status === 'number') {
+        return res.status(err.status).json({ error: err.error });
+    }
+    console.error(fallback.log, err);
+    return res.status(500).json({ error: fallback.message });
+};
+
+// What the profile page renders. Deliberately says whether a password exists
+// rather than anything about it, and masks the linked email.
+app.get('/api/account/:userId', async (req, res) => {
+    try {
+        const account = await getAccountById(parseInt(req.params.userId));
+        if (!account) return res.status(404).json({ error: 'Account not found' });
+
+        res.json({
+            id: account.id,
+            username: account.username,
+            hasPassword: Boolean(account.password_hash),
+            googleLinked: Boolean(account.google_id),
+            googleEmailMasked: maskEmail(account.google_email)
+        });
+    } catch (err) {
+        respondWithError(res, err, { log: 'Error fetching account:', message: 'Server error' });
+    }
+});
+
+// Change the display name, rewriting the history that stored it.
+app.post('/api/account/:userId/username', async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const { newUsername, password, idToken } = req.body;
+
+    const name = validateUsername(newUsername);
+    if (!name.ok) return res.status(400).json({ error: name.error });
+
+    try {
+        const account = await proveAccountOwner(userId, { password, idToken });
+
+        // Rooms identify players by name (`RoomManager.findAllRoomsByUsername`),
+        // and `hostUsername` is a bare string, so renaming out from under a live
+        // seat desyncs it. Cheaper to refuse than to chase the name through the
+        // in-memory game state.
+        if (roomManager.findAllRoomsByUsername(account.username).length > 0) {
+            return res.status(409).json({ error: 'Leave your game before changing your username' });
+        }
+
+        const result = await renameUser(userId, name.username);
+        res.json({ success: true, user: { id: result.id, username: result.username } });
+    } catch (err) {
+        if (err && err.code === 'USERNAME_TAKEN') {
+            return res.status(400).json({ error: 'Username already taken' });
+        }
+        if (err && err.code === 'ACCOUNT_NOT_FOUND') {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+        // The availability check is not atomic with the UPDATEs, so a race can
+        // still surface as a constraint failure. Report the actionable version.
+        if (err && /UNIQUE constraint failed/i.test(err.message || '')) {
+            return res.status(400).json({ error: 'Username already taken' });
+        }
+        respondWithError(res, err, { log: 'Username change error:', message: 'Failed to change username' });
+    }
+});
+
+// Set a first password (Google-only account) or replace an existing one.
+app.post('/api/account/:userId/password', async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const { newPassword, currentPassword, idToken } = req.body;
+
+    const pass = validatePassword(newPassword);
+    if (!pass.ok) return res.status(400).json({ error: pass.error });
+
+    try {
+        const account = await getAccountById(userId);
+        if (!account) return res.status(404).json({ error: 'Account not found' });
+
+        // An account that has a password must prove it with that password --
+        // otherwise a linked Google token would be a way to take over an account
+        // whose owner only ever wanted Google as a second way in.
+        if (account.password_hash) {
+            await proveAccountOwner(userId, { password: currentPassword });
+        } else {
+            await proveAccountOwner(userId, { idToken });
+        }
+
+        await setUserPassword(userId, pass.password);
+        res.json({ success: true, hasPassword: true });
+    } catch (err) {
+        respondWithError(res, err, { log: 'Password change error:', message: 'Failed to change password' });
+    }
+});
+
+// Link Google from inside a session. The login screen can only offer this to
+// someone who is logged out and starting from the Google button.
+app.post('/api/account/:userId/google/link', async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const { idToken, password } = req.body;
+
+    if (!idToken) return res.status(400).json({ error: 'Missing Google token' });
+    if (!googleClient) return res.status(500).json({ error: 'Google OAuth not configured on server' });
+
+    try {
+        // Proof is the password specifically: the Google token being linked
+        // proves nothing about this account yet, which is the whole point.
+        const account = await proveAccountOwner(userId, { password });
+        if (account.google_id) {
+            return res.status(400).json({ error: 'This account already has Google linked' });
+        }
+
+        const payload = await verifyGoogleToken(idToken);
+        const { sub: googleId, email } = payload;
+
+        const existingGoogleUser = await getUserByGoogleId(googleId);
+        if (existingGoogleUser) {
+            return res.status(400).json({ error: 'This Google account is already linked to another user' });
+        }
+
+        await linkGoogleAccount(userId, googleId, email);
+        res.json({ success: true, googleLinked: true, googleEmailMasked: maskEmail(email) });
+    } catch (err) {
+        respondWithError(res, err, { log: 'Account Google link error:', message: 'Failed to link Google account' });
+    }
+});
+
+app.post('/api/account/:userId/google/unlink', async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const { password } = req.body;
+
+    try {
+        const account = await proveAccountOwner(userId, { password });
+        if (!account.google_id) {
+            return res.status(400).json({ error: 'This account has no Google account linked' });
+        }
+        // Reachable only if proof came from somewhere other than a password,
+        // but the check is what makes "you cannot lock yourself out" true rather
+        // than incidental.
+        if (!account.password_hash) {
+            return res.status(400).json({ error: 'Set a password first, or you will lose access to this account' });
+        }
+
+        await unlinkGoogleAccount(userId);
+        res.json({ success: true, googleLinked: false });
+    } catch (err) {
+        respondWithError(res, err, { log: 'Account Google unlink error:', message: 'Failed to unlink Google account' });
     }
 });
 
