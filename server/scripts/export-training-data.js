@@ -11,7 +11,7 @@
 // Usage:
 //   GAMELOG_ENABLED=1 GAMELOG_EXPORT_SECRET=... \
 //     node scripts/export-training-data.js --out data/ [--since KEY] [--limit N]
-//     [--humans-only] [--include-abandoned] [--no-legal]
+//     [--humans-only] [--include-abandoned] [--no-legal] [--competitive-only]
 
 const fs = require('fs');
 const path = require('path');
@@ -27,7 +27,8 @@ const SHARD_SIZE = 5000;   // decisions per shard
 function parseArgs(argv) {
     const args = {
         out: 'data', since: null, limit: null,
-        humansOnly: false, includeAbandoned: false, legal: true
+        humansOnly: false, includeAbandoned: false, legal: true,
+        competitiveOnly: false
     };
     for (let i = 2; i < argv.length; i++) {
         const flag = argv[i];
@@ -37,6 +38,7 @@ function parseArgs(argv) {
         else if (flag === '--humans-only') args.humansOnly = true;
         else if (flag === '--include-abandoned') args.includeAbandoned = true;
         else if (flag === '--no-legal') args.legal = false;
+        else if (flag === '--competitive-only') args.competitiveOnly = true;
         else if (flag === '--help') args.help = true;
     }
     return args;
@@ -50,6 +52,17 @@ Usage: export-training-data.js --out DIR [options]
   --humans-only         only emit decisions made by humans
   --include-abandoned   include games that were abandoned (see below)
   --no-legal            skip legal-move enumeration (much faster, smaller)
+  --competitive-only    drop games whose bots played below full strength
+
+Games played against weakened bots are INCLUDED by default and tagged with
+weakened_bots (per row) and difficulty (per seat). They are not junk: the human
+moves in them are genuine human decisions, and the bot rows are valid league
+opponents. What is biased is the outcome label -- round utility earned against
+weak opposition overstates how good those actions were -- so condition on the
+tag, reweight, or drop them at training time, where the trade-off is visible.
+Labelling is the irreversible half; a filter can always be applied later, but
+data exported without provenance can never be sorted out. Pass this flag when
+fitting on outcome labels and you want the clean subset.
 
 Abandoned games are EXCLUDED by default only because their game-level labels
 are null; their completed rounds are fully usable and are the bulk of the
@@ -166,13 +179,17 @@ async function main() {
     const writer = new ShardWriter(args.out, 'big2');
 
     const stats = {
-        games: 0, skippedAbandoned: 0, rounds: 0,
+        games: 0, skippedAbandoned: 0, skippedWeakened: 0, rounds: 0,
         decisions: 0, emitted: 0, replayFailures: 0
     };
 
     for (const game of games) {
         if (game.end_reason === 'abandoned' && !args.includeAbandoned) {
             stats.skippedAbandoned++;
+            continue;
+        }
+        if (game.weakened_bots && args.competitiveOnly) {
+            stats.skippedWeakened++;
             continue;
         }
         stats.games++;
@@ -226,6 +243,10 @@ async function main() {
                         : occupant.subject_key,
                     policy_gen: occupant.policy_gen,
                     policy_ref: occupant.policy_ref,
+                    // How hard this seat was trying. NULL for humans, and NULL
+                    // on rows logged before difficulty tiers existed, which
+                    // reads correctly as full strength.
+                    difficulty: occupant.difficulty ?? null,
                     rating_mu: occupant.rating_mu,
                     rating_sigma: occupant.rating_sigma,
                     // Their hand was inherited, not chosen. Contaminated for
@@ -238,6 +259,13 @@ async function main() {
                     policy_fallback: ply.source === SOURCE.BOT_FALLBACK,
 
                     game_mode: game.game_mode,
+                    // True when any bot seat in this game played below full
+                    // strength. Every row of such a game carries it, human rows
+                    // included: the round utility is zero-sum across all four
+                    // seats, so a weakened bot biases everyone's outcome label,
+                    // not just its own. Rows are emitted either way - see the
+                    // note on --competitive-only below.
+                    weakened_bots: Boolean(game.weakened_bots),
                     rules_version: game.rules_version,
                     schema_version: game.schema_version,
                     end_reason: game.end_reason,
@@ -302,7 +330,8 @@ async function main() {
     await writer.close();
 
     console.log(`games        ${stats.games} exported` +
-        (stats.skippedAbandoned ? `, ${stats.skippedAbandoned} abandoned skipped` : ''));
+        (stats.skippedAbandoned ? `, ${stats.skippedAbandoned} abandoned skipped` : '') +
+        (stats.skippedWeakened ? `, ${stats.skippedWeakened} weakened-bot skipped` : ''));
     console.log(`rounds       ${stats.rounds}`);
     console.log(`decisions    ${stats.decisions} seen, ${stats.emitted} emitted`);
     if (stats.replayFailures) {

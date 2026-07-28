@@ -508,6 +508,10 @@ function initDb() {
                 // Avatar chosen in the Avatar Picker. NULL means "never chose
                 // one", which is what tells clients to fall back to the
                 // deterministic name-derived avatar.
+                // The host's remembered bot-difficulty choice. Only ever
+                // pre-fills a new room; the room's own value is authoritative
+                // once set, since bots are shared by the whole table.
+                addColumn('bot_difficulty', "bot_difficulty TEXT DEFAULT 'competitive'");
                 addColumn('avatar_animal', 'avatar_animal TEXT');
                 addColumn('avatar_tile', 'avatar_tile INTEGER');
             }
@@ -554,6 +558,12 @@ function initDb() {
                 addColumn('controls_won', 'controls_won INTEGER');
                 addColumn('min_hand_size', 'min_hand_size INTEGER');
                 addColumn('standing', 'standing INTEGER');
+                // How hard this round's bots were trying. NULL on rows written
+                // before difficulty tiers existed, which reads as full strength
+                // - the only thing that existed then. The "vs bots" deal
+                // strength scope splits on it so that farming casual bots does
+                // not read as beating the real thing.
+                addColumn('bot_difficulty', 'bot_difficulty TEXT');
             }
         });
 
@@ -1072,8 +1082,8 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             deal_strength_raw, deal_tier, deal_rank,
             deal_baseline_version, human_opponents,
             deal_plays_needed, controls_dealt, controls_played, controls_won,
-            min_hand_size, standing
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            min_hand_size, standing, bot_difficulty
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
@@ -1102,7 +1112,10 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             roundData.dealStrength ? (roundData.controlsPlayed || 0) : null,
             roundData.dealStrength ? (roundData.controlsWon || 0) : null,
             roundData.minHandSize ?? null,
-            roundData.standing ?? null
+            roundData.standing ?? null,
+            roundData.dealStrength
+                ? (roundData.dealStrength.botDifficulty ?? null)
+                : null
         ];
 
         db.run(query, params, (err) => {
@@ -1780,6 +1793,12 @@ const updateVarianceScores = async (userId, gameMode) => {
 // ========== USER PREFERENCES FUNCTIONS ==========
 
 // Get user preferences
+// Valid bot-difficulty tiers. Deliberately a local copy rather than an import
+// of BOT_DIFFICULTIES from game/BotPolicy.js, which would pull the whole bot
+// stack into the database layer; botDifficulty.test.js asserts the two lists
+// agree, so they cannot drift silently.
+const BOT_DIFFICULTY_IDS = ['competitive', 'balanced', 'casual'];
+
 const getUserPreferences = (userId) => {
     return new Promise((resolve, reject) => {
         db.get(`SELECT * FROM user_preferences WHERE user_id = ?`, [userId], (err, row) => {
@@ -1796,6 +1815,7 @@ const getUserPreferences = (userId) => {
                     reduced_motion: 0,
                     sound_enabled: 1,
                     sound_volume: 0.6,
+                    bot_difficulty: 'competitive',
                     avatar_animal: null,
                     avatar_tile: null
                 });
@@ -1826,6 +1846,14 @@ const updateUserPreferences = async (userId, preferences) => {
     const soundEnabledValue = toInt(pick(preferences.soundEnabled, existing.sound_enabled ?? 1));
     const rawVolume = Number(pick(preferences.soundVolume, existing.sound_volume ?? 0.6));
     const soundVolumeValue = Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : 0.6;
+    // Validated against the whitelist rather than stored as sent: this value is
+    // handed straight to the room policy factory, which throws on an unknown
+    // tier, and an unrecognised setting must not become a way to get one.
+    const rawDifficulty = pick(
+        preferences.botDifficulty, existing.bot_difficulty ?? 'competitive');
+    const botDifficultyValue = BOT_DIFFICULTY_IDS.includes(rawDifficulty)
+        ? rawDifficulty
+        : 'competitive';
     // Avatar stays NULL until the player picks one; callers validate the emoji
     // against the picker's set before it gets here.
     const avatarAnimalValue = pick(preferences.avatarAnimal, existing.avatar_animal ?? null) ?? null;
@@ -1834,8 +1862,8 @@ const updateUserPreferences = async (userId, preferences) => {
 
     return new Promise((resolve, reject) => {
         const query = `INSERT INTO user_preferences
-                           (user_id, four_color_mode, pusoy_mode, auto_pass, coach_enabled, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, avatar_animal, avatar_tile)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           (user_id, four_color_mode, pusoy_mode, auto_pass, coach_enabled, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, bot_difficulty, avatar_animal, avatar_tile)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
                            pusoy_mode = ?,
@@ -1846,12 +1874,13 @@ const updateUserPreferences = async (userId, preferences) => {
                            reduced_motion = ?,
                            sound_enabled = ?,
                            sound_volume = ?,
+                           bot_difficulty = ?,
                            avatar_animal = ?,
                            avatar_tile = ?`;
 
         const values = [
-            userId, fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue,
-            fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, avatarAnimalValue, avatarTileValue
+            userId, fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, botDifficultyValue, avatarAnimalValue, avatarTileValue,
+            fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, botDifficultyValue, avatarAnimalValue, avatarTileValue
         ];
 
         db.run(query, values, (err) => {
@@ -1921,13 +1950,18 @@ const getDealStrengthStats = (userId, gameMode) => {
             SELECT
                 deal_tier,
                 CASE WHEN human_opponents > 0 THEN 1 ELSE 0 END as vs_humans,
+                -- NULL means the round predates difficulty tiers, when every
+                -- bot played at full strength - so it groups with competitive.
+                CASE WHEN bot_difficulty IS NOT NULL
+                          AND bot_difficulty <> 'competitive'
+                     THEN 1 ELSE 0 END as weakened_bots,
                 COUNT(*) as rounds,
                 SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END) as wins,
                 AVG(round_points) as avg_points,
                 AVG(deal_strength_raw) as avg_raw
             FROM round_stats
             WHERE user_id = ? AND game_mode = ? AND deal_tier IS NOT NULL
-            GROUP BY deal_tier, vs_humans
+            GROUP BY deal_tier, vs_humans, weakened_bots
         `;
 
         // Rank-based highlights. A "steal" is winning the round holding the
@@ -1936,6 +1970,9 @@ const getDealStrengthStats = (userId, gameMode) => {
         const rankQuery = `
             SELECT
                 CASE WHEN human_opponents > 0 THEN 1 ELSE 0 END as vs_humans,
+                CASE WHEN bot_difficulty IS NOT NULL
+                          AND bot_difficulty <> 'competitive'
+                     THEN 1 ELSE 0 END as weakened_bots,
                 COUNT(*) as rounds,
                 SUM(CASE WHEN deal_rank = 4 THEN 1 ELSE 0 END) as worst_deals,
                 SUM(CASE WHEN deal_rank = 4 AND placement = 1 THEN 1 ELSE 0 END) as steals,
@@ -1945,7 +1982,7 @@ const getDealStrengthStats = (userId, gameMode) => {
                 AVG(deal_rank) as avg_rank
             FROM round_stats
             WHERE user_id = ? AND game_mode = ? AND deal_tier IS NOT NULL
-            GROUP BY vs_humans
+            GROUP BY vs_humans, weakened_bots
         `;
 
         const run = (query) => new Promise((res, rej) => {
@@ -2620,6 +2657,7 @@ module.exports = {
     // User preferences
     getUserPreferences,
     updateUserPreferences,
+    BOT_DIFFICULTY_IDS,
     getAvatarsByUsernames,
     // Leaderboard
     getLeaderboard,

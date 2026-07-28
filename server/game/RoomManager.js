@@ -1,10 +1,19 @@
 // server/game/RoomManager.js
 const { Deck } = require('./Deck');
 const { Big2Rules } = require('./Big2Rules');
-const { BotLogic } = require('./BotLogic');
-const { createBotPolicy, createCoachAdvisor } = require('./BotPolicy');
-const { calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA } = require('./RatingSystem');
-const { getPointThreshold } = require('./GameModes');
+const {
+    createBotPolicy,
+    createCoachAdvisor,
+    BOT_DIFFICULTIES,
+    DEFAULT_BOT_DIFFICULTY
+} = require('./BotPolicy');
+const {
+    calculateDisplayRating,
+    botRatingForDifficulty,
+    DEFAULT_MU,
+    DEFAULT_SIGMA
+} = require('./RatingSystem');
+const { GAME_MODES, getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
 const { rankTable, playsNeeded, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
@@ -105,9 +114,17 @@ class Room {
         this.pendingTimeouts = new Map(); // Map of timeout type -> timeout ID
         this.trickWinGeneration = 0; // Generation counter for trick win timeouts
         this.isBotThinking = false; // Flag to prevent multiple bot turn calculations
+        // How hard this room's bots try. The tier is stored here only so it can
+        // survive being read back by the lobby; the authority on what actually
+        // plays is `botPolicy.difficulty`, and every consumer - the UI payload,
+        // the game log, the rating - reads it from the policy object rather
+        // than from a second field that could drift out of agreement with what
+        // checkBotTurn dispatches. See docs/GAME-STATE-HISTORY-STORE.md on the
+        // decorative `player.difficulty` that made exactly that mistake.
+        this.botDifficulty = DEFAULT_BOT_DIFFICULTY;
         // Snapshotted per room so an in-flight game never changes policy when
         // configuration changes during a rolling deploy.
-        this.botPolicy = createBotPolicy();
+        this.botPolicy = createBotPolicy({ difficulty: this.botDifficulty });
         // Hints may use a different policy from the seats. Reactions and
         // grading remain deterministic; this advisor is read only.
         this.coachAdvisor = createCoachAdvisor();
@@ -424,13 +441,17 @@ class Room {
 
         const botId = `bot_${Date.now()}_replacement`;
 
+        // Same tier as every other bot in the room - it is answered for by the
+        // room's single botPolicy, so a replacement seat cannot mismatch.
+        const botRating = botRatingForDifficulty(this.botPolicy.difficulty);
+
         const botPlayer = {
             id: botId,
             name: `Bot (${oldPlayer.name})`,
             isBot: true,
-            rating_mu: DEFAULT_MU,
-            rating_sigma: DEFAULT_SIGMA,
-            rating: calculateDisplayRating(DEFAULT_MU, DEFAULT_SIGMA),
+            rating_mu: botRating.mu,
+            rating_sigma: botRating.sigma,
+            rating: calculateDisplayRating(botRating.mu, botRating.sigma),
             hand: oldPlayer.hand, // Keep the same hand
             isDisconnected: false,
             // Who this seat belonged to before the swap. The bot's name carries
@@ -698,7 +719,10 @@ class Room {
         this.updateActivity();
 
         if (this.players.length < 4) {
-            // Auto-fill with bots if < 4
+            // Auto-fill with bots if < 4. A weakened bot is a weaker opponent,
+            // so it is seated at a lower rating and beating it pays less.
+            const botRating = botRatingForDifficulty(this.botPolicy.difficulty);
+
             while (this.players.length < 4) {
                 const botId = `bot_${Date.now()}_${this.players.length}`;
 
@@ -706,11 +730,13 @@ class Room {
                     id: botId,
                     // The bot's name is a policy parameter, not a label:
                     // BotLogic.getBotProfile derives its temperament from it.
+                    // The difficulty tier is deliberately NOT encoded here -
+                    // it would silently change that temperament.
                     name: `Bot ${this.players.length + 1}`,
                     isBot: true,
-                    rating_mu: DEFAULT_MU,
-                    rating_sigma: DEFAULT_SIGMA,
-                    rating: calculateDisplayRating(DEFAULT_MU, DEFAULT_SIGMA)
+                    rating_mu: botRating.mu,
+                    rating_sigma: botRating.sigma,
+                    rating: calculateDisplayRating(botRating.mu, botRating.sigma)
                 });
             }
         }
@@ -901,7 +927,11 @@ class Room {
                 // Aces and 2s dealt. Where they end up - taking a trick, spent
                 // without taking one, or still in hand - is the control economy.
                 controls: countControls(player.hand),
-                baselineVersion: BASELINE_VERSION
+                baselineVersion: BASELINE_VERSION,
+                // The "vs bots" hand-strength scope exists so that farming bots
+                // does not read as general strength. Pooling every tier into it
+                // would defeat that, so the tier travels with the round.
+                botDifficulty: this.botPolicy.difficulty
             };
         });
     }
@@ -922,9 +952,33 @@ class Room {
         if (this.gameState !== 'waiting') {
             return { error: 'Cannot change mode during game' };
         }
+        // getPointThreshold falls back to STANDARD for an unknown id, so an
+        // unvalidated mode used to look harmless - but this.gameMode kept the
+        // junk string, and it is a stats partition key (getUserStatsByMode),
+        // so a malformed payload wrote a phantom mode's statistics.
+        if (!Object.values(GAME_MODES).some(mode => mode.id === gameMode)) {
+            return { error: 'Unknown game mode' };
+        }
 
         this.gameMode = gameMode;
         this.pointThreshold = getPointThreshold(gameMode);
+        return { success: true };
+    }
+
+    setBotDifficulty(difficulty) {
+        // Waiting-state only. The policy is snapshotted per room precisely so
+        // an in-flight game cannot change how its bots play; rebuilding it here
+        // is the one moment that is safe.
+        if (this.gameState !== 'waiting') {
+            return { error: 'Cannot change bot difficulty during game' };
+        }
+        if (!Object.prototype.hasOwnProperty.call(
+            BOT_DIFFICULTIES, difficulty)) {
+            return { error: 'Unknown bot difficulty' };
+        }
+
+        this.botDifficulty = difficulty;
+        this.botPolicy = createBotPolicy({ difficulty });
         return { success: true };
     }
 
@@ -1620,12 +1674,11 @@ class Room {
             //
             // Per-bot temperament belongs to the heuristic policy. PPO was
             // trained profile-free and deliberately sees the canonical public
-            // observation used by replay and grading.
+            // observation used by replay and grading, so its profileFor returns
+            // null - which is why this no longer branches on policy kind.
             const gameContext = this.buildSeatContext(
                 this.currentTurnIndex,
-                this.botPolicy.kind === 'heuristic'
-                    ? BotLogic.getBotProfile(currentPlayer.name)
-                    : null
+                this.botPolicy.profileFor(currentPlayer.name)
             );
 
             const handleBotMove = (move, reasoning) => {
@@ -1714,7 +1767,11 @@ class Room {
                 isDisconnected: p.isDisconnected || false,
                 lastPlayed: this.playerLastPlayed[p.id] || null,
                 cumulativeScore: this.cumulativeScores[p.id] || 0,
-                rating: p.rating
+                rating: p.rating,
+                // Read off the policy, never off the player, so a seat badge
+                // can never claim a tier different from the one that is
+                // actually answering for it.
+                botDifficulty: p.isBot ? this.botPolicy.difficulty : null
             })),
             currentTurn: this.players[this.currentTurnIndex]?.id,
             lastPlayedHand: this.lastPlayedHand,
@@ -1728,6 +1785,7 @@ class Room {
             cumulativeScores: this.cumulativeScores,
             debugMode: this.debugMode,
             gameMode: this.gameMode,
+            botDifficulty: this.botPolicy.difficulty,
             pointThreshold: this.pointThreshold,
             isPrivate: this.isPrivate,
             trickWinPending: this.trickWinPending || false,
@@ -1756,7 +1814,14 @@ class Room {
                     // attribution. policyRef identifies the PPO artifact.
                     subjectKey: p.name,
                     policyGen: this.botPolicy.policyGen,
-                    policyRef: this.botPolicy.policyRef
+                    policyRef: this.botPolicy.policyRef,
+                    // How hard this seat was trying. A tape from a weakened
+                    // table is still real data - a human's moves in it are
+                    // genuine human moves - but its outcome labels were earned
+                    // against weak opposition, so training has to be able to
+                    // tell. Sourced from the same policy object that produced
+                    // the moves, so the label cannot lie.
+                    difficulty: this.botPolicy.difficulty
                 };
             }
             return {

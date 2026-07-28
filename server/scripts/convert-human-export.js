@@ -29,6 +29,7 @@ function parseArgs(argv) {
         output: path.resolve('ai/human.rl-experience.bin'),
         subject: null,
         includeGuests: false,
+        competitiveOnly: false,
         gamma: 0.995
     };
     for (let i = 2; i < argv.length; i++) {
@@ -37,6 +38,7 @@ function parseArgs(argv) {
         else if (flag === '--output') args.output = path.resolve(argv[++i]);
         else if (flag === '--subject') args.subject = argv[++i];
         else if (flag === '--include-guests') args.includeGuests = true;
+        else if (flag === '--competitive-only') args.competitiveOnly = true;
         else if (flag === '--gamma') args.gamma = Number(argv[++i]);
         else if (flag === '--help') args.help = true;
         else throw new Error(`Unknown argument: ${flag}`);
@@ -50,6 +52,7 @@ Usage: node scripts/convert-human-export.js --input DIR --subject HMAC [options]
   --input DIR       directory containing big2-*.jsonl.gz shards
   --subject HMAC    pseudonymized subject, for example h:0123abcd...
   --include-guests  also convert guest seats, as one anonymous pool
+  --competitive-only  drop rows from games whose bots played below full strength
   --output FILE     float32 replay buffer
   --gamma N         discount between the player's decisions
 
@@ -259,10 +262,18 @@ function isSelected(record, { subject, includeGuests }) {
         record.subject === subject;
 }
 
-function convert(records, { subject, gamma, includeGuests = false }) {
+function convert(records, {
+    subject, gamma, includeGuests = false, competitiveOnly = false
+}) {
     const utilities = utilitiesByRound(records);
     const eligible = records.filter(record =>
         isSelected(record, { subject, includeGuests }) &&
+        // Rows from a weakened-bot table are real human decisions, so they stay
+        // in by default. What they carry that is suspect is the *label*: this
+        // converter's target is a discounted round utility, and a utility
+        // earned against deliberately weak opponents overstates the moves that
+        // earned it. Pass --competitive-only for the clean subset.
+        !(competitiveOnly && record.weakened_bots) &&
         !record.joined_mid_game &&
         !record.forced_pass &&
         !record.policy_fallback &&
@@ -350,6 +361,7 @@ function main(argv = process.argv) {
         rows: result.rows.length,
         subject: args.subject,
         includeGuests: args.includeGuests,
+        competitiveOnly: args.competitiveOnly,
         guestDecisions: result.guestDecisions,
         humanDecisions: result.humanDecisions,
         gamma: args.gamma,
