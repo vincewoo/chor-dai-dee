@@ -33,6 +33,7 @@ function parseArgs(argv) {
         output: path.resolve('ai/human.ppo'),
         subjects: [],
         allSubjects: false,
+        includeGuests: false,
         validationFraction: 0.20,
         splitSeed: 90210
     };
@@ -42,6 +43,7 @@ function parseArgs(argv) {
         else if (flag === '--output') args.output = path.resolve(argv[++i]);
         else if (flag === '--subject') args.subjects.push(argv[++i]);
         else if (flag === '--all-subjects') args.allSubjects = true;
+        else if (flag === '--include-guests') args.includeGuests = true;
         else if (flag === '--validation-fraction') {
             args.validationFraction = Number(argv[++i]);
         } else if (flag === '--split-seed') {
@@ -58,15 +60,29 @@ Usage: node scripts/convert-human-ppo-export.js --input DIR [subjects] [options]
   --input DIR               directory containing big2-*.jsonl.gz shards
   --subject HMAC            include one subject (repeatable)
   --all-subjects            include every pseudonymized human subject
+  --include-guests          also include guest seats, as one anonymous pool
   --output PREFIX           writes PREFIX.actions.bin/.decisions.bin/.json
   --validation-fraction N   fraction of complete games held out (default 0.20)
   --split-seed N            deterministic game split seed
+
+At least one of --subject, --all-subjects or --include-guests is required.
+--include-guests composes with the other two, and on its own selects guest
+decisions alone.
 `;
 
-function isEligible(record, subjects) {
-    return record.occupant === 'human' &&
-        record.subject &&
-        subjects.has(record.subject) &&
+/**
+ * Guests have no account, so the export gives them occupant 'guest' and a null
+ * subject: --include-guests takes the whole pool or none of it. The human
+ * branch still demands a subject, so an account seat whose user_id lookup
+ * failed at export time stays out of a named-subject run.
+ */
+function isEligible(record, subjects, includeGuests = false) {
+    const selected = record.occupant === 'guest'
+        ? Boolean(includeGuests)
+        : record.occupant === 'human' &&
+            Boolean(record.subject) &&
+            subjects.has(record.subject);
+    return selected &&
         !record.joined_mid_game &&
         !record.forced_pass &&
         !record.policy_fallback &&
@@ -128,10 +144,12 @@ function encodeDecision(decision, validation) {
     return buffer;
 }
 
-function convert(records, { subjects, validationFraction, splitSeed }) {
+function convert(records, {
+    subjects, validationFraction, splitSeed, includeGuests = false
+}) {
     const selectedSubjects = new Set(subjects);
     const eligible = records.filter(record =>
-        isEligible(record, selectedSubjects));
+        isEligible(record, selectedSubjects, includeGuests));
     const split = splitGames(
         eligible.map(record => record.game),
         validationFraction,
@@ -161,6 +179,10 @@ function convert(records, { subjects, validationFraction, splitSeed }) {
         skipped,
         exactActionsAdded,
         humanOverrides,
+        // Recorded so a fine-tuned actor can be traced back to how much of its
+        // imitation data came from seats with no account behind them.
+        guestDecisions: converted.filter(
+            item => item.record.occupant === 'guest').length,
         split
     };
 }
@@ -171,9 +193,11 @@ function main(argv = process.argv) {
         console.log(USAGE);
         return 0;
     }
-    if (!args.input || (!args.allSubjects && !args.subjects.length)) {
+    if (!args.input ||
+        (!args.allSubjects && !args.subjects.length && !args.includeGuests)) {
         throw new Error(
-            '--input and either --subject or --all-subjects are required');
+            '--input and at least one of --subject, --all-subjects or ' +
+            '--include-guests are required');
     }
     if (args.allSubjects && args.subjects.length) {
         throw new Error('Use either --all-subjects or --subject, not both');
@@ -196,7 +220,7 @@ function main(argv = process.argv) {
         subjects
     });
     if (!result.converted.length) {
-        throw new Error('No eligible human decisions were converted');
+        throw new Error('No eligible decisions were converted');
     }
 
     fs.mkdirSync(path.dirname(args.output), { recursive: true });
@@ -251,6 +275,9 @@ function main(argv = process.argv) {
         sourceGames:
             result.split.training.size + result.split.validation.size,
         subjects: subjects.length,
+        includeGuests: args.includeGuests,
+        guestDecisions: result.guestDecisions,
+        accountDecisions: result.converted.length - result.guestDecisions,
         humanOverrides: result.humanOverrides,
         teacherOverrides: result.humanOverrides,
         exactActionsAdded: result.exactActionsAdded,
@@ -278,6 +305,8 @@ function main(argv = process.argv) {
     console.log(`eligible      ${result.eligible}`);
     console.log(`converted     ${result.converted.length} ` +
         `(${trainingDecisions} train, ${validationDecisions} validation)`);
+    console.log(`provenance    ${metadata.accountDecisions} account, ` +
+        `${result.guestDecisions} guest`);
     console.log(`human choices ${result.humanOverrides} differed from heuristic`);
     console.log(`exact actions ${result.exactActionsAdded} added to abstraction`);
     console.log(`skipped       ${result.skipped}`);

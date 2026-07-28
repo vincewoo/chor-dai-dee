@@ -379,6 +379,7 @@ const Lobby = ({ user, socket, setUser }) => {
                 onActivity={() => navigate('/activity')}
                 onStats={() => navigate('/stats')}
                 onEditAvatar={() => navigate('/avatar')}
+                onProfile={user.isGuest ? null : () => navigate('/profile')}
                 onLogout={handleLogout}
                 error={error}
                 spectateOffer={spectateOffer}

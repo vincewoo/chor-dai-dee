@@ -100,15 +100,21 @@ function ActivityFeedV2({
     const cards = useMemo(
         () =>
             games.map((g) => {
-                const participants = [...(g.participants || [])].sort(
-                    (a, b) => (a.placement ?? 99) - (b.placement ?? 99)
+                const abandoned = g.status === 'abandoned';
+                // Abandoned games carry scores but no placements, so ordering by
+                // placement would leave them in seat order. Their scores are
+                // still a standing, just not a final one — lower is better.
+                const participants = [...(g.participants || [])].sort((a, b) =>
+                    abandoned
+                        ? (a.score ?? 0) - (b.score ?? 0)
+                        : (a.placement ?? 99) - (b.placement ?? 99)
                 );
                 const winner = participants.find((p) => p.placement === 1);
                 const winnerName = winner?.username || g.winner_username || null;
                 return {
                     id: g.game_id,
                     mode: g.game_mode,
-                    abandoned: g.status === 'abandoned',
+                    abandoned,
                     isPrivate: !g.is_public,
                     when: timeAgo(g.end_time, nowTs),
                     rounds: g.total_rounds,
@@ -190,12 +196,17 @@ function ActivityFeedV2({
                 {!loading && !error && cards.length > 0 && (
                     <div className="mt-4 grid grid-cols-1 items-start gap-[10px] md:grid-cols-2 md:gap-3">
                         {cards.map((c, i) => {
-                            const open = expandedId === c.id;
+                            // Games swept out of the historic 'in_progress'
+                            // backlog never had participants written, so there
+                            // are no standings to open.
+                            const canExpand = c.participants.length > 0;
+                            const open = canExpand && expandedId === c.id;
                             return (
                                 <button
                                     key={c.id}
-                                    onClick={() => setExpandedId(open ? null : c.id)}
-                                    aria-expanded={open}
+                                    onClick={() => canExpand && setExpandedId(open ? null : c.id)}
+                                    aria-expanded={canExpand ? open : undefined}
+                                    disabled={!canExpand}
                                     className="text-left"
                                     style={{
                                         background: c.hasMe
@@ -204,7 +215,7 @@ function ActivityFeedV2({
                                         border: `1px solid ${c.hasMe ? `${acc}55` : 'rgba(255,255,255,.09)'}`,
                                         borderRadius: 16,
                                         padding: '12px 14px',
-                                        cursor: 'pointer',
+                                        cursor: canExpand ? 'pointer' : 'default',
                                         boxShadow: c.hasMe ? `0 0 16px ${soft}` : 'none',
                                         ...anim({ animation: `cddToast .35s ${(Math.min(i, 8) * 0.04).toFixed(2)}s ease-out both` }),
                                     }}
@@ -231,21 +242,28 @@ function ActivityFeedV2({
                                         </span>
                                     </div>
 
-                                    {/* Winner line */}
+                                    {/* Winner line. An abandoned game has no
+                                        winner, so it gets a door instead of a
+                                        crowned "?" avatar. */}
                                     <div className="mt-[10px] flex items-center gap-[11px]">
                                         <div style={{ position: 'relative', flexShrink: 0 }}>
-                                            <div style={{ width: 38, height: 38, borderRadius: 12, background: getAvatarTile(c.winnerName || '?'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 21 }}>
-                                                {getAvatarEmoji(c.winnerName || '?')}
+                                            <div style={{ width: 38, height: 38, borderRadius: 12, background: c.abandoned ? 'rgba(255,143,112,.14)' : getAvatarTile(c.winnerName || '?'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 21 }}>
+                                                {c.abandoned ? '🚪' : getAvatarEmoji(c.winnerName || '?')}
                                             </div>
-                                            <span style={{ position: 'absolute', top: -8, left: -4, fontSize: 14 }}>👑</span>
+                                            {!c.abandoned && <span style={{ position: 'absolute', top: -8, left: -4, fontSize: 14 }}>👑</span>}
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div className="truncate" style={{ color: c.winnerIsMe ? acc : '#f4f5f7', fontWeight: 700, fontSize: 14 }}>
-                                                {c.winnerName || 'No winner'}
-                                                {c.winnerIsMe && <span style={{ color: 'rgba(244,245,247,.5)', fontWeight: 600 }}> · you</span>}
+                                            <div className="truncate" style={{ color: c.abandoned ? 'rgba(244,245,247,.6)' : (c.winnerIsMe ? acc : '#f4f5f7'), fontWeight: 700, fontSize: 14 }}>
+                                                {c.abandoned ? 'Nobody finished' : (c.winnerName || 'No winner')}
+                                                {!c.abandoned && c.winnerIsMe && <span style={{ color: 'rgba(244,245,247,.5)', fontWeight: 600 }}> · you</span>}
                                             </div>
                                             <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>
-                                                {c.participants.length} players
+                                                {/* Games swept from the historic
+                                                    'in_progress' backlog have no
+                                                    participant rows at all. */}
+                                                {c.participants.length > 0
+                                                    ? `${c.participants.length} players`
+                                                    : 'Players unknown'}
                                                 {c.rounds ? ` · ${c.rounds} round${c.rounds === 1 ? '' : 's'}` : ''}
                                                 {c.duration ? ` · ${c.duration}` : ''}
                                             </div>
@@ -254,10 +272,12 @@ function ActivityFeedV2({
                                             {c.highlights > 0 && (
                                                 <span style={{ color: acc, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>⭐ {c.highlights}</span>
                                             )}
-                                            <span
-                                                aria-hidden="true"
-                                                style={{ color: 'rgba(244,245,247,.4)', fontSize: 12, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none', transition: rm ? undefined : 'transform .2s ease' }}
-                                            >▾</span>
+                                            {canExpand && (
+                                                <span
+                                                    aria-hidden="true"
+                                                    style={{ color: 'rgba(244,245,247,.4)', fontSize: 12, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none', transition: rm ? undefined : 'transform .2s ease' }}
+                                                >▾</span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -283,7 +303,7 @@ function ActivityFeedV2({
                                                             <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 10, fontWeight: 600 }}>
                                                                 {p.placement
                                                                     ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
-                                                                    : 'Unranked'}
+                                                                    : (c.abandoned ? 'Score when abandoned' : 'Unranked')}
                                                                 {p.roundsWon ? ` · ${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won` : ''}
                                                             </div>
                                                         </div>

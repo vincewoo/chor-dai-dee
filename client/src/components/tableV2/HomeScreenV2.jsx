@@ -80,6 +80,7 @@ function HomeScreenV2({
     onActivity,
     onStats,
     onEditAvatar,
+    onProfile,
     onLogout,
     error,
     spectateOffer,
@@ -183,11 +184,27 @@ function HomeScreenV2({
                         style={{ flexShrink: 0, width: 46, height: 46, borderRadius: 15, border: '1px solid rgba(255,255,255,.12)', background: getAvatarTile(username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, padding: 0, cursor: onEditAvatar ? 'pointer' : 'default' }}
                     >{getAvatarEmoji(username)}</button>
 
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* The name doubles as the way into account settings. The
+                        bottom nav has to hold one line at 320px, so a fifth
+                        destination goes here rather than there. Guests get no
+                        `onProfile` and the block stays inert text. */}
+                    <div
+                        {...(onProfile ? {
+                            role: 'button',
+                            tabIndex: 0,
+                            onClick: onProfile,
+                            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onProfile(); } },
+                            'aria-label': 'Account settings',
+                        } : {})}
+                        style={{ flex: 1, minWidth: 0, cursor: onProfile ? 'pointer' : 'default' }}
+                    >
                         <div className="flex items-center gap-[6px]" style={{ color: TEXT, fontWeight: 800, fontSize: 17 }}>
                             <span className="truncate">{username}</span>
                             {isGuest && (
                                 <span style={{ flexShrink: 0, background: 'rgba(255,255,255,.12)', color: 'rgba(244,245,247,.8)', fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: '2px 6px', borderRadius: 6 }}>GUEST</span>
+                            )}
+                            {onProfile && (
+                                <span aria-hidden="true" style={{ flexShrink: 0, color: MUTED, fontSize: 14, fontWeight: 700 }}>›</span>
                             )}
                         </div>
                         <div className="flex items-center gap-[6px]" style={{ color: MUTED, fontSize: 12, fontWeight: 600 }}>

@@ -400,24 +400,33 @@ biased the sample is:
 - `orphaned_restart` — the process died. Deploys are independent of game state,
   making these an essentially unbiased random sample and the one class of
   truncated game that can be pooled freely.
+- `last_human_left` — the last human seat emptied mid-game, leaving only bots,
+  and the room was destroyed on that same tick. Same bias class as
+  `multiplayer_timeout`, but observed directly rather than inferred from
+  inactivity.
 
 Two things have to exist for this to be recorded at all:
 
-1. **Cleanup must write a close-out.** `cleanupInactiveRooms()` currently only
-   frees memory and makes no database call (`index.js:2642`), which is why
-   `'abandoned'` has never once been written to `game_history` despite being in
-   its CHECK constraint and queried by the activity feed (`index.js:2137`).
-   Every abandoned game since launch is still marked `'in_progress'`. The new
-   store must not inherit that.
+1. **Cleanup must write a close-out.** `cleanupInactiveRooms()` returns the rooms
+   it reaped, and `index.js` flushes each one through `recordAbandonedGame()`.
+   The paths where the last human walks out are wired to the same function,
+   because those delete the room immediately and the sweep never sees them.
 2. **A startup orphan sweep.** If the process dies, nothing writes anything. On
    boot, mark every `mlog_game` with a NULL `ended_at` as
    `end_reason='abandoned', abandon_reason='orphaned_restart'`. Without it,
    killed games stay indistinguishable from live ones forever.
 
+Both apply to `game_history` as well as to this store; `recordAbandonedGame()`
+writes both, and `db.sweepAbandonedGames()` is the `game_history` counterpart of
+the boot sweep. That was not always true: for most of the project's life nothing
+wrote `'abandoned'` to `game_history` at all, despite it being in the CHECK
+constraint and having its own activity-feed filter, so every abandoned game sat
+at `'in_progress'` — a status no filter selects.
+
 **Measure this before building.** The existing `game_history` table already
-answers how much it matters — and since nothing ever writes `'abandoned'`, the
-`in_progress` count *is* the historical abandoned count, give or take the handful
-genuinely live at query time:
+answers how much it matters. Note that the `in_progress` count is only the
+historical abandoned count on a database that predates the sweep; after it runs
+those rows have been converted, and `in_progress` means genuinely live:
 
 ```sql
 SELECT status, COUNT(*) FROM game_history GROUP BY status;

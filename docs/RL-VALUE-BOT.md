@@ -443,6 +443,51 @@ whole games to a deterministic training or validation split, never reads
 `hidden.hands`, and preserves a legal human action when the bot's intentionally
 compressed action enumeration does not contain that exact card allocation.
 
+#### Guest seats
+
+Neither `--all-subjects` nor any `--subject` selects a guest. A guest has no
+account, so the export gives that seat `occupant: "guest"` and a null subject —
+there is no pseudonymized id to name. `--include-guests` adds them as one
+anonymous pool, in either converter:
+
+```bash
+npm run bot:ppo:human -- \
+  --input ../fly-export/2026-07-27 \
+  --all-subjects --include-guests \
+  --output /tmp/human.ppo
+```
+
+Nothing else about the conversion changes. A trajectory is keyed on
+`game:round:seat`, never on who occupied the seat, and every deliberateness
+filter above applies to a guest decision exactly as it does to an account one.
+
+Three properties are worth keeping in mind before training on this pool:
+
+- **It is opt-in and it stays opt-in.** Without the flag both converters behave
+  byte-for-byte as before, so an existing run is never silently changed by
+  guests appearing in the corpus.
+- **It cannot be filtered by skill.** Guests carry no rating and no cross-game
+  identity, so `rating_mu` weighting and per-player corpora are unavailable by
+  construction. Guests also skew toward first-time players, which is a different
+  behavior distribution from the account holders the current adapter imitates —
+  this pool is likelier to *cost* top-choice agreement than to add to it.
+- **The mix is recorded, not inferred.** Both converters count account versus
+  guest decisions and write the split to the sidecar (`guestDecisions`,
+  `includeGuests`), because the replay buffer itself carries no provenance and
+  the question "how much of this model came from guests" is otherwise
+  unanswerable after the fact.
+
+Passing `--include-guests` *without* any subject selector converts guest
+decisions alone, which is the A/B against an account-only baseline. Run that
+comparison on held-out games before folding guests into a promoted candidate;
+per §"Human games" above, a larger corpus is not automatically a better one.
+
+Guest rounds already matter even when you do not train on them: their seat
+labels are what let `utilitiesByRound` reconstruct a four-seat zero-sum utility,
+so a round with a guest in it is dropped entirely from an account holder's
+trajectory if guest records are missing from the export. This is one more reason
+the converters need full exports rather than `--humans-only` ones.
+
 Fine-tune a disposable copy of the promoted actor with a deliberately small
 learning rate:
 
@@ -475,7 +520,7 @@ and generation 8 better on 27. This validates the pipeline but is not evidence
 for promotion; the candidate remains in `/tmp`.
 
 The older `bot:rl:human` command remains available for outcome-value experiments
-with the pre-PPO learner.
+with the pre-PPO learner, and takes the same `--include-guests` flag.
 
 The 6.8 GB `.venv-rl` is ignored by Git and deliberately not part of the base
 server install or Docker image.

@@ -22,7 +22,8 @@ const {
 const {
     reconstructDecision,
     reconstructActionSet,
-    utilitiesByRound
+    utilitiesByRound,
+    isSelected
 } = require('../scripts/convert-human-export');
 const {
     parseBenchmark,
@@ -320,6 +321,38 @@ test('human export reconstructs zero-sum utility from all four seat labels', () 
     assert.strictEqual(utility.get(1), -5 / 117);
     assert.strictEqual(utility.get(2), -20 / 117);
     assert.strictEqual(utility.get(3), -9 / 117);
+});
+
+test('guest seats are selectable only as a pool, and only when asked for', () => {
+    const guest = { occupant: 'guest', subject: null };
+    const named = { occupant: 'human', subject: 'h:abc' };
+    const other = { occupant: 'human', subject: 'h:def' };
+    // A registered player whose user_id lookup failed at export time.
+    const unattributed = { occupant: 'human', subject: null };
+    const bot = { occupant: 'bot_heuristic', subject: 'Rocky' };
+
+    const namedOnly = { subject: 'h:abc', includeGuests: false };
+    assert.strictEqual(isSelected(named, namedOnly), true);
+    assert.strictEqual(isSelected(other, namedOnly), false);
+    assert.strictEqual(isSelected(guest, namedOnly), false);
+    assert.strictEqual(isSelected(bot, namedOnly), false);
+
+    const withGuests = { subject: 'h:abc', includeGuests: true };
+    assert.strictEqual(isSelected(named, withGuests), true);
+    assert.strictEqual(isSelected(guest, withGuests), true);
+    assert.strictEqual(isSelected(bot, withGuests), false);
+
+    // Guests alone: what an A/B against an account-only baseline runs.
+    const guestsOnly = { subject: null, includeGuests: true };
+    assert.strictEqual(isSelected(guest, guestsOnly), true);
+    assert.strictEqual(isSelected(named, guestsOnly), false);
+
+    // The null subject must never match through as a wildcard.
+    assert.strictEqual(isSelected(unattributed, guestsOnly), false);
+    assert.strictEqual(
+        isSelected(unattributed, { subject: null, includeGuests: false }),
+        false
+    );
 });
 
 test('human export preserves legal plays outside the bot action abstraction', () => {
