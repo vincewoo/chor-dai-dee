@@ -525,6 +525,18 @@ with the pre-PPO learner, and takes the same `--include-guests` flag.
 The 6.8 GB `.venv-rl` is ignored by Git and deliberately not part of the base
 server install or Docker image.
 
+## Bot difficulty
+
+The promoted actor is also what the difficulty tiers are built from: they are
+softmax temperatures it is sampled at, not separate models. `competitive` is the
+argmax behaviour benchmarked above; `balanced` and `casual` sample at T=4.5 and
+T=8. The calibration, and why the heuristic could not serve as an "easy" tier
+(it costs a reference seat only ~1.4pp), are in `BOT-DIFFICULTY.md`.
+
+For training, note `mlog_game.weakened_bots` and `mlog_seat.difficulty`: rows
+from weakened tables are exported by default and must be filtered or reweighted
+before fitting anything on an outcome label.
+
 ## Current boundary
 
 The promoted PPO actor is wired to live bots and coaching through the explicit

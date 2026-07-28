@@ -32,6 +32,7 @@ const GameRoom = ({ user, socket }) => {
         reducedMotion, toggleReducedMotion,
         soundEnabled, toggleSound,
         soundVolume, setSoundVolume,
+        setBotDifficulty,
     } = useUserPreferences();
     const handContainerRef = useRef(null);
     const [containerWidth, setContainerWidth] = useState(0);
@@ -1187,11 +1188,18 @@ const GameRoom = ({ user, socket }) => {
                     isHost={gameState.players.find(p => p.name === gameState.hostUsername)?.id === myPlayerId}
                     hostUsername={gameState.hostUsername}
                     gameMode={gameState.gameMode}
+                    botDifficulty={gameState.botDifficulty}
                     fourColorMode={fourColorMode}
                     pusoyMode={pusoyMode}
                     isPrivate={gameState.isPrivate}
                     onSetPrivacy={(priv) => socket.emit('set_privacy', { isPrivate: priv })}
                     onSetGameMode={(mode) => socket.emit('set_game_mode', { gameMode: mode })}
+                    onSetBotDifficulty={(difficulty) => {
+                        socket.emit('set_bot_difficulty', { difficulty });
+                        // Remember it, so the next room this player creates
+                        // starts here. The room stays authoritative either way.
+                        setBotDifficulty(difficulty);
+                    }}
                     onToggleFourColor={toggleFourColorMode}
                     onTogglePusoy={togglePusoyMode}
                     voice={{

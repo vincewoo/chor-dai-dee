@@ -46,6 +46,47 @@ const botSeats = () => [0, 1, 2, 3].map(seat => ({
     policyGen: 1
 }));
 
+test('difficulty and weakened_bots round-trip', async () => {
+    const competitive = baseGame();
+    const competitiveKey = await gamelog.openGame(competitive,
+        botSeats().map(seat => ({ ...seat, difficulty: 'competitive' })));
+    const casual = baseGame();
+    const casualKey = await gamelog.openGame(casual, botSeats().map(
+        (seat, index) => ({
+            ...seat,
+            difficulty: index === 0 ? 'casual' : 'competitive'
+        })));
+
+    const { get, all } = await gamelog.openForRead();
+
+    // One weakened seat taints the whole game: round utility is zero-sum, so
+    // it biases every seat's outcome label, not just its own.
+    assert.strictEqual(
+        (await get('SELECT weakened_bots FROM mlog_game WHERE game_key = ?',
+            [competitiveKey])).weakened_bots, 0);
+    assert.strictEqual(
+        (await get('SELECT weakened_bots FROM mlog_game WHERE game_key = ?',
+            [casualKey])).weakened_bots, 1);
+
+    const seats = await all(
+        'SELECT seat, difficulty FROM mlog_seat WHERE game_key = ? ORDER BY seat',
+        [casualKey]);
+    assert.deepStrictEqual(seats.map(row => row.difficulty),
+        ['casual', 'competitive', 'competitive', 'competitive']);
+});
+
+test('a human seat records no difficulty', async () => {
+    const gameKey = await gamelog.openGame(baseGame(), [
+        { seat: 0, fromRound: 1, occupant: 'human', subjectKey: 'Alice', userId: 7 },
+        ...botSeats().slice(1).map(seat => ({ ...seat, difficulty: 'competitive' }))
+    ]);
+    const { get } = await gamelog.openForRead();
+    const row = await get(
+        'SELECT difficulty FROM mlog_seat WHERE game_key = ? AND seat = 0',
+        [gameKey]);
+    assert.strictEqual(row.difficulty, null);
+});
+
 test('schema is created and a game round-trips', async () => {
     const game = baseGame();
     const gameKey = await gamelog.openGame(game, botSeats());

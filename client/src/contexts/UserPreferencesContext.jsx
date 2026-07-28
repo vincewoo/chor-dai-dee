@@ -53,6 +53,16 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return ['gold', 'mint', 'coral', 'violet'].includes(saved) ? saved : 'gold';
     });
 
+    // The bot difficulty a room this player creates starts at. Validated
+    // against the whitelist the way accentColor is, so a stale or hand-edited
+    // localStorage value cannot reach the server.
+    const [botDifficulty, setBotDifficulty] = useState(() => {
+        const saved = localStorage.getItem('botDifficulty');
+        return ['casual', 'balanced', 'competitive'].includes(saved)
+            ? saved
+            : 'competitive';
+    });
+
     const [soundEnabled, setSoundEnabled] = useState(() => {
         const saved = localStorage.getItem('soundEnabled');
         return saved !== 'false'; // Default to on
@@ -109,6 +119,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         }
                         if (data.soundEnabled !== undefined) {
                             setSoundEnabled(data.soundEnabled);
+                        }
+                        if (data.botDifficulty !== undefined) {
+                            setBotDifficulty(data.botDifficulty);
+                            localStorage.setItem('botDifficulty', data.botDifficulty);
                         }
                         if (data.soundVolume !== undefined) {
                             setSoundVolume(data.soundVolume);
@@ -167,7 +181,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
+                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, botDifficulty }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -187,7 +201,8 @@ export const UserPreferencesProvider = ({ children, user }) => {
         localStorage.setItem('reducedMotion', reducedMotion);
         localStorage.setItem('soundEnabled', soundEnabled);
         localStorage.setItem('soundVolume', soundVolume);
-    }, [fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
+        localStorage.setItem('botDifficulty', botDifficulty);
+    }, [fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, botDifficulty, user?.id, isLoading]);
 
     // Mirror sound settings into the audio engine, which keeps its own state so
     // that playSound() callers don't have to thread preferences through props.
@@ -253,6 +268,8 @@ export const UserPreferencesProvider = ({ children, user }) => {
             setReducedMotion,
             setSoundEnabled,
             setSoundVolume,
+            botDifficulty,
+            setBotDifficulty,
             isLoading
         }}>
             {children}

@@ -9,6 +9,45 @@ const DEFAULT_SIGMA = 25 / 3;
 const RATING_OFFSET = 1200;
 const RATING_MULTIPLIER = 40;
 
+// What a bot seat is worth to beat, by difficulty tier.
+//
+// Bots never receive rating updates, but they are rated *opponents*: their mu
+// is what calculateNewRatings weighs a human's placement against. Leaving a
+// deliberately weakened bot at DEFAULT_MU would pay a human the same for
+// beating a casual table as for beating a full-strength one, which is a
+// farmable rating.
+//
+// These are fitted, not chosen. For each tier, mu is the value at which
+// openskill's predictWin gives a DEFAULT_MU player against three such bots the
+// win rate that scripts/bench-bot-difficulty.js actually measured for that tier
+// (25% / 32% / 40%; neutral is 25%). Re-fit them if the bench numbers move -
+// there is a test pinning the relationship. `competitive` must stay exactly
+// DEFAULT_MU so the default table's rating math is unchanged.
+//
+// Sigma is deliberately left at DEFAULT_SIGMA: it expresses uncertainty about
+// the opponent, which a difficulty tier says nothing about.
+const BOT_RATING_BY_DIFFICULTY = {
+    competitive: DEFAULT_MU,
+    balanced: 19.83,
+    casual: 12.85
+};
+
+/**
+ * The rating a bot seat is created with, given the room's difficulty tier.
+ * Unknown or absent tiers fall back to full strength - an unrecognised setting
+ * must never be a way to earn cheap rating.
+ *
+ * @param {string} difficulty - tier id
+ * @returns {{mu: number, sigma: number}}
+ */
+function botRatingForDifficulty(difficulty) {
+    const mu = Object.prototype.hasOwnProperty.call(
+        BOT_RATING_BY_DIFFICULTY, difficulty)
+        ? BOT_RATING_BY_DIFFICULTY[difficulty]
+        : DEFAULT_MU;
+    return { mu, sigma: DEFAULT_SIGMA };
+}
+
 /**
  * Calculates the display rating from OpenSkill mu and sigma.
  * Formula: 1200 + (mu - 3*sigma) * 40
@@ -96,4 +135,11 @@ function calculateNewRatings(players, finalScores) {
     return updates;
 }
 
-module.exports = { calculateNewRatings, calculateDisplayRating, DEFAULT_MU, DEFAULT_SIGMA };
+module.exports = {
+    calculateNewRatings,
+    calculateDisplayRating,
+    botRatingForDifficulty,
+    BOT_RATING_BY_DIFFICULTY,
+    DEFAULT_MU,
+    DEFAULT_SIGMA
+};

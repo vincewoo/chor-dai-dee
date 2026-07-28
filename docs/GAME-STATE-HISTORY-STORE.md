@@ -471,6 +471,21 @@ log read the room setting instead. *(Both fields are gone with the advanced bot;
 rule stands: label a seat from what actually answers for it, not from a field
 set where the bot was created.)*
 
+*(Amended again: a difficulty setting now exists, and it follows exactly that
+rule. The tier lives on `room.botPolicy` — the same object `checkBotTurn`
+dispatches through — and `describeSeats`, the seat payload and the bot's seated
+rating all read `this.botPolicy.difficulty`. There is no per-player
+`difficulty` field to disagree with it, because there is no second field at all.
+`test/botDifficulty.test.js` asserts the seat description and the dispatching
+policy agree, including for a `replaceWithBot` seat, which is the case the
+original implementation got wrong. Recorded as `mlog_seat.difficulty`, with
+`mlog_game.weakened_bots` as the game-level roll-up; NULL/0 on pre-tier rows,
+which is historically accurate.)*
+
+*(The `bot_ppo` occupant and `advanced_bots` are no longer fossils either — the
+promoted generation-14 PPO actor is the live policy and both are written on
+every production game. `SOURCE.BOT_FALLBACK` is still written by nothing.)*
+
 **Policy is not stable within a seat.** If `getAdvancedBotMove` rejected, the
 catch block fell back to `BotLogic.getBotMove` **for that ply only** and the
 game continued on the PPO policy afterwards. A seat-level `policy_gen` would

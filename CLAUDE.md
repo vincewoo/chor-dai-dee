@@ -29,6 +29,7 @@ Tests (server, uses Node's built-in runner):
 cd server/
 npm test             # regression tests (bot logic, game log, replay, export, activity feed)
 npm run bench        # bot self-play benchmark + behavioural metrics
+npm run bench:difficulty # difficulty-tier ladder + monotonicity gate
 npm run bot:rl:train # train the candidate-value policy with canonical JS rules
 npm run bot:rl:bench # held-out learned-vs-heuristic evaluation
 npm run bot:rl:experience # generate canonical replay rows for batched training
@@ -300,20 +301,47 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
     patience and aggression from the bot's name; `pickScoredMove` samples near
     the top move rather than always taking the argmax, so bots at one table do
     not play identically. Bots with no profile are fully deterministic.
-  - **One bot policy, not a difficulty setting** - the heuristic is what every
-    bot seat plays. A second "advanced" bot (a PPO network served by a Python
-    worker) was removed: it never beat the heuristic and the TensorFlow runtime
-    it needed did not survive on Fly.io, so in practice it errored and fell back
-    to the heuristic anyway. `SOURCE.BOT_FALLBACK` and the game log's
-    `bot_ppo` / `advanced_bots` columns are the fossils of it — reserved so old
-    tapes decode, written by nothing.
+  - **The heuristic is no longer the live policy.** Production runs the promoted
+    generation-14 PPO actor (`fly.toml` sets `BOT_POLICY = "ppo"`), selected per
+    room by `BotPolicy.createBotPolicy()`. Inference is pure JavaScript, so Fly
+    needs no Python, CUDA or GPU. Setting `BOT_POLICY` back to `heuristic` and
+    `COACH_POLICY` back to `move_quality` is a configuration-only rollback.
+    An *earlier* advanced bot — a PPO network served by a Python worker — was
+    removed for erroring on Fly.io and falling back to the heuristic anyway;
+    `SOURCE.BOT_FALLBACK` is the one genuine fossil of it, reserved so old tapes
+    decode and written by nothing. `bot_ppo` and `advanced_bots` are not
+    fossils: they are written on every production game.
+- `BotPolicy.js` - Chooses what plays a bot seat and how hard it tries.
+  `createBotPolicy({ mode, difficulty })` returns one object exposing `getMove`,
+  `profileFor` and its own provenance (`occupant`, `policyGen`, `policyRef`,
+  `difficulty`); a Room snapshots exactly one, so nothing can dispatch on a
+  different policy from the one it records. See `docs/BOT-DIFFICULTY.md`.
+  - **Difficulty is one dial: the softmax temperature the PPO actor is sampled
+    at.** `competitive` (the default) is argmax and byte-identical to the
+    pre-difficulty bot; `balanced` and `casual` sample at rising temperature.
+    Measured against a fixed full-strength reference seat, the three tiers give
+    that reference 25% / 33% / 40% of rounds. Temperature below ~2 is
+    indistinguishable from argmax, and the heuristic is only ~1.4pp weaker than
+    PPO, so neither is a usable "easy" setting — both were measured, not assumed.
+  - **`sample: true` also disables PPOBot's heuristic-override guard**, because
+    `PPOBot` gates it on `!sample`. Deliberate: the guard pulls near-tie
+    deviations back to the heuristic move, which is exactly what produces the
+    weakening. It is worth ~0.1pp, so nothing is lost. Do not decouple them
+    without re-running `npm run bench:difficulty`.
 - `BotContext.js` - Builds the observation a bot reasons over. Shared by live
   play, the self-play benchmark, and the game-log replayer so all three see
   identical features. Takes plain seat-indexed state, never a Room.
+- `PPOModel.js` / `PPOBot.js` - The live learned policy. Variable-action
+  actor/critic over server-generated legal candidates, sharing `RLValueBot`'s
+  `decisionOptions` encoder so live play, replay and grading see identical
+  features. `PPOBot` takes `{ sample, temperature, overrideMargin }` — the knobs
+  the difficulty tiers are built from.
 - `RLValueModel.js` / `RLValueBot.js` - Experimental variable-action value
-  policy. Server-generated legal candidates are scored from public information,
-  with a margin-gated heuristic fallback. Training and promotion instructions
-  are in `docs/RL-VALUE-BOT.md`; it is not yet the live advanced-bot policy.
+  policy, and the canonical candidate encoder the PPO path also uses. Server-
+  generated legal candidates are scored from public information, with a
+  margin-gated heuristic fallback. Training and promotion instructions are in
+  `docs/RL-VALUE-BOT.md`; the value policy is a training/benchmark path and a
+  distillation teacher, not the live bot.
 - `TapeCodec.js` - Game-log encodings: 52-byte deal blob, 52-bit card masks
   (built with BigInt - JS bitwise operators truncate to 32 bits), action/source
   /flag codes, `think_ms` clamping
@@ -403,8 +431,12 @@ to offer and would otherwise be locked out of its own settings.
 - `GET /api/stats/:username/head-to-head` - Head-to-head records vs other players
 - `GET /api/stats/:username/tier3` - Advanced analytics (Tier 3)
 - `GET /api/stats/:username/hand-strength` - Deal strength vs. outcome. Returns
-  three scopes (`all`, `vsBots`, `vsHumans`) so beating bots and beating humans
-  stay distinguishable, each with a per-tier win rate against the baseline,
+  four scopes (`all`, `vsBots`, `vsCasualBots`, `vsHumans`) so beating bots and
+  beating humans stay distinguishable — and so rounds against deliberately
+  weakened bots do not silently inflate the `vsBots` baseline, which exists
+  precisely so farming bots does not read as general strength. The client only
+  offers the fourth chip once there are rounds in it. Each carries a per-tier
+  win rate against the baseline,
   "Edge" (results minus what the deals were worth) and its confidence interval.
 
 #### Preferences
@@ -427,6 +459,9 @@ to offer and would otherwise be locked out of its own settings.
 #### Client → Server
 - `join_room` - Create/join a room
 - `set_game_mode` - Set game mode (short/standard) before starting
+- `set_bot_difficulty` - Set the bot tier (casual/balanced/competitive). Host
+  only, and refused once the game starts: the room's bot policy is snapshotted
+  so an in-flight game can never change how its bots play.
 - `start_game` - Begin game (auto-fills bots if < 4 players)
 - `play_card` - Submit a hand
 - `pass_turn` - Pass current turn
@@ -462,6 +497,23 @@ reconnect and on bot/human swaps. See `docs/GAME-STATE-HISTORY-STORE.md`.
 
 Tables: `mlog_game`, `mlog_seat` (occupancy segments), `mlog_round` (deal +
 outcome labels), `mlog_action` (the tape).
+
+Bot difficulty is recorded, not filtered out: `mlog_seat.difficulty` per seat
+and `mlog_game.weakened_bots` per game (one weakened seat taints the whole
+game's labels, since round utility is zero-sum). Games against easier bots are
+still real data - the human moves in them are genuine human decisions and the
+bot rows are valid league opponents. What is biased is the *outcome label*, so
+the exporters emit everything by default and offer `--competitive-only` for the
+clean subset. Labelling is the irreversible half; a filter can be applied later,
+but data exported without provenance can never be sorted out.
+
+**`gamelog.js` has no automatic migration.** `createSchema` only runs
+`CREATE TABLE IF NOT EXISTS`, which is a no-op on an existing database, and
+every write is wrapped in `guard()` - so a column added to the `SCHEMA` array
+alone would leave production silently failing to record seats, with the error
+caught and logged rather than raised. Anything added to a table after its first
+release must also go in `ADDED_COLUMNS`. `test/gamelogMigration.test.js` builds
+a v1 database on disk and asserts a real write survives.
 
 Recording requires `GAMELOG_ENABLED=1` (there is no per-player opt-out).
 Unsetting it is the kill switch.
@@ -514,7 +566,9 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   denormalize a username, so a retired name leaves no trace anywhere else — and
   once free it can be registered by somebody else. This is the record of which
   account used to hold it.
-- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, coach_enabled, table theme, sound, avatar_animal/avatar_tile)
+- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, coach_enabled, table theme, sound, bot_difficulty, avatar_animal/avatar_tile).
+  `bot_difficulty` only pre-fills rooms this player creates; the room's own
+  value is authoritative, since bots are shared by the whole table.
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
 - `stats_standard` - Standard game mode statistics
@@ -522,7 +576,7 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
 #### Analytics Tables
 - `round_stats` - Per-round granular stats (plays, passes, leads_won, combinations,
   plus deal strength: `deal_strength_raw`, `deal_tier`, `deal_rank`,
-  `deal_baseline_version`, `human_opponents`). The deal columns are NULL on rows
+  `deal_baseline_version`, `human_opponents`, `bot_difficulty`). The deal columns are NULL on rows
   written before the feature - an unknown deal is not an average one, so every
   deal-strength query filters `IS NOT NULL` rather than treating them as zero.
 - `head_to_head_stats` - Win/loss records against specific opponents

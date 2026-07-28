@@ -34,8 +34,11 @@ const { encodeDeal } = require('./game/TapeCodec');
  *
  * Changelog:
  *   1 - initial schema.
+ *   2 - bot difficulty tiers: mlog_seat.difficulty, mlog_game.weakened_bots.
+ *       NULL/0 on rows written before tiers existed, which is historically
+ *       accurate - every bot before this played at full strength.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const isProduction = process.env.NODE_ENV === 'production';
 const dbPath = process.env.GAMELOG_PATH || (isProduction
@@ -110,6 +113,11 @@ const SCHEMA = [
         point_threshold   INTEGER NOT NULL,
         -- True when at least one seat uses the promoted PPO policy.
         advanced_bots     INTEGER NOT NULL DEFAULT 0,
+        -- True when at least one bot seat played below full strength. The
+        -- one-predicate filter for "this game's outcome labels were earned
+        -- against deliberately weakened opposition"; per-seat detail lives in
+        -- mlog_seat.difficulty.
+        weakened_bots     INTEGER NOT NULL DEFAULT 0,
         schema_version    INTEGER NOT NULL,
         rules_version     INTEGER NOT NULL,
         server_build      TEXT,
@@ -137,6 +145,12 @@ const SCHEMA = [
         subject_key     TEXT,
         policy_gen      INTEGER,
         policy_ref      TEXT,
+        -- Bot difficulty tier for this seat segment ('competitive', 'balanced',
+        -- 'casual'). NULL for humans and guests, and NULL on rows written
+        -- before tiers existed - which reads correctly as full strength.
+        -- Deliberately separate from policy_ref: that names the artifact, and
+        -- overloading it would break grouping by checkpoint.
+        difficulty      TEXT,
         user_id         INTEGER,
         rating_mu       REAL,
         rating_sigma    REAL,
@@ -184,6 +198,35 @@ const SCHEMA = [
         WHERE previous_game_key IS NOT NULL`
 ];
 
+// Columns added after the initial schema. CREATE TABLE IF NOT EXISTS is a
+// no-op on a database that already has the table, so a new column in SCHEMA
+// above never reaches an existing gamelog.sqlite on its own - and because every
+// write goes through guard(), the resulting "no such column" would be caught
+// and logged rather than raised, silently ending seat recording in production.
+// Anything added to a table after its first release must therefore also be
+// listed here. Same shape as the additive migrations in db.js.
+const ADDED_COLUMNS = [
+    ['mlog_seat', 'difficulty', 'difficulty TEXT'],
+    ['mlog_game', 'weakened_bots', 'weakened_bots INTEGER NOT NULL DEFAULT 0']
+];
+
+function ensureColumns(done) {
+    let pending = ADDED_COLUMNS.length;
+    let failed = null;
+    const finish = (err) => {
+        if (err && !failed) failed = err;
+        if (--pending === 0) done(failed);
+    };
+
+    for (const [table, column, ddl] of ADDED_COLUMNS) {
+        db.all(`PRAGMA table_info(${table})`, (err, columns) => {
+            if (err) return finish(err);
+            if (columns.some(c => c.name === column)) return finish(null);
+            db.run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`, finish);
+        });
+    }
+}
+
 function createSchema(done) {
     db.serialize(() => {
         let pending = SCHEMA.length;
@@ -191,7 +234,12 @@ function createSchema(done) {
         for (const stmt of SCHEMA) {
             db.run(stmt, (err) => {
                 if (err && !failed) failed = err;
-                if (--pending === 0) done(failed);
+                // The tables must all exist before PRAGMA table_info can say
+                // anything useful about them.
+                if (--pending === 0) {
+                    if (failed) return done(failed);
+                    ensureColumns(done);
+                }
             });
         }
     });
@@ -256,17 +304,22 @@ const openGame = guard('openGame', async (game, seats) => {
         }
 
         const advancedBots = seats.some(seat => seat.occupant === 'bot_ppo');
+        // Any bot seat below full strength taints the whole game's outcome
+        // labels, not just its own rows, because the utility is zero-sum across
+        // all four seats. So this is a game-level fact.
+        const weakenedBots = seats.some(seat =>
+            seat.difficulty && seat.difficulty !== 'competitive');
         const res = await run(
             `INSERT INTO mlog_game
                 (game_id, room_id, game_mode, point_threshold,
-                 advanced_bots, schema_version, rules_version,
+                 advanced_bots, weakened_bots, schema_version, rules_version,
                  server_build, started_at,
                  previous_game_key, chain_kind)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT(game_id) DO NOTHING`,
             [
                 game.gameId, game.roomId, game.gameMode, game.pointThreshold,
-                advancedBots ? 1 : 0,
+                advancedBots ? 1 : 0, weakenedBots ? 1 : 0,
                 SCHEMA_VERSION, RULES_VERSION,
                 serverBuild, game.startedAt,
                 previousKey, previousKey === null ? null : (game.chainKind || null)
@@ -295,13 +348,14 @@ function insertSeat(gameKey, seat) {
     return run(
         `INSERT INTO mlog_seat
             (game_key, seat, segment, from_round, to_round, occupant, subject_key,
-             policy_gen, policy_ref, user_id, rating_mu, rating_sigma, joined_mid_game)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             policy_gen, policy_ref, difficulty, user_id, rating_mu, rating_sigma,
+             joined_mid_game)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(game_key, seat, segment) DO NOTHING`,
         [
             gameKey, seat.seat, seat.segment || 0, seat.fromRound, seat.toRound ?? null,
             seat.occupant, seat.subjectKey ?? null, seat.policyGen ?? null,
-            seat.policyRef ?? null, seat.userId ?? null,
+            seat.policyRef ?? null, seat.difficulty ?? null, seat.userId ?? null,
             seat.ratingMu ?? null, seat.ratingSigma ?? null,
             seat.joinedMidGame ? 1 : 0
         ]

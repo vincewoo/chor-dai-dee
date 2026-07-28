@@ -3,6 +3,10 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import { GAME_MODES } from '../../constants/gameModes';
+import {
+    BOT_DIFFICULTY_ORDER,
+    DEFAULT_BOT_DIFFICULTY
+} from '../../constants/botDifficulty';
 import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -17,11 +21,13 @@ function WaitingRoomV2({
     isHost,
     hostUsername,
     gameMode,
+    botDifficulty,
     fourColorMode,
     pusoyMode,
     isPrivate,
     onSetPrivacy,
     onSetGameMode,
+    onSetBotDifficulty,
     onToggleFourColor,
     onTogglePusoy,
     onAddBot,
@@ -62,6 +68,7 @@ function WaitingRoomV2({
 
     const shortSelected = (gameMode || 'standard') === GAME_MODES.SHORT.id;
     const longSelected = (gameMode || 'standard') === GAME_MODES.STANDARD.id;
+    const selectedDifficulty = botDifficulty || DEFAULT_BOT_DIFFICULTY;
 
     const seats = [];
     players.forEach((p, i) => {
@@ -202,6 +209,27 @@ function WaitingRoomV2({
                                     acc={acc}
                                     onClick={() => isHost && onSetGameMode?.(GAME_MODES.STANDARD.id)}
                                 />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Bot difficulty</div>
+                                <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>
+                                    Applies to every bot seat
+                                </div>
+                            </div>
+                            <div className="flex gap-[6px]">
+                                {BOT_DIFFICULTY_ORDER.map(tier => (
+                                    <SegButton
+                                        key={tier.id}
+                                        label={tier.label}
+                                        selected={selectedDifficulty === tier.id}
+                                        disabled={!isHost}
+                                        accGrad={accGrad}
+                                        acc={acc}
+                                        onClick={() => isHost && onSetBotDifficulty?.(tier.id)}
+                                    />
+                                ))}
                             </div>
                         </div>
                         {/* Only the host can change who may join. */}

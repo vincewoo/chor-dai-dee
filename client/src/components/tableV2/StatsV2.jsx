@@ -774,6 +774,11 @@ function DealStrengthSection({ data, acc, rm }) {
     const scopes = [
         { id: 'all', label: 'All' },
         { id: 'vsBots', label: 'Bots' },
+        // Only offered once there is something in it, so a player who never
+        // touches the difficulty setting sees the same three chips as before.
+        ...(data.vsCasualBots && data.vsCasualBots.rounds > 0
+            ? [{ id: 'vsCasualBots', label: 'Easy bots' }]
+            : []),
         { id: 'vsHumans', label: 'Humans' },
     ];
     const signed = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}pp`;

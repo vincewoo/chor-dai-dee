@@ -331,6 +331,25 @@ io.on('connection', (socket) => {
             } else {
                 targetRoomId = roomManager.createRoom();
                 console.log(`Created new room: ${targetRoomId}`);
+                // Pre-fill the creator's remembered difficulty. Best-effort: a
+                // lookup failure just leaves the room at the default, and the
+                // host can still change it in the waiting room. Guests have no
+                // account to remember anything on.
+                if (!isGuest) {
+                    try {
+                        const creator = await getUserByUsername(username);
+                        if (creator) {
+                            const prefs = await getUserPreferences(creator.id);
+                            if (prefs && prefs.bot_difficulty) {
+                                roomManager.getRoom(targetRoomId)
+                                    ?.setBotDifficulty(prefs.bot_difficulty);
+                            }
+                        }
+                    } catch (e) {
+                        console.error(
+                            'Error applying remembered bot difficulty:', e);
+                    }
+                }
             }
         }
 
@@ -1616,6 +1635,30 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('room_update', room.getGameState());
     });
 
+    socket.on('set_bot_difficulty', ({ difficulty }) => {
+        const result = roomManager.findRoomBySocketId(socket.id);
+        if (!result) {
+            return socket.emit('error', 'Not in a room');
+        }
+
+        const { room, roomId, player } = result;
+
+        // Bots are shared by the whole table, so the tier is the host's call.
+        if (!player || player.name !== room.hostUsername) {
+            return socket.emit(
+                'error', 'Only the room host can change the bot difficulty');
+        }
+
+        // Rebuilds the room's bot policy. Refused outside the waiting state, so
+        // an in-flight game can never change how its bots play.
+        const setResult = room.setBotDifficulty(difficulty);
+        if (setResult.error) {
+            return socket.emit('error', setResult.error);
+        }
+
+        io.to(roomId).emit('room_update', room.getGameState());
+    });
+
     socket.on('start_game', async ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
@@ -2857,6 +2900,9 @@ app.get('/api/preferences/:userId', async (req, res) => {
             // Sound defaults to on, so treat a missing column as enabled.
             soundEnabled: (preferences.sound_enabled ?? 1) === 1,
             soundVolume: preferences.sound_volume ?? 0.6,
+            // Pre-fills the bot difficulty of rooms this player creates. Full
+            // strength when the column predates the setting.
+            botDifficulty: preferences.bot_difficulty || 'competitive',
             // null when the player has never picked one
             avatarAnimal: preferences.avatar_animal ?? null,
             avatarTile: preferences.avatar_tile ?? null
@@ -2870,8 +2916,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
+        const { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, botDifficulty } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, botDifficulty });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);
@@ -3046,10 +3092,18 @@ app.get('/api/stats/:username/hand-strength', async (req, res) => {
  * Pure, so it is unit-testable without a database.
  */
 function buildHandStrengthResponse(byTier, byRank) {
-    const scopes = { all: null, vsBots: null, vsHumans: null };
+    const scopes = {
+        all: null, vsBots: null, vsCasualBots: null, vsHumans: null
+    };
     const matchers = {
         all: () => true,
-        vsBots: row => row.vs_humans === 0,
+        // "vs bots" means the real thing. Rounds against deliberately weakened
+        // bots get their own scope rather than being pooled in here or hidden:
+        // pooling them would defeat the entire point of the split, which is
+        // that farming bots should not read as general strength - but dropping
+        // them would lose rounds the player actually played.
+        vsBots: row => row.vs_humans === 0 && row.weakened_bots === 0,
+        vsCasualBots: row => row.vs_humans === 0 && row.weakened_bots === 1,
         vsHumans: row => row.vs_humans === 1
     };
 

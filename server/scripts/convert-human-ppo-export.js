@@ -34,6 +34,7 @@ function parseArgs(argv) {
         subjects: [],
         allSubjects: false,
         includeGuests: false,
+        competitiveOnly: false,
         validationFraction: 0.20,
         splitSeed: 90210
     };
@@ -44,6 +45,7 @@ function parseArgs(argv) {
         else if (flag === '--subject') args.subjects.push(argv[++i]);
         else if (flag === '--all-subjects') args.allSubjects = true;
         else if (flag === '--include-guests') args.includeGuests = true;
+        else if (flag === '--competitive-only') args.competitiveOnly = true;
         else if (flag === '--validation-fraction') {
             args.validationFraction = Number(argv[++i]);
         } else if (flag === '--split-seed') {
@@ -61,6 +63,7 @@ Usage: node scripts/convert-human-ppo-export.js --input DIR [subjects] [options]
   --subject HMAC            include one subject (repeatable)
   --all-subjects            include every pseudonymized human subject
   --include-guests          also include guest seats, as one anonymous pool
+  --competitive-only        drop rows from games with below-full-strength bots
   --output PREFIX           writes PREFIX.actions.bin/.decisions.bin/.json
   --validation-fraction N   fraction of complete games held out (default 0.20)
   --split-seed N            deterministic game split seed
@@ -76,13 +79,20 @@ decisions alone.
  * branch still demands a subject, so an account seat whose user_id lookup
  * failed at export time stays out of a named-subject run.
  */
-function isEligible(record, subjects, includeGuests = false) {
+function isEligible(
+    record, subjects, includeGuests = false, competitiveOnly = false
+) {
     const selected = record.occupant === 'guest'
         ? Boolean(includeGuests)
         : record.occupant === 'human' &&
             Boolean(record.subject) &&
             subjects.has(record.subject);
     return selected &&
+        // Kept by default: these are genuine human decisions. It is the
+        // round_points label below that was earned against weakened bots and
+        // therefore overstates the moves that earned it. --competitive-only
+        // takes the clean subset when fitting on that label.
+        !(competitiveOnly && record.weakened_bots) &&
         !record.joined_mid_game &&
         !record.forced_pass &&
         !record.policy_fallback &&
@@ -145,11 +155,12 @@ function encodeDecision(decision, validation) {
 }
 
 function convert(records, {
-    subjects, validationFraction, splitSeed, includeGuests = false
+    subjects, validationFraction, splitSeed, includeGuests = false,
+    competitiveOnly = false
 }) {
     const selectedSubjects = new Set(subjects);
     const eligible = records.filter(record =>
-        isEligible(record, selectedSubjects, includeGuests));
+        isEligible(record, selectedSubjects, includeGuests, competitiveOnly));
     const split = splitGames(
         eligible.map(record => record.game),
         validationFraction,
@@ -276,6 +287,7 @@ function main(argv = process.argv) {
             result.split.training.size + result.split.validation.size,
         subjects: subjects.length,
         includeGuests: args.includeGuests,
+        competitiveOnly: args.competitiveOnly,
         guestDecisions: result.guestDecisions,
         accountDecisions: result.converted.length - result.guestDecisions,
         humanOverrides: result.humanOverrides,
