@@ -8,7 +8,7 @@ const { PPOModel } = require('./PPOModel');
 const { PPOBot } = require('./PPOBot');
 const { decisionOptions } = require('./RLValueBot');
 
-const PPO_POLICY_GENERATION = 8;
+const PPO_POLICY_GENERATION = 14;
 const DEFAULT_PPO_MODEL_PATH = path.resolve(
     __dirname, '../ai/ppo-policy-gpu-v1.json');
 

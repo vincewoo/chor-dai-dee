@@ -313,6 +313,38 @@ PPO experience is on-policy. Do not combine arbitrary old trajectory buffers:
 their stored probabilities came from a different actor. A later generation
 collects fresh trajectories from the accepted PPO checkpoint.
 
+For more robust training, league mode keeps the current checkpoint as the only
+learner while rotating its opponents between current self-play, historical PPO
+checkpoints, and the heuristic:
+
+```bash
+npm run bot:ppo:generation -- \
+  --input .ppo-generations/gen-014/model.json \
+  --baseline .ppo-generations/gen-014/model.json \
+  --opponents league \
+  --opponent-pool .ppo-generations/gen-008/model.json,.ppo-generations/gen-011/model.json,.ppo-generations/gen-013/model.json \
+  --workers 8 \
+  --rounds 100000 \
+  --epochs 4 \
+  --temperature 1.5 \
+  --entropy-coef 0.005 \
+  --imitation-coef 0 \
+  --selection-rounds 24000 \
+  --benchmark-rounds 48000
+```
+
+The deterministic league schedule is 40% current-policy self-play, 30% against
+historical PPOs, 20% against heuristics, and 10% mixed historical/heuristic
+tables. Historical policies only produce opponent moves; their stored
+experience is never reused for PPO updates. Checkpoint paths and SHA-256
+fingerprints are recorded with the generated experience.
+
+When an opponent pool is supplied, promotion has two required gates: the
+existing paired benchmark against three heuristics and a paired league
+benchmark that rotates the learner through every seat against each historical
+checkpoint and the heuristic. `league-diagnostics.json` and
+`league-{parent,candidate}.txt` retain that evidence.
+
 Artifacts are written beneath `.ppo-generations/gen-NNN/`. `model.json` is the
 selected conservative policy, `trained-model.json` is the raw PPO update, and
 `generation.json`, `selection.json`, and `policy-diagnostics.json` record the
