@@ -37,6 +37,21 @@ const sortCards = (cards) => {
     return [...cards].sort((a, b) => a.value - b.value);
 };
 
+// Quick Select should always lead with the weakest valid play. Hand strength is
+// the primary key; for hands with equal strength (full houses with the same
+// triple, quads with different kickers, etc.), spend the lowest cards first.
+const compareHandsLowestFirst = (a, b) => {
+    if (a.value !== b.value) return a.value - b.value;
+
+    for (let i = 0; i < Math.min(a.cards.length, b.cards.length); i++) {
+        if (a.cards[i].value !== b.cards[i].value) {
+            return a.cards[i].value - b.cards[i].value;
+        }
+    }
+
+    return a.cards.length - b.cards.length;
+};
+
 // Check if newHand beats oldHand
 const canBeat = (newHand, oldHand) => {
     if (!newHand || !oldHand) return false;
@@ -142,7 +157,9 @@ const generateCartesianProduct = (arrays, callback) => {
 export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = Infinity) => {
     if (!playerHand || playerHand.length === 0) return [];
 
-    const handWithValues = ensureCardValues(playerHand);
+    // Generation order must not depend on how the player has manually sorted
+    // their cards. This also makes limited existence searches deterministic.
+    const handWithValues = sortCards(ensureCardValues(playerHand));
     const eligibleHands = [];
 
     // Helper to add hand if valid and beats lastPlayedHand
@@ -266,25 +283,16 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
             Object.values(rankGroups).forEach(group => {
                 if (group.length >= 3) {
                     combinations(group, 3).forEach(c => triples.push({ cards: c, rank: group[0].rank }));
-                    // Pairs from triples are added but will be deprioritized
-                    combinations(group, 2).forEach(c => pairs.push({ cards: c, rank: group[0].rank, fromTriple: true }));
+                    combinations(group, 2).forEach(c => pairs.push({ cards: c, rank: group[0].rank }));
                 } else if (group.length === 2) {
-                    pairs.push({ cards: group, rank: group[0].rank, fromTriple: false });
+                    pairs.push({ cards: group, rank: group[0].rank });
                 }
             });
 
-            // Sort pairs: non-triple pairs first (sorted by rank), then triple-derived pairs (sorted by rank)
-            // Within each group, sort by lowest rank value first
-            pairs.sort((a, b) => {
-                // First priority: prefer pairs NOT from triples
-                if (a.fromTriple !== b.fromTriple) {
-                    return a.fromTriple ? 1 : -1;
-                }
-                // Second priority: prefer lower rank pairs
-                const aRankIndex = RANKS.indexOf(a.rank);
-                const bRankIndex = RANKS.indexOf(b.rank);
-                return aRankIndex - bRankIndex;
-            });
+            // A lower pair is preferred even when it comes from another triple.
+            // Quick Select ranks card combinations only; preserving strategic
+            // structures is the coach/bot's job, not the hand-type picker.
+            pairs.sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
 
             for (const triple of triples) {
                 for (const pair of pairs) {
@@ -362,8 +370,34 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
         }
     }
 
-    eligibleHands.sort((a, b) => a.value - b.value);
+    eligibleHands.sort(compareHandsLowestFirst);
     return eligibleHands;
+};
+
+const handIdentity = (hand) => hand.cards.map(card => `${card.rank}-${card.suit}`).join(',');
+
+// Return every combination for a Quick Select chip, putting the lowest
+// currently playable combinations first. Non-playable combinations remain at
+// the end so the chip can still cycle through them as a hand browser.
+export const findQuickSelectHands = (playerHand, lastPlayedHand, handType) => {
+    const allHands = findEligibleHands(playerHand, null, handType);
+
+    if (!lastPlayedHand) {
+        return allHands.map(hand => ({ hand, canPlay: true }));
+    }
+
+    const playableKeys = new Set(
+        findEligibleHands(playerHand, lastPlayedHand, handType).map(handIdentity)
+    );
+    const options = allHands.map(hand => ({
+        hand,
+        canPlay: playableKeys.has(handIdentity(hand)),
+    }));
+
+    return [
+        ...options.filter(option => option.canPlay),
+        ...options.filter(option => !option.canPlay),
+    ];
 };
 
 // Find all hand types that have at least one eligible hand
@@ -412,4 +446,4 @@ export const findAvailableHandTypes = (playerHand, lastPlayedHand) => {
 };
 
 export { HAND_TYPES };
-export default { findEligibleHands, findAvailableHandTypes, HAND_TYPES };
+export default { findEligibleHands, findQuickSelectHands, findAvailableHandTypes, HAND_TYPES };

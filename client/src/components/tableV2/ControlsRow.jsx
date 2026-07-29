@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { findEligibleHands, findAvailableHandTypes, HAND_TYPES } from '../../utils/handFinder';
+import { findQuickSelectHands, findAvailableHandTypes, HAND_TYPES } from '../../utils/handFinder';
 import { CoachButton } from './CoachBubble';
 
 // The suit icons carry U+FE0E for the same reason as theme/tableTheme's
@@ -23,7 +23,7 @@ const HAND_SHORT_NAMES = {
     [HAND_TYPES.STRAIGHT_FLUSH]: 'SF',
 };
 
-// Chip-style quick-select + Clear + Sort, plus the Pass / Play buttons.
+// Chip-style quick-select + fixed Reset / Sort actions, plus Pass / Play.
 function ControlsRow({
     playerHand, lastPlayedHand, isMyTurn, selectedCards, onSelectCards,
     sortMode, isCustomOrder, onSortClick,
@@ -33,16 +33,18 @@ function ControlsRow({
 }) {
     const [activeType, setActiveType] = useState(null);
     const [activeIndex, setActiveIndex] = useState(0);
+    const [activeCanPlay, setActiveCanPlay] = useState(false);
 
     const availableHandTypes = useMemo(() => {
         const all = findAvailableHandTypes(playerHand, null);
         return all.filter(h => SHOWN_HAND_TYPES.includes(h.type));
     }, [playerHand]);
 
-    const beatableHandTypes = useMemo(() => {
-        if (!lastPlayedHand) return new Set();
+    const playableHandTypes = useMemo(() => {
+        if (!isMyTurn) return new Set();
+        if (!lastPlayedHand) return new Set(availableHandTypes.map(hand => hand.type));
         return new Set(findAvailableHandTypes(playerHand, lastPlayedHand).map(h => h.type));
-    }, [playerHand, lastPlayedHand]);
+    }, [availableHandTypes, playerHand, lastPlayedHand, isMyTurn]);
 
     const isActiveTypeValid = useMemo(
         () => !!activeType && availableHandTypes.some(h => h.type === activeType),
@@ -50,36 +52,31 @@ function ControlsRow({
     );
 
     const handleTypeClick = useCallback((type) => {
-        const allHands = findEligibleHands(playerHand, null, type);
-        let hands = allHands;
-        if (lastPlayedHand) {
-            const beatable = findEligibleHands(playerHand, lastPlayedHand, type);
-            const beatableSet = new Set(beatable.map(h => h.cards.map(c => `${c.rank}-${c.suit}`).join(',')));
-            hands = [
-                ...allHands.filter(h => beatableSet.has(h.cards.map(c => `${c.rank}-${c.suit}`).join(','))),
-                ...allHands.filter(h => !beatableSet.has(h.cards.map(c => `${c.rank}-${c.suit}`).join(','))),
-            ];
-        }
-        if (hands.length === 0) return;
+        const options = findQuickSelectHands(playerHand, lastPlayedHand, type);
+        if (options.length === 0) return;
+
         if (activeType === type && isActiveTypeValid) {
-            const next = (activeIndex + 1) % hands.length;
+            const next = (activeIndex + 1) % options.length;
             setActiveIndex(next);
-            onSelectCards(hands[next].cards);
+            setActiveCanPlay(options[next].canPlay);
+            onSelectCards(options[next].hand.cards);
         } else {
             setActiveType(type);
             setActiveIndex(0);
-            onSelectCards(hands[0].cards);
+            setActiveCanPlay(options[0].canPlay);
+            onSelectCards(options[0].hand.cards);
         }
     }, [activeType, activeIndex, playerHand, lastPlayedHand, onSelectCards, isActiveTypeValid]);
 
     const handleClear = useCallback(() => {
         setActiveType(null);
         setActiveIndex(0);
+        setActiveCanPlay(false);
         onSelectCards([]);
     }, [onSelectCards]);
 
     const sortLabel = isCustomOrder ? '🔀 Custom' : (sortMode === 'rank' ? 'Sort: Rank' : 'Sort: Suit');
-    const showChips = isMyTurn && availableHandTypes.length > 0;
+    const showChips = availableHandTypes.length > 0;
 
     const chipBase = {
         flexShrink: 0, padding: '7px 12px', borderRadius: 10, fontFamily: "'Outfit',sans-serif",
@@ -89,53 +86,89 @@ function ControlsRow({
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, width: '100%' }}>
-            {/* Quick-select chips + Clear + Sort */}
+            {/* Only the hand-type chips scroll. Frequently used utility actions
+                live in their own fixed rail so they never leave the viewport. */}
             <div
-                className="scrollbar-thin"
-                style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: '100%', overflowX: 'auto', padding: '2px 12px' }}
+                style={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: '100%', minWidth: 0 }}
             >
-                {showChips && availableHandTypes.map(({ type, count }) => {
-                    const isActive = activeType === type && isActiveTypeValid;
-                    const canBeat = beatableHandTypes.has(type);
-                    const currentIndex = isActive ? activeIndex + 1 : 0;
-                    return (
+                <div
+                    className="scrollbar-thin"
+                    style={{ display: 'flex', gap: 8, alignItems: 'center', flex: '1 1 auto', minWidth: 0, overflowX: 'auto', padding: '2px 8px 2px 12px' }}
+                >
+                    {showChips && availableHandTypes.map(({ type, count }) => {
+                        const isActive = activeType === type && isActiveTypeValid;
+                        const canPlayType = playableHandTypes.has(type);
+                        const activeIsPlayable = isMyTurn && isActive && activeCanPlay;
+                        const currentIndex = isActive ? activeIndex + 1 : 0;
+                        const title = !isMyTurn
+                            ? `${HAND_SHORT_NAMES[type]} preview. Click to review and cycle while you wait for your turn.`
+                            : (canPlayType
+                                ? `${HAND_SHORT_NAMES[type]} can be played. Click to select the lowest option; click again to cycle.`
+                                : `${HAND_SHORT_NAMES[type]} cannot beat the current hand. Click to preview and cycle anyway.`);
+                        return (
+                            <button
+                                key={type}
+                                onClick={() => handleTypeClick(type)}
+                                title={title}
+                                aria-label={title}
+                                style={{
+                                    ...chipBase,
+                                    border: `1px solid ${activeIsPlayable ? acc : (isActive ? 'rgba(255,255,255,.48)' : (canPlayType ? `${acc}88` : 'rgba(255,255,255,.18)'))}`,
+                                    background: activeIsPlayable
+                                        ? acc
+                                        : (isActive ? 'rgba(255,255,255,.1)' : (canPlayType ? `${acc}18` : 'rgba(0,0,0,.38)')),
+                                    color: activeIsPlayable ? '#0b0d10' : (canPlayType ? acc : 'rgba(244,245,247,.42)'),
+                                    opacity: canPlayType || isActive ? 1 : .72,
+                                    boxShadow: canPlayType && !isActive ? `inset 0 0 0 1px ${acc}18` : 'none',
+                                }}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    style={{
+                                        width: 6, height: 6, borderRadius: 999,
+                                        background: canPlayType ? acc : 'rgba(244,245,247,.28)',
+                                        boxShadow: canPlayType ? `0 0 7px ${acc}` : 'none',
+                                    }}
+                                />
+                                <span>{HAND_ICONS[type]}</span>
+                                <span>{HAND_SHORT_NAMES[type]}</span>
+                                {count > 1 && (
+                                    <span style={{
+                                        fontSize: 9, padding: '1px 5px', borderRadius: 999,
+                                        background: activeIsPlayable ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.15)',
+                                    }}>
+                                        {isActive ? `${currentIndex}/${count}` : count}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+                        padding: '2px 12px 2px 8px', position: 'relative', zIndex: 1,
+                        background: 'rgba(9,12,15,.88)', borderRadius: 12,
+                        boxShadow: '-10px 0 16px rgba(0,0,0,.28)',
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    {((activeType && isActiveTypeValid) || (selectedCards && selectedCards.length > 0)) && (
                         <button
-                            key={type}
-                            onClick={() => handleTypeClick(type)}
-                            style={{
-                                ...chipBase,
-                                border: `1px solid ${isActive ? acc : (canBeat ? `${acc}66` : 'rgba(255,255,255,.18)')}`,
-                                background: isActive ? acc : 'rgba(0,0,0,.38)',
-                                color: isActive ? '#0b0d10' : (canBeat ? acc : 'rgba(244,245,247,.55)'),
-                            }}
+                            onClick={handleClear}
+                            style={{ ...chipBase, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7' }}
                         >
-                            <span>{HAND_ICONS[type]}</span>
-                            <span>{HAND_SHORT_NAMES[type]}</span>
-                            {count > 1 && (
-                                <span style={{
-                                    fontSize: 9, padding: '1px 5px', borderRadius: 999,
-                                    background: isActive ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.15)',
-                                }}>
-                                    {isActive ? `${currentIndex}/${count}` : count}
-                                </span>
-                            )}
+                            ↺ Reset
                         </button>
-                    );
-                })}
-                {((activeType && isActiveTypeValid) || (selectedCards && selectedCards.length > 0)) && (
+                    )}
                     <button
-                        onClick={handleClear}
+                        onClick={onSortClick}
                         style={{ ...chipBase, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7' }}
                     >
-                        ↺ Clear
+                        {sortLabel}
                     </button>
-                )}
-                <button
-                    onClick={onSortClick}
-                    style={{ ...chipBase, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7' }}
-                >
-                    {sortLabel}
-                </button>
+                </div>
             </div>
 
             {/* Coach / Pass / Play. The owl is positioned rather than laid out
