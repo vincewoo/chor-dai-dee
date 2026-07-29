@@ -4,11 +4,11 @@ import SortableHandCardV2 from './SortableHandCardV2';
 import useHandGeometry from '../../hooks/useHandGeometry';
 
 // The player's overlapping hand. Reuses GameRoom's dnd sensors + handlers via
-// props so drag-reorder, swipe-select, and tap-select all keep working.
+// props so drag-reorder and tap-select keep working.
 function MobileHandV2({
     sortedHand, selectedCards, onToggle,
-    sensors, onDragStart, onDragEnd,
-    handContainerRef, onTouchStart, onTouchMove, onTouchEnd,
+    sensors, onDragEnd,
+    handContainerRef,
     containerWidth, acc, fourColor, pusoyMode, geometry,
 }) {
     const { width, height, marginLeft, typeScale } = useHandGeometry(sortedHand.length, containerWidth, geometry);
@@ -18,7 +18,6 @@ function MobileHandV2({
             <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
-                onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
             >
                 <SortableContext
@@ -27,9 +26,6 @@ function MobileHandV2({
                 >
                     <div
                         ref={handContainerRef}
-                        onTouchStart={onTouchStart}
-                        onTouchMove={onTouchMove}
-                        onTouchEnd={onTouchEnd}
                         style={{ display: 'flex', justifyContent: 'center', touchAction: 'pan-y', minHeight: height }}
                     >
                         {sortedHand.map((card, index) => {

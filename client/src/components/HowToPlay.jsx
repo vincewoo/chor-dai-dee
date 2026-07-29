@@ -43,13 +43,16 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 font-sans" style={{ fontFamily: "'Outfit',sans-serif" }}>
-            <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 shadow-2xl" style={{ background: 'linear-gradient(180deg,rgba(24,27,33,.98),rgba(13,15,19,.99))' }}>
+            <div
+                className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 shadow-2xl"
+                style={{ background: 'linear-gradient(180deg,rgba(22,60,50,.99),rgba(12,43,35,.99))' }}
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-white/10 p-6 text-[#f4f5f7]">
                     <h2 className="text-2xl font-bold">How to Play Big 2</h2>
                     <button
                         onClick={onClose}
-                        className="text-[rgba(244,245,247,.7)] hover:text-[#f4f5f7] text-3xl leading-none"
+                        className="text-[rgba(244,245,247,.9)] hover:text-white text-3xl leading-none"
                         aria-label="Close"
                     >
                         ×
@@ -62,7 +65,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         onClick={() => setActiveTab('overview')}
                         className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'overview'
                                 ? 'text-[#ffc94d] border-b-2 border-[#ffc94d]'
-                                : 'text-[rgba(244,245,247,.5)] hover:text-[#f4f5f7]'
+                                : 'text-[rgba(244,245,247,.72)] hover:text-white'
                             }`}
                     >
                         Overview
@@ -71,7 +74,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         onClick={() => setActiveTab('rankings')}
                         className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'rankings'
                                 ? 'text-[#ffc94d] border-b-2 border-[#ffc94d]'
-                                : 'text-[rgba(244,245,247,.5)] hover:text-[#f4f5f7]'
+                                : 'text-[rgba(244,245,247,.72)] hover:text-white'
                             }`}
                     >
                         Rankings
@@ -80,7 +83,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         onClick={() => setActiveTab('rules')}
                         className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'rules'
                                 ? 'text-[#ffc94d] border-b-2 border-[#ffc94d]'
-                                : 'text-[rgba(244,245,247,.5)] hover:text-[#f4f5f7]'
+                                : 'text-[rgba(244,245,247,.72)] hover:text-white'
                             }`}
                     >
                         Rules
@@ -89,7 +92,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         onClick={() => setActiveTab('scoring')}
                         className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'scoring'
                                 ? 'text-[#ffc94d] border-b-2 border-[#ffc94d]'
-                                : 'text-[rgba(244,245,247,.5)] hover:text-[#f4f5f7]'
+                                : 'text-[rgba(244,245,247,.72)] hover:text-white'
                             }`}
                     >
                         Scoring
@@ -98,7 +101,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         onClick={() => setActiveTab('features')}
                         className={`flex-1 px-2 py-3 font-medium transition text-xs ${activeTab === 'features'
                                 ? 'text-[#ffc94d] border-b-2 border-[#ffc94d]'
-                                : 'text-[rgba(244,245,247,.5)] hover:text-[#f4f5f7]'
+                                : 'text-[rgba(244,245,247,.72)] hover:text-white'
                             }`}
                     >
                         Features
@@ -111,12 +114,12 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         <div className="space-y-4">
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-2">What is Big 2?</h3>
-                                <p className="text-[rgba(244,245,247,.75)] leading-relaxed">
+                                <p className="text-[rgba(244,245,247,.86)] leading-relaxed">
                                     Big 2 (also known as Deuces or Chor Dai Dee) is a popular card game in East Asia.
                                     The objective is to be the first player to get rid of all your cards by playing higher-ranking
                                     hands than your opponents.
                                 </p>
-                                <p className="text-[rgba(244,245,247,.75)] leading-relaxed">
+                                <p className="text-[rgba(244,245,247,.86)] leading-relaxed">
                                     Many variations exist, but this implementation follows the Hong Kong ruleset with some common house rules.
                                     See the <strong>Rules</strong> tab for detailed gameplay instructions.
                                 </p>
@@ -124,7 +127,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-2">Quick Start</h3>
-                                <ol className="list-decimal list-inside space-y-2 text-[rgba(244,245,247,.75)]">
+                                <ol className="list-decimal list-inside space-y-2 text-[rgba(244,245,247,.86)]">
                                     <li>Each player receives 13 cards</li>
                                     <li>The player with 3{sym('D')} starts the first round</li>
                                     <li>Play cards that beat the current hand on the table</li>
@@ -141,11 +144,11 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="border border-white/10 rounded-lg p-4">
                                         <h4 className="font-bold text-[#6ee7a8] mb-2">Short Game (~30 min)</h4>
-                                        <p className="text-[rgba(244,245,247,.75)]">First player to reach 50 points ends the game. Perfect for quick matches.</p>
+                                        <p className="text-[rgba(244,245,247,.86)]">First player to reach 50 points ends the game. Perfect for quick matches.</p>
                                     </div>
                                     <div className="border border-white/10 rounded-lg p-4">
                                         <h4 className="font-bold text-[#6ee7a8] mb-2">Standard Game (~60 min)</h4>
-                                        <p className="text-[rgba(244,245,247,.75)]">First player to reach 100 points ends the game. Full competitive experience.</p>
+                                        <p className="text-[rgba(244,245,247,.86)]">First player to reach 100 points ends the game. Full competitive experience.</p>
                                     </div>
                                 </div>
                             </section>
@@ -157,14 +160,14 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Suit Rankings (Lowest to Highest)</h3>
                                 {pusoyMode && (
-                                    <p className="text-sm text-[rgba(244,245,247,.55)] mb-3">Pusoy Dos (Filipino) suit order</p>
+                                    <p className="text-sm text-[rgba(244,245,247,.70)] mb-3">Pusoy Dos (Filipino) suit order</p>
                                 )}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                                     {ordered.map((suit, i) => (
                                         <div key={suit} className="border border-white/10 rounded-lg p-3 text-center">
                                             <div className={`text-4xl mb-2 ${suitClass(suit)}`}>{SUIT_SYMBOLS[suit]}</div>
                                             <div className="font-bold text-[#f4f5f7]">{SUIT_NAMES[suit]}</div>
-                                            <div className="text-sm text-[rgba(244,245,247,.55)]">{TIER_LABELS[i]}</div>
+                                            <div className="text-sm text-[rgba(244,245,247,.70)]">{TIER_LABELS[i]}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -173,10 +176,10 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Rank Rankings (Lowest to Highest)</h3>
                                 <div className="bg-white/[.04] rounded-lg p-4">
-                                    <div className="text-center text-[rgba(244,245,247,.75)] font-mono text-lg">
+                                    <div className="text-center text-[rgba(244,245,247,.86)] font-mono text-lg">
                                         3 &lt; 4 &lt; 5 &lt; 6 &lt; 7 &lt; 8 &lt; 9 &lt; 10 &lt; J &lt; Q &lt; K &lt; A &lt; <span className="font-bold text-[#ff8d96]">2</span>
                                     </div>
-                                    <p className="text-sm text-[rgba(244,245,247,.55)] text-center mt-2">Note: 2 is the highest rank (hence "Big 2")</p>
+                                    <p className="text-sm text-[rgba(244,245,247,.70)] text-center mt-2">Note: 2 is the highest rank (hence "Big 2")</p>
                                 </div>
                             </section>
 
@@ -186,30 +189,30 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                 {/* Single */}
                                 <div className="border border-white/10 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">1. Single Card</h4>
-                                    <p className="text-[rgba(244,245,247,.75)] text-sm mb-2">Any single card. Compared by rank first, then suit.</p>
+                                    <p className="text-[rgba(244,245,247,.86)] text-sm mb-2">Any single card. Compared by rank first, then suit.</p>
                                     <CardRow pusoyMode={pusoyMode} cards={[{ rank: '7', suit: 'H' }]} />
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Example: 7{sym('H')} beats 7{sym('D')} but loses to 8{sym('D')}</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] text-center mt-1">Example: 7{sym('H')} beats 7{sym('D')} but loses to 8{sym('D')}</p>
                                 </div>
 
                                 {/* Pair */}
                                 <div className="border border-white/10 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">2. Pair</h4>
-                                    <p className="text-[rgba(244,245,247,.75)] text-sm mb-2">Two cards of the same rank. Compared by rank, then highest suit.</p>
+                                    <p className="text-[rgba(244,245,247,.86)] text-sm mb-2">Two cards of the same rank. Compared by rank, then highest suit.</p>
                                     <CardRow pusoyMode={pusoyMode} cards={[{ rank: 'J', suit: 'S' }, { rank: 'J', suit: 'H' }]} />
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Example: JJ with {sym('S')} as highest suit</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] text-center mt-1">Example: JJ with {sym('S')} as highest suit</p>
                                 </div>
 
                                 {/* Triple */}
                                 <div className="border border-white/10 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">3. Triple</h4>
-                                    <p className="text-[rgba(244,245,247,.75)] text-sm mb-2">Three cards of the same rank. Compared by rank only.</p>
+                                    <p className="text-[rgba(244,245,247,.86)] text-sm mb-2">Three cards of the same rank. Compared by rank only.</p>
                                     <CardRow pusoyMode={pusoyMode} cards={[{ rank: '9', suit: 'S' }, { rank: '9', suit: 'H' }, { rank: '9', suit: 'C' }]} />
                                 </div>
 
                                 {/* 5-Card Hands */}
                                 <div className="bg-[#ffc94d]/10 border-2 border-yellow-400 rounded-lg p-4 mb-3">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">5-Card Hands (Special)</h4>
-                                    <p className="text-[rgba(244,245,247,.75)] text-sm mb-3">
+                                    <p className="text-[rgba(244,245,247,.86)] text-sm mb-3">
                                         These hands consist of exactly 5 cards and can only beat other 5-card hands.
                                         They are ranked by hand type first, then by the highest card.
                                     </p>
@@ -217,7 +220,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     {/* Straight */}
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Straight (Weakest 5-card hand)</h5>
-                                        <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Five consecutive ranks. Compared by highest card.</p>
+                                        <p className="text-xs text-[rgba(244,245,247,.70)] mb-2">Five consecutive ranks. Compared by highest card.</p>
                                         <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '5', suit: 'D' },
                                             { rank: '6', suit: 'C' },
@@ -230,7 +233,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     {/* Flush */}
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Flush</h5>
-                                        <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Five cards of the same suit. Compared by highest card, then suit.</p>
+                                        <p className="text-xs text-[rgba(244,245,247,.70)] mb-2">Five cards of the same suit. Compared by highest card, then suit.</p>
                                         <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '3', suit: 'H' },
                                             { rank: '5', suit: 'H' },
@@ -243,7 +246,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     {/* Full House */}
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Full House</h5>
-                                        <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Three of a kind + a pair. Compared by the triple's rank.</p>
+                                        <p className="text-xs text-[rgba(244,245,247,.70)] mb-2">Three of a kind + a pair. Compared by the triple's rank.</p>
                                         <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: 'Q', suit: 'S' },
                                             { rank: 'Q', suit: 'H' },
@@ -251,13 +254,13 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                             { rank: '4', suit: 'D' },
                                             { rank: '4', suit: 'S' }
                                         ]} />
-                                        <p className="text-xs text-[rgba(244,245,247,.55)] text-center mt-1">Three Queens + Two 4s</p>
+                                        <p className="text-xs text-[rgba(244,245,247,.70)] text-center mt-1">Three Queens + Two 4s</p>
                                     </div>
 
                                     {/* Four of a Kind */}
                                     <div className="rounded bg-black/25 p-3 mb-2">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Four of a Kind (Quads)</h5>
-                                        <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Four cards of the same rank + any fifth card. Compared by the quad's rank.</p>
+                                        <p className="text-xs text-[rgba(244,245,247,.70)] mb-2">Four cards of the same rank + any fifth card. Compared by the quad's rank.</p>
                                         <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '8', suit: 'S' },
                                             { rank: '8', suit: 'H' },
@@ -270,7 +273,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     {/* Straight Flush */}
                                     <div className="rounded bg-black/25 p-3">
                                         <h5 className="font-semibold text-[#f4f5f7] mb-1">Straight Flush (Strongest hand!)</h5>
-                                        <p className="text-xs text-[rgba(244,245,247,.55)] mb-2">Five consecutive ranks, all same suit. Compared by highest card, then suit.</p>
+                                        <p className="text-xs text-[rgba(244,245,247,.70)] mb-2">Five consecutive ranks, all same suit. Compared by highest card, then suit.</p>
                                         <CardRow pusoyMode={pusoyMode} cards={[
                                             { rank: '9', suit: 'S' },
                                             { rank: '10', suit: 'S' },
@@ -288,7 +291,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         <div className="space-y-4">
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Starting the Game</h3>
-                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.75)]">
+                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.86)]">
                                     <li><strong>First Round:</strong> The player with 3{sym('D')} must play it first (can be in a hand containing 3{sym('D')})</li>
                                     <li><strong>Subsequent Rounds:</strong> The winner of the previous round starts and can play any valid hand</li>
                                     <li>Each player receives 13 cards at the start of each round</li>
@@ -297,7 +300,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Playing Your Turn</h3>
-                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.75)]">
+                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.86)]">
                                     <li>You must play the <strong>same number of cards</strong> as the current hand on the table</li>
                                     <li>Your hand must be <strong>higher-ranking</strong> than the current hand</li>
                                     <li>Singles beat singles, pairs beat pairs, trips beat trips, and 5-card hands beat 5-card hands (by type first, then value)</li>
@@ -309,10 +312,10 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Free Control</h3>
                                 <div className="bg-[#6ee7a8]/10 border border-green-300 rounded-lg p-4">
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         When all other players pass consecutively, the last player who played a hand gains <strong>"free control"</strong>.
                                     </p>
-                                    <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.75)]">
+                                    <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.86)]">
                                         <li>The table is cleared</li>
                                         <li>You can play any valid hand (single, pair, triple, or 5-card hand)</li>
                                         <li>This is your opportunity to start fresh with your strategy</li>
@@ -322,7 +325,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Winning a Round</h3>
-                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.75)]">
+                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.86)]">
                                     <li>The first player to play all their cards wins the round</li>
                                     <li>The round ends immediately when someone empties their hand</li>
                                     <li>The winner scores 0 points; other players score penalty points based on remaining cards</li>
@@ -331,7 +334,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Special Rules</h3>
-                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.75)]">
+                                <ul className="list-disc list-inside space-y-2 text-[rgba(244,245,247,.86)]">
                                     <li><strong>5-Card Hands:</strong> Can only be beaten by stronger 5-card hands (e.g., a straight flush beats a flush)</li>
                                     <li><strong>2 is Highest:</strong> The rank "2" is the strongest card, higher than Ace</li>
                                     <li><strong>Suit Breaking Ties:</strong> When ranks are equal, suit determines the winner (
@@ -345,31 +348,31 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                 </ul>
                                 <div className="mt-4 border-l-4 border-blue-500 bg-[#7fb2ff]/10 p-4 rounded-r-lg">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">Hong Kong Variant: Straights with 2s</h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         This game follows Hong Kong Big 2 rules for straights containing 2s:
                                     </p>
-                                    <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.75)] ml-4">
+                                    <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.86)] ml-4">
                                         <li><strong>A-2-3-4-5 (Highest Straight):</strong> The strongest possible straight, valued by the 2</li>
                                         <li><strong>2-3-4-5-6 (Second Highest):</strong> Second strongest straight, also valued by the 2</li>
                                         <li><strong>Invalid: J-Q-K-A-2:</strong> The 2 cannot be used as the high end of a straight</li>
                                         <li><strong>Invalid: Any other combinations with 2:</strong> Only A-2-3-4-5 and 2-3-4-5-6 are valid</li>
                                     </ul>
-                                    <p className="text-sm text-[rgba(244,245,247,.55)] mt-2">
+                                    <p className="text-sm text-[rgba(244,245,247,.70)] mt-2">
                                         💡 The same rules apply to straight flushes: A-2-3-4-5 flush is the highest straight flush.
                                     </p>
                                 </div>
                                 <div className="mt-4 border-l-4 border-yellow-500 bg-[#ffc94d]/10 p-4 rounded-r-lg">
                                     <h4 className="font-bold text-[#f4f5f7] mb-2">🐉 Hong Kong Variant: Dragon (Instant Win)</h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         If a player is dealt a <strong>Dragon</strong> (one card of each rank: 3-4-5-6-7-8-9-10-J-Q-K-A-2),
                                         they immediately win the entire game!
                                     </p>
-                                    <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.75)] ml-4">
+                                    <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.86)] ml-4">
                                         <li><strong>Instant Victory:</strong> No playing required - the game ends immediately</li>
                                         <li><strong>Dragon Winner:</strong> Gets 0 points</li>
                                         <li><strong>All Other Players:</strong> Each receives 39 penalty points (13 cards × 3 multiplier)</li>
                                     </ul>
-                                    <p className="text-sm text-[rgba(244,245,247,.55)] mt-2">
+                                    <p className="text-sm text-[rgba(244,245,247,.70)] mt-2">
                                         💡 Dragons are extremely rare! The odds are approximately 1 in 158 million hands.
                                     </p>
                                 </div>
@@ -381,7 +384,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         <div className="space-y-4">
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Game Features</h3>
-                                <p className="text-[rgba(244,245,247,.75)] mb-4">
+                                <p className="text-[rgba(244,245,247,.86)] mb-4">
                                     This implementation includes several quality-of-life features to enhance your gameplay experience.
                                     Access most of these through the settings gear icon during gameplay.
                                 </p>
@@ -393,14 +396,14 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">🎨</span>
                                         Four-Color Deck Mode
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         Toggle between traditional 2-color (red/black) and colorblind-friendly 4-color deck modes.
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li><strong>2-Color:</strong> Red (Hearts/Diamonds), Black (Spades/Clubs)</li>
                                         <li><strong>4-Color:</strong> Red (Hearts), Blue (Diamonds), Black (Spades), Green (Clubs)</li>
                                     </ul>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Access via settings gear icon in-game</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Access via settings gear icon in-game</p>
                                 </div>
 
                                 <div className="border-l-4 border-blue-500 bg-[#7fb2ff]/10 p-4 rounded-r-lg mb-3">
@@ -408,10 +411,26 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">⚡</span>
                                         Auto-Pass
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         Automatically pass your turn when you have no valid moves. Saves time and speeds up gameplay.
                                     </p>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Access via settings gear icon in-game</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Access via settings gear icon in-game</p>
+                                </div>
+
+                                <div className="border-l-4 border-amber-500 bg-[#ffc94d]/10 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-[#f4f5f7] mb-2 flex items-center">
+                                        <span className="text-xl mr-2">🦉</span>
+                                        Coach
+                                    </h4>
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
+                                        Enable the owl coach for move suggestions and feedback while you learn.
+                                    </p>
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
+                                        <li>Tap the owl beside Pass and Play to select its recommended move</li>
+                                        <li>The coach explains its suggestion and can recommend passing</li>
+                                        <li>It also points out mistakes after a play</li>
+                                    </ul>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Off by default; enable it from the settings gear</p>
                                 </div>
 
                                 <div className="border-l-4 border-purple-500 bg-[#a48fff]/10 p-4 rounded-r-lg mb-3">
@@ -419,27 +438,20 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">🎯</span>
                                         Hand Helper / Quick Select
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
-                                        Shows all valid hands you can play from your current cards. Highlights winning hands in green!
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
+                                        Hand-type chips show the combinations available in your hand. Your table accent marks types
+                                        that can be played now; combinations that cannot beat the pile stay visible in grey for review.
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
-                                        <li>Auto-detects all playable combinations (singles, pairs, triples, 5-card hands)</li>
-                                        <li>Green highlighting for hands that beat the current pile</li>
-                                        <li>Click to select cards, cycle through alternatives with repeated clicks</li>
-                                        <li>Shows counts and percentages for each hand type</li>
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
+                                        <li>Finds pairs, triples, straights, flushes, full houses, quads, and straight flushes</li>
+                                        <li>The first click selects the lowest combination that can be played</li>
+                                        <li>Repeated clicks cycle through the remaining alternatives, including lower previews</li>
+                                        <li>Counts show how many combinations of each type are available</li>
+                                        <li>When your turn starts, the row scrolls to place the first playable type at the left edge</li>
                                     </ul>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Always visible during your turn</p>
-                                </div>
-
-                                <div className="border-l-4 border-orange-500 bg-[#ffab6b]/10 p-4 rounded-r-lg mb-3">
-                                    <h4 className="font-bold text-[#f4f5f7] mb-2 flex items-center">
-                                        <span className="text-xl mr-2">👆</span>
-                                        Swipe/Slide Selection
-                                    </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
-                                        Select multiple cards quickly by swiping across them. Works on both mobile and desktop.
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">
+                                        💡 The chips remain available between turns, shown in grey, so you can review your hand while waiting
                                     </p>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Click and drag across cards to select/deselect</p>
                                 </div>
 
                                 <div className="border-l-4 border-pink-500 bg-[#ff8fd0]/10 p-4 rounded-r-lg mb-3">
@@ -447,15 +459,18 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">🔄</span>
                                         Card Reorganization & Sorting
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
-                                        Drag and drop to reorder your hand cards. Organize them however you prefer!
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
+                                        Tap cards to select them, or drag and drop to arrange your hand however you prefer.
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li>Full touch and mouse support</li>
-                                        <li>Reorder cards to group by rank or suit</li>
-                                        <li>Position stays consistent throughout the round</li>
+                                        <li>Sort toggles between rank and suit order</li>
+                                        <li>Manual card order stays consistent throughout the round</li>
+                                        <li>Reset clears the current card or helper selection</li>
                                     </ul>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Click and drag cards to reorder</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">
+                                        💡 Reset and Sort stay right-aligned on their own row below the hand helpers
+                                    </p>
                                 </div>
 
                                 <div className="border-l-4 border-yellow-500 bg-[#ffc94d]/10 p-4 rounded-r-lg mb-3">
@@ -463,17 +478,33 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">👥</span>
                                         Multiplayer Support
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         Play with friends online in real-time. Create a room and share the code!
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li>Real-time multiplayer using WebSocket technology</li>
                                         <li>Create private rooms with shareable room codes</li>
                                         <li>Join existing games with a room code</li>
                                         <li>Automatic bot filling if fewer than 4 players</li>
+                                        <li>The host can choose Casual, Balanced, or Competitive bot difficulty</li>
                                         <li>Play with any combination of human players and bots</li>
+                                        <li>Watch an in-progress room without taking a player seat</li>
                                     </ul>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Create a room in the lobby and share the code with friends</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Create a room in the lobby and share the code with friends</p>
+                                </div>
+
+                                <div className="border-l-4 border-teal-500 bg-[#6ee0e7]/10 p-4 rounded-r-lg mb-3">
+                                    <h4 className="font-bold text-[#f4f5f7] mb-2 flex items-center">
+                                        <span className="text-xl mr-2">⚙️</span>
+                                        Display, Sound & Accessibility
+                                    </h4>
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
+                                        <li><strong>Pusoy Dos Suits:</strong> Remaps the displayed suits to ♣, ♠, ♥, ♦ order without changing the cards or rules</li>
+                                        <li><strong>Sound Effects:</strong> Toggle game sounds and adjust their volume</li>
+                                        <li><strong>Table Theme:</strong> Choose the table surface and accent colour</li>
+                                        <li><strong>Reduced Motion:</strong> Minimizes animated table effects</li>
+                                    </ul>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Each setting changes only your own view</p>
                                 </div>
 
                                 <div className="border-l-4 border-rose-500 bg-[#ff8d96]/10 p-4 rounded-r-lg mb-3">
@@ -481,15 +512,15 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">🎙️</span>
                                         Voice Chat
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         Talk to other players in real-time with built-in voice chat.
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li>Crystal clear WebRTC audio</li>
                                         <li>Toggle microphone on/off anytime</li>
                                         <li>See who is currently speaking</li>
                                     </ul>
-                                    <p className="text-xs text-[rgba(244,245,247,.55)] mt-2">💡 Enable/Disable via settings gear icon</p>
+                                    <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Enable/Disable via settings gear icon</p>
                                 </div>
 
                                 <div className="border-l-4 border-cyan-500 bg-[#6ee0e7]/10 p-4 rounded-r-lg mb-3">
@@ -497,14 +528,15 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">📱</span>
                                         Mobile Optimized
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         Fully responsive design with mobile-specific optimizations for the best experience.
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li>Dynamic card spacing based on screen size and card count</li>
-                                        <li>Touch-friendly controls and swipe support</li>
+                                        <li>Touch-friendly controls for tapping and drag-and-drop reordering</li>
                                         <li>Improved touch targets for buttons and cards</li>
                                         <li>Card count indicators for opponent hands</li>
+                                        <li>Opponents with 3 or fewer cards receive a red “N LEFT” warning</li>
                                     </ul>
                                 </div>
 
@@ -513,10 +545,10 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <span className="text-xl mr-2">🔌</span>
                                         Auto-Reconnection
                                     </h4>
-                                    <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                    <p className="text-[rgba(244,245,247,.86)] mb-2">
                                         Automatically rejoin your game if you get disconnected. Your progress is saved!
                                     </p>
-                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.75)] text-sm ml-4">
+                                    <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li>Seamless reconnection to in-progress games</li>
                                         <li>Connection status indicators</li>
                                         <li>Game state fully restored on reconnect</li>
@@ -530,13 +562,13 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                         <div className="space-y-4">
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">How Scoring Works</h3>
-                                <p className="text-[rgba(244,245,247,.75)] mb-3">
+                                <p className="text-[rgba(244,245,247,.86)] mb-3">
                                     Big 2 uses a penalty scoring system. The winner of each round gets 0 points,
                                     while other players receive penalty points based on their remaining cards.
                                 </p>
                                 <div className="bg-[#ffc94d]/10 border border-yellow-300 rounded-lg p-4">
                                     <p className="font-bold text-[#f4f5f7] mb-2">Important: Lowest score wins!</p>
-                                    <p className="text-[rgba(244,245,247,.75)]">
+                                    <p className="text-[rgba(244,245,247,.86)]">
                                         When a player reaches 50 points (Short) or 100 points (Standard), the game ends.
                                         The player with the LOWEST cumulative score is the winner.
                                     </p>
@@ -545,27 +577,27 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Penalty Points per Round</h3>
-                                <p className="text-[rgba(244,245,247,.75)] mb-3">
+                                <p className="text-[rgba(244,245,247,.86)] mb-3">
                                     If you lose a round badly ({'>='} 10 cards remaining), you receive a higher penalty multiplier.
                                     The multiplier increases as the number of remaining cards increases.
                                 </p>
                                 <div className="space-y-3">
                                     <div className="border border-white/10 rounded-lg p-4">
                                         <h4 className="font-bold text-[#6ee7a8] mb-2">1-9 Cards Remaining: 1× Multiplier</h4>
-                                        <p className="text-[rgba(244,245,247,.75)]">Points = Number of cards remaining</p>
-                                        <p className="text-sm text-[rgba(244,245,247,.55)] mt-1">Example: 7 cards left = 7 points</p>
+                                        <p className="text-[rgba(244,245,247,.86)]">Points = Number of cards remaining</p>
+                                        <p className="text-sm text-[rgba(244,245,247,.70)] mt-1">Example: 7 cards left = 7 points</p>
                                     </div>
 
                                     <div className="border border-white/10 rounded-lg p-4">
                                         <h4 className="font-bold text-[#ffab6b] mb-2">10-12 Cards Remaining: 2× Multiplier</h4>
-                                        <p className="text-[rgba(244,245,247,.75)]">Points = (Number of cards remaining) × 2</p>
-                                        <p className="text-sm text-[rgba(244,245,247,.55)] mt-1">Example: 11 cards left = 22 points</p>
+                                        <p className="text-[rgba(244,245,247,.86)]">Points = (Number of cards remaining) × 2</p>
+                                        <p className="text-sm text-[rgba(244,245,247,.70)] mt-1">Example: 11 cards left = 22 points</p>
                                     </div>
 
                                     <div className="border border-white/10 rounded-lg p-4">
                                         <h4 className="font-bold text-[#ff8d96] mb-2">13 Cards Remaining: 3× Multiplier</h4>
-                                        <p className="text-[rgba(244,245,247,.75)]">Points = 13 × 3 = 39 points</p>
-                                        <p className="text-sm text-[rgba(244,245,247,.55)] mt-1">Applies when you didn't play any cards (maximum penalty)</p>
+                                        <p className="text-[rgba(244,245,247,.86)]">Points = 13 × 3 = 39 points</p>
+                                        <p className="text-sm text-[rgba(244,245,247,.70)] mt-1">Applies when you didn't play any cards (maximum penalty)</p>
                                     </div>
                                 </div>
                             </section>
@@ -574,7 +606,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Scoring Example</h3>
                                 <div className="bg-white/[.04] rounded-lg p-4">
                                     <p className="font-semibold text-[#f4f5f7] mb-2">Round Results:</p>
-                                    <ul className="space-y-1 text-[rgba(244,245,247,.75)]">
+                                    <ul className="space-y-1 text-[rgba(244,245,247,.86)]">
                                         <li>• Player A: 0 cards (Winner) = <strong>0 points</strong></li>
                                         <li>• Player B: 5 cards = <strong>5 points</strong> (1× multiplier)</li>
                                         <li>• Player C: 11 cards = <strong>22 points</strong> (2× multiplier)</li>
@@ -585,10 +617,10 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
 
                             <section>
                                 <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Rating System</h3>
-                                <p className="text-[rgba(244,245,247,.75)] mb-2">
+                                <p className="text-[rgba(244,245,247,.86)] mb-2">
                                     Players have a skill rating that updates after each game based on their final placement (1st, 2nd, 3rd, 4th).
                                 </p>
-                                <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.75)]">
+                                <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.86)]">
                                     <li>Starting rating: ~1200</li>
                                     <li>Better placements increase your rating</li>
                                     <li>Worse placements decrease your rating</li>

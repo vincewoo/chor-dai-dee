@@ -6,10 +6,11 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
 
 ### Core Gameplay
 - **Multiplayer support**: Play with up to 4 players in real-time via Socket.io
-- **Bot players**: Intelligent AI opponents with heuristic-based decision-making
-  - "Poker First" strategy to preserve strong 5-card hands
-  - Card counting, strategic passing and per-round opponent modelling
+- **Bot players**: Policy-driven AI opponents with Casual, Balanced, and Competitive difficulty tiers
+  - The deployed server uses the promoted generation-14 PPO policy, with a configuration-only heuristic fallback
+  - Card counting, strategic passing, and per-round opponent modelling
   - Per-bot personality, so four bots at one table do not play identically
+- **Spectator mode**: Watch an in-progress room without occupying a player seat
 - **Voice Chat**: Real-time voice communication with other players (toggleable)
 - **Game modes**: Choose between Short Game (50 points, default) or Standard Game (100 points)
 - **Reconnection support**: Seamlessly rejoin in-progress games if disconnected
@@ -22,21 +23,26 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
 - **Skill-based rating system**: OpenSkill-based ratings (similar to TrueSkill) that update based on game placement
 - **Persistent accounts**: User registration and login with comprehensive stats tracking
 - **Mode-specific stats**: Separate tracking for Short and Standard game modes
+- **Activity feed**: Review recent games, including abandoned games and rage-quit filtering
+
+### Accounts & Identity
+- **Profiles**: Rename your account, change or add a password, and link or unlink Google sign-in
+- **Google authentication**: Sign in with Google or link Google to an existing password account
+- **Persistent avatars**: Pick an animal and tile style that follows your account throughout the app and multiplayer tables
 
 ### UI/UX Features
-- **Hand Helper**: Quick selection tool that finds all valid hands and highlights which ones beat the current pile
+- **Hand Helper**: Finds every available hand type, accents playable responses, keeps non-playable previews clickable, and selects the lowest playable combination first
+- **Helper auto-scroll**: When your turn starts, the helper row scrolls to expose as many playable hand types as possible
+- **Owl Coach**: Optional move suggestions, automatic card selection, explanations, and post-play feedback
 - **Drag & Drop**: Reorder your hand by dragging cards (touch and mouse support)
 - **Four-Color Deck Mode**: Colorblind-friendly option (diamonds blue, clubs green)
+- **Pusoy Dos suit display**: Optional per-player suit remapping to the Filipino ♣ < ♠ < ♥ < ♦ order
 - **Auto-Pass**: Automatically pass when no valid moves are available
-- **Mobile optimized**: Responsive design with dynamic card spacing and swipe support
+- **Low-card alerts**: Opponents with 3 or fewer cards receive a prominent warning
+- **Personalization and accessibility**: Table surfaces, accent colors, sound volume, and reduced motion
+- **Mobile optimized**: Responsive design with dynamic card spacing and touch-friendly controls
 - **Smooth animations**: Card animations and transitions using Framer Motion
-- **Settings panel**: In-game gear icon to adjust preferences (voice, deck colors, etc.)
-
-### Developer Features
-- **Bot Debug Panel**: Real-time analysis of bot decision-making
-  - View reasoning, decision factors, and alternative moves considered
-  - Situation analysis and decision history tracking
-  - Toggle on/off in settings
+- **Settings panel**: In-game gear icon for gameplay, sound, display, and accessibility preferences
 
 ## Quick Start
 
@@ -115,7 +121,7 @@ Each instance uses its own SQLite database (`server/database.sqlite`), providing
 4. **Click "Start Game"** when ready (bots fill empty spots automatically)
 5. **Player with 3 of Diamonds plays first** (round 1 only; subsequent rounds start with previous winner)
 6. **Play valid card combinations** to beat the table, or pass
-7. **Use the Hand Helper** (lightbulb icon) to find valid hands quickly
+7. **Use the Hand Helper chips** to select the lowest playable combination or cycle through alternatives
 8. **Drag cards** to reorder your hand as needed
 9. **First player to empty their hand wins the round**
 10. **Game continues** until someone reaches 50 or 100 points - lowest score wins!
@@ -125,7 +131,7 @@ Each instance uses its own SQLite database (`server/database.sqlite`), providing
 - **Single**: Any single card
 - **Pair**: Two cards of the same rank
 - **Triple**: Three cards of the same rank
-- **Straight**: 5+ consecutive cards (3-4-5-6-7 up to 10-J-Q-K-A; 2 cannot be used in straights)
+- **Straight**: Exactly 5 consecutive cards. Standard straights run from 3-4-5-6-7 through 10-J-Q-K-A; the Hong Kong A-2-3-4-5 and 2-3-4-5-6 straights are also valid
 - **Flush**: 5 cards of the same suit
 - **Full House**: Triple + Pair
 - **Quads (Four of a Kind)**: Four cards of same rank + any card
@@ -181,20 +187,28 @@ Access comprehensive statistics from the lobby:
 
 Statistics are tracked separately for Short and Standard game modes.
 
-## Game Settings
+## Game and Player Settings
 
-Access settings via the gear icon in-game:
+The room host can configure these options in the waiting room:
 
+- **Game length**: Short (50 points) or Standard (100 points)
+- **Bot difficulty**: Casual, Balanced, or Competitive; the choice applies to every bot seat
+- **Room privacy**: Public or private
+
+Access personal settings through the gear icon:
+
+- **Auto-Pass**: Automatically pass when you have no valid moves
+- **Owl Coach**: Add a move-suggestion button beside Pass and Play
 - **Four-Color Deck**: Toggle colorblind-friendly deck colors
   - 2-color mode: Red (Hearts/Diamonds), Black (Spades/Clubs)
   - 4-color mode: Red (Hearts), Blue (Diamonds), Black (Spades), Green (Clubs)
 - **Pusoy Dos Suits**: Display suits in the Filipino Pusoy Dos order (♣ lowest,
   then ♠, ♥, ♦ highest) instead of the underlying Diamonds < Clubs < Hearts <
-  Spades. Purely a display setting — it changes nothing about the rules, the
-  cards you hold, or what other players at the table see, and each player can
-  set it independently.
-- **Auto-Pass**: Automatically pass when you have no valid moves
-- **Bot Debug Panel**: View real-time bot decision analysis (for developers)
+  Spades. This changes only your display, not the cards, rules, or other players'
+  views.
+- **Sound Effects**: Toggle game sounds and adjust volume
+- **Table Theme**: Choose the table surface and accent color
+- **Reduced Motion**: Minimize animated table effects
 
 ## Tech Stack
 
@@ -228,35 +242,35 @@ Access settings via the gear icon in-game:
 chor-dai-dee/
 ├── client/
 │   ├── src/
-│   │   ├── components/        # React components
-│   │   │   ├── Login.jsx
-│   │   │   ├── Lobby.jsx
-│   │   │   ├── GameRoom.jsx
-│   │   │   ├── Stats.jsx
-│   │   │   ├── HandHelper.jsx
-│   │   │   ├── BotDebugPanel.jsx
-│   │   │   └── Card.jsx
-│   │   ├── contexts/          # React contexts
-│   │   │   ├── SuitColorContext.jsx
-│   │   │   └── UserPreferencesContext.jsx
-│   │   ├── utils/             # Utility functions
-│   │   ├── constants/         # Constants and config
-│   │   ├── App.jsx            # Main app component
-│   │   └── main.jsx           # Entry point
+│   │   ├── components/          # Routes and shared React components
+│   │   │   ├── tableV2/         # Current responsive table and v2 screens
+│   │   │   │   ├── ControlsRow.jsx
+│   │   │   │   ├── GameTableDesktop.jsx
+│   │   │   │   └── GameTableMobile.jsx
+│   │   │   ├── modals/          # Settings and confirmation dialogs
+│   │   │   ├── GameRoom.jsx     # Game socket/state orchestrator
+│   │   │   ├── HowToPlay.jsx    # In-game rules and feature guide
+│   │   │   └── Lobby.jsx
+│   │   ├── contexts/            # Voice, suit-color, and preference state
+│   │   ├── hooks/               # Shared React hooks
+│   │   ├── utils/               # Rules, Quick Select, avatars, sound, API
+│   │   ├── constants/           # Game and UI constants
+│   │   ├── App.jsx              # Route composition
+│   │   └── main.jsx             # Client entry point and PWA registration
 │   └── package.json
 │
 └── server/
-    ├── game/                  # Game logic modules
-    │   ├── RoomManager.js     # Room and player management
-    │   ├── Big2Rules.js       # Hand validation
-    │   ├── Deck.js            # Card deck
-    │   ├── BotLogic.js        # AI decision-making
-    │   ├── Scoring.js         # Score calculation
-    │   ├── RatingSystem.js    # Skill rating
-    │   ├── DecisionAnalyzer.js # Advanced analytics
-    │   └── GameModes.js       # Game mode config
-    ├── db.js                  # Database layer
-    ├── index.js               # Server entry point
+    ├── game/                    # Rules, rooms, scoring, ratings, AI, coach
+    │   ├── RoomManager.js
+    │   ├── Big2Rules.js
+    │   ├── BotPolicy.js
+    │   ├── PPOBot.js
+    │   └── Coach.js
+    ├── scripts/                 # Training-data, replay, and benchmark tools
+    ├── test/                    # Server regression tests
+    ├── db.js                    # SQLite data layer
+    ├── gamelog.js               # Replay/training game history
+    ├── index.js                 # Express and Socket.io entry point
     └── package.json
 ```
 

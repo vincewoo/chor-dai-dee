@@ -40,8 +40,8 @@ function GameTableDesktop(props) {
         canKickPlayer, handlePlayerClick,
         sortMode, isCustomOrder, handleSortClick,
         roundResult, nextRound, onOpenSettings, onCreateAccount,
-        sensors, handleDragStart, handleDragEnd,
-        handContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd,
+        sensors, handleDragEnd,
+        handContainerRef,
         voiceState, voiceAudioLevels,
         isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
@@ -268,12 +268,8 @@ function GameTableDesktop(props) {
                                 selectedCards={selectedCards}
                                 onToggle={toggleCard}
                                 sensors={sensors}
-                                onDragStart={handleDragStart}
                                 onDragEnd={handleDragEnd}
                                 handContainerRef={handContainerRef}
-                                onTouchStart={handleTouchStart}
-                                onTouchMove={handleTouchMove}
-                                onTouchEnd={handleTouchEnd}
                                 containerWidth={handAreaWidth}
                                 acc={acc}
                                 fourColor={fourColorMode}

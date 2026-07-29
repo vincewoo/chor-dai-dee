@@ -68,7 +68,6 @@ const GameRoom = ({ user, socket }) => {
         })
     );
 
-    const [isDragging, setIsDragging] = useState(false);
     const [gameState, setGameState] = useState(null);
     const [myHand, setMyHand] = useState([]);
     const [selectedCards, setSelectedCards] = useState([]);
@@ -123,9 +122,6 @@ const GameRoom = ({ user, socket }) => {
 
     // Track voice user count for non-connected users to see who's in voice
     const [voiceUserCount, setVoiceUserCount] = useState(0);
-
-    // Track touch interactions for swipe selection
-    const touchStartRef = useRef(null);
 
     // The socket listeners below are registered once (deps: [socket, navigate]),
     // so the suit lens is read through a ref — putting it in the dep array would
@@ -644,78 +640,6 @@ const GameRoom = ({ user, socket }) => {
         });
     }, []);
 
-    // Swipe Selection Logic
-    const handleTouchStart = (e) => {
-        // Prevent default to stop scrolling if needed, but usually we want to allow scrolling if not swiping on cards
-        // e.preventDefault();
-
-        // Find the card we started on
-        const touch = e.touches[0];
-        const element = document.elementFromPoint(touch.clientX, touch.clientY);
-        const cardElement = element?.closest('[data-card-id]');
-
-        if (cardElement) {
-            const cardId = cardElement.getAttribute('data-card-id');
-            const [rank, suit] = cardId.split('-');
-
-            // Determine if we are "selecting" or "deselecting" based on the start card
-            const isSelected = selectedCards.some(c => c.rank === rank && c.suit === suit);
-            touchStartRef.current = {
-                mode: isSelected ? 'deselect' : 'select',
-                lastToggled: cardId, // Initialize as last toggled to prevent re-toggle if we stay on it
-                startCardId: cardId,
-                startCardProcessed: false
-            };
-
-            // NOTE: We do NOT toggle immediately here.
-            // If it's a tap, the click handler on the Card component will handle it.
-            // If it's a swipe, handleTouchMove will handle it when moving off the start card.
-        } else {
-            touchStartRef.current = null;
-        }
-    };
-
-    const handleTouchMove = (e) => {
-        // Abort if no touch session or if a drag-and-drop operation is active
-        if (!touchStartRef.current || isDragging) return;
-
-        // e.preventDefault(); // Stop scrolling while painting selection
-
-        const touch = e.touches[0];
-        const element = document.elementFromPoint(touch.clientX, touch.clientY);
-        const cardElement = element?.closest('[data-card-id]');
-
-        if (cardElement) {
-            const cardId = cardElement.getAttribute('data-card-id');
-
-            // Check if we need to process the start card (first move off it)
-            if (!touchStartRef.current.startCardProcessed && cardId !== touchStartRef.current.startCardId) {
-                // We have moved off the start card to a NEW card.
-                // Now we must toggle the start card to confirm the action on it (swipe start).
-                const [startRank, startSuit] = touchStartRef.current.startCardId.split('-');
-                toggleCard({ rank: startRank, suit: startSuit });
-                touchStartRef.current.startCardProcessed = true;
-            }
-
-            // If we moved to a new card (different from last toggled)
-            if (cardId !== touchStartRef.current.lastToggled) {
-                const [rank, suit] = cardId.split('-');
-                const isSelected = selectedCards.some(c => c.rank === rank && c.suit === suit);
-                const { mode } = touchStartRef.current;
-
-                // Apply the action if it matches our mode (only select unselected, or deselect selected)
-                if ((mode === 'select' && !isSelected) || (mode === 'deselect' && isSelected)) {
-                    toggleCard({ rank, suit });
-                    touchStartRef.current.lastToggled = cardId;
-                }
-            }
-        }
-    };
-
-    const handleTouchEnd = () => {
-        touchStartRef.current = null;
-    };
-
     // Helper function to reorder selected cards as a group
     const reorderSelectedCards = (hand, selectedCards, overCardId, isDraggingRight) => {
         const selectedSet = new Set(selectedCards.map(c => `${c.rank}-${c.suit}`));
@@ -748,13 +672,8 @@ const GameRoom = ({ user, socket }) => {
         return result;
     };
 
-    const handleDragStart = () => {
-        setIsDragging(true);
-    };
-
     // Handle drag end event
     const handleDragEnd = (event) => {
-        setIsDragging(false);
         const { active, over } = event;
 
         if (!over || active.id === over.id) return;
@@ -953,8 +872,8 @@ const GameRoom = ({ user, socket }) => {
         roundResult, nextRound,
         onOpenSettings: () => setShowSettings(true),
         onCreateAccount: () => navigate('/'),
-        sensors, handleDragStart, handleDragEnd,
-        handContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd,
+        sensors, handleDragEnd,
+        handContainerRef,
         containerWidth, voiceState, voiceAudioLevels,
         isSpectator, viewerIndex,
         onSelectSeat: (player) => setSpectatorSeatId(player?.id ?? null),

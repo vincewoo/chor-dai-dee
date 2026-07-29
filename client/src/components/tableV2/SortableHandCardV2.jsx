@@ -4,8 +4,7 @@ import { memo } from 'react';
 import HandCardFaceV2 from './HandCardFaceV2';
 
 // v2 hand card: overlapping white face with accent selection raise + deuce dot.
-// Keeps the useSortable id scheme (`rank-suit`) and the data-card-id attribute
-// so GameRoom's swipe-select and dnd reorder handlers continue to work.
+// Keeps the useSortable id scheme (`rank-suit`) for drag-and-drop reordering.
 const SortableHandCardV2 = ({
     card, isSelected, onToggle, index, marginLeft, width, height, acc, fourColor, pusoyMode, typeScale,
 }) => {
@@ -30,7 +29,6 @@ const SortableHandCardV2 = ({
         <div
             ref={setNodeRef}
             style={wrapperStyle}
-            data-card-id={`${card.rank}-${card.suit}`}
             {...attributes}
             {...listeners}
         >

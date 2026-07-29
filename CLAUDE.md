@@ -659,17 +659,26 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   registry of looked-up avatars and `useAvatars()` (in `hooks/useAvatars.js`)
   loads the names a component renders.
 - **Settings Panel:** In-game gear icon for preferences
-  - Toggle four-color deck
-  - Toggle auto-pass
+  - Auto-pass and the optional owl coach
+  - Two-/four-color suits and the display-only Pusoy Dos suit lens
+  - Sound toggle/volume, table surface/accent and reduced motion
 
 ### Gameplay Helpers
 - **Quick Select** (`tableV2/ControlsRow.jsx`, backed by `utils/handFinder.js`):
-  - Chips for every hand type currently playable
-  - Chips that can beat the pile are accented; tapping one cycles through the
-    alternatives of that type
+  - Chips for every pair, triple or five-card hand type present in the player's
+    cards; single cards are selected directly from the hand
+  - Playable types use the table accent. Types that cannot beat the pile stay
+    visible in grey and remain clickable; every chip is grey between turns so
+    the player can review their hand while waiting
+  - The first click selects the lowest currently playable combination. Further
+    clicks cycle through the rest, with non-playable lower previews ordered after
+    the playable responses
+  - At the start of a turn, the chip scroller aligns the first playable type to
+    its left inset, bounded by the scroller's maximum position
+  - Reset and Sort live in a separate right-aligned row below the chips
 - **Drag & Drop Card Reordering:**
-  - Reorder hand cards by dragging (@dnd-kit); touch and mouse
-  - Swipe across the fan to select a run of cards
+  - Tap cards to select them or reorder them by dragging (@dnd-kit); touch and
+    mouse. There is deliberately no swipe-across selection gesture.
 
 ### Layout
 - Card size and overlap come from `useHandGeometry`, driven by the active

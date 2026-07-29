@@ -27,8 +27,8 @@ function GameTableMobile(props) {
         canKickPlayer, handlePlayerClick,
         sortMode, isCustomOrder, handleSortClick,
         roundResult, nextRound, onOpenSettings, onCreateAccount,
-        sensors, handleDragStart, handleDragEnd,
-        handContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd,
+        sensors, handleDragEnd,
+        handContainerRef,
         containerWidth, voiceState, voiceAudioLevels,
         isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
@@ -229,12 +229,8 @@ function GameTableMobile(props) {
                     selectedCards={selectedCards}
                     onToggle={toggleCard}
                     sensors={sensors}
-                    onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     handContainerRef={handContainerRef}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
                     containerWidth={containerWidth}
                     acc={acc}
                     fourColor={fourColorMode}
