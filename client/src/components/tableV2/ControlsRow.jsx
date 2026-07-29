@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { findQuickSelectHands, findAvailableHandTypes, HAND_TYPES } from '../../utils/handFinder';
 import { CoachButton } from './CoachBubble';
 
@@ -17,6 +17,7 @@ const SHOWN_HAND_TYPES = [
     HAND_TYPES.PAIR, HAND_TYPES.TRIPLE, HAND_TYPES.STRAIGHT, HAND_TYPES.FLUSH,
     HAND_TYPES.FULL_HOUSE, HAND_TYPES.QUADS, HAND_TYPES.STRAIGHT_FLUSH,
 ];
+const HELPER_ROW_INSET = 12;
 const HAND_SHORT_NAMES = {
     [HAND_TYPES.PAIR]: 'Pair', [HAND_TYPES.TRIPLE]: 'Triple', [HAND_TYPES.STRAIGHT]: 'Straight',
     [HAND_TYPES.FLUSH]: 'Flush', [HAND_TYPES.FULL_HOUSE]: 'Full H.', [HAND_TYPES.QUADS]: 'Quads',
@@ -34,6 +35,8 @@ function ControlsRow({
     const [activeType, setActiveType] = useState(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [activeCanPlay, setActiveCanPlay] = useState(false);
+    const helperRowRef = useRef(null);
+    const chipRefs = useRef({});
 
     const availableHandTypes = useMemo(() => {
         const all = findAvailableHandTypes(playerHand, null);
@@ -45,6 +48,27 @@ function ControlsRow({
         if (!lastPlayedHand) return new Set(availableHandTypes.map(hand => hand.type));
         return new Set(findAvailableHandTypes(playerHand, lastPlayedHand).map(h => h.type));
     }, [availableHandTypes, playerHand, lastPlayedHand, isMyTurn]);
+    const firstPlayableType = SHOWN_HAND_TYPES.find(type => playableHandTypes.has(type));
+
+    useEffect(() => {
+        if (!isMyTurn || !firstPlayableType || !helperRowRef.current) return;
+
+        const chip = chipRefs.current[firstPlayableType];
+        const row = helperRowRef.current;
+        if (!chip) return;
+
+        const rowRect = row.getBoundingClientRect();
+        const chipRect = chip.getBoundingClientRect();
+        const targetLeft = row.scrollLeft + chipRect.left - rowRect.left - HELPER_ROW_INSET;
+        const boundedLeft = Math.max(0, Math.min(targetLeft, row.scrollWidth - row.clientWidth));
+
+        if (Math.abs(row.scrollLeft - boundedLeft) > 1) {
+            row.scrollTo({
+                left: boundedLeft,
+                behavior: rm ? 'auto' : 'smooth',
+            });
+        }
+    }, [isMyTurn, firstPlayableType, rm]);
 
     const isActiveTypeValid = useMemo(
         // The parent clears selectedCards between plays and tricks. Treat that
@@ -92,8 +116,9 @@ function ControlsRow({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, width: '100%' }}>
             {/* Hand-type chips get the full-width scrolling row. */}
             <div
+                ref={helperRowRef}
                 className="scrollbar-thin"
-                style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', padding: '2px 12px', boxSizing: 'border-box' }}
+                style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', padding: `2px ${HELPER_ROW_INSET}px`, boxSizing: 'border-box' }}
             >
                 {showChips && availableHandTypes.map(({ type, count }) => {
                     const isActive = activeType === type && isActiveTypeValid;
@@ -107,6 +132,10 @@ function ControlsRow({
                             : `${HAND_SHORT_NAMES[type]} cannot beat the current hand. Click to preview and cycle anyway.`);
                     return (
                         <button
+                            ref={(element) => {
+                                if (element) chipRefs.current[type] = element;
+                                else delete chipRefs.current[type];
+                            }}
                             key={type}
                             onClick={() => handleTypeClick(type)}
                             title={title}
