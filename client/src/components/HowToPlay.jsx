@@ -486,7 +486,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <li>Create private rooms with shareable room codes</li>
                                         <li>Join existing games with a room code</li>
                                         <li>Automatic bot filling if fewer than 4 players</li>
-                                        <li>The host can choose calibrated Adaptive bots in solo games or full-strength Expert bots</li>
+                                        <li>Bot strength automatically matches the solo player or the average of the humans at the table</li>
                                         <li>Play with any combination of human players and bots</li>
                                         <li>Watch an in-progress room without taking a player seat</li>
                                     </ul>

@@ -6,7 +6,7 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
 
 ### Core Gameplay
 - **Multiplayer support**: Play with up to 4 players in real-time via Socket.io
-- **Bot players**: Policy-driven AI opponents with Casual, Balanced, and Competitive difficulty tiers
+- **Bot players**: Policy-driven AI opponents that calibrate automatically from placement games
   - The deployed server uses the promoted generation-14 PPO policy, with a configuration-only heuristic fallback
   - Card counting, strategic passing, and per-round opponent modelling
   - Per-bot personality, so four bots at one table do not play identically
@@ -192,8 +192,10 @@ Statistics are tracked separately for Short and Standard game modes.
 The room host can configure these options in the waiting room:
 
 - **Game length**: Short (50 points) or Standard (100 points)
-- **Bot difficulty**: Casual, Balanced, or Competitive; the choice applies to every bot seat
 - **Room privacy**: Public or private
+
+Bot strength is automatic: bots use the solo player's placement estimate or
+the average estimate of every human at a mixed table.
 
 Access personal settings through the gear icon:
 

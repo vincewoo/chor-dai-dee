@@ -1,19 +1,20 @@
 # Bot difficulty
 
-The player-facing choices are now:
+Bot strength is selected automatically rather than exposed as a lobby choice:
 
-- `adaptive` (default for new accounts): one continuous PPO temperature chosen
-  from the solo player's persistent calibration and frozen for the complete
-  game. The estimate updates only after a naturally completed game.
-- `competitive`, labelled **Expert** in the client: the promoted PPO actor in
-  pure argmax mode for the complete game.
+- A solo human plays against `adaptive` bots at the continuous PPO temperature
+  chosen from that player's persistent placement calibration.
+- A table with multiple humans averages every player's saved calibration and
+  uses that middle temperature for its `adaptive` bots. Guests and players
+  without any placement history contribute the neutral cold-start estimate.
 
 The former `casual` and `balanced` ids remain valid so old preferences, logs,
 replays and command-line benchmarks keep their meaning. They are no longer
 shown in the waiting-room picker.
 
-Adaptive is solo-only. A single room-wide policy cannot personalize fairly to
-multiple humans, so a mixed human/bot table must use Expert.
+The selected room average is frozen for the complete game. Each registered
+human's placement evidence updates their own estimate after the game; the
+aggregate is never persisted over an individual player.
 
 ## Adaptive calibration
 
@@ -159,19 +160,20 @@ setting, so a bot replacing a departed human was labelled "advanced" while
 running the heuristic. There is no second field here to disagree, so the label
 cannot lie.
 
-`Room.setBotDifficulty` validates the id and rebuilds the policy, and is refused
-outside the `waiting` state — the per-room policy snapshot exists so an
-in-flight game can never change how its bots play, and a mid-game rebuild would
-make the tape describe a bot that never played the earlier rounds.
+`Room.setBotDifficulty` remains an internal primitive for tests, benchmarks and
+historical replay compatibility. Production game boundaries call
+`Room.configureBotPolicyForRoster`, and no socket or preference API exposes the
+choice. The per-room policy snapshot exists so an in-flight game can never
+change how its bots play.
 `replaceWithBot` needs no special handling for the same reason: the replacement
 seat has no policy of its own and is answered for by the room's.
 
 ## Rating
 
 `rating_mu` and `rating_sigma` are now shadow state. They update after every
-completed rated game, including Adaptive solo games, but are removed from stats,
-leaderboard and room API payloads. Players see only Iron, Bronze, Silver, Gold,
-Platinum, Diamond or Champ.
+completed rated game, including Adaptive placement games, but are removed from
+stats, leaderboard and room API payloads. Players see only Iron, Bronze, Silver,
+Gold, Platinum, Diamond or Champ.
 
 The visible rank is persisted separately. Players remain Unranked until
 Adaptive placement is complete, then the shadow score supplies the initial rank

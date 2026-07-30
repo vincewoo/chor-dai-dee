@@ -3,6 +3,7 @@ const assert = require('node:assert');
 
 const {
     defaultCalibration,
+    averageCalibrations,
     summarizeEvidence,
     updateCalibration,
     publicCalibration
@@ -26,6 +27,17 @@ const rounds = (count, { dealRank = 3, placement = 1 } = {}) =>
         dealRank,
         placement
     }));
+
+test('room calibration averages every human estimate', () => {
+    const average = averageCalibrations([
+        { ...defaultCalibration(), lastTemperature: 4, skillMu: 0.8 },
+        { ...defaultCalibration(), lastTemperature: 10, skillMu: 0.5 },
+        { ...defaultCalibration(), lastTemperature: 16, skillMu: 0.2 }
+    ]);
+
+    assert.strictEqual(average.lastTemperature, 10);
+    assert.strictEqual(average.skillMu, 0.5);
+});
 
 test('only confident choices count and each round is capped', () => {
     const evidence = summarizeEvidence({

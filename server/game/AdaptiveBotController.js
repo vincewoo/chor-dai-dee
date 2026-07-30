@@ -163,6 +163,33 @@ function calibrationProgress(calibration) {
     return value.calibrationComplete ? 1 : evidenceProgress(value);
 }
 
+/**
+ * Build one room-level estimate from every human at the table. Temperature is
+ * averaged directly because it is the only calibration value consumed by the
+ * live bot policy; the remaining fields keep the aggregate well-formed for
+ * diagnostics without ever being persisted over an individual player.
+ */
+function averageCalibrations(calibrations = []) {
+    const values = (calibrations.length
+        ? calibrations
+        : [defaultCalibration()]
+    ).map(normalizeCalibration);
+    const mean = key => values.reduce(
+        (sum, value) => sum + value[key], 0) / values.length;
+
+    return {
+        skillMu: mean('skillMu'),
+        skillSigma: mean('skillSigma'),
+        completedGames: Math.floor(mean('completedGames')),
+        meaningfulDecisions: Math.floor(mean('meaningfulDecisions')),
+        completedRounds: Math.floor(mean('completedRounds')),
+        lastTemperature: mean('lastTemperature'),
+        calibrationComplete: values.every(
+            value => value.calibrationComplete),
+        controllerVersion: CONTROLLER_VERSION
+    };
+}
+
 function updateCalibration(previous, rawEvidence) {
     const current = normalizeCalibration(previous);
     const evidence = rawEvidence?.effectiveDecisions === undefined
@@ -259,6 +286,7 @@ module.exports = {
     MAX_PLACEMENT_GAMES,
     defaultCalibration,
     normalizeCalibration,
+    averageCalibrations,
     temperatureForSkill,
     summarizeEvidence,
     updateCalibration,

@@ -217,6 +217,21 @@ test('the tier cannot change once the game is under way', () => {
     assert.strictEqual(room.botPolicy.difficulty, 'casual');
 });
 
+test('the live roster uses adaptive strength without a player choice', () => {
+    const solo = new Room('AUTO-SOLO', 'short');
+    solo.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    assert.deepStrictEqual(
+        solo.configureBotPolicyForRoster(), { success: true });
+    assert.strictEqual(solo.botPolicy.difficulty, 'adaptive');
+
+    const mixed = new Room('AUTO-MIXED', 'short');
+    mixed.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    mixed.addPlayer({ id: 'human-2', name: 'Bob', isBot: false });
+    assert.deepStrictEqual(
+        mixed.configureBotPolicyForRoster(), { success: true });
+    assert.strictEqual(mixed.botPolicy.difficulty, 'adaptive');
+});
+
 test('adaptive effort is frozen for a complete game', () => {
     const room = new Room('ADAPTIVE-FROZEN', 'short');
     room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });

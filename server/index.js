@@ -32,11 +32,37 @@ const gamelogRecorder = require('./gamelogRecorder');
 const { reviewForUser, examplesForUser, ReviewUnavailable } = require('./gamelogReview');
 const { DEFAULT_LIMIT: REVIEW_DEFAULT_LIMIT } = require('./game/MoveReview');
 const {
+    defaultCalibration,
+    averageCalibrations,
     summarizeEvidence,
     updateCalibration
 } = require('./game/AdaptiveBotController');
 
 const app = express();
+
+// One room-wide bot policy has to suit every human who may face it. Registered
+// players contribute their saved placement estimate; guests contribute the
+// neutral cold-start estimate. The arithmetic mean is used directly as the
+// room's Adaptive temperature.
+const configureBotsForRoom = async (room) => {
+    const humans = room.players.filter(player => !player.isBot);
+    const calibrations = await Promise.all(humans.map(async player => {
+        if (player.isGuest) return defaultCalibration();
+        try {
+            const user = await getUserByUsername(player.name);
+            return user
+                ? await getBotCalibration(user.id)
+                : defaultCalibration();
+        } catch (e) {
+            console.error(
+                `Error loading placement calibration for ${player.name}:`, e);
+            return defaultCalibration();
+        }
+    }));
+
+    room.setAdaptiveCalibration(averageCalibrations(calibrations));
+    return room.configureBotPolicyForRoster();
+};
 
 // Determine allowed origins based on environment
 const isProduction = process.env.NODE_ENV === 'production';
@@ -339,36 +365,10 @@ io.on('connection', (socket) => {
                 targetRoomId = roomManager.createRoom();
                 console.log(`Created new room: ${targetRoomId}`);
                 const createdRoom = roomManager.getRoom(targetRoomId);
-                // Pre-fill the creator's remembered difficulty. Best-effort: a
-                // lookup failure just leaves the room at the default, and the
-                // host can still change it in the waiting room. Guests have no
-                // account to remember anything on.
-                if (!isGuest) {
-                    try {
-                        const creator = await getUserByUsername(username);
-                        if (creator) {
-                            const prefs = await getUserPreferences(creator.id);
-                            const calibration = await getBotCalibration(
-                                creator.id);
-                            createdRoom?.setAdaptiveCalibration(calibration);
-                            if (prefs && prefs.bot_difficulty) {
-                                const remembered = ['casual', 'balanced']
-                                    .includes(prefs.bot_difficulty)
-                                    ? 'adaptive'
-                                    : prefs.bot_difficulty;
-                                createdRoom?.setBotDifficulty(
-                                    remembered);
-                            }
-                        }
-                    } catch (e) {
-                        console.error(
-                            'Error applying remembered bot difficulty:', e);
-                    }
-                } else {
-                    // Guests have no persistent estimate, but still receive the
-                    // forgiving cold-start Adaptive game for this room.
-                    createdRoom?.setBotDifficulty('adaptive');
-                }
+                // New rooms always begin on the placement-calibrated policy.
+                // The final policy is selected automatically from the roster
+                // when the host starts the game.
+                createdRoom?.setBotDifficulty('adaptive');
             }
         }
 
@@ -1148,32 +1148,31 @@ io.on('connection', (socket) => {
                 placement: index + 1
             }));
 
-            // Adaptive is a separate, non-competitive estimate. One full game
-            // produces one update, weighted by its actual confident decisions
-            // and completed rounds; the selected temperature is not applied
-            // until startGame() freezes the next game's policy.
-            if (room.botPolicy.difficulty === 'adaptive' &&
-                room.canUseAdaptive()) {
-                const adaptivePlayer = room.players.find(p =>
-                    !p.isBot && !p.joinedMidGame);
-                const placement = adaptivePlayer
-                    ? finalPlacements.find(
-                        item => item.playerId === adaptivePlayer.id)
-                    : null;
-                if (adaptivePlayer && placement) {
-                    const evidence = summarizeEvidence(
-                        room.adaptiveEvidenceFor(
-                            adaptivePlayer, placement.placement));
-                    const updated = updateCalibration(
-                        room.adaptiveCalibration, evidence);
-                    room.setAdaptiveCalibration(updated.calibration);
+            // Every human gets an individual placement update. The room used
+            // their average for this game, but their estimates remain separate
+            // so the next lineup can be averaged from its actual members.
+            if (room.botPolicy.difficulty === 'adaptive') {
+                const adaptivePlayers = room.players.filter(player =>
+                    !player.isBot && !player.isGuest &&
+                    !player.joinedMidGame);
+                for (const adaptivePlayer of adaptivePlayers) {
+                    const placement = finalPlacements.find(
+                        item => item.playerId === adaptivePlayer.id);
+                    if (!placement) continue;
                     try {
-                        const user = adaptivePlayer.isGuest
-                            ? null
-                            : await lookupUser(adaptivePlayer.name);
-                        if (user) {
-                            await saveBotCalibration(
-                                user.id, updated.calibration);
+                        const user = await lookupUser(adaptivePlayer.name);
+                        if (!user) continue;
+                        const currentCalibration = await getBotCalibration(
+                            user.id);
+                        const evidence = summarizeEvidence(
+                            room.adaptiveEvidenceFor(
+                                adaptivePlayer, placement.placement));
+                        const updated = updateCalibration(
+                            currentCalibration, evidence);
+                        await saveBotCalibration(
+                            user.id, updated.calibration);
+                        if (adaptivePlayers.length === 1) {
+                            room.setAdaptiveCalibration(updated.calibration);
                         }
                     } catch (e) {
                         console.error(
@@ -1717,47 +1716,6 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('room_update', room.getGameState());
     });
 
-    socket.on('set_bot_difficulty', async ({ difficulty }) => {
-        const result = roomManager.findRoomBySocketId(socket.id);
-        if (!result) {
-            return socket.emit('error', 'Not in a room');
-        }
-
-        const { room, roomId, player } = result;
-
-        // Bots are shared by the whole table, so the tier is the host's call.
-        if (!player || player.name !== room.hostUsername) {
-            return socket.emit(
-                'error', 'Only the room host can change the bot difficulty');
-        }
-        if (room.gameState !== 'waiting') {
-            return socket.emit(
-                'error', 'Cannot change bot difficulty during game');
-        }
-
-        // Rebuilds the room's bot policy. Refused outside the waiting state, so
-        // an in-flight game can never change how its bots play.
-        if (difficulty === 'adaptive' && !player.isGuest) {
-            try {
-                const user = await getUserByUsername(player.name);
-                if (user) {
-                    room.setAdaptiveCalibration(
-                        await getBotCalibration(user.id));
-                }
-            } catch (e) {
-                console.error(
-                    'Error loading Adaptive calibration:', e);
-            }
-        }
-
-        const setResult = room.setBotDifficulty(difficulty);
-        if (setResult.error) {
-            return socket.emit('error', setResult.error);
-        }
-
-        io.to(roomId).emit('room_update', room.getGameState());
-    });
-
     socket.on('start_game', async ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {
@@ -1768,11 +1726,9 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            if (room.botDifficulty === 'adaptive' &&
-                !room.canUseAdaptive()) {
-                socket.emit(
-                    'error',
-                    'Adaptive bots are available in solo bot games only');
+            const botPolicyResult = await configureBotsForRoom(room);
+            if (botPolicyResult.error) {
+                socket.emit('error', botPolicyResult.error);
                 return;
             }
 
@@ -2169,6 +2125,12 @@ io.on('connection', (socket) => {
         if (!room.allPlayersReady()) {
             const readyStatus = room.getReadyStatus();
             return socket.emit('error', `Waiting for players to be ready: ${readyStatus.notReady.join(', ')}`);
+        }
+
+        // Refresh every player's estimate before averaging the rematch policy.
+        const botPolicyResult = await configureBotsForRoom(room);
+        if (botPolicyResult.error) {
+            return socket.emit('error', botPolicyResult.error);
         }
 
         // Start the rematch
@@ -3007,12 +2969,6 @@ app.get('/api/preferences/:userId', async (req, res) => {
             // Sound defaults to on, so treat a missing column as enabled.
             soundEnabled: (preferences.sound_enabled ?? 1) === 1,
             soundVolume: preferences.sound_volume ?? 0.6,
-            // Pre-fills the bot difficulty of rooms this player creates. Full
-            // strength when the column predates the setting.
-            botDifficulty: ['casual', 'balanced'].includes(
-                preferences.bot_difficulty)
-                ? 'adaptive'
-                : (preferences.bot_difficulty || 'adaptive'),
             // null when the player has never picked one
             avatarAnimal: preferences.avatar_animal ?? null,
             avatarTile: preferences.avatar_tile ?? null
@@ -3026,8 +2982,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, botDifficulty } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, botDifficulty });
+        const { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);

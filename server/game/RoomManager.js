@@ -131,8 +131,9 @@ class Room {
         // Snapshotted per room so an in-flight game never changes policy when
         // configuration changes during a rolling deploy.
         this.botPolicy = createBotPolicy({ difficulty: this.botDifficulty });
-        // Account-owned estimate used only to choose the next complete game's
-        // frozen Adaptive temperature. It never changes live bot behaviour.
+        // Room-level estimate averaged from the current humans before a game.
+        // It chooses the next complete game's frozen Adaptive temperature and
+        // never changes live bot behaviour.
         this.adaptiveCalibration = defaultCalibration();
         this.adaptiveRoundEvidence = {};
         // Hints may use a different policy from the seats. Reactions and
@@ -1004,9 +1005,25 @@ class Room {
     }
 
     /**
-     * Loads the host's persistent estimate while the room is waiting, or stores
-     * the just-completed estimate for the next game. Rebuilding is waiting-only:
-     * a finished room still describes the policy that actually played.
+     * Apply the room-level calibration prepared from its human roster instead
+     * of exposing a player-facing difficulty setting. The server averages the
+     * humans' saved placement estimates before calling this method.
+     */
+    configureBotPolicyForRoster() {
+        if (this.gameState !== 'waiting' &&
+            this.gameState !== 'finished') {
+            return { error: 'Cannot configure bots during game' };
+        }
+
+        this.botDifficulty = 'adaptive';
+        this.refreshBotPolicy();
+        return { success: true };
+    }
+
+    /**
+     * Loads the roster's averaged estimate before a game, or stores a solo
+     * player's just-completed estimate for a direct rematch. Rebuilding is
+     * waiting-only: a finished room still describes the policy that played.
      */
     setAdaptiveCalibration(calibration) {
         this.adaptiveCalibration = normalizeCalibration(calibration);
@@ -1024,8 +1041,8 @@ class Room {
         }
         this.botPolicy = createBotPolicy(options);
         // Bot OpenSkill values are private opponent metadata. Refresh existing
-        // waiting-room bot seats too, so a later difficulty selection cannot
-        // leave the next game's shadow-rating calculation on a stale strength.
+        // waiting-room bot seats too, so a newly averaged roster cannot leave
+        // the next game's shadow-rating calculation on stale strength.
         const botRating = botRatingForDifficulty(
             this.botPolicy.difficulty, this.botPolicy.temperature);
         for (const player of this.players) {
@@ -1036,10 +1053,6 @@ class Room {
                 botRating.mu, botRating.sigma);
         }
         return this.botPolicy;
-    }
-
-    canUseAdaptive() {
-        return this.players.filter(player => !player.isBot).length === 1;
     }
 
     /**
@@ -2117,6 +2130,10 @@ class Room {
 
         // Generate new game ID
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+        // Re-apply the roster estimate at every game boundary. Production
+        // rematches refresh its average from persistence before reaching here.
+        this.configureBotPolicyForRoster();
 
         // Start the game (this will auto-fill bots)
         return this.startGame();

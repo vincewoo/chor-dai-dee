@@ -6,7 +6,6 @@ import { useVoice } from '../contexts/VoiceContext';
 import { GAME_MODES } from '../constants/gameModes';
 import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
-import { useUserPreferences } from '../contexts/UserPreferencesContext';
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -26,8 +25,7 @@ const Lobby = ({ user, socket, setUser }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const voiceContext = useVoice();
-    const { fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode } = useSuitColors();
-    const { setBotDifficulty } = useUserPreferences();
+    const { pusoyMode } = useSuitColors();
 
         // Room lobby state (when returning from a game)
     const [roomLobbyData, setRoomLobbyData] = useState(null);
@@ -64,12 +62,6 @@ const Lobby = ({ user, socket, setUser }) => {
                     players: state.players || prev.players,
                     hostUsername: state.hostUsername || prev.hostUsername,
                     gameMode: state.gameMode || prev.gameMode,
-                    // This is a field whitelist, not a spread: anything the
-                    // server adds to the room state has to be named here or it
-                    // never reaches the waiting room.
-                    botDifficulty: state.botDifficulty || prev.botDifficulty,
-                    adaptiveCalibration:
-                        state.adaptiveCalibration ?? prev.adaptiveCalibration
                 }));
                 if (state.gameMode) {
                     setSelectedGameMode(state.gameMode);
@@ -132,17 +124,6 @@ const Lobby = ({ user, socket, setUser }) => {
             socket.emit('set_game_mode', { roomId: roomLobbyData.roomId, gameMode: mode });
         }
     }, [roomLobbyData, socket]);
-
-    // Deliberately not mirrored into local state the way selectedGameMode is:
-    // the server echoes the room back on room_update, so holding a second copy
-    // here only creates something that can disagree with it.
-    const handleBotDifficultyChange = useCallback((difficulty) => {
-        if (roomLobbyData) {
-            socket.emit('set_bot_difficulty', { difficulty });
-            // Remember it for the next room this player creates.
-            setBotDifficulty(difficulty);
-        }
-    }, [roomLobbyData, socket, setBotDifficulty]);
 
     // Handle voice toggle in room lobby
     const handleVoiceToggle = useCallback(async () => {
@@ -351,14 +332,7 @@ const Lobby = ({ user, socket, setUser }) => {
                 isHost={isHost}
                 hostUsername={roomLobbyData.hostUsername}
                 gameMode={selectedGameMode}
-                botDifficulty={roomLobbyData.botDifficulty}
-                adaptiveCalibration={roomLobbyData.adaptiveCalibration}
-                fourColorMode={fourColorMode}
-                pusoyMode={pusoyMode}
                 onSetGameMode={handleGameModeChange}
-                onSetBotDifficulty={handleBotDifficultyChange}
-                onToggleFourColor={toggleFourColorMode}
-                onTogglePusoy={togglePusoyMode}
                 onStartGame={handleStartGameFromLobby}
                 onLeave={handleLeaveRoomLobby}
                 voice={{

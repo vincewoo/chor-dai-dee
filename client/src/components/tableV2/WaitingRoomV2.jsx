@@ -3,10 +3,6 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import { GAME_MODES } from '../../constants/gameModes';
-import {
-    BOT_DIFFICULTY_ORDER,
-    DEFAULT_BOT_DIFFICULTY
-} from '../../constants/botDifficulty';
 import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -21,16 +17,9 @@ function WaitingRoomV2({
     isHost,
     hostUsername,
     gameMode,
-    botDifficulty,
-    adaptiveCalibration,
-    fourColorMode,
-    pusoyMode,
     isPrivate,
     onSetPrivacy,
     onSetGameMode,
-    onSetBotDifficulty,
-    onToggleFourColor,
-    onTogglePusoy,
     onAddBot,
     onStartGame,
     onLeave,
@@ -69,25 +58,6 @@ function WaitingRoomV2({
 
     const shortSelected = (gameMode || 'standard') === GAME_MODES.SHORT.id;
     const longSelected = (gameMode || 'standard') === GAME_MODES.STANDARD.id;
-    const selectedDifficulty = botDifficulty || DEFAULT_BOT_DIFFICULTY;
-    const adaptiveAvailable = players.filter(player => !player.isBot).length === 1;
-    const adaptiveStatus = (() => {
-        if (selectedDifficulty !== 'adaptive') {
-            return 'Full-strength play for the entire game';
-        }
-        if (!adaptiveAvailable) {
-            return 'Adaptive is available in solo bot games';
-        }
-        if (!adaptiveCalibration) {
-            return 'Placement updates between complete solo games';
-        }
-        if (adaptiveCalibration.complete) {
-            return 'Placement complete · updates after each full game';
-        }
-        return `Placement matches · ${adaptiveCalibration.progress}% · ` +
-            `${adaptiveCalibration.completedGames} of at least ` +
-            `${adaptiveCalibration.minimumGames} games`;
-    })();
 
     const seats = [];
     players.forEach((p, i) => {
@@ -230,29 +200,6 @@ function WaitingRoomV2({
                                 />
                             </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Bot difficulty</div>
-                                <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>
-                                    {adaptiveStatus}
-                                </div>
-                            </div>
-                            <div className="flex gap-[6px]">
-                                {BOT_DIFFICULTY_ORDER.map(tier => (
-                                    <SegButton
-                                        key={tier.id}
-                                        label={tier.label}
-                                        selected={selectedDifficulty === tier.id}
-                                        disabled={!isHost ||
-                                            (tier.id === 'adaptive' &&
-                                                !adaptiveAvailable)}
-                                        accGrad={accGrad}
-                                        acc={acc}
-                                        onClick={() => isHost && onSetBotDifficulty?.(tier.id)}
-                                    />
-                                ))}
-                            </div>
-                        </div>
                         {/* Only the host can change who may join. */}
                         {isHost && onSetPrivacy && (
                             <div className="flex items-center justify-between">
@@ -278,38 +225,6 @@ function WaitingRoomV2({
                                         onClick={() => onSetPrivacy(true)}
                                     />
                                 </div>
-                            </div>
-                        )}
-
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Four-colour deck</div>
-                                <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>Easier to tell suits apart</div>
-                            </div>
-                            <button
-                                onClick={onToggleFourColor}
-                                aria-label="Toggle four-colour deck"
-                                style={{ width: 46, height: 26, borderRadius: 13, border: 'none', background: fourColorMode ? acc : 'rgba(255,255,255,.18)', position: 'relative', cursor: 'pointer', transition: 'background .2s' }}
-                            >
-                                <span style={{ position: 'absolute', top: 3, left: fourColorMode ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 2px 5px rgba(0,0,0,.4)', transition: 'left .2s' }} />
-                            </button>
-                        </div>
-
-                        {/* Display-only suit lens — per-viewer, so it never
-                            changes the game everyone else is playing. */}
-                        {onTogglePusoy && (
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Pusoy Dos suits</div>
-                                    <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>Filipino suit order — ♣ ♠ ♥ ♦</div>
-                                </div>
-                                <button
-                                    onClick={onTogglePusoy}
-                                    aria-label="Toggle Pusoy Dos suit display"
-                                    style={{ width: 46, height: 26, borderRadius: 13, border: 'none', background: pusoyMode ? acc : 'rgba(255,255,255,.18)', position: 'relative', cursor: 'pointer', transition: 'background .2s' }}
-                                >
-                                    <span style={{ position: 'absolute', top: 3, left: pusoyMode ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 2px 5px rgba(0,0,0,.4)', transition: 'left .2s' }} />
-                                </button>
                             </div>
                         )}
 

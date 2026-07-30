@@ -459,10 +459,9 @@ to offer and would otherwise be locked out of its own settings.
 #### Client → Server
 - `join_room` - Create/join a room
 - `set_game_mode` - Set game mode (short/standard) before starting
-- `set_bot_difficulty` - Set the bot tier (casual/balanced/competitive). Host
-  only, and refused once the game starts: the room's bot policy is snapshotted
-  so an in-flight game can never change how its bots play.
 - `start_game` - Begin game (auto-fills bots if < 4 players)
+  Bot strength is automatic: the server averages every human player's saved
+  placement calibration and snapshots that policy for the complete game.
 - `play_card` - Submit a hand
 - `pass_turn` - Pass current turn
 - `next_round` - Start the next round after round ends
@@ -566,9 +565,10 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   denormalize a username, so a retired name leaves no trace anywhere else — and
   once free it can be registered by somebody else. This is the record of which
   account used to hold it.
-- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass, coach_enabled, table theme, sound, bot_difficulty, avatar_animal/avatar_tile).
-  `bot_difficulty` only pre-fills rooms this player creates; the room's own
-  value is authoritative, since bots are shared by the whole table.
+- `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass,
+  coach_enabled, table theme, sound, avatar_animal/avatar_tile). The legacy
+  `bot_difficulty` column remains for migration compatibility but is no longer
+  exposed or used to configure rooms.
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
 - `stats_standard` - Standard game mode statistics
