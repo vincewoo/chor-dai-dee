@@ -7,6 +7,11 @@ const { BotLogic, BOT_LOGIC_VERSION } = require('./BotLogic');
 const { PPOModel } = require('./PPOModel');
 const { PPOBot } = require('./PPOBot');
 const { decisionOptions } = require('./RLValueBot');
+const {
+    MIN_TEMPERATURE,
+    MAX_TEMPERATURE,
+    COLD_START_TEMPERATURE
+} = require('./AdaptiveBotController');
 
 const PPO_POLICY_GENERATION = 14;
 const DEFAULT_PPO_MODEL_PATH = path.resolve(
@@ -14,12 +19,13 @@ const DEFAULT_PPO_MODEL_PATH = path.resolve(
 
 // How hard the bots try. One dial - the softmax temperature the promoted PPO
 // actor is sampled at - because it is the only knob that is unbounded, monotone
-// and measurable. Calibrated in scripts/bench-bot-difficulty.js against a fixed
-// full-strength reference seat; see docs/BOT-DIFFICULTY.md for the table.
+// and measurable. Adaptive supplies a bounded continuous value selected before
+// a complete game; the fixed tiers remain as benchmark and history anchors.
+// See docs/BOT-DIFFICULTY.md for the measured table.
 //
 // `competitive` is argmax and must stay byte-identical to the pre-difficulty
-// behaviour: it is the default, so the great majority of recorded games stay
-// on-distribution for the checkpoint the training pipeline is fitting.
+// behaviour. It remains the low-level factory default for internal callers and
+// fixed-policy benchmarks; new player rooms explicitly choose Adaptive.
 //
 // Note `sample: true` also disables PPOBot's heuristic-override guard, because
 // PPOBot.js gates it on `!sample`. That is deliberate, not an oversight. The
@@ -29,6 +35,13 @@ const DEFAULT_PPO_MODEL_PATH = path.resolve(
 // temperature. Measured, the guard is worth ~0.1pp of win rate, so nothing of
 // value is lost. Do not "fix" the coupling without re-running the bench.
 const BOT_DIFFICULTIES = {
+    adaptive: {
+        id: 'adaptive',
+        label: 'Adaptive',
+        sample: true,
+        temperature: COLD_START_TEMPERATURE,
+        variabilityMultiplier: COLD_START_TEMPERATURE + 1
+    },
     competitive: {
         id: 'competitive',
         label: 'Competitive',
@@ -66,14 +79,37 @@ function resolveDifficulty(difficulty) {
     return tier;
 }
 
+function resolveStrength(difficulty, temperature) {
+    const tier = resolveDifficulty(difficulty);
+    if (tier.id !== 'adaptive' || temperature === undefined ||
+        temperature === null) {
+        return tier;
+    }
+
+    const value = Number(temperature);
+    if (!Number.isFinite(value) ||
+        value < MIN_TEMPERATURE || value > MAX_TEMPERATURE) {
+        throw new Error(
+            `adaptive bot temperature must be between ` +
+            `${MIN_TEMPERATURE} and ${MAX_TEMPERATURE}`);
+    }
+    return {
+        ...tier,
+        temperature: value,
+        variabilityMultiplier: value + 1
+    };
+}
+
 let cachedPPO = null;
 
-function heuristicPolicy({ difficulty } = {}) {
-    const tier = resolveDifficulty(difficulty);
+function heuristicPolicy({ difficulty, temperature } = {}) {
+    const tier = resolveStrength(difficulty, temperature);
     return {
         kind: 'heuristic',
         occupant: 'bot_heuristic',
         difficulty: tier.id,
+        sample: tier.sample,
+        temperature: tier.temperature,
         policyGen: BOT_LOGIC_VERSION,
         policyRef: null,
         // The configuration-only rollback path (BOT_POLICY=heuristic in
@@ -120,14 +156,17 @@ function loadPPO(modelPath) {
 function ppoPolicy({
     modelPath = DEFAULT_PPO_MODEL_PATH,
     overrideMargin = 0.02,
-    difficulty
+    difficulty,
+    temperature
 } = {}) {
-    const tier = resolveDifficulty(difficulty);
+    const tier = resolveStrength(difficulty, temperature);
     const model = loadPPO(modelPath);
     return {
         kind: 'ppo',
         occupant: 'bot_ppo',
         difficulty: tier.id,
+        sample: tier.sample,
+        temperature: tier.temperature,
         policyGen: PPO_POLICY_GENERATION,
         // The artifact, and only the artifact. The difficulty tier is recorded
         // separately (mlog_seat.difficulty) - encoding it here would break
@@ -238,14 +277,19 @@ function createBotPolicy({
     overrideMargin = process.env.BOT_PPO_OVERRIDE_MARGIN === undefined
         ? 0.02
         : Number(process.env.BOT_PPO_OVERRIDE_MARGIN),
-    difficulty = process.env.BOT_DIFFICULTY || DEFAULT_BOT_DIFFICULTY
+    difficulty = process.env.BOT_DIFFICULTY || DEFAULT_BOT_DIFFICULTY,
+    temperature
 } = {}) {
-    if (mode === 'heuristic') return heuristicPolicy({ difficulty });
+    if (mode === 'heuristic') {
+        return heuristicPolicy({ difficulty, temperature });
+    }
     if (mode === 'ppo') {
         if (!Number.isFinite(overrideMargin) || overrideMargin < 0) {
             throw new Error('BOT_PPO_OVERRIDE_MARGIN must be non-negative');
         }
-        return ppoPolicy({ modelPath, overrideMargin, difficulty });
+        return ppoPolicy({
+            modelPath, overrideMargin, difficulty, temperature
+        });
     }
     throw new Error('BOT_POLICY must be heuristic or ppo');
 }

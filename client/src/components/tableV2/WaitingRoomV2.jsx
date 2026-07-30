@@ -22,6 +22,7 @@ function WaitingRoomV2({
     hostUsername,
     gameMode,
     botDifficulty,
+    adaptiveCalibration,
     fourColorMode,
     pusoyMode,
     isPrivate,
@@ -69,6 +70,24 @@ function WaitingRoomV2({
     const shortSelected = (gameMode || 'standard') === GAME_MODES.SHORT.id;
     const longSelected = (gameMode || 'standard') === GAME_MODES.STANDARD.id;
     const selectedDifficulty = botDifficulty || DEFAULT_BOT_DIFFICULTY;
+    const adaptiveAvailable = players.filter(player => !player.isBot).length === 1;
+    const adaptiveStatus = (() => {
+        if (selectedDifficulty !== 'adaptive') {
+            return 'Full-strength play for the entire game';
+        }
+        if (!adaptiveAvailable) {
+            return 'Adaptive is available in solo bot games';
+        }
+        if (!adaptiveCalibration) {
+            return 'Calibrates between complete solo games';
+        }
+        if (adaptiveCalibration.complete) {
+            return 'Calibrated · updates after each full game';
+        }
+        return `Calibrating · ${adaptiveCalibration.progress}% · ` +
+            `${adaptiveCalibration.completedGames} of at least ` +
+            `${adaptiveCalibration.minimumGames} games`;
+    })();
 
     const seats = [];
     players.forEach((p, i) => {
@@ -215,7 +234,7 @@ function WaitingRoomV2({
                             <div>
                                 <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 13 }}>Bot difficulty</div>
                                 <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>
-                                    Applies to every bot seat
+                                    {adaptiveStatus}
                                 </div>
                             </div>
                             <div className="flex gap-[6px]">
@@ -224,7 +243,9 @@ function WaitingRoomV2({
                                         key={tier.id}
                                         label={tier.label}
                                         selected={selectedDifficulty === tier.id}
-                                        disabled={!isHost}
+                                        disabled={!isHost ||
+                                            (tier.id === 'adaptive' &&
+                                                !adaptiveAvailable)}
                                         accGrad={accGrad}
                                         acc={acc}
                                         onClick={() => isHost && onSetBotDifficulty?.(tier.id)}

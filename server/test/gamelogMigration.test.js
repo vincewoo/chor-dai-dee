@@ -118,7 +118,9 @@ test('an existing v1 database gains the difficulty columns', async () => {
             subjectKey: 'Bot 2',
             policyGen: 14,
             policyRef: 'ppo-policy-gpu-v1.json',
-            difficulty: 'casual'
+            difficulty: 'adaptive',
+            botMode: 'adaptive',
+            policyTemperature: 9.5
         }]
     );
     assert.ok(gameKey > 0, 'the seat write was swallowed by guard()');
@@ -126,9 +128,12 @@ test('an existing v1 database gains the difficulty columns', async () => {
     const { get } = await gamelog.openForRead();
 
     const migrated = await get(
-        'SELECT difficulty FROM mlog_seat WHERE game_key = ? AND seat = 0',
+        `SELECT difficulty, bot_mode, policy_temperature
+         FROM mlog_seat WHERE game_key = ? AND seat = 0`,
         [gameKey]);
-    assert.strictEqual(migrated.difficulty, 'casual');
+    assert.strictEqual(migrated.difficulty, 'adaptive');
+    assert.strictEqual(migrated.bot_mode, 'adaptive');
+    assert.strictEqual(migrated.policy_temperature, 9.5);
     assert.strictEqual(
         (await get('SELECT weakened_bots FROM mlog_game WHERE game_key = ?',
             [gameKey])).weakened_bots, 1);
@@ -136,8 +141,11 @@ test('an existing v1 database gains the difficulty columns', async () => {
     // Rows written before tiers existed read as full strength, which is
     // historically accurate -- there was nothing else to be.
     const legacySeat = await get(
-        'SELECT difficulty FROM mlog_seat WHERE game_key = 1 AND seat = 0');
+        `SELECT difficulty, bot_mode, policy_temperature
+         FROM mlog_seat WHERE game_key = 1 AND seat = 0`);
     assert.strictEqual(legacySeat.difficulty, null);
+    assert.strictEqual(legacySeat.bot_mode, null);
+    assert.strictEqual(legacySeat.policy_temperature, null);
     assert.strictEqual(
         (await get('SELECT weakened_bots FROM mlog_game WHERE game_key = 1'))
             .weakened_bots, 0);

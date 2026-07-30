@@ -1,7 +1,50 @@
 # Bot difficulty
 
-Three tiers, chosen by the host in the waiting room, applying to every bot seat
-at that table.
+The player-facing choices are now:
+
+- `adaptive` (default for new accounts): one continuous PPO temperature chosen
+  from the solo player's persistent calibration and frozen for the complete
+  game. The estimate updates only after a naturally completed game.
+- `competitive`, labelled **Expert** in the client: the promoted PPO actor in
+  pure argmax mode for the complete game.
+
+The former `casual` and `balanced` ids remain valid so old preferences, logs,
+replays and command-line benchmarks keep their meaning. They are no longer
+shown in the waiting-room picker.
+
+Adaptive is solo-only. A single room-wide policy cannot personalize fairly to
+multiple humans, so a mixed human/bot table must use Expert.
+
+## Adaptive calibration
+
+`AdaptiveBotController.js` owns a separate, dimensionless skill estimate.
+Calibration measures decision quality to choose a challenge; hidden OpenSkill
+rates the completed result against the frozen bots' independently modelled
+strength. Neither continuous value is shown to the player.
+
+The first five to ten completed games are calibration games. Completion needs
+both a minimum game count and enough evidence, with ten games as the hard stop.
+Evidence is measured rather than inferred from the mode label:
+
+- profile-free move-quality decisions count only when they were scored and the
+  evaluator was confident;
+- at most eight decisions per round count, because choices in one deal and
+  board trajectory are correlated;
+- round placement is compared with the rank of the original deal, after the
+  round ends.
+
+This is why a Standard game usually moves confidence further than a Short game
+without being assigned an arbitrary 2x multiplier. It actually contains more
+rounds and confident decisions.
+
+The next temperature moves by at most 2 during calibration and 0.75 after it,
+with a 0.5 deadband. `Room.startGame()` snapshots that value into `botPolicy`;
+no event inside the game can rebuild it.
+
+Game-log seats record `difficulty='adaptive'`, `bot_mode='adaptive'` and the
+exact `policy_temperature`. `round_stats` records the same effective
+temperature with the deal. Adaptive games set `weakened_bots=1`, so their human
+actions remain available while biased outcome/value labels can be filtered.
 
 ## The dial
 
@@ -22,14 +65,13 @@ assumed — see the table below.
 
 | Tier | knobs | bot `rating_mu` |
 |---|---|---|
-| `competitive` (default) | `sample: false, overrideMargin: 0.02` | 25.0 (`DEFAULT_MU`) |
+| `competitive` (internal fixed-policy default) | `sample: false, overrideMargin: 0.02` | 25.0 (`DEFAULT_MU`) |
 | `balanced` | `sample: true, temperature: 4.5` | 19.83 |
 | `casual` | `sample: true, temperature: 8` | 12.85 |
 
-`competitive` is byte-identical to the pre-difficulty bot. It is the default, so
-a player who never opens the setting sees no change at all, and the great
-majority of recorded games stay on-distribution for the checkpoint the training
-pipeline is fitting.
+`competitive` is byte-identical to the pre-difficulty bot. It remains the
+factory default for internal callers, historical tests and fixed-policy
+benchmarks. New player accounts explicitly start on Adaptive.
 
 ## Measured ladder
 
@@ -105,9 +147,10 @@ T=12 and T=20 are already measured.
 ## Where the tier lives
 
 `room.botPolicy` — the object `checkBotTurn` dispatches through — and nowhere
-else. The seat payload (`getGameState().players[].botDifficulty`), the game log
-(`describeSeats().difficulty`), the bots' seated rating and the round-stats
-record all read `this.botPolicy.difficulty`.
+else. The game log (`describeSeats().difficulty`), the bots' hidden opponent
+rating and the round-stats record all read `this.botPolicy.difficulty`. Seat
+payloads deliberately say only that the occupant is a bot; they expose neither
+the hidden opponent rating nor the exact Adaptive temperature.
 
 This is the direct fix for the failure documented in
 `GAME-STATE-HISTORY-STORE.md`: the previous difficulty attempt kept a decorative
@@ -125,29 +168,42 @@ seat has no policy of its own and is answered for by the room's.
 
 ## Rating
 
-Bots never receive rating updates, but they are rated *opponents*: their `mu` is
-what `calculateNewRatings` weighs a human's placement against. Leaving a weakened
-bot at `DEFAULT_MU` would pay a human the same for beating a casual table as a
+`rating_mu` and `rating_sigma` are now shadow state. They update after every
+completed rated game, including Adaptive solo games, but are removed from stats,
+leaderboard and room API payloads. Players see only Bronze, Silver, Gold or
+Platinum.
+
+The visible rank is persisted separately. Crossing the next rank's hidden
+threshold starts a three-result promotion series; three top-half finishes
+promote. Demotion uses a 75-point hidden buffer plus three bottom-half finishes.
+Consequently one result can move shadow skill without making the public rank
+flicker, and a visible promotion represents sustained play around the next
+level rather than a direct numeric mapping.
+
+Bots never receive rating updates, but they are rated *opponents*: their hidden
+`mu` is what `calculateNewRatings` weighs a human's placement against. Leaving a
+weakened bot at `DEFAULT_MU` would pay a human the same for beating it as a
 full-strength one.
 
 `RatingSystem.botRatingForDifficulty` supplies the per-tier `mu`, and both bot
-creation sites in `RoomManager` use it. Nothing else changed — the values flow
-through `playersWithStats` untouched, so the scoring math is the same. Sigma
-stays at `DEFAULT_SIGMA`: it expresses uncertainty about an opponent, which a
-difficulty tier says nothing about.
+creation sites in `RoomManager` use it. Adaptive interpolates a monotone hidden
+`mu` from the complete game's frozen temperature. The fixed T=4.5 and T=8
+anchors retain their benchmark fits; the rest of the initial curve is
+provisional and is versioned for re-fitting from logged temperatures. Sigma
+stays at `DEFAULT_SIGMA`.
 
 The values are **fitted, not chosen**. For each tier, `mu` is the value at which
 openskill's `predictWin` gives a `DEFAULT_MU` player against three such bots the
 win rate the bench actually measured. An unknown tier falls back to `DEFAULT_MU`
 — an unrecognised setting must never be a route to cheap rating.
 
-Simulated over 900 rounds per tier, expected `mu` drift for a full-strength
+Simulated over 900 rounds per fixed tier, expected `mu` drift for a full-strength
 player is more negative on easier tiers (−0.12 competitive, −0.19 balanced,
 −0.28 casual per round), so farming casual bots loses rating rather than earning
 it. The absolute figures there are an artifact of modelling per-round what is
 actually a per-game update; only the ordering is meaningful. The fit is a fit,
-not an identity — if it proves unstable, the fallback is to skip rating for
-weakened rooms entirely.
+not an identity, so the continuous Adaptive curve must be checked against live
+outcomes and re-fitted rather than treated as permanent.
 
 ## Training data
 

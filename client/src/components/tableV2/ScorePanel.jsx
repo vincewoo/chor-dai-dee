@@ -1,9 +1,10 @@
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { ALERT_RED, isLowCards } from '../../theme/tableTheme';
+import { publicRankLabel } from '../../constants/publicRank';
 
 // Persistent scoreboard rail for the desktop table. On mobile the same numbers
 // live behind the HUD's Info toggle (ScoreStrip); here there is room to keep
-// them on screen, with each player's rating and remaining cards alongside.
+// them on screen, with each player's public rank and remaining cards alongside.
 function ScorePanel({ players, myPlayerId, currentTurn, pointThreshold, acc }) {
     if (!players || players.length === 0) return null;
 
@@ -63,7 +64,9 @@ function ScorePanel({ players, myPlayerId, currentTurn, pointThreshold, acc }) {
                                     <span style={lowCards ? { color: ALERT_RED, fontWeight: 800 } : undefined}>
                                         {p.cardCount} {p.cardCount === 1 ? 'card' : 'cards'}
                                     </span>
-                                    {p.rating !== undefined && ` · ${p.rating}`}
+                                    {` · ${p.isBot
+                                        ? 'Bot'
+                                        : publicRankLabel(p.publicRank)}`}
                                     {p.isDisconnected && ' · DC'}
                                 </div>
                             </div>

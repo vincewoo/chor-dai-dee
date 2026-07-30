@@ -1,37 +1,36 @@
 // client/src/constants/botDifficulty.js
 //
-// How hard the bots at a table try. Mirrors BOT_DIFFICULTIES in
-// server/game/BotPolicy.js, which is authoritative - the server validates the
-// id it is sent and rebuilds its policy from its own table. These are labels.
-//
-// Duplicated across the boundary the same way GAME_MODES is.
+// Player-facing subset of server/game/BotPolicy.js. The server retains the old
+// fixed tier ids for historical logs and preferences; new rooms offer the
+// simpler game-frozen Adaptive / full-strength Expert choice.
 export const BOT_DIFFICULTIES = {
-    CASUAL: {
-        id: 'casual',
-        label: 'Casual',
-        description: 'Makes plenty of mistakes'
+    ADAPTIVE: {
+        id: 'adaptive',
+        label: 'Adaptive',
+        description: 'Calibrates between complete solo games'
     },
-    BALANCED: {
-        id: 'balanced',
-        label: 'Balanced',
-        description: 'Plays well, but not perfectly'
-    },
-    COMPETITIVE: {
+    EXPERT: {
         id: 'competitive',
-        label: 'Competitive',
-        description: 'Always plays its best move',
-        isDefault: true
+        label: 'Expert',
+        description: 'Always plays its strongest move'
     }
 };
 
-export const DEFAULT_BOT_DIFFICULTY = BOT_DIFFICULTIES.COMPETITIVE.id;
+export const DEFAULT_BOT_DIFFICULTY = BOT_DIFFICULTIES.ADAPTIVE.id;
 
-// Easiest first, which is how the picker reads left to right.
 export const BOT_DIFFICULTY_ORDER = [
-    BOT_DIFFICULTIES.CASUAL,
-    BOT_DIFFICULTIES.BALANCED,
-    BOT_DIFFICULTIES.COMPETITIVE
+    BOT_DIFFICULTIES.ADAPTIVE,
+    BOT_DIFFICULTIES.EXPERT
 ];
 
+// Historical fixed tiers remain readable on old rooms and game payloads even
+// though the new lobby offers the simpler Adaptive / Expert choice.
+const LEGACY_LABELS = {
+    casual: 'Casual',
+    balanced: 'Balanced'
+};
+
 export const botDifficultyLabel = (id) =>
-    BOT_DIFFICULTY_ORDER.find(tier => tier.id === id)?.label || null;
+    BOT_DIFFICULTY_ORDER.find(tier => tier.id === id)?.label ||
+    LEGACY_LABELS[id] ||
+    null;

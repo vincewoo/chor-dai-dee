@@ -249,7 +249,7 @@ const Login = ({ setUser }) => {
     return (
         <AuthShell
             title={isRegistering ? 'Create an account' : 'Welcome back'}
-            subtitle={isRegistering ? 'Your stats and rating follow the account.' : "Let's blast some 2s!"}
+            subtitle={isRegistering ? 'Your stats and rank follow the account.' : "Let's blast some 2s!"}
             error={error}
             footer={
                 <button

@@ -55,11 +55,12 @@ Usage: export-training-data.js --out DIR [options]
   --competitive-only    drop games whose bots played below full strength
 
 Games played against weakened bots are INCLUDED by default and tagged with
-weakened_bots (per row) and difficulty (per seat). They are not junk: the human
-moves in them are genuine human decisions, and the bot rows are valid league
-opponents. What is biased is the outcome label -- round utility earned against
-weak opposition overstates how good those actions were -- so condition on the
-tag, reweight, or drop them at training time, where the trade-off is visible.
+weakened_bots (per row), difficulty and the exact policy_temperature (per
+seat). They are not junk: the human moves in them are genuine human decisions,
+and the bot rows are valid league opponents. What is biased is the outcome
+label -- round utility earned against weak opposition overstates how good those
+actions were -- so condition on the tag, reweight, or drop them at training
+time, where the trade-off is visible.
 Labelling is the irreversible half; a filter can always be applied later, but
 data exported without provenance can never be sorted out. Pass this flag when
 fitting on outcome labels and you want the clean subset.
@@ -247,6 +248,9 @@ async function main() {
                     // on rows logged before difficulty tiers existed, which
                     // reads correctly as full strength.
                     difficulty: occupant.difficulty ?? null,
+                    bot_mode: occupant.bot_mode ?? null,
+                    policy_temperature:
+                        occupant.policy_temperature ?? null,
                     rating_mu: occupant.rating_mu,
                     rating_sigma: occupant.rating_sigma,
                     // Their hand was inherited, not chosen. Contaminated for

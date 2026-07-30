@@ -32,6 +32,43 @@ const BOT_RATING_BY_DIFFICULTY = {
     casual: 12.85
 };
 
+// Hidden opponent rating for the continuous Adaptive temperature. The two
+// shipped tier anchors (T=4.5 and T=8) retain their measured fitted values;
+// the remaining monotone anchors are a version-1 extrapolation to be re-fitted
+// from the exact temperatures now written to game logs.
+const BOT_RATING_BY_TEMPERATURE = [
+    { temperature: 1, mu: DEFAULT_MU },
+    { temperature: 3, mu: 22.5 },
+    { temperature: 4.5, mu: 19.83 },
+    { temperature: 6, mu: 17.3 },
+    { temperature: 8, mu: 12.85 },
+    { temperature: 9, mu: 10 },
+    { temperature: 12, mu: 5 },
+    { temperature: 20, mu: -5 }
+];
+
+function botMuForTemperature(temperature) {
+    const value = Number(temperature);
+    if (!Number.isFinite(value)) return DEFAULT_MU;
+    if (value <= BOT_RATING_BY_TEMPERATURE[0].temperature) {
+        return BOT_RATING_BY_TEMPERATURE[0].mu;
+    }
+
+    const last = BOT_RATING_BY_TEMPERATURE[
+        BOT_RATING_BY_TEMPERATURE.length - 1];
+    if (value >= last.temperature) return last.mu;
+
+    for (let index = 1; index < BOT_RATING_BY_TEMPERATURE.length; index++) {
+        const right = BOT_RATING_BY_TEMPERATURE[index];
+        if (value > right.temperature) continue;
+        const left = BOT_RATING_BY_TEMPERATURE[index - 1];
+        const fraction = (value - left.temperature) /
+            (right.temperature - left.temperature);
+        return left.mu + fraction * (right.mu - left.mu);
+    }
+    return DEFAULT_MU;
+}
+
 /**
  * The rating a bot seat is created with, given the room's difficulty tier.
  * Unknown or absent tiers fall back to full strength - an unrecognised setting
@@ -40,11 +77,13 @@ const BOT_RATING_BY_DIFFICULTY = {
  * @param {string} difficulty - tier id
  * @returns {{mu: number, sigma: number}}
  */
-function botRatingForDifficulty(difficulty) {
-    const mu = Object.prototype.hasOwnProperty.call(
-        BOT_RATING_BY_DIFFICULTY, difficulty)
-        ? BOT_RATING_BY_DIFFICULTY[difficulty]
-        : DEFAULT_MU;
+function botRatingForDifficulty(difficulty, temperature) {
+    const mu = difficulty === 'adaptive'
+        ? botMuForTemperature(temperature)
+        : Object.prototype.hasOwnProperty.call(
+            BOT_RATING_BY_DIFFICULTY, difficulty)
+            ? BOT_RATING_BY_DIFFICULTY[difficulty]
+            : DEFAULT_MU;
     return { mu, sigma: DEFAULT_SIGMA };
 }
 
@@ -139,7 +178,9 @@ module.exports = {
     calculateNewRatings,
     calculateDisplayRating,
     botRatingForDifficulty,
+    botMuForTemperature,
     BOT_RATING_BY_DIFFICULTY,
+    BOT_RATING_BY_TEMPERATURE,
     DEFAULT_MU,
     DEFAULT_SIGMA
 };

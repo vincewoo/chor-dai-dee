@@ -58,9 +58,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
     // localStorage value cannot reach the server.
     const [botDifficulty, setBotDifficulty] = useState(() => {
         const saved = localStorage.getItem('botDifficulty');
-        return ['casual', 'balanced', 'competitive'].includes(saved)
-            ? saved
-            : 'competitive';
+        if (saved === 'competitive') return saved;
+        // The old Casual/Balanced choices both migrate to the new calibrated
+        // experience; the server keeps their ids only to read historical data.
+        return 'adaptive';
     });
 
     const [soundEnabled, setSoundEnabled] = useState(() => {

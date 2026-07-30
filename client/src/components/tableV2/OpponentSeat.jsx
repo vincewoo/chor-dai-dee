@@ -3,9 +3,9 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { ALERT_RED, isLowCards, isPass } from '../../theme/tableTheme';
 import VoiceIndicator from '../VoiceIndicator';
 import {
-    DEFAULT_BOT_DIFFICULTY,
-    botDifficultyLabel
-} from '../../constants/botDifficulty';
+    publicRankColor,
+    publicRankLabel
+} from '../../constants/publicRank';
 
 // Seat metrics per size. 'sm' is the original mobile seat; 'lg' gives the
 // desktop table a badge that reads at arm's length.
@@ -97,30 +97,25 @@ function OpponentSeat({
         </div>
     );
 
-    // Weakened bots say so. A competitive bot is the default and carries no
-    // badge, so a table nobody has reconfigured is unchanged.
-    const botTierLabel = player.isBot &&
-        player.botDifficulty &&
-        player.botDifficulty !== DEFAULT_BOT_DIFFICULTY
-        ? botDifficultyLabel(player.botDifficulty)
-        : null;
+    const rankLabel = player.isBot
+        ? 'BOT'
+        : publicRankLabel(player.publicRank);
 
     const nameBlock = (
         <div style={{ textAlign: rightAligned ? 'right' : 'left', minWidth: 0 }}>
             <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: m.name, lineHeight: 1.15 }}>
                 {player.name}
-                {infoOn && player.rating !== undefined && (
-                    <span style={{ color: acc, fontWeight: 600, fontSize: m.rating }}> · {player.rating}</span>
+                {infoOn && rankLabel && (
+                    <span style={{
+                        color: player.isBot
+                            ? 'rgba(244,245,247,.45)'
+                            : publicRankColor(rankLabel),
+                        fontWeight: 700,
+                        fontSize: m.rating
+                    }}> · {rankLabel}</span>
                 )}
                 {player.isDisconnected && (
                     <span style={{ color: ALERT_RED, fontWeight: 800, fontSize: 10, marginLeft: 4 }}>DC</span>
-                )}
-                {/* Only for a bot playing below full strength, so a default
-                    table looks exactly as it did before tiers existed. */}
-                {botTierLabel && (
-                    <span style={{ color: 'rgba(244,245,247,.45)', fontWeight: 700, fontSize: 9, marginLeft: 4 }}>
-                        {botTierLabel.toUpperCase()}
-                    </span>
                 )}
             </div>
             <CountGlyph

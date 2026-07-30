@@ -5,11 +5,17 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
 const { validateUsername, validatePassword } = require('./username');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
-const { calculateNewRatings, calculateDisplayRating } = require('./game/RatingSystem');
+const {
+    calculateNewRatings
+} = require('./game/RatingSystem');
+const {
+    publicRankPayload,
+    publicStatsView
+} = require('./game/PublicRank');
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
 const {
     TIERS: DEAL_TIERS,
@@ -24,6 +30,10 @@ const gamelog = require('./gamelog');
 const gamelogRecorder = require('./gamelogRecorder');
 const { reviewForUser, examplesForUser, ReviewUnavailable } = require('./gamelogReview');
 const { DEFAULT_LIMIT: REVIEW_DEFAULT_LIMIT } = require('./game/MoveReview');
+const {
+    summarizeEvidence,
+    updateCalibration
+} = require('./game/AdaptiveBotController');
 
 const app = express();
 
@@ -288,28 +298,22 @@ io.on('connection', (socket) => {
         // spectator - that would break the hand-emit invariant in emitSpectatorHands.
         dropSpectatorEverywhere(username, socket);
 
-        // Fetch user stats to get rating
-        // Skip database lookup for guest users
-        let ratingMu, ratingSigma, displayRating;
+        // Fetch only the coarse public rank. OpenSkill mu/sigma never enter a
+        // room payload; game-end rating calculations read them directly from
+        // the database.
+        let publicRank = isGuest ? 'Unranked' : 'Bronze';
         if (isGuest) {
-            // Guest users get default rating
-            displayRating = calculateDisplayRating(undefined, undefined);
+            publicRank = 'Unranked';
         } else if (username) {
             try {
                 const stats = await getUserStatsByMode(username, 'standard');
                 if (stats) {
-                    ratingMu = stats.rating_mu;
-                    ratingSigma = stats.rating_sigma;
-                    displayRating = calculateDisplayRating(ratingMu, ratingSigma);
-                } else {
-                    displayRating = calculateDisplayRating(undefined, undefined); // Default
+                    publicRank = publicRankPayload(
+                        stats.public_rank).label;
                 }
             } catch (e) {
                 console.error('Error fetching stats for join_room:', e);
-                displayRating = calculateDisplayRating(undefined, undefined);
             }
-        } else {
-            displayRating = calculateDisplayRating(undefined, undefined);
         }
 
         // OPTION 2: Auto-leave any previous rooms before joining a new one
@@ -331,6 +335,7 @@ io.on('connection', (socket) => {
             } else {
                 targetRoomId = roomManager.createRoom();
                 console.log(`Created new room: ${targetRoomId}`);
+                const createdRoom = roomManager.getRoom(targetRoomId);
                 // Pre-fill the creator's remembered difficulty. Best-effort: a
                 // lookup failure just leaves the room at the default, and the
                 // host can still change it in the waiting room. Guests have no
@@ -340,15 +345,26 @@ io.on('connection', (socket) => {
                         const creator = await getUserByUsername(username);
                         if (creator) {
                             const prefs = await getUserPreferences(creator.id);
+                            const calibration = await getBotCalibration(
+                                creator.id);
+                            createdRoom?.setAdaptiveCalibration(calibration);
                             if (prefs && prefs.bot_difficulty) {
-                                roomManager.getRoom(targetRoomId)
-                                    ?.setBotDifficulty(prefs.bot_difficulty);
+                                const remembered = ['casual', 'balanced']
+                                    .includes(prefs.bot_difficulty)
+                                    ? 'adaptive'
+                                    : prefs.bot_difficulty;
+                                createdRoom?.setBotDifficulty(
+                                    remembered);
                             }
                         }
                     } catch (e) {
                         console.error(
                             'Error applying remembered bot difficulty:', e);
                     }
+                } else {
+                    // Guests have no persistent estimate, but still receive the
+                    // forgiving cold-start Adaptive game for this room.
+                    createdRoom?.setBotDifficulty('adaptive');
                 }
             }
         }
@@ -437,8 +453,7 @@ io.on('connection', (socket) => {
 
             const player = room.reconnectPlayer(username, socket.id, socket);
             if (player) {
-                // Update rating on reconnection just in case it changed
-                player.rating = displayRating;
+                player.publicRank = publicRank;
 
                 socket.join(existingRoomId);
 
@@ -497,7 +512,7 @@ io.on('connection', (socket) => {
 
             const player = targetRoom.reconnectPlayer(username, socket.id, socket);
             if (player) {
-                player.rating = displayRating;
+                player.publicRank = publicRank;
                 socket.join(targetRoomId);
 
                 socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
@@ -553,7 +568,7 @@ io.on('connection', (socket) => {
             id: socket.id,
             name: username,
             socket,
-            rating: displayRating,
+            publicRank,
             isGuest: isGuest || false
         };
 
@@ -908,7 +923,8 @@ io.on('connection', (socket) => {
         // Update ratings for all human players (excluding mid-game joiners).
         // calculateNewRatings returns HUMANS ONLY, so the result cannot be
         // indexed by seat -- key it by name, as the game_over path does.
-        const newRatings = calculateNewRatings(playersWithStats, dragonFinalScores);
+        const newRatings = calculateNewRatings(
+            playersWithStats, dragonFinalScores);
         const ratingUpdates = {};
         newRatings.forEach(r => {
             ratingUpdates[r.name] = { mu: r.mu, sigma: r.sigma };
@@ -933,13 +949,14 @@ io.on('connection', (socket) => {
                     // USERNAME. It was being called with a user id and an
                     // options object, so it rejected 'User not found' on the
                     // first await and a dragon win recorded nothing at all.
-                    await updateUserStatsByMode(
+                    const rankState = await updateUserStatsByMode(
                         player.name,
                         room.gameMode,
                         isWinner,
                         dragonFinalScores[player.id],
                         newRating ? newRating.mu : null,
-                        newRating ? newRating.sigma : null
+                        newRating ? newRating.sigma : null,
+                        dragonPlacements[player.id]
                     );
 
                     // Keeps the placement counters in step with games_played,
@@ -961,8 +978,14 @@ io.on('connection', (socket) => {
                         dragonPlacements[player.id]
                     );
 
-                    if (newRating) {
-                        player.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
+                    if (rankState) {
+                        player.publicRank = rankState.rank.label;
+                        if (rankState.change && player.socket) {
+                            player.socket.emit('rank_update', {
+                                change: rankState.change,
+                                rank: rankState.rank.label
+                            });
+                        }
                     }
                 } catch (e) {
                     console.error("Failed to update stats for", player.name, e);
@@ -1002,6 +1025,10 @@ io.on('connection', (socket) => {
             ...score,
             placement: index + 1
         }));
+
+        // Server-only deal ranks are safe to consume now that the round has
+        // ended. They never influence a move in the round that produced them.
+        room.recordAdaptiveRoundPlacements(roundScoresWithPlacements);
 
         // Save round stats for each player (only registered human players, not guests).
         // One transaction for the whole loop: these are up to 4 independent inserts
@@ -1118,6 +1145,41 @@ io.on('connection', (socket) => {
                 placement: index + 1
             }));
 
+            // Adaptive is a separate, non-competitive estimate. One full game
+            // produces one update, weighted by its actual confident decisions
+            // and completed rounds; the selected temperature is not applied
+            // until startGame() freezes the next game's policy.
+            if (room.botPolicy.difficulty === 'adaptive' &&
+                room.canUseAdaptive()) {
+                const adaptivePlayer = room.players.find(p =>
+                    !p.isBot && !p.joinedMidGame);
+                const placement = adaptivePlayer
+                    ? finalPlacements.find(
+                        item => item.playerId === adaptivePlayer.id)
+                    : null;
+                if (adaptivePlayer && placement) {
+                    const evidence = summarizeEvidence(
+                        room.adaptiveEvidenceFor(
+                            adaptivePlayer, placement.placement));
+                    const updated = updateCalibration(
+                        room.adaptiveCalibration, evidence);
+                    room.setAdaptiveCalibration(updated.calibration);
+                    try {
+                        const user = adaptivePlayer.isGuest
+                            ? null
+                            : await lookupUser(adaptivePlayer.name);
+                        if (user) {
+                            await saveBotCalibration(
+                                user.id, updated.calibration);
+                        }
+                    } catch (e) {
+                        console.error(
+                            'Failed to save Adaptive calibration for',
+                            adaptivePlayer.name, e);
+                    }
+                }
+            }
+
             // Save game history when game completes
             try {
                 const endTime = new Date();
@@ -1197,7 +1259,8 @@ io.on('connection', (socket) => {
             }));
 
             // 2. Calculate new ratings (mid-game joiners excluded from rating calculation)
-            const newRatings = calculateNewRatings(playersWithStats, room.cumulativeScores);
+            const newRatings = calculateNewRatings(
+                playersWithStats, room.cumulativeScores);
 
             // Map new ratings by name for easy lookup
             const ratingUpdates = {};
@@ -1223,13 +1286,16 @@ io.on('connection', (socket) => {
                             const playerPlacement = finalPlacements.find(fp => fp.playerId === p.id);
 
                             // Update game-level stats (wins/losses/points/rating)
-                            await updateUserStatsByMode(
+                            const rankState = await updateUserStatsByMode(
                                 p.name,
                                 room.gameMode,
                                 isWinner,
                                 totalScore,
                                 newRating ? newRating.mu : null,
-                                newRating ? newRating.sigma : null
+                                newRating ? newRating.sigma : null,
+                                playerPlacement
+                                    ? playerPlacement.placement
+                                    : null
                             );
 
                             // Update aggregate stats (placement, plays, passes, penalties)
@@ -1344,9 +1410,16 @@ io.on('connection', (socket) => {
                                 }
                             }
 
-                            // Update player object in room with new rating so UI updates
-                            if (newRating) {
-                                p.rating = calculateDisplayRating(newRating.mu, newRating.sigma);
+                            // Only the coarse rank is allowed back into room
+                            // state; the continuous update remains server-side.
+                            if (rankState) {
+                                p.publicRank = rankState.rank.label;
+                                if (rankState.change && p.socket) {
+                                    p.socket.emit('rank_update', {
+                                        change: rankState.change,
+                                        rank: rankState.rank.label
+                                    });
+                                }
                             }
                         } catch (e) {
                             console.error("Failed to update stats for", p.name, e);
@@ -1617,16 +1690,20 @@ io.on('connection', (socket) => {
             return socket.emit('error', setResult.error);
         }
 
-        // Update all players' ratings for the selected game mode
+        // Update the coarse public rank for the selected game mode. Shadow
+        // rating values stay in the database.
         for (const player of room.players) {
             if (!player.isBot && player.name) {
                 try {
                     const stats = await getUserStatsByMode(player.name, gameMode);
                     if (stats) {
-                        player.rating = calculateDisplayRating(stats.rating_mu, stats.rating_sigma);
+                        player.publicRank = publicRankPayload(
+                            stats.public_rank).label;
                     }
                 } catch (e) {
-                    console.error(`Error updating rating for ${player.name} in mode ${gameMode}:`, e);
+                    console.error(
+                        `Error updating rank for ${player.name} in mode ` +
+                        `${gameMode}:`, e);
                 }
             }
         }
@@ -1635,7 +1712,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('room_update', room.getGameState());
     });
 
-    socket.on('set_bot_difficulty', ({ difficulty }) => {
+    socket.on('set_bot_difficulty', async ({ difficulty }) => {
         const result = roomManager.findRoomBySocketId(socket.id);
         if (!result) {
             return socket.emit('error', 'Not in a room');
@@ -1648,9 +1725,26 @@ io.on('connection', (socket) => {
             return socket.emit(
                 'error', 'Only the room host can change the bot difficulty');
         }
+        if (room.gameState !== 'waiting') {
+            return socket.emit(
+                'error', 'Cannot change bot difficulty during game');
+        }
 
         // Rebuilds the room's bot policy. Refused outside the waiting state, so
         // an in-flight game can never change how its bots play.
+        if (difficulty === 'adaptive' && !player.isGuest) {
+            try {
+                const user = await getUserByUsername(player.name);
+                if (user) {
+                    room.setAdaptiveCalibration(
+                        await getBotCalibration(user.id));
+                }
+            } catch (e) {
+                console.error(
+                    'Error loading Adaptive calibration:', e);
+            }
+        }
+
         const setResult = room.setBotDifficulty(difficulty);
         if (setResult.error) {
             return socket.emit('error', setResult.error);
@@ -1666,6 +1760,14 @@ io.on('connection', (socket) => {
             const player = room.players.find(p => p.id === socket.id);
             if (!player || player.name !== room.hostUsername) {
                 socket.emit('error', 'Only the room host can start the game');
+                return;
+            }
+
+            if (room.botDifficulty === 'adaptive' &&
+                !room.canUseAdaptive()) {
+                socket.emit(
+                    'error',
+                    'Adaptive bots are available in solo bot games only');
                 return;
             }
 
@@ -2902,7 +3004,10 @@ app.get('/api/preferences/:userId', async (req, res) => {
             soundVolume: preferences.sound_volume ?? 0.6,
             // Pre-fills the bot difficulty of rooms this player creates. Full
             // strength when the column predates the setting.
-            botDifficulty: preferences.bot_difficulty || 'competitive',
+            botDifficulty: ['casual', 'balanced'].includes(
+                preferences.bot_difficulty)
+                ? 'adaptive'
+                : (preferences.bot_difficulty || 'adaptive'),
             // null when the player has never picked one
             avatarAnimal: preferences.avatar_animal ?? null,
             avatarTile: preferences.avatar_tile ?? null
@@ -2967,7 +3072,7 @@ app.get('/api/avatars', async (req, res) => {
 app.get('/api/stats/:username', async (req, res) => {
     try {
         const stats = await getUserStats(req.params.username);
-        if (stats) res.json(stats);
+        if (stats) res.json(publicStatsView(stats));
         else res.status(404).json({ error: 'User not found' });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
@@ -2999,7 +3104,7 @@ app.get('/api/stats/:username/detailed', async (req, res) => {
         res.json({
             username,
             mode,
-            gameStats: gameStats || {},
+            gameStats: publicStatsView(gameStats) || {},
             roundAggregates: roundAggregates || {},
             combinationStats: combinationStats || {},
             comeback: comeback || {}

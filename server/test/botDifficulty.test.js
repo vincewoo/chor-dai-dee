@@ -48,10 +48,11 @@ const { BOT_DIFFICULTY_IDS } = require('../db');
 const { Room } = require('../game/RoomManager');
 const { makeRng, deal, playRound } = require('./botHarness');
 
-const ppoPolicy = (difficulty) => createBotPolicy({
+const ppoPolicy = (difficulty, temperature) => createBotPolicy({
     mode: 'ppo',
     modelPath: DEFAULT_PPO_MODEL_PATH,
-    difficulty
+    difficulty,
+    temperature
 });
 
 const freePlayContext = {
@@ -68,17 +69,31 @@ const freePlayContext = {
 test('every tier is defined easiest-last with the documented knobs', () => {
     assert.deepStrictEqual(
         Object.keys(BOT_DIFFICULTIES).sort(),
-        ['balanced', 'casual', 'competitive']
+        ['adaptive', 'balanced', 'casual', 'competitive']
     );
     // competitive is argmax; the other two sample, and casual samples hotter.
     assert.strictEqual(BOT_DIFFICULTIES.competitive.sample, false);
     assert.strictEqual(BOT_DIFFICULTIES.balanced.sample, true);
     assert.strictEqual(BOT_DIFFICULTIES.casual.sample, true);
+    assert.strictEqual(BOT_DIFFICULTIES.adaptive.sample, true);
     assert.ok(
         BOT_DIFFICULTIES.casual.temperature >
         BOT_DIFFICULTIES.balanced.temperature,
         'casual must sample hotter than balanced or the ladder inverts'
     );
+});
+
+test('adaptive accepts a bounded continuous temperature', () => {
+    const policy = ppoPolicy('adaptive', 7.25);
+    assert.strictEqual(policy.difficulty, 'adaptive');
+    assert.strictEqual(policy.temperature, 7.25);
+    assert.strictEqual(policy.sample, true);
+    assert.throws(
+        () => ppoPolicy('adaptive', 2.99),
+        /temperature must be between/);
+    assert.throws(
+        () => ppoPolicy('adaptive', 20.01),
+        /temperature must be between/);
 });
 
 test('the default tier is full strength', () => {
@@ -202,22 +217,45 @@ test('the tier cannot change once the game is under way', () => {
     assert.strictEqual(room.botPolicy.difficulty, 'casual');
 });
 
-test('seat payload and game log agree with the dispatching policy', () => {
+test('adaptive effort is frozen for a complete game', () => {
+    const room = new Room('ADAPTIVE-FROZEN', 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    room.setAdaptiveCalibration({ lastTemperature: 9 });
+    assert.deepStrictEqual(
+        room.setBotDifficulty('adaptive'), { success: true });
+    room.startGame();
+    assert.strictEqual(room.botPolicy.temperature, 9);
+
+    // A completed-game estimate may be prepared while the old game is still
+    // represented by the room, but cannot rebuild its dispatching policy.
+    room.setAdaptiveCalibration({ lastTemperature: 12 });
+    assert.strictEqual(room.botPolicy.temperature, 9);
+
+    room.gameState = 'finished';
+    room.startRematch();
+    assert.strictEqual(room.botPolicy.temperature, 12);
+});
+
+test('game log records bot strength while seat payload hides it', () => {
     for (const tier of Object.keys(BOT_DIFFICULTIES)) {
         const room = seatedRoom(tier);
 
         const seats = room.describeSeats();
         const state = room.getGameState();
         room.players.forEach((player, index) => {
+            assert.strictEqual('rating' in state.players[index], false);
             if (!player.isBot) {
                 assert.strictEqual(seats[index].difficulty, undefined);
-                assert.strictEqual(state.players[index].botDifficulty, null);
+                assert.strictEqual(
+                    state.players[index].publicRank, 'Bronze');
                 return;
             }
             assert.strictEqual(seats[index].difficulty, room.botPolicy.difficulty);
             assert.strictEqual(
-                state.players[index].botDifficulty, room.botPolicy.difficulty);
+                state.players[index].botDifficulty, undefined);
+            assert.strictEqual(state.players[index].publicRank, null);
         });
+        assert.strictEqual(state.botTemperature, undefined);
     }
 });
 
@@ -234,14 +272,16 @@ test('a mid-game bot replacement inherits the room tier', () => {
     assert.strictEqual(
         room.describeSeats()[index].difficulty, room.botPolicy.difficulty);
     assert.strictEqual(
-        room.getGameState().players[index].botDifficulty, 'casual');
+        room.getGameState().players[index].botDifficulty, undefined);
     assert.strictEqual(bot.rating_mu, botRatingForDifficulty('casual').mu);
 });
 
 test('bot seats are created at the tier rating', () => {
     for (const tier of Object.keys(BOT_DIFFICULTIES)) {
-        const expected = botRatingForDifficulty(tier);
-        for (const bot of seatedRoom(tier).players.filter(p => p.isBot)) {
+        const room = seatedRoom(tier);
+        const expected = botRatingForDifficulty(
+            tier, room.botPolicy.temperature);
+        for (const bot of room.players.filter(p => p.isBot)) {
             assert.strictEqual(bot.rating_mu, expected.mu);
             assert.strictEqual(bot.rating_sigma, expected.sigma);
         }
@@ -302,6 +342,15 @@ test('beating easier bots pays less', () => {
         'beating casual bots must pay less than beating balanced ones');
     assert.ok(winAgainst('balanced') < winAgainst('competitive'),
         'beating balanced bots must pay less than beating full-strength ones');
+});
+
+test('Adaptive uses the frozen temperature as hidden rating opposition', () => {
+    assert.ok(
+        botRatingForDifficulty('adaptive', 12).mu <
+        botRatingForDifficulty('adaptive', 6).mu);
+    assert.strictEqual(
+        botRatingForDifficulty('adaptive', 8).mu,
+        botRatingForDifficulty('casual').mu);
 });
 
 // --- cross-module agreement -------------------------------------------------

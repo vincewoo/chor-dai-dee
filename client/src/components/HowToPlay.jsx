@@ -486,7 +486,7 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                         <li>Create private rooms with shareable room codes</li>
                                         <li>Join existing games with a room code</li>
                                         <li>Automatic bot filling if fewer than 4 players</li>
-                                        <li>The host can choose Casual, Balanced, or Competitive bot difficulty</li>
+                                        <li>The host can choose calibrated Adaptive bots in solo games or full-strength Expert bots</li>
                                         <li>Play with any combination of human players and bots</li>
                                         <li>Watch an in-progress room without taking a player seat</li>
                                     </ul>
@@ -616,16 +616,16 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                             </section>
 
                             <section>
-                                <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Rating System</h3>
+                                <h3 className="text-xl font-bold text-[#f4f5f7] mb-3">Rank System</h3>
                                 <p className="text-[rgba(244,245,247,.86)] mb-2">
-                                    Players have a skill rating that updates after each game based on their final placement (1st, 2nd, 3rd, 4th).
+                                    Your hidden skill estimate updates after each completed game, while your public rank changes only after sustained results.
                                 </p>
                                 <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.86)]">
-                                    <li>Starting rating: ~1200</li>
-                                    <li>Better placements increase your rating</li>
-                                    <li>Worse placements decrease your rating</li>
-                                    <li>The system uses OpenSkill (similar to TrueSkill) for fair matchmaking</li>
-                                    <li>Only human players receive rating updates</li>
+                                    <li>Public ranks: Bronze, Silver, Gold, and Platinum</li>
+                                    <li>Promotion requires several strong results at the next rank's skill level</li>
+                                    <li>Demotion also requires sustained results, so one game cannot change your rank</li>
+                                    <li>Adaptive bot strength is included in the hidden OpenSkill calculation</li>
+                                    <li>Bot ratings and exact Adaptive strength are never shown</li>
                                 </ul>
                             </section>
                         </div>

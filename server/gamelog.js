@@ -37,8 +37,10 @@ const { encodeDeal } = require('./game/TapeCodec');
  *   2 - bot difficulty tiers: mlog_seat.difficulty, mlog_game.weakened_bots.
  *       NULL/0 on rows written before tiers existed, which is historically
  *       accurate - every bot before this played at full strength.
+ *   3 - game-frozen Adaptive provenance: mlog_seat.bot_mode and
+ *       mlog_seat.policy_temperature.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const isProduction = process.env.NODE_ENV === 'production';
 const dbPath = process.env.GAMELOG_PATH || (isProduction
@@ -145,12 +147,15 @@ const SCHEMA = [
         subject_key     TEXT,
         policy_gen      INTEGER,
         policy_ref      TEXT,
-        -- Bot difficulty tier for this seat segment ('competitive', 'balanced',
-        -- 'casual'). NULL for humans and guests, and NULL on rows written
-        -- before tiers existed - which reads correctly as full strength.
+        -- Bot difficulty tier for this seat segment ('adaptive',
+        -- 'competitive', 'balanced', 'casual'). NULL for humans and guests,
+        -- and NULL on rows written before tiers existed - which reads
+        -- correctly as full strength.
         -- Deliberately separate from policy_ref: that names the artifact, and
         -- overloading it would break grouping by checkpoint.
         difficulty      TEXT,
+        bot_mode        TEXT,
+        policy_temperature REAL,
         user_id         INTEGER,
         rating_mu       REAL,
         rating_sigma    REAL,
@@ -207,6 +212,8 @@ const SCHEMA = [
 // listed here. Same shape as the additive migrations in db.js.
 const ADDED_COLUMNS = [
     ['mlog_seat', 'difficulty', 'difficulty TEXT'],
+    ['mlog_seat', 'bot_mode', 'bot_mode TEXT'],
+    ['mlog_seat', 'policy_temperature', 'policy_temperature REAL'],
     ['mlog_game', 'weakened_bots', 'weakened_bots INTEGER NOT NULL DEFAULT 0']
 ];
 
@@ -348,14 +355,16 @@ function insertSeat(gameKey, seat) {
     return run(
         `INSERT INTO mlog_seat
             (game_key, seat, segment, from_round, to_round, occupant, subject_key,
-             policy_gen, policy_ref, difficulty, user_id, rating_mu, rating_sigma,
-             joined_mid_game)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             policy_gen, policy_ref, difficulty, bot_mode, policy_temperature,
+             user_id, rating_mu, rating_sigma, joined_mid_game)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(game_key, seat, segment) DO NOTHING`,
         [
             gameKey, seat.seat, seat.segment || 0, seat.fromRound, seat.toRound ?? null,
             seat.occupant, seat.subjectKey ?? null, seat.policyGen ?? null,
-            seat.policyRef ?? null, seat.difficulty ?? null, seat.userId ?? null,
+            seat.policyRef ?? null, seat.difficulty ?? null,
+            seat.botMode ?? null, seat.policyTemperature ?? null,
+            seat.userId ?? null,
             seat.ratingMu ?? null, seat.ratingSigma ?? null,
             seat.joinedMidGame ? 1 : 0
         ]

@@ -67,7 +67,9 @@ const Lobby = ({ user, socket, setUser }) => {
                     // This is a field whitelist, not a spread: anything the
                     // server adds to the room state has to be named here or it
                     // never reaches the waiting room.
-                    botDifficulty: state.botDifficulty || prev.botDifficulty
+                    botDifficulty: state.botDifficulty || prev.botDifficulty,
+                    adaptiveCalibration:
+                        state.adaptiveCalibration ?? prev.adaptiveCalibration
                 }));
                 if (state.gameMode) {
                     setSelectedGameMode(state.gameMode);
@@ -350,6 +352,7 @@ const Lobby = ({ user, socket, setUser }) => {
                 hostUsername={roomLobbyData.hostUsername}
                 gameMode={selectedGameMode}
                 botDifficulty={roomLobbyData.botDifficulty}
+                adaptiveCalibration={roomLobbyData.adaptiveCalibration}
                 fourColorMode={fourColorMode}
                 pusoyMode={pusoyMode}
                 onSetGameMode={handleGameModeChange}

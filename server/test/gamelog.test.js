@@ -75,6 +75,28 @@ test('difficulty and weakened_bots round-trip', async () => {
         ['casual', 'competitive', 'competitive', 'competitive']);
 });
 
+test('adaptive seats record the frozen continuous strength', async () => {
+    const gameKey = await gamelog.openGame(baseGame(), botSeats().map(seat => ({
+        ...seat,
+        difficulty: 'adaptive',
+        botMode: 'adaptive',
+        policyTemperature: 7.25
+    })));
+    const { get } = await gamelog.openForRead();
+    const seat = await get(
+        `SELECT difficulty, bot_mode, policy_temperature
+         FROM mlog_seat WHERE game_key = ? AND seat = 0`,
+        [gameKey]);
+    const game = await get(
+        'SELECT weakened_bots FROM mlog_game WHERE game_key = ?',
+        [gameKey]);
+
+    assert.strictEqual(seat.difficulty, 'adaptive');
+    assert.strictEqual(seat.bot_mode, 'adaptive');
+    assert.strictEqual(seat.policy_temperature, 7.25);
+    assert.strictEqual(game.weakened_bots, 1);
+});
+
 test('a human seat records no difficulty', async () => {
     const gameKey = await gamelog.openGame(baseGame(), [
         { seat: 0, fromRound: 1, occupant: 'human', subjectKey: 'Alice', userId: 7 },

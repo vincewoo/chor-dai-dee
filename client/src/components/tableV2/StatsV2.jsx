@@ -4,6 +4,10 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import { archetypeDescriptions } from '../ArchetypeDialog';
+import {
+    publicRankColor,
+    publicRankLabel
+} from '../../constants/publicRank';
 import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -249,7 +253,7 @@ function StatsV2({
             losses: g.losses || 0,
             winRate: pct(wins, played),
             avgPoints: played > 0 ? ((g.points || 0) / played).toFixed(1) : '0.0',
-            rating: g.rating_mu ? Math.round((g.rating_mu - 3 * g.rating_sigma) * 40 + 1200) : 1200,
+            publicRank: publicRankLabel(g.public_rank),
         };
     }, [stats]);
 
@@ -301,7 +305,7 @@ function StatsV2({
             <div className="mt-6" style={card}>
                 <div style={{ color: TEXT, fontWeight: 800, fontSize: 16 }}>Stats aren't saved for guests</div>
                 <div className="mt-2" style={{ color: MUTED, fontSize: 13, fontWeight: 600, lineHeight: 1.5 }}>
-                    Create an account to track your rating, placements and play style across games.
+                    Create an account to track your rank, placements and play style across games.
                 </div>
                 <div className="mt-4 flex flex-col gap-[10px]">
                     <button
@@ -336,7 +340,7 @@ function StatsV2({
                             <span style={{ background: 'rgba(255,255,255,.14)', color: 'rgba(244,245,247,.85)', fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: '2px 6px', borderRadius: 6, whiteSpace: 'nowrap' }}>RIVAL</span>
                         )}
                     </div>
-                    {/* Rating and rank live in the hero tile — keep this line on volume. */}
+                    {/* Public rank lives in the hero tile — keep this line on volume. */}
                     <div style={{ color: MUTED, fontSize: 11, fontWeight: 600 }}>
                         {loading && !stats
                             ? 'Loading…'
@@ -450,12 +454,18 @@ function OverviewTab({ overview, game, rounds, comeback, rankLabel, acc, rm }) {
             >
                 <div className="flex items-end justify-between">
                     <div>
-                        <div style={{ color: MUTED, fontSize: 10, fontWeight: 800, letterSpacing: 2 }}>RATING</div>
-                        <div style={{ color: acc, fontSize: 38, fontWeight: 800, lineHeight: 1.1, marginTop: 2 }}>{num(overview.rating)}</div>
+                        <div style={{ color: MUTED, fontSize: 10, fontWeight: 800, letterSpacing: 2 }}>RANK</div>
+                        <div style={{
+                            color: publicRankColor(overview.publicRank),
+                            fontSize: 38,
+                            fontWeight: 800,
+                            lineHeight: 1.1,
+                            marginTop: 2
+                        }}>{overview.publicRank}</div>
                     </div>
                     {rankLabel && (
                         <div style={{ background: 'rgba(0,0,0,.34)', border: `1px solid ${acc}55`, borderRadius: 12, padding: '7px 11px', textAlign: 'right' }}>
-                            <div style={{ color: FAINT, fontSize: 9, fontWeight: 800, letterSpacing: 1 }}>RANK</div>
+                            <div style={{ color: FAINT, fontSize: 9, fontWeight: 800, letterSpacing: 1 }}>LEADERBOARD</div>
                             <div style={{ color: acc, fontSize: 15, fontWeight: 800 }}>{rankLabel}</div>
                         </div>
                     )}

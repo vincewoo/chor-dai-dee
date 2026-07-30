@@ -1,6 +1,15 @@
 // server/db.js
 const sqlite3 = require('sqlite3').verbose();
 const { DecisionAnalyzer } = require('./game/DecisionAnalyzer');
+const {
+    defaultCalibration,
+    normalizeCalibration
+} = require('./game/AdaptiveBotController');
+const {
+    PUBLIC_RANKS,
+    updatePublicRank,
+    publicRankPayload
+} = require('./game/PublicRank');
 const bcrypt = require('bcrypt');
 const path = require('path');
 
@@ -111,6 +120,24 @@ function initDb() {
             }
         });
 
+        // Skill estimate used only for selecting a complete Adaptive bot game.
+        // Separate from shadow rating: calibration measures decision quality
+        // to choose a challenge, while OpenSkill rates the completed result
+        // against the frozen bots' independently modelled strength.
+        db.run(`CREATE TABLE IF NOT EXISTS bot_calibration (
+            user_id INTEGER PRIMARY KEY,
+            skill_mu REAL NOT NULL,
+            skill_sigma REAL NOT NULL,
+            completed_games INTEGER NOT NULL DEFAULT 0,
+            meaningful_decisions INTEGER NOT NULL DEFAULT 0,
+            completed_rounds INTEGER NOT NULL DEFAULT 0,
+            last_temperature REAL NOT NULL,
+            calibration_complete INTEGER NOT NULL DEFAULT 0,
+            controller_version INTEGER NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )`);
+
         // Create round_stats table for per-round tracking
         db.run(`CREATE TABLE IF NOT EXISTS round_stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,6 +190,8 @@ function initDb() {
             -- round_stats holds one player's own score and never the table's,
             -- so without this there is no way to ask who was ahead when.
             standing INTEGER,
+            bot_difficulty TEXT,
+            bot_temperature REAL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`);
@@ -511,7 +540,7 @@ function initDb() {
                 // The host's remembered bot-difficulty choice. Only ever
                 // pre-fills a new room; the room's own value is authoritative
                 // once set, since bots are shared by the whole table.
-                addColumn('bot_difficulty', "bot_difficulty TEXT DEFAULT 'competitive'");
+                addColumn('bot_difficulty', "bot_difficulty TEXT DEFAULT 'adaptive'");
                 addColumn('avatar_animal', 'avatar_animal TEXT');
                 addColumn('avatar_tile', 'avatar_tile INTEGER');
             }
@@ -564,6 +593,7 @@ function initDb() {
                 // strength scope splits on it so that farming casual bots does
                 // not read as beating the real thing.
                 addColumn('bot_difficulty', 'bot_difficulty TEXT');
+                addColumn('bot_temperature', 'bot_temperature REAL');
             }
         });
 
@@ -599,6 +629,7 @@ function initDb() {
                     console.log("Adding advanced stats columns to stats tables");
                     addAdvancedStatsColumns();
                 }
+                ensurePublicRankColumns();
             }
         });
 
@@ -739,6 +770,9 @@ function createStatsTable() {
             games_played INTEGER DEFAULT 0,
             rating_mu REAL DEFAULT 25.0,
             rating_sigma REAL DEFAULT 8.333,
+            public_rank INTEGER NOT NULL DEFAULT 0,
+            promotion_progress INTEGER NOT NULL DEFAULT 0,
+            demotion_progress INTEGER NOT NULL DEFAULT 0,
             first_place INTEGER DEFAULT 0,
             second_place INTEGER DEFAULT 0,
             third_place INTEGER DEFAULT 0,
@@ -762,6 +796,9 @@ function createStatsTable() {
             games_played INTEGER DEFAULT 0,
             rating_mu REAL DEFAULT 25.0,
             rating_sigma REAL DEFAULT 8.333,
+            public_rank INTEGER NOT NULL DEFAULT 0,
+            promotion_progress INTEGER NOT NULL DEFAULT 0,
+            demotion_progress INTEGER NOT NULL DEFAULT 0,
             first_place INTEGER DEFAULT 0,
             second_place INTEGER DEFAULT 0,
             third_place INTEGER DEFAULT 0,
@@ -784,6 +821,9 @@ function createStatsTable() {
             games_played INTEGER DEFAULT 0,
             rating_mu REAL DEFAULT 25.0,
             rating_sigma REAL DEFAULT 8.333,
+            public_rank INTEGER NOT NULL DEFAULT 0,
+            promotion_progress INTEGER NOT NULL DEFAULT 0,
+            demotion_progress INTEGER NOT NULL DEFAULT 0,
             first_place INTEGER DEFAULT 0,
             second_place INTEGER DEFAULT 0,
             third_place INTEGER DEFAULT 0,
@@ -801,6 +841,79 @@ function createStatsTable() {
         // Safe now: queued after the CREATE TABLE statements inside serialize().
         createStatsIndexes();
     });
+}
+
+// Add the coarse public-rank state without replacing the existing OpenSkill
+// columns. Existing continuous values become the initial visible rank once;
+// after that, promotion/demotion series own the public value.
+function ensurePublicRankColumns() {
+    const ranked = [...PUBLIC_RANKS]
+        .map((rank, index) => ({ ...rank, index }))
+        .filter(rank => Number.isFinite(rank.entryScore))
+        .sort((left, right) => right.entryScore - left.entryScore);
+    const initialRankCase = ranked.reduce(
+        (sql, rank) =>
+            `${sql} WHEN (1200 + (rating_mu - 3 * rating_sigma) * 40) ` +
+            `>= ${rank.entryScore} THEN ${rank.index}`,
+        'CASE'
+    ) + ' ELSE 0 END';
+
+    for (const table of ['stats', 'stats_short', 'stats_standard']) {
+        db.all(`PRAGMA table_info(${table})`, (err, columns) => {
+            if (err || columns.length === 0) {
+                if (err) {
+                    console.error(
+                        `Error checking public rank columns on ${table}:`,
+                        err.message);
+                }
+                return;
+            }
+
+            const names = new Set(columns.map(column => column.name));
+            const additions = [
+                ['public_rank',
+                    'public_rank INTEGER NOT NULL DEFAULT 0'],
+                ['promotion_progress',
+                    'promotion_progress INTEGER NOT NULL DEFAULT 0'],
+                ['demotion_progress',
+                    'demotion_progress INTEGER NOT NULL DEFAULT 0']
+            ].filter(([name]) => !names.has(name));
+
+            const runNext = (index = 0) => {
+                if (index >= additions.length) return;
+                const [name, definition] = additions[index];
+                db.run(
+                    `ALTER TABLE ${table} ADD COLUMN ${definition}`,
+                    (addErr) => {
+                        if (addErr &&
+                            !addErr.message.includes('duplicate column')) {
+                            console.error(
+                                `Error adding ${name} to ${table}:`,
+                                addErr.message);
+                            return runNext(index + 1);
+                        }
+                        if (name === 'public_rank') {
+                            db.run(
+                                `UPDATE ${table}
+                                 SET public_rank = ${initialRankCase}`,
+                                (updateErr) => {
+                                    if (updateErr) {
+                                        console.error(
+                                            `Error initializing ranks on ${table}:`,
+                                            updateErr.message);
+                                    }
+                                    runNext(index + 1);
+                                }
+                            );
+                        } else {
+                            runNext(index + 1);
+                        }
+                    }
+                );
+            };
+            runNext();
+        });
+    }
 }
 
 function addAdvancedStatsColumns() {
@@ -846,6 +959,9 @@ function migrateStatsTable() {
                 games_played INTEGER DEFAULT 0,
                 rating_mu REAL DEFAULT 25.0,
                 rating_sigma REAL DEFAULT 8.333,
+                public_rank INTEGER NOT NULL DEFAULT 0,
+                promotion_progress INTEGER NOT NULL DEFAULT 0,
+                demotion_progress INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )`);
 
@@ -895,14 +1011,17 @@ const createUser = async (username, password) => {
                     }
                 });
 
-                db.run(`INSERT INTO user_preferences (user_id) VALUES (?)`, [userId], (err) => {
+                db.run(
+                    `INSERT INTO user_preferences (user_id, bot_difficulty)
+                     VALUES (?, 'adaptive')`,
+                    [userId], (err) => {
                     if (err) {
                         reject(err);
                         return;
                     }
                     // All inserts successful
                     resolve({ id: userId, username });
-                });
+                    });
             });
         });
     });
@@ -1017,7 +1136,15 @@ const getUserStatsByMode = (username, gameMode) => {
 };
 
 // Update user stats for a specific game mode
-const updateUserStatsByMode = (username, gameMode, isWin, pointsDelta, newMu = null, newSigma = null) => {
+const updateUserStatsByMode = (
+    username,
+    gameMode,
+    isWin,
+    pointsDelta,
+    newMu = null,
+    newSigma = null,
+    placement = null
+) => {
     return new Promise((resolve, reject) => {
         db.get(`SELECT id FROM users WHERE username = ?`, [username], (err, row) => {
             if (err) return reject(err);
@@ -1033,27 +1160,52 @@ const updateUserStatsByMode = (username, gameMode, isWin, pointsDelta, newMu = n
             db.run(initQuery, [userId], (err) => {
                 if (err) return reject(err);
 
-                // Build update query
-                let query = `UPDATE ${tableName} SET
-                    wins = wins + ?,
-                    losses = losses + ?,
-                    points = points + ?,
-                    games_played = games_played + 1`;
+                db.get(
+                    `SELECT rating_mu, rating_sigma, public_rank,
+                            promotion_progress, demotion_progress
+                     FROM ${tableName} WHERE user_id = ?`,
+                    [userId],
+                    (stateErr, current) => {
+                        if (stateErr) return reject(stateErr);
 
-                const params = [winInc, lossInc, pointsDelta];
+                        // Build update query. The continuous values are shadow
+                        // state; only the coarse rank computed here is public.
+                        let query = `UPDATE ${tableName} SET
+                            wins = wins + ?,
+                            losses = losses + ?,
+                            points = points + ?,
+                            games_played = games_played + 1`;
+                        const params = [winInc, lossInc, pointsDelta];
+                        let rankState = null;
 
-                if (newMu !== null && newSigma !== null) {
-                    query += `, rating_mu = ?, rating_sigma = ?`;
-                    params.push(newMu, newSigma);
-                }
+                        if (newMu !== null && newSigma !== null) {
+                            rankState = updatePublicRank(current, {
+                                mu: newMu,
+                                sigma: newSigma,
+                                placement
+                            });
+                            query += `, rating_mu = ?, rating_sigma = ?,
+                                public_rank = ?,
+                                promotion_progress = ?,
+                                demotion_progress = ?`;
+                            params.push(
+                                newMu,
+                                newSigma,
+                                rankState.publicRank,
+                                rankState.promotionProgress,
+                                rankState.demotionProgress
+                            );
+                        }
 
-                query += ` WHERE user_id = ?`;
-                params.push(userId);
+                        query += ` WHERE user_id = ?`;
+                        params.push(userId);
 
-                db.run(query, params, (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                });
+                        db.run(query, params, (updateErr) => {
+                            if (updateErr) return reject(updateErr);
+                            resolve(rankState);
+                        });
+                    }
+                );
             });
         });
     });
@@ -1082,8 +1234,8 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             deal_strength_raw, deal_tier, deal_rank,
             deal_baseline_version, human_opponents,
             deal_plays_needed, controls_dealt, controls_played, controls_won,
-            min_hand_size, standing, bot_difficulty
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            min_hand_size, standing, bot_difficulty, bot_temperature
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             gameId, userId, gameMode, roundData.roundNumber, roundData.placement,
@@ -1115,6 +1267,9 @@ const saveRoundStats = (gameId, userId, gameMode, roundData) => {
             roundData.standing ?? null,
             roundData.dealStrength
                 ? (roundData.dealStrength.botDifficulty ?? null)
+                : null,
+            roundData.dealStrength
+                ? (roundData.dealStrength.botTemperature ?? null)
                 : null
         ];
 
@@ -1790,6 +1945,57 @@ const updateVarianceScores = async (userId, gameMode) => {
     }
 };
 
+// ========== ADAPTIVE BOT CALIBRATION ==========
+
+const getBotCalibration = (userId) => new Promise((resolve, reject) => {
+    db.get(
+        `SELECT * FROM bot_calibration WHERE user_id = ?`,
+        [userId],
+        (err, row) => {
+            if (err) return reject(err);
+            resolve(normalizeCalibration(row || defaultCalibration()));
+        }
+    );
+});
+
+const saveBotCalibration = (userId, value) => {
+    const calibration = normalizeCalibration(value);
+    return new Promise((resolve, reject) => {
+        db.run(
+            `INSERT INTO bot_calibration
+                (user_id, skill_mu, skill_sigma, completed_games,
+                 meaningful_decisions, completed_rounds, last_temperature,
+                 calibration_complete, controller_version, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+             ON CONFLICT(user_id) DO UPDATE SET
+                 skill_mu = excluded.skill_mu,
+                 skill_sigma = excluded.skill_sigma,
+                 completed_games = excluded.completed_games,
+                 meaningful_decisions = excluded.meaningful_decisions,
+                 completed_rounds = excluded.completed_rounds,
+                 last_temperature = excluded.last_temperature,
+                 calibration_complete = excluded.calibration_complete,
+                 controller_version = excluded.controller_version,
+                 updated_at = CURRENT_TIMESTAMP`,
+            [
+                userId,
+                calibration.skillMu,
+                calibration.skillSigma,
+                calibration.completedGames,
+                calibration.meaningfulDecisions,
+                calibration.completedRounds,
+                calibration.lastTemperature,
+                calibration.calibrationComplete ? 1 : 0,
+                calibration.controllerVersion
+            ],
+            (err) => {
+                if (err) return reject(err);
+                resolve(calibration);
+            }
+        );
+    });
+};
+
 // ========== USER PREFERENCES FUNCTIONS ==========
 
 // Get user preferences
@@ -1797,7 +2003,9 @@ const updateVarianceScores = async (userId, gameMode) => {
 // of BOT_DIFFICULTIES from game/BotPolicy.js, which would pull the whole bot
 // stack into the database layer; botDifficulty.test.js asserts the two lists
 // agree, so they cannot drift silently.
-const BOT_DIFFICULTY_IDS = ['competitive', 'balanced', 'casual'];
+const BOT_DIFFICULTY_IDS = [
+    'adaptive', 'competitive', 'balanced', 'casual'
+];
 
 const getUserPreferences = (userId) => {
     return new Promise((resolve, reject) => {
@@ -1815,7 +2023,7 @@ const getUserPreferences = (userId) => {
                     reduced_motion: 0,
                     sound_enabled: 1,
                     sound_volume: 0.6,
-                    bot_difficulty: 'competitive',
+                    bot_difficulty: 'adaptive',
                     avatar_animal: null,
                     avatar_tile: null
                 });
@@ -1850,10 +2058,10 @@ const updateUserPreferences = async (userId, preferences) => {
     // handed straight to the room policy factory, which throws on an unknown
     // tier, and an unrecognised setting must not become a way to get one.
     const rawDifficulty = pick(
-        preferences.botDifficulty, existing.bot_difficulty ?? 'competitive');
+        preferences.botDifficulty, existing.bot_difficulty ?? 'adaptive');
     const botDifficultyValue = BOT_DIFFICULTY_IDS.includes(rawDifficulty)
         ? rawDifficulty
-        : 'competitive';
+        : 'adaptive';
     // Avatar stays NULL until the player picks one; callers validate the emoji
     // against the picker's set before it gets here.
     const avatarAnimalValue = pick(preferences.avatarAnimal, existing.avatar_animal ?? null) ?? null;
@@ -2318,23 +2526,23 @@ const getLeaderboard = (options = {}) => {
         let orderByClause;
         switch (sortBy) {
             case 'games':
-                orderByClause = 'games_played DESC, rating_display DESC';
+                orderByClause = 'games_played DESC, public_rank DESC';
                 break;
             case 'wins':
-                orderByClause = 'wins DESC, rating_display DESC';
+                orderByClause = 'wins DESC, public_rank DESC';
                 break;
             case 'winRate':
                 orderByClause = 'win_rate DESC, games_played DESC';
                 break;
             case 'firstPlace':
-                orderByClause = 'first_place DESC, rating_display DESC';
+                orderByClause = 'first_place DESC, public_rank DESC';
                 break;
             case 'avgPlacement':
-                orderByClause = 'avg_placement ASC, rating_display DESC';
+                orderByClause = 'avg_placement ASC, public_rank DESC';
                 break;
             case 'rating':
             default:
-                orderByClause = 'rating_display DESC, games_played DESC';
+                orderByClause = 'public_rank DESC, wins DESC';
                 break;
         }
 
@@ -2344,9 +2552,7 @@ const getLeaderboard = (options = {}) => {
                 s.games_played,
                 s.wins,
                 s.losses,
-                s.rating_mu,
-                s.rating_sigma,
-                (1200 + (s.rating_mu - 3 * s.rating_sigma) * 40) as rating_display,
+                s.public_rank,
                 s.first_place,
                 s.second_place,
                 s.third_place,
@@ -2377,7 +2583,10 @@ const getLeaderboard = (options = {}) => {
 
         db.all(query, [gameMode, minGames, limit, offset], (err, rows) => {
             if (err) return reject(err);
-            resolve(rows || []);
+            resolve((rows || []).map(row => ({
+                ...row,
+                public_rank: publicRankPayload(row.public_rank)
+            })));
         });
     });
 };
@@ -2387,7 +2596,7 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
     return new Promise((resolve, reject) => {
         const tableName = gameMode === 'short' ? 'stats_short' : 'stats_standard';
 
-        const RATING = '(1200 + (s.rating_mu - 3 * s.rating_sigma) * 40)';
+        const PUBLIC_RANK = 's.public_rank';
         const WIN_RATE = 'CASE WHEN s.games_played > 0 THEN CAST(s.wins AS REAL) / s.games_played ELSE 0 END';
         // Must match getLeaderboard's expression exactly, or a player's rank
         // disagrees with the list they are ranked in. Games, not rounds -- see
@@ -2400,23 +2609,23 @@ const getPlayerRank = (username, gameMode = 'standard', sortBy = 'rating') => {
         let primary, tiebreak, betterCmp;
         switch (sortBy) {
             case 'games':
-                primary = 's.games_played'; tiebreak = RATING; betterCmp = '>';
+                primary = 's.games_played'; tiebreak = PUBLIC_RANK; betterCmp = '>';
                 break;
             case 'wins':
-                primary = 's.wins'; tiebreak = RATING; betterCmp = '>';
+                primary = 's.wins'; tiebreak = PUBLIC_RANK; betterCmp = '>';
                 break;
             case 'winRate':
                 primary = WIN_RATE; tiebreak = 's.games_played'; betterCmp = '>';
                 break;
             case 'firstPlace':
-                primary = 's.first_place'; tiebreak = RATING; betterCmp = '>';
+                primary = 's.first_place'; tiebreak = PUBLIC_RANK; betterCmp = '>';
                 break;
             case 'avgPlacement':
-                primary = AVG_PLACEMENT; tiebreak = RATING; betterCmp = '<';
+                primary = AVG_PLACEMENT; tiebreak = PUBLIC_RANK; betterCmp = '<';
                 break;
             case 'rating':
             default:
-                primary = RATING; tiebreak = 's.games_played'; betterCmp = '>';
+                primary = PUBLIC_RANK; tiebreak = 's.wins'; betterCmp = '>';
                 break;
         }
 
@@ -2503,14 +2712,17 @@ const createGoogleUser = async (username, googleId, googleEmail) => {
                     }
                 });
 
-                db.run(`INSERT INTO user_preferences (user_id) VALUES (?)`, [userId], (err) => {
+                db.run(
+                    `INSERT INTO user_preferences (user_id, bot_difficulty)
+                     VALUES (?, 'adaptive')`,
+                    [userId], (err) => {
                     if (err) {
                         reject(err);
                         return;
                     }
                     // All inserts successful
                     resolve({ id: userId, username, googleId, googleEmail });
-                });
+                    });
             });
         });
     });
@@ -2657,6 +2869,8 @@ module.exports = {
     // User preferences
     getUserPreferences,
     updateUserPreferences,
+    getBotCalibration,
+    saveBotCalibration,
     BOT_DIFFICULTY_IDS,
     getAvatarsByUsernames,
     // Leaderboard

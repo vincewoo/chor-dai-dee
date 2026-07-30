@@ -260,6 +260,17 @@ const GameRoom = ({ user, socket }) => {
             setGameOver({ ...data, isDragonWin: true });
         });
 
+        socket.on('rank_update', ({ change, rank }) => {
+            const promoted = change === 'promoted';
+            setNotification({
+                type: promoted ? 'success' : 'warning',
+                message: promoted
+                    ? `Promoted to ${rank}!`
+                    : `Rank adjusted to ${rank}`
+            });
+            setTimeout(() => setNotification(null), 5000);
+        });
+
         socket.on('error', (err) => {
             // The server writes errors in underlying suit notation; rewrite the
             // one that names a card for whichever lens this viewer is using.
@@ -360,6 +371,7 @@ const GameRoom = ({ user, socket }) => {
             socket.off('round_over');
             socket.off('game_over');
             socket.off('dragon_win');
+            socket.off('rank_update');
             socket.off('error');
             socket.off('player_disconnected');
             socket.off('player_reconnected');
@@ -1108,6 +1120,7 @@ const GameRoom = ({ user, socket }) => {
                     hostUsername={gameState.hostUsername}
                     gameMode={gameState.gameMode}
                     botDifficulty={gameState.botDifficulty}
+                    adaptiveCalibration={gameState.adaptiveCalibration}
                     fourColorMode={fourColorMode}
                     pusoyMode={pusoyMode}
                     isPrivate={gameState.isPrivate}

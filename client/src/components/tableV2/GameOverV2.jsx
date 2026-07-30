@@ -4,8 +4,8 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
-// mockup. Standings are derived from the game_over payload; rating deltas are
-// not available client-side, so they're omitted. Post-game action buttons are
+// mockup. Standings are derived from the game_over payload; shadow-rating
+// changes stay server-side. Post-game action buttons are
 // passed as children (all wiring stays in GameRoom).
 function GameOverV2({ gameOver, myName, children }) {
     const { acc, accGrad, soft, rm } = useTableTheme();

@@ -21,6 +21,11 @@ const { evaluateMove } = require('./MoveQuality');
 const Coach = require('./Coach');
 const { GameTape } = require('./GameTape');
 const { SOURCE, FLAG, clampThinkMs } = require('./TapeCodec');
+const {
+    defaultCalibration,
+    normalizeCalibration,
+    publicCalibration
+} = require('./AdaptiveBotController');
 
 // Praise notes the coach may hand one player in one round. Corrections are
 // unlimited - a mistake is worth hearing about whenever it happens - but an owl
@@ -125,6 +130,10 @@ class Room {
         // Snapshotted per room so an in-flight game never changes policy when
         // configuration changes during a rolling deploy.
         this.botPolicy = createBotPolicy({ difficulty: this.botDifficulty });
+        // Account-owned estimate used only to choose the next complete game's
+        // frozen Adaptive temperature. It never changes live bot behaviour.
+        this.adaptiveCalibration = defaultCalibration();
+        this.adaptiveRoundEvidence = {};
         // Hints may use a different policy from the seats. Reactions and
         // grading remain deterministic; this advisor is read only.
         this.coachAdvisor = createCoachAdvisor();
@@ -441,9 +450,10 @@ class Room {
 
         const botId = `bot_${Date.now()}_replacement`;
 
-        // Same tier as every other bot in the room - it is answered for by the
-        // room's single botPolicy, so a replacement seat cannot mismatch.
-        const botRating = botRatingForDifficulty(this.botPolicy.difficulty);
+        // Same hidden opponent rating as every other bot in the room, including
+        // the exact frozen Adaptive temperature.
+        const botRating = botRatingForDifficulty(
+            this.botPolicy.difficulty, this.botPolicy.temperature);
 
         const botPlayer = {
             id: botId,
@@ -577,7 +587,7 @@ class Room {
             id: newPlayer.id,
             name: newPlayer.name,
             socket: newPlayer.socket,
-            rating: newPlayer.rating,
+            publicRank: newPlayer.publicRank,
             hand: oldBot.hand, // Transfer the bot's hand to the human
             isBot: false,
             isDisconnected: false,
@@ -718,10 +728,18 @@ class Room {
         // Update activity timestamp
         this.updateActivity();
 
+        // The policy artifact is stable, while Adaptive effort is selected
+        // once here from the latest completed-game calibration and then frozen
+        // until this game ends.
+        if (this.botDifficulty === 'adaptive') {
+            this.refreshBotPolicy();
+        }
+
         if (this.players.length < 4) {
-            // Auto-fill with bots if < 4. A weakened bot is a weaker opponent,
-            // so it is seated at a lower rating and beating it pays less.
-            const botRating = botRatingForDifficulty(this.botPolicy.difficulty);
+            // Auto-fill with bots if < 4. Their hidden opponent rating follows
+            // the fixed tier or exact frozen Adaptive temperature.
+            const botRating = botRatingForDifficulty(
+                this.botPolicy.difficulty, this.botPolicy.temperature);
 
             while (this.players.length < 4) {
                 const botId = `bot_${Date.now()}_${this.players.length}`;
@@ -761,6 +779,7 @@ class Room {
             this.tier3DecisionTracking = {};
             this.pendingRiskyDecisions = {};
             this.pendingControlPlays = {};
+            this.adaptiveRoundEvidence = {};
         }
 
         this.roundNumber++;
@@ -931,7 +950,8 @@ class Room {
                 // The "vs bots" hand-strength scope exists so that farming bots
                 // does not read as general strength. Pooling every tier into it
                 // would defeat that, so the tier travels with the round.
-                botDifficulty: this.botPolicy.difficulty
+                botDifficulty: this.botPolicy.difficulty,
+                botTemperature: this.botPolicy.temperature
             };
         });
     }
@@ -978,8 +998,80 @@ class Room {
         }
 
         this.botDifficulty = difficulty;
-        this.botPolicy = createBotPolicy({ difficulty });
+        this.refreshBotPolicy();
         return { success: true };
+    }
+
+    /**
+     * Loads the host's persistent estimate while the room is waiting, or stores
+     * the just-completed estimate for the next game. Rebuilding is waiting-only:
+     * a finished room still describes the policy that actually played.
+     */
+    setAdaptiveCalibration(calibration) {
+        this.adaptiveCalibration = normalizeCalibration(calibration);
+        if (this.gameState === 'waiting' &&
+            this.botDifficulty === 'adaptive') {
+            this.refreshBotPolicy();
+        }
+        return this.adaptiveCalibration;
+    }
+
+    refreshBotPolicy() {
+        const options = { difficulty: this.botDifficulty };
+        if (this.botDifficulty === 'adaptive') {
+            options.temperature = this.adaptiveCalibration.lastTemperature;
+        }
+        this.botPolicy = createBotPolicy(options);
+        // Bot OpenSkill values are private opponent metadata. Refresh existing
+        // waiting-room bot seats too, so a later difficulty selection cannot
+        // leave the next game's shadow-rating calculation on a stale strength.
+        const botRating = botRatingForDifficulty(
+            this.botPolicy.difficulty, this.botPolicy.temperature);
+        for (const player of this.players) {
+            if (!player.isBot) continue;
+            player.rating_mu = botRating.mu;
+            player.rating_sigma = botRating.sigma;
+            player.rating = calculateDisplayRating(
+                botRating.mu, botRating.sigma);
+        }
+        return this.botPolicy;
+    }
+
+    canUseAdaptive() {
+        return this.players.filter(player => !player.isBot).length === 1;
+    }
+
+    /**
+     * Store one post-round, deal-adjusted observation for later calibration.
+     * Names are stable across reconnects, while socket ids are not.
+     */
+    recordAdaptiveRoundPlacements(roundPlacements) {
+        if (this.botPolicy.difficulty !== 'adaptive') return;
+        for (const result of roundPlacements || []) {
+            const player = this.players.find(p => p.id === result.id);
+            if (!player || player.isBot || player.joinedMidGame) {
+                continue;
+            }
+            const deal = this.roundDealStrength[player.id];
+            if (!deal) continue;
+            if (!this.adaptiveRoundEvidence[player.name]) {
+                this.adaptiveRoundEvidence[player.name] = [];
+            }
+            this.adaptiveRoundEvidence[player.name].push({
+                round: this.roundNumber,
+                dealRank: deal.rank,
+                placement: result.placement
+            });
+        }
+    }
+
+    adaptiveEvidenceFor(player, finalPlacement) {
+        const tracking = this.tier3DecisionTracking[player.id];
+        return {
+            decisions: tracking ? tracking.decisions : [],
+            rounds: this.adaptiveRoundEvidence[player.name] || [],
+            finalPlacement
+        };
     }
 
     setPrivacy(isPrivate, requesterUsername) {
@@ -1410,6 +1502,7 @@ class Room {
             quality: quality.quality,
             scored: quality.scored,
             forced: quality.forced,
+            confident: quality.confident,
             lossFraction: quality.lossFraction,
             rank: quality.rank,
             optionCount: quality.optionCount,
@@ -1767,11 +1860,11 @@ class Room {
                 isDisconnected: p.isDisconnected || false,
                 lastPlayed: this.playerLastPlayed[p.id] || null,
                 cumulativeScore: this.cumulativeScores[p.id] || 0,
-                rating: p.rating,
-                // Read off the policy, never off the player, so a seat badge
-                // can never claim a tier different from the one that is
-                // actually answering for it.
-                botDifficulty: p.isBot ? this.botPolicy.difficulty : null
+                // Continuous ratings never cross the socket boundary. Humans
+                // expose only their coarse public rank; a bot is simply a bot.
+                publicRank: p.isBot
+                    ? null
+                    : (p.publicRank || (p.isGuest ? 'Unranked' : 'Bronze'))
             })),
             currentTurn: this.players[this.currentTurnIndex]?.id,
             lastPlayedHand: this.lastPlayedHand,
@@ -1786,6 +1879,9 @@ class Room {
             debugMode: this.debugMode,
             gameMode: this.gameMode,
             botDifficulty: this.botPolicy.difficulty,
+            adaptiveCalibration: this.botPolicy.difficulty === 'adaptive'
+                ? publicCalibration(this.adaptiveCalibration)
+                : null,
             pointThreshold: this.pointThreshold,
             isPrivate: this.isPrivate,
             trickWinPending: this.trickWinPending || false,
@@ -1821,7 +1917,11 @@ class Room {
                     // against weak opposition, so training has to be able to
                     // tell. Sourced from the same policy object that produced
                     // the moves, so the label cannot lie.
-                    difficulty: this.botPolicy.difficulty
+                    difficulty: this.botPolicy.difficulty,
+                    botMode: this.botPolicy.difficulty === 'adaptive'
+                        ? 'adaptive'
+                        : 'fixed',
+                    policyTemperature: this.botPolicy.temperature
                 };
             }
             return {
@@ -1974,7 +2074,9 @@ class Room {
                 id: p.id,
                 name: p.name,
                 isBot: p.isBot,
-                rating: p.rating
+                publicRank: p.isBot
+                    ? null
+                    : (p.publicRank || (p.isGuest ? 'Unranked' : 'Bronze'))
             })),
             hostUsername: this.hostUsername,
             roomId: this.id
@@ -2155,7 +2257,10 @@ class RoomManager {
                     players: room.players.map(p => ({
                         name: p.name,
                         isBot: p.isBot,
-                        rating: p.rating
+                        publicRank: p.isBot
+                            ? null
+                            : (p.publicRank ||
+                                (p.isGuest ? 'Unranked' : 'Bronze'))
                     }))
                 });
             }

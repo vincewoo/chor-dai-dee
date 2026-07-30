@@ -2,11 +2,15 @@ import { useMemo } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
+import {
+    publicRankColor,
+    publicRankLabel
+} from '../../constants/publicRank';
 import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 const SORTS = [
-    { id: 'rating', label: 'Rating' },
+    { id: 'rating', label: 'Rank' },
     { id: 'games', label: 'Games' },
     { id: 'wins', label: 'Wins' },
     { id: 'winRate', label: 'Win rate' },
@@ -56,7 +60,7 @@ function Stat({ label, value, color = '#f4f5f7' }) {
 // Sorting, the minimum-games filter and the per-player detail columns are
 // desktop-only. They came from the legacy desktop table and there is no room for
 // them on a phone, so they render from md up and the phone keeps the podium and
-// a rating-ranked list.
+// a public-rank list.
 function LeaderboardV2({
     data = [], mode, onSetMode, user, loading, error, onBack, onPlayerClick,
     sortBy, onSetSortBy, minGames, onSetMinGames, onArchetypeClick,
@@ -72,7 +76,6 @@ function LeaderboardV2({
     const rest = ranked.slice(3);
     const me = ranked.find((p) => user && p.username === user.username);
 
-    const fmt = (r) => Math.round(r).toLocaleString();
     const anim = (d) => (rm ? undefined : d);
 
     // Podium column order: 2nd, 1st, 3rd (center is tallest).
@@ -169,7 +172,13 @@ function LeaderboardV2({
                                         <div style={{ width: tileSize(p.rank), height: tileSize(p.rank), borderRadius: 16, background: getAvatarTile(p.username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: first ? 36 : 28, boxShadow: first ? `0 0 22px ${soft}` : '0 6px 14px rgba(0,0,0,.35)' }}>{getAvatarEmoji(p.username)}</div>
                                         <div className="max-w-full truncate" style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 12 }}>{p.username}</div>
                                         <div style={{ width: '100%', borderRadius: '12px 12px 0 0', background: 'linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,.28))', border: '1px solid rgba(255,255,255,.1)', borderBottom: 'none', height: barHeight(p.rank), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                                            <div style={{ color: acc, fontWeight: 800, fontSize: 16 }}>{fmt(p.rating_display)}</div>
+                                            <div style={{
+                                                color: publicRankColor(
+                                                    p.public_rank),
+                                                fontWeight: 800,
+                                                fontSize: 14
+                                            }}>{publicRankLabel(
+                                                p.public_rank)}</div>
                                             <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 10, fontWeight: 700 }}>#{p.rank}</div>
                                         </div>
                                     </div>
@@ -222,7 +231,14 @@ function LeaderboardV2({
                                         </div>
                                     </div>
 
-                                    <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 15, whiteSpace: 'nowrap', minWidth: 44, textAlign: 'right' }}>{fmt(r.rating_display)}</div>
+                                    <div style={{
+                                        color: publicRankColor(r.public_rank),
+                                        fontWeight: 800,
+                                        fontSize: 14,
+                                        whiteSpace: 'nowrap',
+                                        minWidth: 74,
+                                        textAlign: 'right'
+                                    }}>{publicRankLabel(r.public_rank)}</div>
                                 </button>
                             ))}
                         </div>
@@ -258,7 +274,12 @@ function LeaderboardV2({
                                 </div>
                                 <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>{me.first_place} rounds won</div>
                             </div>
-                            <div style={{ color: acc, fontWeight: 800, fontSize: 16, whiteSpace: 'nowrap' }}>{fmt(me.rating_display)}</div>
+                            <div style={{
+                                color: publicRankColor(me.public_rank),
+                                fontWeight: 800,
+                                fontSize: 15,
+                                whiteSpace: 'nowrap'
+                            }}>{publicRankLabel(me.public_rank)}</div>
                         </div>
                     </div>
                 )}
