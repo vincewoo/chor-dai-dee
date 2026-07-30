@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import VoiceControlModal from './VoiceControlModal';
+import { useVoiceLevel } from '../contexts/voiceLevelStore';
 
 const MicIcon = ({ muted, deafened, size }) => {
   const iconSize = size === 'desktop' ? 'w-[1.5vmax] h-[1.5vmax]' : size === 'hud' ? 'w-4 h-4' : 'w-5 h-5';
@@ -39,7 +40,6 @@ const VoiceControlBubble = ({
   isMuted,
   isDeafened,
   forcedMute = false,
-  audioLevel = 0,
   onToggleVoice,
   onToggleMute,
   onToggleDeafen,
@@ -50,6 +50,7 @@ const VoiceControlBubble = ({
   size = 'mobile' // 'mobile' or 'desktop'
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const audioLevel = useVoiceLevel(username);
 
   const isSpeaking = voiceEnabled && isVoiceConnected && audioLevel > 0.05;
 
