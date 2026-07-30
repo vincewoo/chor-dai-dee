@@ -207,6 +207,7 @@ function GameTableMobile(props) {
                     playerHand={myHand}
                     lastPlayedHand={lastPlayedHand}
                     isMyTurn={isMyTurn}
+                    isFirstLead={isFirstLead}
                     selectedCards={selectedCards}
                     onSelectCards={handleSelectCards}
                     sortMode={sortMode}

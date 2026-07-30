@@ -37,10 +37,14 @@ const sortCards = (cards) => {
     return [...cards].sort((a, b) => a.value - b.value);
 };
 
-// Quick Select should always lead with the weakest valid play. Hand strength is
-// the primary key; for hands with equal strength (full houses with the same
-// triple, quads with different kickers, etc.), spend the lowest cards first.
-const compareHandsLowestFirst = (a, b) => {
+// Quick Select normally keeps structure-preserving hands ahead of options that
+// borrow from another set. Low borrowed cards are still preferable to spending
+// loose or paired aces and twos, which are valuable control cards.
+const compareHandsLowestFirst = (a, b, optionPriorities) => {
+    const optionPriorityDifference =
+        (optionPriorities.get(a) || 0) - (optionPriorities.get(b) || 0);
+    if (optionPriorityDifference !== 0) return optionPriorityDifference;
+
     if (a.value !== b.value) return a.value - b.value;
 
     for (let i = 0; i < Math.min(a.cards.length, b.cards.length); i++) {
@@ -127,6 +131,13 @@ const groupCardsBySuit = (cards) => {
     return groups;
 };
 
+const kickerOptionPriority = (rank, breaksSet) => {
+    if (breaksSet) return rank === 'A' || rank === '2' ? 4 : 1;
+    if (rank === 'A') return 2;
+    if (rank === '2') return 3;
+    return 0;
+};
+
 // Cartesian product for generating straights from rank groups
 // Kept for backward compatibility if needed, but generateCartesianProduct is preferred
 // eslint-disable-next-line no-unused-vars
@@ -154,18 +165,22 @@ const generateCartesianProduct = (arrays, callback) => {
 
 // Find all valid hands of a specific type that can beat the current hand
 // Added limit parameter to optimize "check existence" calls
-export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = Infinity) => {
+export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = Infinity, requiredCard = null) => {
     if (!playerHand || playerHand.length === 0) return [];
 
     // Generation order must not depend on how the player has manually sorted
     // their cards. This also makes limited existence searches deterministic.
     const handWithValues = sortCards(ensureCardValues(playerHand));
     const eligibleHands = [];
+    const optionPriorities = new WeakMap();
 
     // Helper to add hand if valid and beats lastPlayedHand
     // Returns true if added, false otherwise
-    const addIfValid = (cards, type) => {
+    const addIfValid = (cards, type, optionPriority = 0) => {
         if (eligibleHands.length >= limit) return false;
+        if (requiredCard && !cards.some(card =>
+            card.rank === requiredCard.rank && card.suit === requiredCard.suit
+        )) return false;
 
         const sorted = sortCards(cards);
         let value;
@@ -201,6 +216,7 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
         }
 
         const handObj = { type, value, cards: sorted };
+        optionPriorities.set(handObj, optionPriority);
 
         if (lastPlayedHand) {
             if (canBeat(handObj, lastPlayedHand)) {
@@ -251,25 +267,26 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
         }
         case HAND_TYPES.QUADS: {
             const rankGroups = groupCardsByRank(handWithValues);
-            const quads = [];
-            const others = [];
-
-            Object.values(rankGroups).forEach((group) => {
-                if (group.length === 4) {
-                    quads.push(group);
-                } else {
-                    others.push(...group);
-                }
-            });
+            const groups = Object.values(rankGroups);
+            const quads = groups.filter(group => group.length === 4);
 
             for (const quad of quads) {
-                const kickers = [...others];
-                for (const otherQuad of quads) {
-                    if (otherQuad !== quad) kickers.push(...otherQuad);
-                }
+                const kickers = groups
+                    .filter(group => group !== quad)
+                    .flatMap(group => group.map(card => ({
+                        card,
+                        optionPriority: kickerOptionPriority(
+                            card.rank,
+                            group.length > 1
+                        ),
+                    })));
 
-                for (const kicker of kickers) {
-                    if (addIfValid([...quad, kicker], HAND_TYPES.QUADS) && eligibleHands.length >= limit) break;
+                for (const { card: kicker, optionPriority } of kickers) {
+                    if (addIfValid(
+                        [...quad, kicker],
+                        HAND_TYPES.QUADS,
+                        optionPriority
+                    ) && eligibleHands.length >= limit) break;
                 }
                 if (eligibleHands.length >= limit) break;
             }
@@ -283,21 +300,30 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
             Object.values(rankGroups).forEach(group => {
                 if (group.length >= 3) {
                     combinations(group, 3).forEach(c => triples.push({ cards: c, rank: group[0].rank }));
-                    combinations(group, 2).forEach(c => pairs.push({ cards: c, rank: group[0].rank }));
+                    combinations(group, 2).forEach(c => pairs.push({
+                        cards: c,
+                        rank: group[0].rank,
+                        optionPriority: kickerOptionPriority(group[0].rank, true),
+                    }));
                 } else if (group.length === 2) {
-                    pairs.push({ cards: group, rank: group[0].rank });
+                    pairs.push({
+                        cards: group,
+                        rank: group[0].rank,
+                        optionPriority: kickerOptionPriority(group[0].rank, false),
+                    });
                 }
             });
 
-            // A lower pair is preferred even when it comes from another triple.
-            // Quick Select ranks card combinations only; preserving strategic
-            // structures is the coach/bot's job, not the hand-type picker.
             pairs.sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
 
             for (const triple of triples) {
                 for (const pair of pairs) {
                     if (triple.rank !== pair.rank) {
-                        if (addIfValid([...triple.cards, ...pair.cards], HAND_TYPES.FULL_HOUSE) && eligibleHands.length >= limit) break;
+                        if (addIfValid(
+                            [...triple.cards, ...pair.cards],
+                            HAND_TYPES.FULL_HOUSE,
+                            pair.optionPriority
+                        ) && eligibleHands.length >= limit) break;
                     }
                 }
                 if (eligibleHands.length >= limit) break;
@@ -370,7 +396,9 @@ export const findEligibleHands = (playerHand, lastPlayedHand, handType, limit = 
         }
     }
 
-    eligibleHands.sort(compareHandsLowestFirst);
+    eligibleHands.sort((a, b) =>
+        compareHandsLowestFirst(a, b, optionPriorities)
+    );
     return eligibleHands;
 };
 
@@ -379,15 +407,21 @@ const handIdentity = (hand) => hand.cards.map(card => `${card.rank}-${card.suit}
 // Return every combination for a Quick Select chip, putting the lowest
 // currently playable combinations first. Non-playable combinations remain at
 // the end so the chip can still cycle through them as a hand browser.
-export const findQuickSelectHands = (playerHand, lastPlayedHand, handType) => {
+export const findQuickSelectHands = (playerHand, lastPlayedHand, handType, requiredCard = null) => {
     const allHands = findEligibleHands(playerHand, null, handType);
 
-    if (!lastPlayedHand) {
+    if (!lastPlayedHand && !requiredCard) {
         return allHands.map(hand => ({ hand, canPlay: true }));
     }
 
     const playableKeys = new Set(
-        findEligibleHands(playerHand, lastPlayedHand, handType).map(handIdentity)
+        findEligibleHands(
+            playerHand,
+            lastPlayedHand,
+            handType,
+            Infinity,
+            requiredCard
+        ).map(handIdentity)
     );
     const options = allHands.map(hand => ({
         hand,
@@ -401,7 +435,7 @@ export const findQuickSelectHands = (playerHand, lastPlayedHand, handType) => {
 };
 
 // Find all hand types that have at least one eligible hand
-export const findAvailableHandTypes = (playerHand, lastPlayedHand) => {
+export const findAvailableHandTypes = (playerHand, lastPlayedHand, requiredCard = null) => {
     if (!playerHand || playerHand.length === 0) return [];
 
     const handWithValues = ensureCardValues(playerHand);
@@ -430,7 +464,13 @@ export const findAvailableHandTypes = (playerHand, lastPlayedHand) => {
         // This prevents generating thousands of combinations (e.g. Flush) just to show a button.
         // 100 is enough for the user to cycle through (UX-wise).
         const limit = 100;
-        const hands = findEligibleHands(handWithValues, lastPlayedHand, type, limit);
+        const hands = findEligibleHands(
+            handWithValues,
+            lastPlayedHand,
+            type,
+            limit,
+            requiredCard
+        );
 
         if (hands.length > 0) {
             availableTypes.push({

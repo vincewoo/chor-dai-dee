@@ -18,6 +18,7 @@ const SHOWN_HAND_TYPES = [
     HAND_TYPES.FULL_HOUSE, HAND_TYPES.QUADS, HAND_TYPES.STRAIGHT_FLUSH,
 ];
 const HELPER_ROW_INSET = 12;
+const THREE_OF_DIAMONDS = { rank: '3', suit: 'D' };
 const HAND_SHORT_NAMES = {
     [HAND_TYPES.PAIR]: 'Pair', [HAND_TYPES.TRIPLE]: 'Triple', [HAND_TYPES.STRAIGHT]: 'Straight',
     [HAND_TYPES.FLUSH]: 'Flush', [HAND_TYPES.FULL_HOUSE]: 'Full H.', [HAND_TYPES.QUADS]: 'Quads',
@@ -26,7 +27,7 @@ const HAND_SHORT_NAMES = {
 
 // Chip-style quick-select + right-aligned Reset / Sort actions, plus Pass / Play.
 function ControlsRow({
-    playerHand, lastPlayedHand, isMyTurn, selectedCards, onSelectCards,
+    playerHand, lastPlayedHand, isMyTurn, isFirstLead, selectedCards, onSelectCards,
     sortMode, isCustomOrder, onSortClick,
     canPlay, canPass, playLabel, onPlay, onPass,
     coach,
@@ -45,9 +46,12 @@ function ControlsRow({
 
     const playableHandTypes = useMemo(() => {
         if (!isMyTurn) return new Set();
-        if (!lastPlayedHand) return new Set(availableHandTypes.map(hand => hand.type));
-        return new Set(findAvailableHandTypes(playerHand, lastPlayedHand).map(h => h.type));
-    }, [availableHandTypes, playerHand, lastPlayedHand, isMyTurn]);
+        if (!lastPlayedHand && !isFirstLead) {
+            return new Set(availableHandTypes.map(hand => hand.type));
+        }
+        const requiredCard = isFirstLead ? THREE_OF_DIAMONDS : null;
+        return new Set(findAvailableHandTypes(playerHand, lastPlayedHand, requiredCard).map(h => h.type));
+    }, [availableHandTypes, playerHand, lastPlayedHand, isMyTurn, isFirstLead]);
     const firstPlayableType = SHOWN_HAND_TYPES.find(type => playableHandTypes.has(type));
 
     useEffect(() => {
@@ -80,7 +84,8 @@ function ControlsRow({
     );
 
     const handleTypeClick = useCallback((type) => {
-        const options = findQuickSelectHands(playerHand, lastPlayedHand, type);
+        const requiredCard = isFirstLead ? THREE_OF_DIAMONDS : null;
+        const options = findQuickSelectHands(playerHand, lastPlayedHand, type, requiredCard);
         if (options.length === 0) return;
 
         if (activeType === type && isActiveTypeValid) {
@@ -94,7 +99,7 @@ function ControlsRow({
             setActiveCanPlay(options[0].canPlay);
             onSelectCards(options[0].hand.cards);
         }
-    }, [activeType, activeIndex, playerHand, lastPlayedHand, onSelectCards, isActiveTypeValid]);
+    }, [activeType, activeIndex, playerHand, lastPlayedHand, isFirstLead, onSelectCards, isActiveTypeValid]);
 
     const handleClear = useCallback(() => {
         setActiveType(null);
@@ -129,7 +134,9 @@ function ControlsRow({
                         ? `${HAND_SHORT_NAMES[type]} preview. Click to review and cycle while you wait for your turn.`
                         : (canPlayType
                             ? `${HAND_SHORT_NAMES[type]} can be played. Click to select the lowest option; click again to cycle.`
-                            : `${HAND_SHORT_NAMES[type]} cannot beat the current hand. Click to preview and cycle anyway.`);
+                            : (isFirstLead
+                                ? `${HAND_SHORT_NAMES[type]} cannot open because none include the 3 of Diamonds. Click to preview and cycle anyway.`
+                                : `${HAND_SHORT_NAMES[type]} cannot beat the current hand. Click to preview and cycle anyway.`));
                     return (
                         <button
                             ref={(element) => {
