@@ -42,7 +42,7 @@ function GameTableDesktop(props) {
         roundResult, nextRound, onOpenSettings, onCreateAccount,
         sensors, handleDragEnd,
         handContainerRef,
-        voiceState, voiceAudioLevels,
+        voiceState,
         isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
 
@@ -119,7 +119,6 @@ function GameTableDesktop(props) {
                         isMuted={voiceState?.isMuted || false}
                         isDeafened={voiceState?.isDeafened || false}
                         forcedMute={voiceState?.forcedMute || false}
-                        audioLevel={voiceAudioLevels?.[user?.username] || 0}
                         onToggleVoice={voiceState?.handleVoiceToggle}
                         onToggleMute={voiceState?.toggleMute}
                         onToggleDeafen={voiceState?.toggleDeafen}
@@ -179,7 +178,6 @@ function GameTableDesktop(props) {
                                 onPlayerClick={isSpectator ? onSelectSeat : handlePlayerClick}
                                 isClickable={isSpectator ? !!player : canKickPlayer(player)}
                                 hint={isSpectator ? 'Click to view' : null}
-                                voiceLevel={voiceAudioLevels?.[player?.name] || 0}
                             />
                         ))}
 

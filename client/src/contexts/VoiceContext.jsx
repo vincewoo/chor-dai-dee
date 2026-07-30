@@ -1,4 +1,17 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
+import {
+  clearAllVoiceLevels,
+  clearVoiceLevel,
+  setVoiceLevel
+} from './voiceLevelStore';
 
 // simple-peer pulls in the stream/buffer/process node polyfills, which is a large
 // chunk of the entry bundle for a feature most sessions never turn on. It is
@@ -40,7 +53,6 @@ export const VoiceProvider = ({ socket, children }) => {
   const [currentRoomId, setCurrentRoomId] = useState(null);
   const [currentUsername, setCurrentUsername] = useState(null);
   const [peers, setPeers] = useState({});
-  const [audioLevels, setAudioLevels] = useState({});
   const [permissionError, setPermissionError] = useState(false);
   const [playerVolumes, setPlayerVolumes] = useState({});
   // Host-applied mute (spectators). Soft: we disable our own mic track and lock
@@ -52,6 +64,7 @@ export const VoiceProvider = ({ socket, children }) => {
   const peersRef = useRef({});
   const audioContextRef = useRef(null);
   const analyzersRef = useRef({});
+  const monitorCleanupsRef = useRef({});
 
   // Initialize audio context
   const initAudioContext = useCallback(() => {
@@ -91,7 +104,9 @@ export const VoiceProvider = ({ socket, children }) => {
     const THROTTLE_INTERVAL = 100; // Limit updates to ~10fps to reduce re-renders
 
     const checkLevel = (timestamp) => {
-      if (!analyzersRef.current[userId]) return;
+      // The identity check stops an old loop if this user's stream is replaced.
+      // Checking only for the key would let both loops survive a fast reconnect.
+      if (analyzersRef.current[userId] !== analyzer) return;
 
       animationId = requestAnimationFrame(checkLevel);
 
@@ -117,10 +132,7 @@ export const VoiceProvider = ({ socket, children }) => {
         const rms = Math.sqrt(sum / dataArray.length);
         const normalizedLevel = Math.min(rms / 128, 1);
 
-        setAudioLevels(prev => ({
-          ...prev,
-          [userId]: normalizedLevel
-        }));
+        setVoiceLevel(userId, normalizedLevel);
 
         lastUpdateTime = now;
         // Reset error flag on successful read
@@ -143,6 +155,33 @@ export const VoiceProvider = ({ socket, children }) => {
     };
   }, []);
 
+  const startAudioMonitor = useCallback((userId, analyzer) => {
+    monitorCleanupsRef.current[userId]?.();
+    analyzersRef.current[userId] = analyzer;
+    monitorCleanupsRef.current[userId] = monitorAudioLevel(userId, analyzer);
+  }, [monitorAudioLevel]);
+
+  const stopAudioMonitor = useCallback((userId, expectedAnalyzer = null) => {
+    if (
+      expectedAnalyzer &&
+      analyzersRef.current[userId] !== expectedAnalyzer
+    ) {
+      return;
+    }
+
+    monitorCleanupsRef.current[userId]?.();
+    delete monitorCleanupsRef.current[userId];
+    delete analyzersRef.current[userId];
+    clearVoiceLevel(userId);
+  }, []);
+
+  const stopAllAudioMonitors = useCallback(() => {
+    Object.values(monitorCleanupsRef.current).forEach(cleanup => cleanup());
+    monitorCleanupsRef.current = {};
+    analyzersRef.current = {};
+    clearAllVoiceLevels();
+  }, []);
+
   // Create peer connection
   const createPeer = useCallback((userId, initiator) => {
     if (!localStreamRef.current) {
@@ -158,6 +197,7 @@ export const VoiceProvider = ({ socket, children }) => {
     }
 
     let peer;
+    let monitoredAnalyzer = null;
     try {
       peer = new SimplePeer({
         initiator,
@@ -207,8 +247,8 @@ export const VoiceProvider = ({ socket, children }) => {
         const analyzer = audioContextRef.current.createAnalyser();
         analyzer.fftSize = 256;
         source.connect(analyzer);
-        analyzersRef.current[userId] = analyzer;
-        monitorAudioLevel(userId, analyzer);
+        monitoredAnalyzer = analyzer;
+        startAudioMonitor(userId, analyzer);
       }
     });
 
@@ -219,16 +259,13 @@ export const VoiceProvider = ({ socket, children }) => {
     peer.on('close', () => {
       const audio = document.getElementById(`audio-${userId}`);
       if (audio) audio.remove();
-      delete analyzersRef.current[userId];
-      setAudioLevels(prev => {
-        const newLevels = { ...prev };
-        delete newLevels[userId];
-        return newLevels;
-      });
+      if (monitoredAnalyzer) {
+        stopAudioMonitor(userId, monitoredAnalyzer);
+      }
     });
 
     return peer;
-  }, [socket, monitorAudioLevel, playerVolumes]);
+  }, [socket, playerVolumes, startAudioMonitor, stopAudioMonitor]);
 
   // Join voice room
   const joinVoiceRoom = useCallback(async (roomId, username) => {
@@ -282,8 +319,7 @@ export const VoiceProvider = ({ socket, children }) => {
         analyzer.fftSize = 256;
         analyzer.smoothingTimeConstant = 0.8;
         source.connect(analyzer);
-        analyzersRef.current[username] = analyzer;
-        monitorAudioLevel(username, analyzer);
+        startAudioMonitor(username, analyzer);
       } catch (err) {
         console.error('[VoiceContext] Failed to setup audio analyzer:', err);
       }
@@ -302,7 +338,7 @@ export const VoiceProvider = ({ socket, children }) => {
       setIsVoiceConnected(false);
       return false;
     }
-  }, [socket, currentRoomId, initAudioContext, monitorAudioLevel]);
+  }, [socket, currentRoomId, initAudioContext, startAudioMonitor]);
 
   // Leave voice room
   const leaveVoiceRoom = useCallback(() => {
@@ -323,9 +359,8 @@ export const VoiceProvider = ({ socket, children }) => {
     peersRef.current = {};
     setPeers({});
 
-    // Clear analyzers
-    analyzersRef.current = {};
-    setAudioLevels({});
+    // Stop analyser loops and clear their externally-stored meter values.
+    stopAllAudioMonitors();
 
     // Notify server
     if (socket && currentRoomId) {
@@ -339,7 +374,7 @@ export const VoiceProvider = ({ socket, children }) => {
     setVoiceEnabled(false);
     setIsMuted(false);
     setIsDeafened(false);
-  }, [socket, currentRoomId]);
+  }, [socket, currentRoomId, stopAllAudioMonitors]);
 
   // Toggle voice on/off
   const toggleVoice = useCallback(async (roomId, username) => {
@@ -508,10 +543,11 @@ export const VoiceProvider = ({ socket, children }) => {
           // Ignore
         }
       });
+      stopAllAudioMonitors();
     };
-  }, []);
+  }, [stopAllAudioMonitors]);
 
-  const value = {
+  const value = useMemo(() => ({
     // State
     voiceEnabled,
     isVoiceConnected,
@@ -520,7 +556,6 @@ export const VoiceProvider = ({ socket, children }) => {
     forcedMute,
     currentRoomId,
     peers: Object.keys(peers),
-    audioLevels,
     permissionError,
     playerVolumes,
 
@@ -532,7 +567,23 @@ export const VoiceProvider = ({ socket, children }) => {
     toggleDeafen,
     setPlayerVolume,
     setVoiceEnabled
-  };
+  }), [
+    voiceEnabled,
+    isVoiceConnected,
+    isMuted,
+    isDeafened,
+    forcedMute,
+    currentRoomId,
+    peers,
+    permissionError,
+    playerVolumes,
+    joinVoiceRoom,
+    leaveVoiceRoom,
+    toggleVoice,
+    toggleMute,
+    toggleDeafen,
+    setPlayerVolume
+  ]);
 
   return (
     <VoiceContext.Provider value={value}>

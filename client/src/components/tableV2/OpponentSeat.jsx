@@ -60,7 +60,7 @@ function CountGlyph({ count, acc, align = 'left', fontSize = 11, low = false }) 
 // cluster and defaults to the mobile layout. `size` picks the metrics above.
 function OpponentSeat({
     player, position, isTurn, infoOn, acc, rm,
-    onPlayerClick, isClickable, voiceLevel = 0, hint = null,
+    onPlayerClick, isClickable, hint = null,
     placement, size = 'sm',
 }) {
     if (!player) return null;
@@ -93,7 +93,7 @@ function OpponentSeat({
             }}>
                 {emoji}
             </div>
-            <VoiceIndicator isActive={voiceLevel > 0.05} level={voiceLevel} />
+            <VoiceIndicator userId={player.name} />
         </div>
     );
 

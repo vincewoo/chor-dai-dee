@@ -1,9 +1,13 @@
 import { motion } from 'framer-motion';
 import { memo } from 'react';
+import { useVoiceLevel } from '../contexts/voiceLevelStore';
 
 // ⚡ Bolt Optimization: Memoized to prevent re-renders when parent components update.
-// This component should only re-render when 'isActive' or 'level' changes.
-const VoiceIndicator = ({ isActive, level = 0 }) => {
+// Each indicator subscribes directly to its user's meter. Audio samples never
+// need to render GameRoom, the table orchestrator, or the surrounding seat.
+const VoiceIndicator = ({ userId }) => {
+  const level = useVoiceLevel(userId);
+  const isActive = level > 0.05;
   // Removed verbose logging for cleaner console
   if (!isActive) return null;
 

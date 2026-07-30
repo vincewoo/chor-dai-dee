@@ -115,10 +115,9 @@ const GameRoom = ({ user, socket }) => {
     // Sound effects driven by game state transitions
     useGameSounds({ gameState, roundResult, gameOver, myPlayerId });
 
-    // Voice context for persistent voice across navigation
+    // Stable voice connection state and controls. Rapid audio meter values live
+    // in per-user external subscriptions and do not invalidate this component.
     const voiceContext = useVoice();
-    // Use audio levels directly from context to avoid double renders
-    const { audioLevels: voiceAudioLevels } = voiceContext;
 
     // Track voice user count for non-connected users to see who's in voice
     const [voiceUserCount, setVoiceUserCount] = useState(0);
@@ -874,7 +873,7 @@ const GameRoom = ({ user, socket }) => {
         onCreateAccount: () => navigate('/'),
         sensors, handleDragEnd,
         handContainerRef,
-        containerWidth, voiceState, voiceAudioLevels,
+        containerWidth, voiceState,
         isSpectator, viewerIndex,
         onSelectSeat: (player) => setSpectatorSeatId(player?.id ?? null),
         onOpenSpectators: () => setShowSpectators(true),

@@ -29,7 +29,7 @@ function GameTableMobile(props) {
         roundResult, nextRound, onOpenSettings, onCreateAccount,
         sensors, handleDragEnd,
         handContainerRef,
-        containerWidth, voiceState, voiceAudioLevels,
+        containerWidth, voiceState,
         isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
 
@@ -101,7 +101,6 @@ function GameTableMobile(props) {
                         isMuted={voiceState?.isMuted || false}
                         isDeafened={voiceState?.isDeafened || false}
                         forcedMute={voiceState?.forcedMute || false}
-                        audioLevel={voiceAudioLevels?.[user?.username] || 0}
                         onToggleVoice={voiceState?.handleVoiceToggle}
                         onToggleMute={voiceState?.toggleMute}
                         onToggleDeafen={voiceState?.toggleDeafen}
@@ -136,7 +135,6 @@ function GameTableMobile(props) {
                     onPlayerClick={isSpectator ? onSelectSeat : handlePlayerClick}
                     isClickable={isSpectator ? !!player : canKickPlayer(player)}
                     hint={isSpectator ? 'Tap to view' : null}
-                    voiceLevel={voiceAudioLevels?.[player?.name] || 0}
                 />
             ))}
 
