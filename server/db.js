@@ -7,9 +7,14 @@ const {
 } = require('./game/AdaptiveBotController');
 const {
     PUBLIC_RANKS,
+    PLACEMENT_RANK_CAP,
     updatePublicRank,
     publicRankPayload
 } = require('./game/PublicRank');
+const {
+    DEFAULT_MU,
+    DEFAULT_SIGMA
+} = require('./game/RatingSystem');
 const bcrypt = require('bcrypt');
 const path = require('path');
 
@@ -676,6 +681,64 @@ function runOnce(key, migration) {
 }
 
 const RESET_PRE_DECISION_COUNTERS = 'reset_pre_decision_counters_v1';
+const RESET_INCOMPLETE_RANKS = 'reset_incomplete_rank_placements_v1';
+
+// Public ranks used to be backfilled from shadow ratings earned against older,
+// materially weaker bots. Preserve players who completed Adaptive placement,
+// but cap that initial result at Platinum. Everyone else becomes Unranked with a
+// neutral shadow-rating seed and a fresh placement calibration.
+function resetIncompletePlacementRanks(done) {
+    const tables = ['stats', 'stats_short', 'stats_standard'];
+    const calibrationDefaults = defaultCalibration();
+    const run = (sql) => new Promise((resolve, reject) => {
+        db.run(sql, (err) => err ? reject(err) : resolve());
+    });
+
+    tables.reduce((chain, table) => chain
+        .then(() => run(
+            `UPDATE ${table}
+             SET rating_mu = ${DEFAULT_MU},
+                 rating_sigma = ${DEFAULT_SIGMA},
+                 public_rank = 0,
+                 promotion_progress = 0,
+                 demotion_progress = 0,
+                 rank_placement_complete = 0
+             WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM bot_calibration calibration
+                 WHERE calibration.user_id = ${table}.user_id
+                   AND calibration.calibration_complete = 1
+             )`
+        ))
+        .then(() => run(
+            `UPDATE ${table}
+             SET public_rank = MIN(public_rank, ${PLACEMENT_RANK_CAP}),
+                 promotion_progress = 0,
+                 demotion_progress = 0,
+                 rank_placement_complete = 1
+             WHERE EXISTS (
+                 SELECT 1
+                 FROM bot_calibration calibration
+                 WHERE calibration.user_id = ${table}.user_id
+                   AND calibration.calibration_complete = 1
+             )`
+        )),
+    Promise.resolve())
+        .then(() => run(
+            `UPDATE bot_calibration
+             SET skill_mu = ${calibrationDefaults.skillMu},
+                 skill_sigma = ${calibrationDefaults.skillSigma},
+                 completed_games = 0,
+                 meaningful_decisions = 0,
+                 completed_rounds = 0,
+                 last_temperature = ${calibrationDefaults.lastTemperature},
+                 calibration_complete = 0,
+                 controller_version = ${calibrationDefaults.controllerVersion},
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE calibration_complete = 0`
+        ))
+        .then(() => done(null), done);
+}
 
 // Counters that were accumulated under a different meaning than they now carry.
 //
@@ -773,6 +836,7 @@ function createStatsTable() {
             public_rank INTEGER NOT NULL DEFAULT 0,
             promotion_progress INTEGER NOT NULL DEFAULT 0,
             demotion_progress INTEGER NOT NULL DEFAULT 0,
+            rank_placement_complete INTEGER NOT NULL DEFAULT 0,
             first_place INTEGER DEFAULT 0,
             second_place INTEGER DEFAULT 0,
             third_place INTEGER DEFAULT 0,
@@ -799,6 +863,7 @@ function createStatsTable() {
             public_rank INTEGER NOT NULL DEFAULT 0,
             promotion_progress INTEGER NOT NULL DEFAULT 0,
             demotion_progress INTEGER NOT NULL DEFAULT 0,
+            rank_placement_complete INTEGER NOT NULL DEFAULT 0,
             first_place INTEGER DEFAULT 0,
             second_place INTEGER DEFAULT 0,
             third_place INTEGER DEFAULT 0,
@@ -824,6 +889,7 @@ function createStatsTable() {
             public_rank INTEGER NOT NULL DEFAULT 0,
             promotion_progress INTEGER NOT NULL DEFAULT 0,
             demotion_progress INTEGER NOT NULL DEFAULT 0,
+            rank_placement_complete INTEGER NOT NULL DEFAULT 0,
             first_place INTEGER DEFAULT 0,
             second_place INTEGER DEFAULT 0,
             third_place INTEGER DEFAULT 0,
@@ -840,6 +906,17 @@ function createStatsTable() {
 
         // Safe now: queued after the CREATE TABLE statements inside serialize().
         createStatsIndexes();
+        // A fresh schema has nothing historical to reset, but recording the
+        // migration now prevents a later restart from capping ranks that were
+        // legitimately earned during this database's first lifetime.
+        db.run('SELECT 1', (err) => {
+            if (!err) {
+                runOnce(
+                    RESET_INCOMPLETE_RANKS,
+                    done => done(null)
+                );
+            }
+        });
     });
 }
 
@@ -858,7 +935,19 @@ function ensurePublicRankColumns() {
         'CASE'
     ) + ' ELSE 0 END';
 
-    for (const table of ['stats', 'stats_short', 'stats_standard']) {
+    const tables = ['stats', 'stats_short', 'stats_standard'];
+    let remainingTables = tables.length;
+    const tableComplete = () => {
+        remainingTables--;
+        if (remainingTables === 0) {
+            runOnce(
+                RESET_INCOMPLETE_RANKS,
+                resetIncompletePlacementRanks
+            );
+        }
+    };
+
+    for (const table of tables) {
         db.all(`PRAGMA table_info(${table})`, (err, columns) => {
             if (err || columns.length === 0) {
                 if (err) {
@@ -866,6 +955,7 @@ function ensurePublicRankColumns() {
                         `Error checking public rank columns on ${table}:`,
                         err.message);
                 }
+                tableComplete();
                 return;
             }
 
@@ -876,11 +966,16 @@ function ensurePublicRankColumns() {
                 ['promotion_progress',
                     'promotion_progress INTEGER NOT NULL DEFAULT 0'],
                 ['demotion_progress',
-                    'demotion_progress INTEGER NOT NULL DEFAULT 0']
+                    'demotion_progress INTEGER NOT NULL DEFAULT 0'],
+                ['rank_placement_complete',
+                    'rank_placement_complete INTEGER NOT NULL DEFAULT 0']
             ].filter(([name]) => !names.has(name));
 
             const runNext = (index = 0) => {
-                if (index >= additions.length) return;
+                if (index >= additions.length) {
+                    tableComplete();
+                    return;
+                }
                 const [name, definition] = additions[index];
                 db.run(
                     `ALTER TABLE ${table} ADD COLUMN ${definition}`,
@@ -962,6 +1057,7 @@ function migrateStatsTable() {
                 public_rank INTEGER NOT NULL DEFAULT 0,
                 promotion_progress INTEGER NOT NULL DEFAULT 0,
                 demotion_progress INTEGER NOT NULL DEFAULT 0,
+                rank_placement_complete INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )`);
 
@@ -1161,9 +1257,16 @@ const updateUserStatsByMode = (
                 if (err) return reject(err);
 
                 db.get(
-                    `SELECT rating_mu, rating_sigma, public_rank,
-                            promotion_progress, demotion_progress
-                     FROM ${tableName} WHERE user_id = ?`,
+                    `SELECT stats.rating_mu, stats.rating_sigma,
+                            stats.public_rank, stats.promotion_progress,
+                            stats.demotion_progress,
+                            stats.rank_placement_complete,
+                            COALESCE(calibration.calibration_complete, 0)
+                                AS placement_matches_complete
+                     FROM ${tableName} stats
+                     LEFT JOIN bot_calibration calibration
+                       ON calibration.user_id = stats.user_id
+                     WHERE stats.user_id = ?`,
                     [userId],
                     (stateErr, current) => {
                         if (stateErr) return reject(stateErr);
@@ -1182,18 +1285,22 @@ const updateUserStatsByMode = (
                             rankState = updatePublicRank(current, {
                                 mu: newMu,
                                 sigma: newSigma,
-                                placement
+                                placement,
+                                placementMatchesComplete: Boolean(
+                                    current.placement_matches_complete)
                             });
                             query += `, rating_mu = ?, rating_sigma = ?,
                                 public_rank = ?,
                                 promotion_progress = ?,
-                                demotion_progress = ?`;
+                                demotion_progress = ?,
+                                rank_placement_complete = ?`;
                             params.push(
                                 newMu,
                                 newSigma,
                                 rankState.publicRank,
                                 rankState.promotionProgress,
-                                rankState.demotionProgress
+                                rankState.demotionProgress,
+                                rankState.rankPlacementComplete ? 1 : 0
                             );
                         }
 
@@ -2553,6 +2660,7 @@ const getLeaderboard = (options = {}) => {
                 s.wins,
                 s.losses,
                 s.public_rank,
+                s.rank_placement_complete,
                 s.first_place,
                 s.second_place,
                 s.third_place,
@@ -2583,10 +2691,19 @@ const getLeaderboard = (options = {}) => {
 
         db.all(query, [gameMode, minGames, limit, offset], (err, rows) => {
             if (err) return reject(err);
-            resolve((rows || []).map(row => ({
-                ...row,
-                public_rank: publicRankPayload(row.public_rank)
-            })));
+            resolve((rows || []).map(row => {
+                const {
+                    rank_placement_complete: placementComplete,
+                    ...visible
+                } = row;
+                return {
+                    ...visible,
+                    public_rank: publicRankPayload(
+                        row.public_rank,
+                        Boolean(placementComplete)
+                    )
+                };
+            }));
         });
     });
 };

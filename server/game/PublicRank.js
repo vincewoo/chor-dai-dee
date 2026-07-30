@@ -7,16 +7,22 @@ const { calculateDisplayRating } = require('./RatingSystem');
 const PROMOTION_RESULTS = 3;
 const DEMOTION_RESULTS = 3;
 const DEMOTION_BUFFER = 75;
+const PLACEMENT_RANK_CAP = 4;
+const UNRANKED_PUBLIC_RANK = { id: 'unranked', label: 'Unranked' };
 
 // Entry scores are expressed in the old continuous display scale only because
 // that gives us stable migration thresholds. The score itself is never sent to
 // a client. A promotion series makes the visible rank intentionally lag it.
 const PUBLIC_RANKS = [
-    { id: 'bronze', label: 'Bronze', entryScore: -Infinity },
-    { id: 'silver', label: 'Silver', entryScore: 1300 },
-    { id: 'gold', label: 'Gold', entryScore: 1450 },
-    { id: 'platinum', label: 'Platinum', entryScore: 1600 }
+    { id: 'iron', label: 'Iron', entryScore: -Infinity },
+    { id: 'bronze', label: 'Bronze', entryScore: 1300 },
+    { id: 'silver', label: 'Silver', entryScore: 1450 },
+    { id: 'gold', label: 'Gold', entryScore: 1600 },
+    { id: 'platinum', label: 'Platinum', entryScore: 1750 },
+    { id: 'diamond', label: 'Diamond', entryScore: 1900 },
+    { id: 'champ', label: 'Champ', entryScore: 2050 }
 ];
+const DEFAULT_PUBLIC_RANK_LABEL = UNRANKED_PUBLIC_RANK.label;
 
 const clampIndex = value => Math.max(
     0,
@@ -43,7 +49,8 @@ function rankIndexForShadow(mu, sigma) {
 function updatePublicRank(current = {}, {
     mu,
     sigma,
-    placement
+    placement,
+    placementMatchesComplete = true
 } = {}) {
     let rankIndex = clampIndex(
         current.publicRank ?? current.public_rank);
@@ -56,6 +63,41 @@ function updatePublicRank(current = {}, {
         Number(placement) >= 1 && Number(placement) <= 4
         ? Number(placement)
         : null;
+    const storedPlacementState =
+        current.rankPlacementComplete ?? current.rank_placement_complete;
+    let rankPlacementComplete = storedPlacementState === undefined
+        ? true
+        : Boolean(storedPlacementState);
+
+    // Public rank stays at the starting tier during placement matches. Once
+    // calibration completes, place from the current shadow score but never
+    // above Platinum: Diamond and Champ remain available to earn through play.
+    if (!rankPlacementComplete) {
+        if (!placementMatchesComplete) {
+            return {
+                publicRank: 0,
+                promotionProgress: 0,
+                demotionProgress: 0,
+                rankPlacementComplete: false,
+                change: null,
+                rank: { ...UNRANKED_PUBLIC_RANK }
+            };
+        }
+
+        rankIndex = Math.min(
+            rankIndexForShadow(mu, sigma),
+            PLACEMENT_RANK_CAP
+        );
+        rankPlacementComplete = true;
+        return {
+            publicRank: rankIndex,
+            promotionProgress: 0,
+            demotionProgress: 0,
+            rankPlacementComplete,
+            change: 'placed',
+            rank: rankForIndex(rankIndex)
+        };
+    }
 
     let change = null;
     const nextRank = PUBLIC_RANKS[rankIndex + 1];
@@ -96,12 +138,14 @@ function updatePublicRank(current = {}, {
         publicRank: rankIndex,
         promotionProgress,
         demotionProgress,
+        rankPlacementComplete,
         change,
         rank: rankForIndex(rankIndex)
     };
 }
 
-function publicRankPayload(index) {
+function publicRankPayload(index, placementComplete = true) {
+    if (!placementComplete) return { ...UNRANKED_PUBLIC_RANK };
     const rank = rankForIndex(index);
     return { id: rank.id, label: rank.label };
 }
@@ -113,20 +157,28 @@ function publicStatsView(row) {
         rating_sigma: _sigma,
         promotion_progress: _promotion,
         demotion_progress: _demotion,
+        rank_placement_complete: rankPlacementComplete,
         public_rank: publicRank,
         ...visible
     } = row;
     return {
         ...visible,
-        public_rank: publicRankPayload(publicRank)
+        public_rank: publicRankPayload(
+            publicRank,
+            rankPlacementComplete === undefined
+                ? true
+                : Boolean(rankPlacementComplete)
+        )
     };
 }
 
 module.exports = {
     PUBLIC_RANKS,
+    DEFAULT_PUBLIC_RANK_LABEL,
     PROMOTION_RESULTS,
     DEMOTION_RESULTS,
     DEMOTION_BUFFER,
+    PLACEMENT_RANK_CAP,
     rankForIndex,
     rankIndexForShadow,
     updatePublicRank,

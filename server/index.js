@@ -13,6 +13,7 @@ const {
     calculateNewRatings
 } = require('./game/RatingSystem');
 const {
+    DEFAULT_PUBLIC_RANK_LABEL,
     publicRankPayload,
     publicStatsView
 } = require('./game/PublicRank');
@@ -301,7 +302,7 @@ io.on('connection', (socket) => {
         // Fetch only the coarse public rank. OpenSkill mu/sigma never enter a
         // room payload; game-end rating calculations read them directly from
         // the database.
-        let publicRank = isGuest ? 'Unranked' : 'Bronze';
+        let publicRank = isGuest ? 'Unranked' : DEFAULT_PUBLIC_RANK_LABEL;
         if (isGuest) {
             publicRank = 'Unranked';
         } else if (username) {
@@ -309,7 +310,9 @@ io.on('connection', (socket) => {
                 const stats = await getUserStatsByMode(username, 'standard');
                 if (stats) {
                     publicRank = publicRankPayload(
-                        stats.public_rank).label;
+                        stats.public_rank,
+                        Boolean(stats.rank_placement_complete)
+                    ).label;
                 }
             } catch (e) {
                 console.error('Error fetching stats for join_room:', e);
@@ -1698,7 +1701,9 @@ io.on('connection', (socket) => {
                     const stats = await getUserStatsByMode(player.name, gameMode);
                     if (stats) {
                         player.publicRank = publicRankPayload(
-                            stats.public_rank).label;
+                            stats.public_rank,
+                            Boolean(stats.rank_placement_complete)
+                        ).label;
                     }
                 } catch (e) {
                     console.error(

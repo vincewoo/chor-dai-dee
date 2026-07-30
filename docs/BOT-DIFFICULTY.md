@@ -170,15 +170,24 @@ seat has no policy of its own and is answered for by the room's.
 
 `rating_mu` and `rating_sigma` are now shadow state. They update after every
 completed rated game, including Adaptive solo games, but are removed from stats,
-leaderboard and room API payloads. Players see only Bronze, Silver, Gold or
-Platinum.
+leaderboard and room API payloads. Players see only Iron, Bronze, Silver, Gold,
+Platinum, Diamond or Champ.
 
-The visible rank is persisted separately. Crossing the next rank's hidden
-threshold starts a three-result promotion series; three top-half finishes
-promote. Demotion uses a 75-point hidden buffer plus three bottom-half finishes.
-Consequently one result can move shadow skill without making the public rank
-flicker, and a visible promotion represents sustained play around the next
-level rather than a direct numeric mapping.
+The visible rank is persisted separately. Players remain Unranked until
+Adaptive placement is complete, then the shadow score supplies the initial rank
+with a hard cap at Platinum. Diamond and Champ must therefore be earned after
+placement. Crossing the next rank's hidden threshold starts a three-result
+promotion series; three top-half finishes promote. Demotion uses a 75-point
+hidden buffer plus three bottom-half finishes. Consequently one result can move
+shadow skill without making the public rank flicker, and a visible promotion
+represents sustained play around the next level rather than a direct numeric
+mapping.
+
+The seven-rank rollout resets unfinished placement players to Unranked and restores
+their shadow OpenSkill values and partial Adaptive calibration to neutral
+defaults, because their historical games were rated against substantially older
+bots. Completed placement players keep their rating and calibration, with their
+initial public rank capped at Platinum.
 
 Bots never receive rating updates, but they are rated *opponents*: their hidden
 `mu` is what `calculateNewRatings` weighs a human's placement against. Leaving a

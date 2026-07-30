@@ -43,6 +43,14 @@ test('new accounts start Adaptive with an unplaced calibration', async () => {
     assert.strictEqual(calibration.completedGames, 0);
     assert.strictEqual(calibration.calibrationComplete, false);
     assert.strictEqual(calibration.lastTemperature, 10);
+
+    const row = (await getLeaderboard({
+        gameMode: 'standard',
+        minGames: 0
+    })).find(entry => entry.username === user.username);
+    assert.deepStrictEqual(
+        row.public_rank, { id: 'unranked', label: 'Unranked' });
+    assert.strictEqual('rank_placement_complete' in row, false);
 });
 
 test('calibration round-trips independently of public stats', async () => {
@@ -65,8 +73,14 @@ test('calibration round-trips independently of public stats', async () => {
     assert.strictEqual(saved.calibrationComplete, true);
 });
 
-test('shadow rating promotes a public rank without leaking on leaderboard', async () => {
+test('completed placement assigns a public rank without leaking shadow rating', async () => {
     const user = await createUser('shadow_ranked', 'hunter22');
+    await saveBotCalibration(user.id, {
+        completedGames: 5,
+        meaningfulDecisions: 80,
+        completedRounds: 15,
+        calibrationComplete: true
+    });
     for (let game = 0; game < 3; game++) {
         await updateUserStatsByMode(
             user.username,
@@ -81,6 +95,7 @@ test('shadow rating promotes a public rank without leaking on leaderboard', asyn
 
     const internal = await getUserStatsByMode(user.username, 'standard');
     assert.strictEqual(internal.public_rank, 1);
+    assert.strictEqual(internal.rank_placement_complete, 1);
     assert.strictEqual(internal.rating_mu, 28);
 
     const row = (await getLeaderboard({
@@ -88,7 +103,7 @@ test('shadow rating promotes a public rank without leaking on leaderboard', asyn
         minGames: 0
     })).find(entry => entry.username === user.username);
     assert.deepStrictEqual(
-        row.public_rank, { id: 'silver', label: 'Silver' });
+        row.public_rank, { id: 'bronze', label: 'Bronze' });
     assert.strictEqual('rating_mu' in row, false);
     assert.strictEqual('rating_sigma' in row, false);
     assert.strictEqual('rating_display' in row, false);

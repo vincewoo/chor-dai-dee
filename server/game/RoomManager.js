@@ -26,6 +26,7 @@ const {
     normalizeCalibration,
     publicCalibration
 } = require('./AdaptiveBotController');
+const { DEFAULT_PUBLIC_RANK_LABEL } = require('./PublicRank');
 
 // Praise notes the coach may hand one player in one round. Corrections are
 // unlimited - a mistake is worth hearing about whenever it happens - but an owl
@@ -1864,7 +1865,8 @@ class Room {
                 // expose only their coarse public rank; a bot is simply a bot.
                 publicRank: p.isBot
                     ? null
-                    : (p.publicRank || (p.isGuest ? 'Unranked' : 'Bronze'))
+                    : (p.publicRank ||
+                        (p.isGuest ? 'Unranked' : DEFAULT_PUBLIC_RANK_LABEL))
             })),
             currentTurn: this.players[this.currentTurnIndex]?.id,
             lastPlayedHand: this.lastPlayedHand,
@@ -2076,7 +2078,8 @@ class Room {
                 isBot: p.isBot,
                 publicRank: p.isBot
                     ? null
-                    : (p.publicRank || (p.isGuest ? 'Unranked' : 'Bronze'))
+                    : (p.publicRank ||
+                        (p.isGuest ? 'Unranked' : DEFAULT_PUBLIC_RANK_LABEL))
             })),
             hostUsername: this.hostUsername,
             roomId: this.id
@@ -2260,7 +2263,9 @@ class RoomManager {
                         publicRank: p.isBot
                             ? null
                             : (p.publicRank ||
-                                (p.isGuest ? 'Unranked' : 'Bronze'))
+                                (p.isGuest
+                                    ? 'Unranked'
+                                    : DEFAULT_PUBLIC_RANK_LABEL))
                     }))
                 });
             }

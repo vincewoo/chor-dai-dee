@@ -247,7 +247,7 @@ test('game log records bot strength while seat payload hides it', () => {
             if (!player.isBot) {
                 assert.strictEqual(seats[index].difficulty, undefined);
                 assert.strictEqual(
-                    state.players[index].publicRank, 'Bronze');
+                    state.players[index].publicRank, 'Unranked');
                 return;
             }
             assert.strictEqual(seats[index].difficulty, room.botPolicy.difficulty);

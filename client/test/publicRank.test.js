@@ -10,8 +10,8 @@ test('public rank helpers accept API objects and room labels', () => {
     assert.equal(
         publicRankLabel({ id: 'gold', label: 'Gold' }), 'Gold');
     assert.equal(publicRankLabel('Silver'), 'Silver');
-    assert.equal(publicRankLabel(null), 'Bronze');
+    assert.equal(publicRankLabel(null), 'Unranked');
     assert.equal(
-        publicRankColor({ id: 'platinum', label: 'Platinum' }),
-        '#8fe3da');
+        publicRankColor({ id: 'champ', label: 'Champ' }),
+        '#d6a8ff');
 });

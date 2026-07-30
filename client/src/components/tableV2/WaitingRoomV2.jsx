@@ -79,12 +79,12 @@ function WaitingRoomV2({
             return 'Adaptive is available in solo bot games';
         }
         if (!adaptiveCalibration) {
-            return 'Calibrates between complete solo games';
+            return 'Placement updates between complete solo games';
         }
         if (adaptiveCalibration.complete) {
-            return 'Calibrated · updates after each full game';
+            return 'Placement complete · updates after each full game';
         }
-        return `Calibrating · ${adaptiveCalibration.progress}% · ` +
+        return `Placement matches · ${adaptiveCalibration.progress}% · ` +
             `${adaptiveCalibration.completedGames} of at least ` +
             `${adaptiveCalibration.minimumGames} games`;
     })();

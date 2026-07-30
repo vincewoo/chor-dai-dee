@@ -621,7 +621,9 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     Your hidden skill estimate updates after each completed game, while your public rank changes only after sustained results.
                                 </p>
                                 <ul className="list-disc list-inside space-y-1 text-[rgba(244,245,247,.86)]">
-                                    <li>Public ranks: Bronze, Silver, Gold, and Platinum</li>
+                                    <li>Public ranks: Iron, Bronze, Silver, Gold, Platinum, Diamond, and Champ</li>
+                                    <li>You remain Unranked during placement matches</li>
+                                    <li>Placement can award up to Platinum, leaving Diamond and Champ to earn</li>
                                     <li>Promotion requires several strong results at the next rank's skill level</li>
                                     <li>Demotion also requires sustained results, so one game cannot change your rank</li>
                                     <li>Adaptive bot strength is included in the hidden OpenSkill calculation</li>

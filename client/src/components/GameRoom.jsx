@@ -261,9 +261,12 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('rank_update', ({ change, rank }) => {
             const promoted = change === 'promoted';
+            const placed = change === 'placed';
             setNotification({
-                type: promoted ? 'success' : 'warning',
-                message: promoted
+                type: promoted || placed ? 'success' : 'warning',
+                message: placed
+                    ? `Placement complete — ranked ${rank}!`
+                    : promoted
                     ? `Promoted to ${rank}!`
                     : `Rank adjusted to ${rank}`
             });
