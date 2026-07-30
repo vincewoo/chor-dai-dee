@@ -2125,8 +2125,6 @@ const getUserPreferences = (userId) => {
                     four_color_mode: 0,
                     pusoy_mode: 0,
                     auto_pass: 0,
-                    table_theme: 'felt',
-                    accent_color: 'gold',
                     reduced_motion: 0,
                     sound_enabled: 1,
                     sound_volume: 0.6,
@@ -2153,8 +2151,6 @@ const updateUserPreferences = async (userId, preferences) => {
     const autoPassValue = toInt(pick(preferences.autoPass, existing.auto_pass));
     // Coach defaults to OFF, so a missing column reads as off rather than on.
     const coachEnabledValue = toInt(pick(preferences.coachEnabled, existing.coach_enabled ?? 0));
-    const tableThemeValue = pick(preferences.tableTheme, existing.table_theme ?? 'felt');
-    const accentColorValue = pick(preferences.accentColor, existing.accent_color ?? 'gold');
     const reducedMotionValue = toInt(pick(preferences.reducedMotion, existing.reduced_motion));
     // Sound defaults to ON, so fall back to 1 when the column is absent/null
     // rather than letting toInt() read the missing value as "off".
@@ -2177,15 +2173,13 @@ const updateUserPreferences = async (userId, preferences) => {
 
     return new Promise((resolve, reject) => {
         const query = `INSERT INTO user_preferences
-                           (user_id, four_color_mode, pusoy_mode, auto_pass, coach_enabled, table_theme, accent_color, reduced_motion, sound_enabled, sound_volume, bot_difficulty, avatar_animal, avatar_tile)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           (user_id, four_color_mode, pusoy_mode, auto_pass, coach_enabled, reduced_motion, sound_enabled, sound_volume, bot_difficulty, avatar_animal, avatar_tile)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(user_id) DO UPDATE SET
                            four_color_mode = ?,
                            pusoy_mode = ?,
                            auto_pass = ?,
                            coach_enabled = ?,
-                           table_theme = ?,
-                           accent_color = ?,
                            reduced_motion = ?,
                            sound_enabled = ?,
                            sound_volume = ?,
@@ -2194,8 +2188,8 @@ const updateUserPreferences = async (userId, preferences) => {
                            avatar_tile = ?`;
 
         const values = [
-            userId, fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, botDifficultyValue, avatarAnimalValue, avatarTileValue,
-            fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, tableThemeValue, accentColorValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, botDifficultyValue, avatarAnimalValue, avatarTileValue
+            userId, fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, botDifficultyValue, avatarAnimalValue, avatarTileValue,
+            fourColorValue, pusoyModeValue, autoPassValue, coachEnabledValue, reducedMotionValue, soundEnabledValue, soundVolumeValue, botDifficultyValue, avatarAnimalValue, avatarTileValue
         ];
 
         db.run(query, values, (err) => {

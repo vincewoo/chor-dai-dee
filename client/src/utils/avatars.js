@@ -7,7 +7,7 @@
 // Rendering is synchronous (`getAvatarEmoji(name)`), so chosen avatars live in
 // a module-level registry that components fill via the `useAvatars` hook.
 
-import { getApiUrl } from './api';
+import { getApiUrl } from './api.js';
 
 const ANIMALS = [
     '🐯', '🦊', '🐼', '🐰', '🐸', '🦁', '🐨', '🐷',
@@ -28,20 +28,21 @@ export const TILE_GRADS = [
     'linear-gradient(145deg,#eefbf3,#d8ecdf)',
 ];
 
-// Themed name suggestions used by the picker's 🎲 generator.
-export const NAME_POOLS = {
-    '🐯': ['Tai Pan Tiger', 'Stripe Master', 'Roaring Riches'],
-    '🐼': ['Bamboo Baron', 'Panda Express', 'Chill Chomper'],
-    '🐰': ['Lucky Hopper', 'Carrot Countess', 'Bunny Bluff'],
-    '🦊': ['Sly Shuffler', 'Foxy Flush', 'Clever Kit'],
-    '🐸': ['Pond Prince', 'Leap of Faith', 'Ribbit Royale'],
-    '🦉': ['Night Knower', 'Wise Winner', 'Hoot Hustler'],
-    '🐱': ['Kopi Cat', 'Whisker Wager', 'Purrfect Play'],
-    '🐧': ['Tuxedo Trickster', 'Ice Dealer', 'Waddle Winner'],
-    '🐢': ['Steady Stacker', 'Shell Shark', 'Slow Burn'],
-    '🐨': ['Eucalyptus Ace', 'Nap Master', 'Koala-ty Cards'],
-    '🦁': ['Mane Event', 'Pride Player', 'Royal Roar'],
-    '🐹': ['Pocket Rocket', 'Cheek Stash', 'Tiny Titan'],
+// Each picker animal has one playful display name. These labels add character
+// to the picker; player identity everywhere else continues to use the username.
+export const AVATAR_NAMES = {
+    '🐯': 'Tai Pan Tiger',
+    '🐼': 'Bamboo Baron',
+    '🐰': 'Lucky Hopper',
+    '🦊': 'Sly Shuffler',
+    '🐸': 'Ribbit Royale',
+    '🦉': 'Night Knower',
+    '🐱': 'Kopi Cat',
+    '🐧': 'Tuxedo Trickster',
+    '🐢': 'Slow Burn',
+    '🐨': 'Koala-ty Cards',
+    '🦁': 'Mane Event',
+    '🐹': 'Pocket Rocket',
 };
 
 // djb2 string hash → non-negative integer
@@ -139,7 +140,7 @@ const STORE_KEY = 'avatarChoice';
 // Reads the current user's saved avatar override, if any. Kept in localStorage
 // as well as on the server so your own avatar renders instantly at startup and
 // still works while signed out or offline.
-// Shape: { owner, animal, tile (index into TILE_GRADS), name }.
+// Shape: { owner, animal, tile (index into TILE_GRADS) }.
 export function getAvatarChoice() {
     try {
         const raw = localStorage.getItem(STORE_KEY);

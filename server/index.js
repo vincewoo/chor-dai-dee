@@ -2963,8 +2963,6 @@ app.get('/api/preferences/:userId', async (req, res) => {
             autoPass: preferences.auto_pass === 1,
             // The owl coach defaults to off, so a missing column is not "on".
             coachEnabled: (preferences.coach_enabled ?? 0) === 1,
-            tableTheme: preferences.table_theme || 'felt',
-            accentColor: preferences.accent_color || 'gold',
             reducedMotion: preferences.reduced_motion === 1,
             // Sound defaults to on, so treat a missing column as enabled.
             soundEnabled: (preferences.sound_enabled ?? 1) === 1,
@@ -2982,8 +2980,8 @@ app.get('/api/preferences/:userId', async (req, res) => {
 app.post('/api/preferences/:userId', async (req, res) => {
     try {
         const userId = parseInt(req.params.userId);
-        const { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume } = req.body;
-        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume });
+        const { fourColorMode, pusoyMode, autoPass, coachEnabled, reducedMotion, soundEnabled, soundVolume } = req.body;
+        await updateUserPreferences(userId, { fourColorMode, pusoyMode, autoPass, coachEnabled, reducedMotion, soundEnabled, soundVolume });
         res.json({ success: true });
     } catch (err) {
         console.error('Error updating preferences:', err);

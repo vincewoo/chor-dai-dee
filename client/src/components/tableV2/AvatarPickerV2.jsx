@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTableTheme } from '../../theme/tableTheme';
-import { PICKER_ANIMALS, TILE_GRADS, NAME_POOLS, getAvatarChoice, saveAvatarChoice, persistAvatarChoice } from '../../utils/avatars';
+import { PICKER_ANIMALS, TILE_GRADS, AVATAR_NAMES, getAvatarChoice, saveAvatarChoice, persistAvatarChoice } from '../../utils/avatars';
 import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -20,13 +20,10 @@ function AvatarPickerV2({ user }) {
 
     const [animal, setAnimal] = useState(initialAnimal);
     const [tile, setTile] = useState(initialTile);
-    const [nameIdx, setNameIdx] = useState(0);
-
-    const names = NAME_POOLS[animal] || [username];
-    const previewName = names[nameIdx % names.length];
+    const avatarName = AVATAR_NAMES[animal];
 
     const confirm = () => {
-        saveAvatarChoice({ owner: username, animal, tile, name: previewName });
+        saveAvatarChoice({ owner: username, animal, tile });
         // Fire-and-forget: the local save already drives this session's UI, and
         // a failed upload is retried by the next sync on startup.
         persistAvatarChoice(user, { animal, tile });
@@ -60,11 +57,7 @@ function AvatarPickerV2({ user }) {
                 {/* Preview */}
                 <div className="mt-6 flex flex-col items-center gap-[10px]">
                     <div style={{ width: 108, height: 108, borderRadius: 28, background: TILE_GRADS[tile], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 62, boxShadow: `0 0 40px ${soft},0 18px 40px rgba(0,0,0,.5)`, ...(rm ? {} : { animation: 'cddWiggle 2.4s ease-in-out infinite' }) }}>{animal}</div>
-                    <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 22 }}>{previewName}</div>
-                    <button
-                        onClick={() => setNameIdx((i) => i + 1)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,.18)', background: 'rgba(0,0,0,.38)', color: 'rgba(244,245,247,.75)', fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
-                    >🎲 New name</button>
+                    <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 22 }}>{avatarName}</div>
                 </div>
 
                 {/* Animal grid */}
@@ -76,7 +69,9 @@ function AvatarPickerV2({ user }) {
                             return (
                                 <button
                                     key={e}
-                                    onClick={() => { setAnimal(e); setNameIdx(0); }}
+                                    onClick={() => setAnimal(e)}
+                                    aria-label={AVATAR_NAMES[e]}
+                                    aria-pressed={on}
                                     style={{ aspectRatio: '1', borderRadius: 16, border: `2px solid ${on ? acc : 'rgba(255,255,255,.14)'}`, background: TILE_GRADS[i % TILE_GRADS.length], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, cursor: 'pointer', boxShadow: on ? `0 0 18px ${soft}` : '0 5px 12px rgba(0,0,0,.3)', transform: `scale(${on ? 1.08 : 1})`, transition: 'transform .15s,border-color .15s', padding: 0 }}
                                 >{e}</button>
                             );

@@ -42,17 +42,6 @@ export const UserPreferencesProvider = ({ children, user }) => {
         return saved !== 'false'; // Default to true
     });
 
-    // ---- v2 mobile table theme preferences ----
-    const [tableTheme, setTableTheme] = useState(() => {
-        const saved = localStorage.getItem('tableTheme');
-        return saved === 'ink' ? 'ink' : 'felt';
-    });
-
-    const [accentColor, setAccentColor] = useState(() => {
-        const saved = localStorage.getItem('accentColor');
-        return ['gold', 'mint', 'coral', 'violet'].includes(saved) ? saved : 'gold';
-    });
-
     const [soundEnabled, setSoundEnabled] = useState(() => {
         const saved = localStorage.getItem('soundEnabled');
         return saved !== 'false'; // Default to on
@@ -98,12 +87,6 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         if (data.voiceChatEnabled !== undefined) {
                             setVoiceChatEnabled(data.voiceChatEnabled);
                         }
-                        if (data.tableTheme !== undefined) {
-                            setTableTheme(data.tableTheme);
-                        }
-                        if (data.accentColor !== undefined) {
-                            setAccentColor(data.accentColor);
-                        }
                         if (data.reducedMotion !== undefined) {
                             setReducedMotion(data.reducedMotion);
                         }
@@ -124,12 +107,6 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         }
                         if (data.voiceChatEnabled !== undefined) {
                             localStorage.setItem('voiceChatEnabled', data.voiceChatEnabled);
-                        }
-                        if (data.tableTheme !== undefined) {
-                            localStorage.setItem('tableTheme', data.tableTheme);
-                        }
-                        if (data.accentColor !== undefined) {
-                            localStorage.setItem('accentColor', data.accentColor);
                         }
                         if (data.reducedMotion !== undefined) {
                             localStorage.setItem('reducedMotion', data.reducedMotion);
@@ -167,7 +144,7 @@ export const UserPreferencesProvider = ({ children, user }) => {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume }),
+                        body: JSON.stringify({ fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, reducedMotion, soundEnabled, soundVolume }),
                     });
                 } catch (err) {
                     console.error('Error saving preferences:', err);
@@ -182,12 +159,10 @@ export const UserPreferencesProvider = ({ children, user }) => {
         localStorage.setItem('autoPass', autoPass);
         localStorage.setItem('coachEnabled', coachEnabled);
         localStorage.setItem('voiceChatEnabled', voiceChatEnabled);
-        localStorage.setItem('tableTheme', tableTheme);
-        localStorage.setItem('accentColor', accentColor);
         localStorage.setItem('reducedMotion', reducedMotion);
         localStorage.setItem('soundEnabled', soundEnabled);
         localStorage.setItem('soundVolume', soundVolume);
-    }, [fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, tableTheme, accentColor, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
+    }, [fourColorMode, pusoyMode, autoPass, coachEnabled, voiceChatEnabled, reducedMotion, soundEnabled, soundVolume, user?.id, isLoading]);
 
     // Mirror sound settings into the audio engine, which keeps its own state so
     // that playSound() callers don't have to thread preferences through props.
@@ -235,8 +210,6 @@ export const UserPreferencesProvider = ({ children, user }) => {
             autoPass,
             coachEnabled,
             voiceChatEnabled,
-            tableTheme,
-            accentColor,
             reducedMotion,
             soundEnabled,
             soundVolume,
@@ -248,8 +221,6 @@ export const UserPreferencesProvider = ({ children, user }) => {
             toggleReducedMotion,
             toggleSound,
             setAutoPass,
-            setTableTheme,
-            setAccentColor,
             setReducedMotion,
             setSoundEnabled,
             setSoundVolume,

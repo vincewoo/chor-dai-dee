@@ -4,30 +4,15 @@
 import { useMemo } from 'react';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 
-// Accent palettes: acc = primary, dark = gradient end, soft = translucent glow
-export const ACCENTS = {
-    gold:   { acc: '#ffc94d', dark: '#e09a10', soft: 'rgba(255,201,77,.18)' },
-    mint:   { acc: '#6ee7a8', dark: '#2fae70', soft: 'rgba(110,231,168,.14)' },
-    coral:  { acc: '#ff8f70', dark: '#e25a38', soft: 'rgba(255,143,112,.14)' },
-    violet: { acc: '#a48fff', dark: '#7257e8', soft: 'rgba(164,143,255,.14)' },
-};
+// The table uses one shared felt-and-gold design.
+const GOLD = { acc: '#ffc94d', dark: '#e09a10', soft: 'rgba(255,201,77,.18)' };
 
-export const ACCENT_KEYS = ['gold', 'mint', 'coral', 'violet'];
-
-// Surfaces: base = felt/ink background gradient, tint = overlay applied on top
+// Felt surface: base background gradient plus a vignette tint.
 const FELT_BASE = 'radial-gradient(ellipse 120% 90% at 50% 32%,#2f8f5b 0%,#1f6b45 46%,#124d2f 78%,#0c3a23 100%)';
-export const SURFACES = {
-    felt: {
-        base: FELT_BASE,
-        tint: 'radial-gradient(ellipse at 50% 38%,rgba(0,0,0,0) 48%,rgba(0,0,0,.45) 100%)',
-    },
-    ink: {
-        base: FELT_BASE,
-        tint: 'linear-gradient(180deg,#15181e 0%,#101216 55%,#0b0d10 100%)',
-    },
+const FELT = {
+    base: FELT_BASE,
+    tint: 'radial-gradient(ellipse at 50% 38%,rgba(0,0,0,0) 48%,rgba(0,0,0,.45) 100%)',
 };
-
-export const SURFACE_KEYS = ['felt', 'ink'];
 
 // Pile / log card suit colors (hex, used only by v2 components).
 export const PILE_SUIT_COLORS = {
@@ -99,19 +84,17 @@ export function describeHand(type, cards) {
 
 export const isPass = (lastPlayed) => !!lastPlayed && lastPlayed.type === 'pass';
 
-// Resolves theme values from user preferences. Falls back to gold/felt.
+// Resolves the standard table theme plus the user's motion preference.
 export function useTableTheme() {
-    const { accentColor, tableTheme, reducedMotion } = useUserPreferences();
+    const { reducedMotion } = useUserPreferences();
     return useMemo(() => {
-        const a = ACCENTS[accentColor] || ACCENTS.gold;
-        const surface = SURFACES[tableTheme] || SURFACES.felt;
         return {
-            acc: a.acc,
-            dark: a.dark,
-            soft: a.soft,
-            accGrad: `linear-gradient(135deg,${a.acc},${a.dark})`,
-            surface,
+            acc: GOLD.acc,
+            dark: GOLD.dark,
+            soft: GOLD.soft,
+            accGrad: `linear-gradient(135deg,${GOLD.acc},${GOLD.dark})`,
+            surface: FELT,
             rm: !!reducedMotion,
         };
-    }, [accentColor, tableTheme, reducedMotion]);
+    }, [reducedMotion]);
 }

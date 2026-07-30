@@ -501,7 +501,6 @@ const HowToPlay = React.memo(({ isOpen, onClose, pusoyMode }) => {
                                     <ul className="list-disc list-inside text-[rgba(244,245,247,.86)] text-sm ml-4">
                                         <li><strong>Pusoy Dos Suits:</strong> Remaps the displayed suits to ♣, ♠, ♥, ♦ order without changing the cards or rules</li>
                                         <li><strong>Sound Effects:</strong> Toggle game sounds and adjust their volume</li>
-                                        <li><strong>Table Theme:</strong> Choose the table surface and accent colour</li>
                                         <li><strong>Reduced Motion:</strong> Minimizes animated table effects</li>
                                     </ul>
                                     <p className="text-xs text-[rgba(244,245,247,.70)] mt-2">💡 Each setting changes only your own view</p>

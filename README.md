@@ -39,7 +39,7 @@ A feature-rich multiplayer Big 2 card game with comprehensive statistics trackin
 - **Pusoy Dos suit display**: Optional per-player suit remapping to the Filipino ♣ < ♠ < ♥ < ♦ order
 - **Auto-Pass**: Automatically pass when no valid moves are available
 - **Low-card alerts**: Opponents with 3 or fewer cards receive a prominent warning
-- **Personalization and accessibility**: Table surfaces, accent colors, sound volume, and reduced motion
+- **Personalization and accessibility**: A consistent felt-and-gold table, sound volume, and reduced motion
 - **Mobile optimized**: Responsive design with dynamic card spacing and touch-friendly controls
 - **Smooth animations**: Card animations and transitions using Framer Motion
 - **Settings panel**: In-game gear icon for gameplay, sound, display, and accessibility preferences
@@ -209,7 +209,6 @@ Access personal settings through the gear icon:
   Spades. This changes only your display, not the cards, rules, or other players'
   views.
 - **Sound Effects**: Toggle game sounds and adjust volume
-- **Table Theme**: Choose the table surface and accent color
 - **Reduced Motion**: Minimize animated table effects
 
 ## Tech Stack

@@ -27,8 +27,6 @@ const GameRoom = ({ user, socket }) => {
     const {
         autoPass, toggleAutoPass,
         coachEnabled, toggleCoach,
-        tableTheme, setTableTheme,
-        accentColor, setAccentColor,
         reducedMotion, toggleReducedMotion,
         soundEnabled, toggleSound,
         soundVolume, setSoundVolume,
@@ -1169,10 +1167,6 @@ const GameRoom = ({ user, socket }) => {
                 toggleFourColorMode={toggleFourColorMode}
                 pusoyMode={pusoyMode}
                 togglePusoyMode={togglePusoyMode}
-                tableTheme={tableTheme}
-                setTableTheme={setTableTheme}
-                accentColor={accentColor}
-                setAccentColor={setAccentColor}
                 reducedMotion={reducedMotion}
                 toggleReducedMotion={toggleReducedMotion}
                 soundEnabled={soundEnabled}

@@ -176,8 +176,8 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 #### The v2 UI (`components/tableV2/`)
 
 The whole client renders in one design system, defined by `theme/tableTheme.js`
-(accent palettes, felt/ink surfaces, `useTableTheme`) and the `cdd*` keyframes in
-`index.css`. There is no second, older UI: the legacy green/white Tailwind
+(the standard felt-and-gold tokens and `useTableTheme`) and the `cdd*` keyframes
+in `index.css`. There is no second, older UI: the legacy green/white Tailwind
 screens were removed when desktop moved to v2.
 
 The split is by **composition, not design**. `hooks/useMediaQuery.js` is the one
@@ -566,9 +566,9 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   once free it can be registered by somebody else. This is the record of which
   account used to hold it.
 - `user_preferences` - Settings (four_color_mode, pusoy_mode, auto_pass,
-  coach_enabled, table theme, sound, avatar_animal/avatar_tile). The legacy
-  `bot_difficulty` column remains for migration compatibility but is no longer
-  exposed or used to configure rooms.
+  coach_enabled, reduced motion, sound, avatar_animal/avatar_tile). The legacy
+  `table_theme`, `accent_color`, and `bot_difficulty` columns remain for migration
+  compatibility but are no longer exposed or used.
 - `stats` - Overall player statistics
 - `stats_short` - Short game mode statistics
 - `stats_standard` - Standard game mode statistics
