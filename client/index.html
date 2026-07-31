@@ -21,7 +21,12 @@
     <!-- Apple Touch Icon -->
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Do not use black-translucent here. In an installed viewport-fit=cover
+         PWA, WebKit can offset bottom:0 by both the top and bottom safe-area
+         insets in that mode, leaving a large unreachable band below the app.
+         `black` keeps light status-bar icons without enabling that broken
+         translucent viewport geometry. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Chor Dai Dee" />
 
     <!-- MS Tile -->

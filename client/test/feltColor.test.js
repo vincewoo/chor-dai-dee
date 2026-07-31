@@ -78,6 +78,19 @@ test('index.html theme and tile colors match FELT_EDGE', () => {
     }
 });
 
+test('the installed iOS PWA avoids black-translucent viewport geometry', () => {
+    const html = read('index.html');
+    const uncommented = html.replace(/<!--[\s\S]*?-->/g, '');
+    assert.match(
+        uncommented,
+        /<meta\s+name="apple-mobile-web-app-status-bar-style"\s+content="black"\s*\/?>/i
+    );
+    assert.doesNotMatch(
+        uncommented,
+        /apple-mobile-web-app-status-bar-style"[^>]+content="black-translucent"/i
+    );
+});
+
 test('index.html declares no hand-written manifest link', () => {
     // vite-plugin-pwa injects one; per spec the FIRST rel=manifest in tree
     // order wins, so a hand-written link silently overrides every value in
