@@ -21,7 +21,8 @@ const { BotLogic } = require('../game/BotLogic');
 const { Big2Rules } = require('../game/Big2Rules');
 const { evaluateMove, WIN_SCORE } = require('../game/MoveQuality');
 const {
-    reviewGame, reviewRound, classify, playOutcome, HIGHLIGHT_KINDS, MATERIAL_LOSS
+    reviewGame, reviewRound, classify, playOutcome, relativeOpponentHands,
+    HIGHLIGHT_KINDS, MATERIAL_LOSS
 } = require('../game/MoveReview');
 const { encodeDeal, ACTION } = require('../game/TapeCodec');
 const { RANKS, SUITS } = require('../game/Deck');
@@ -378,6 +379,33 @@ test('a highlight carries the position, the alternative and the reason', () => {
         assert.strictEqual(h.opponentHands[0], null, 'the reviewed seat is not its own opponent');
         assert.ok(h.opponentHands.slice(1).every(Array.isArray), 'what you were up against');
         if (h.action === 'play') assert.ok(h.cardsPlayed.length > 0);
+    }
+});
+
+test('opponent hands are rotated to the reviewed seat, not absolute', () => {
+    // Four distinct one-card hands make the rotation directly observable. The
+    // client labels rows by index (You/Next/Across/Prev), so absolute seat
+    // order would mislabel every game where the reviewed player was not
+    // seat 0 — including calling an opponent's hand "You".
+    const hands = [
+        [{ rank: '3', suit: 'D', value: 0 }],
+        [{ rank: '4', suit: 'D', value: 4 }],
+        [{ rank: '5', suit: 'D', value: 8 }],
+        [{ rank: '6', suit: 'D', value: 12 }],
+    ];
+    const wire = (c) => c.rank;
+
+    for (let seat = 0; seat < 4; seat++) {
+        const rel = relativeOpponentHands(hands, seat, wire);
+        assert.strictEqual(rel.length, 4);
+        assert.strictEqual(rel[0], null, `seat ${seat}: index 0 is the reviewed seat`);
+        for (let offset = 1; offset < 4; offset++) {
+            assert.deepStrictEqual(
+                rel[offset],
+                hands[(seat + offset) % 4].map(wire),
+                `seat ${seat}: offset ${offset} is the hand ${offset} to the left`
+            );
+        }
     }
 });
 
