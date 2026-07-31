@@ -90,6 +90,14 @@ body {
 .pb-safe-92 { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
 .pb-safe-104 { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
 
+/* Fixed-position toasts (PWAUpdatePrompt): floated above the home screen's
+   bottom nav, plus the home indicator inset. Scoped to mobile widths — this
+   rule is unlayered so it would otherwise beat the layered sm:bottom-4 that
+   positions the desktop card. */
+@media (max-width: 639.9px) {
+  .bottom-safe-20 { bottom: calc(5rem + env(safe-area-inset-bottom)); } /* Tailwind bottom-20 */
+}
+
 /* Custom scrollbar styles */
 /* Both axes: the class started out on the horizontal quick-select chip row,
    which only ever needed a height, and silently did nothing for the first
