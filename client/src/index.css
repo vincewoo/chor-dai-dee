@@ -79,6 +79,13 @@ body {
 /* Bottom bars that sit ON the home indicator (the mobile tab bar), as opposed
    to scroll content that merely has to clear it (the pb-safe-N helpers below).
 
+   The bar wearing this must be in NORMAL FLOW at the bottom of a full-height
+   column, never `position: fixed; bottom: 0`. In an installed viewport-fit=cover
+   iOS PWA a fixed bottom edge resolves one safe-area-inset-top above the screen,
+   stranding the bar ~60pt up; an out-of-flow element also does not get its
+   background extended into the safe area. In flow, this padding is what paints
+   the bar through the home-indicator band.
+
    `max()` rather than `base + env()`: a bar that ADDS the inset to its own
    padding grows to ~90px in a standalone PWA with its labels crammed against
    the top edge, which is what made the tab bar look wrong. Absorbing the inset
@@ -96,7 +103,6 @@ body {
 .pb-safe-6 { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
 .pb-safe-26 { padding-bottom: calc(26px + env(safe-area-inset-bottom)); }
 .pb-safe-36 { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
-.pb-safe-88 { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 .pb-safe-92 { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
 .pb-safe-104 { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
 

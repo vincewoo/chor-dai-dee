@@ -69,6 +69,38 @@ test('the game shell is fixed to the viewport edges without a height unit', () =
     );
 });
 
+test('the phone tab bar stays in normal flow', () => {
+    // Measured on device: a `position: fixed; bottom: 0` bar in the installed
+    // PWA lands one env(safe-area-inset-top) — 62pt — above the screen, with
+    // the page painting underneath it, and an out-of-flow element does not get
+    // its background extended into the home-indicator band either. Only a flow
+    // row at the end of a full-height column gets both right. See
+    // docs/IOS-PWA-LAYOUT.md.
+    const home = read('src/components/tableV2/HomeScreenV2.jsx');
+
+    const navs = [...home.matchAll(/<nav\s+className="([^"]*)"/g)].map((m) => m[1]);
+    const bar = navs.find((c) => c.includes('pb-safe-bar'));
+    assert.ok(bar, 'the phone tab bar is the nav carrying pb-safe-bar');
+    assert.doesNotMatch(bar, /\bfixed\b/, 'a fixed bottom edge is wrong in the installed iOS PWA');
+    assert.doesNotMatch(bar, /\babsolute\b/, 'absolute inside the scroller rides up onto the content');
+    assert.match(bar, /\bshrink-0\b/, 'the bar must not be squeezed by the scroller');
+    assert.match(bar, /\bmd:hidden\b/, 'desktop uses the header destinations instead');
+
+    // The column shell the bar is the last row of, and the single scroller
+    // between its two flow rows.
+    assert.match(home, /className="relative flex h-full w-full flex-col overflow-hidden/);
+    assert.match(
+        home,
+        /className="relative z-10 min-h-0 flex-1 overflow-y-auto/,
+        'min-h-0 is load-bearing: without it the column outgrows the viewport instead of scrolling'
+    );
+
+    const css = read('src/index.css');
+    const rule = /\.pb-safe-bar\s*\{([^}]*)\}/m.exec(css);
+    assert.ok(rule, 'pb-safe-bar is declared');
+    assert.match(rule[1], /padding-bottom:\s*max\([^)]*env\(safe-area-inset-bottom\)\)/);
+});
+
 test('index.html theme and tile colors match FELT_EDGE', () => {
     const html = read('index.html');
     for (const name of ['theme-color', 'msapplication-TileColor']) {

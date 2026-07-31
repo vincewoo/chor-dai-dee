@@ -163,8 +163,15 @@ function HomeScreenV2({
     });
 
     return (
+        // Column shell, not a scroller: the phone nav is the last row IN NORMAL
+        // FLOW rather than `position: fixed; bottom: 0`. In an installed
+        // viewport-fit=cover iOS PWA a fixed bottom edge resolves one
+        // safe-area-inset-top above the screen, which left the bar floating
+        // ~60pt up with the page painting underneath it. Nothing here is taken
+        // out of flow, so the bar lands on the physical bottom edge and iOS
+        // extends its background through the home-indicator band.
         <div
-            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
+            className="relative flex h-full w-full flex-col overflow-hidden font-sans"
             style={{ background: surface.base, fontFamily: FONT, '--cdd-acc': acc, '--cdd-acc-soft': soft }}
         >
             <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
@@ -175,7 +182,10 @@ function HomeScreenV2({
             <SuitWatermark suit="S" size={150} rotate={-14} opacity={0.03} style={{ top: 120, left: -52 }} />
             <SuitWatermark suit="H" size={170} rotate={12} opacity={0.026} style={{ top: 520, right: -60 }} />
 
-            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-5 pb-safe-88 pt-safe-18 md:max-w-[1000px] md:px-8 md:pb-10 md:pt-7">
+            {/* Scrolling lives here, between the two flow rows. min-h-0 so the
+                flex item may shrink below its content and actually scroll. */}
+            <div className="relative z-10 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="mx-auto flex min-h-full w-full max-w-[440px] flex-col px-5 pb-6 pt-safe-18 md:max-w-[1000px] md:px-8 md:pb-10 md:pt-7">
                 {/* Header: identity first, brand reduced to a corner mark. */}
                 <header className="flex items-center gap-3" style={anim('.02s')}>
                     <button
@@ -413,12 +423,15 @@ function HomeScreenV2({
                     >Watch {spectateOffer} instead</button>
                 )}
             </div>
+            </div>
 
-            {/* Phone destinations. Fixed to the viewport rather than absolute in
-                the scroller, which is what let the old footer land on top of the
-                game list once the page grew. */}
+            {/* Phone destinations. A flow row of the column shell — NOT fixed and
+                NOT absolute in the scroller. Absolute inside the scroller let the
+                old footer ride up onto the game list once the page grew, and
+                `fixed` cured that but broke in the installed iOS PWA (see the
+                shell comment above). As the last row it can do neither. */}
             <nav
-                className="fixed inset-x-0 bottom-0 z-20 flex items-stretch justify-around gap-1 px-2 pb-safe-bar pt-[7px] md:hidden"
+                className="relative z-20 shrink-0 flex items-stretch justify-around gap-1 px-2 pb-safe-bar pt-[7px] md:hidden"
                 style={{ background: 'rgba(8,26,18,.82)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderTop: '1px solid rgba(255,255,255,.09)' }}
             >
                 {destinations.map((d) => (
