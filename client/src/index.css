@@ -22,10 +22,8 @@ body {
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
-  /* The safe-area bands (status bar, home indicator) sit outside the
-     inset-aware app shell, so in a standalone PWA they show THIS background.
-     Left unset it was white bars framing the table; the felt gradient's edge
-     stop makes them read as the table surface continuing under the system UI. */
+  /* The status-bar band sits outside the inset-aware game shell, so it shows
+     this colour. It also remains the fallback behind every other screen. */
   background-color: #0c3a23;
 }
 
@@ -38,18 +36,22 @@ body {
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;
-  /* The app shell never scrolls (html/body overflow: hidden), so the mobile
-     browser toolbar never auto-collapses — the *small* viewport (svh) is the
-     height that is actually visible. iOS reports the large viewport through
-     dvh in some toolbar states, which slid the bottom of the game table (the
-     player's hand) under the browser toolbar. */
+  /* In a browser tab the shell never scrolls, so the toolbar never
+     auto-collapses. The small viewport is therefore the reliably visible
+     height. */
   height: 100svh;
-  /* In a standalone PWA with viewport-fit=cover the web view spans the full
-     screen, so the viewport units include the status bar and home indicator.
-     Wherever env() parses, this calc line wins the cascade — at zero insets
-     (browser tabs, Android) it simply equals 100svh. The declarations above
-     only apply on engines that don't parse env() at all. */
-  height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+/* WebKit currently reports 100svh for an installed PWA with the safe-area
+   insets already removed. Subtracting env() from it again creates the large
+   empty band below the game. In standalone mode 100vh includes the full
+   screen, so pair it with the shell's mt-safe and subtract only that top
+   offset. The table background then reaches the physical bottom; interactive
+   controls still clear the home indicator via safe-area-inset-bottom. */
+@media all and (display-mode: standalone) {
+  .h-screen-safe {
+    height: calc(100vh - env(safe-area-inset-top, 0px));
+  }
 }
 
 .min-h-screen-safe {
