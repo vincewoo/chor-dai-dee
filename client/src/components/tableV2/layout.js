@@ -19,14 +19,38 @@ export const MOBILE_LAYOUT = {
         right: { top: 178, right: 12, alignItems: 'flex-end' },
     },
     pile: {
-        frame: { top: 268, left: 26, right: 26, height: 216, borderRadius: 24 },
+        // Anchored top AND bottom (rather than a fixed height) so the well can
+        // never extend under the bottom controls/hand stack on a viewport
+        // shorter than the ~844px phone these offsets were tuned on. maxHeight
+        // reproduces the old fixed 216px whenever there is room for it.
+        frame: { top: 268, left: 26, right: 26, bottom: 344, maxHeight: 216, minHeight: 132, borderRadius: 24 },
         scale: 1,
         stackHeight: 118,
     },
-    // The mobile banner floats above the hand, which is itself pinned to the
-    // bottom of the viewport, so it needs an explicit offset.
-    banner: { bottom: 308, left: 0, right: 0 },
+    // The mobile banner renders in normal flow at the top of the bottom stack
+    // (GameTableMobile passes placement=null), so it can never collide with
+    // the pile the way the old fixed `bottom: 308` offset did.
+    banner: null,
     hand: { maxCardWidth: 75, minVisibleRatio: 0.32, maxVisibleRatio: 0.52 },
+};
+
+// Compact tier for short viewports (mobile browser chrome visible — see
+// SHORT_QUERY in hooks/useMediaQuery). Same composition, everything shifted up
+// and the pile drawn slightly smaller so seats, pile, banner and controls all
+// fit in ~650px without overlapping.
+export const MOBILE_COMPACT_LAYOUT = {
+    ...MOBILE_LAYOUT,
+    seats: {
+        size: 'sm',
+        top: { top: 62, left: '50%', transform: 'translateX(-50%)', alignItems: 'center' },
+        left: { top: 128, left: 12, alignItems: 'flex-start' },
+        right: { top: 128, right: 12, alignItems: 'flex-end' },
+    },
+    pile: {
+        frame: { top: 200, left: 26, right: 26, bottom: 330, maxHeight: 216, minHeight: 124, borderRadius: 24 },
+        scale: 0.9,
+        stackHeight: 104,
+    },
 };
 
 export const DESKTOP_LAYOUT = {

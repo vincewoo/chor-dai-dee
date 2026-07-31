@@ -15,7 +15,8 @@ import RoundLogSheet from './RoundLogSheet';
 import RoundCelebration from './RoundCelebration';
 import CoachBubble from './CoachBubble';
 import VoiceControlBubble from '../VoiceControlBubble';
-import { MOBILE_LAYOUT } from './layout';
+import { MOBILE_LAYOUT, MOBILE_COMPACT_LAYOUT } from './layout';
+import { useIsShortViewport } from '../../hooks/useMediaQuery';
 
 // Orchestrator for the v2 mobile in-game table. Stateful game logic lives in
 // GameRoom and arrives via props; only local UI state (info/log toggles) is here.
@@ -37,6 +38,9 @@ function GameTableMobile(props) {
     const { log, pileTrickPlays } = useRoundLog(gameState);
     const [infoOn, setInfoOn] = useState(false);
     const [logOpen, setLogOpen] = useState(false);
+    // Short viewports (mobile browser chrome visible) get the compact tier so
+    // the top-anchored seats/pile stay clear of the bottom-anchored controls.
+    const layout = useIsShortViewport() ? MOBILE_COMPACT_LAYOUT : MOBILE_LAYOUT;
 
     const players = gameState.players || [];
     // Load the avatars everyone at this table chose. Covers the seats, the
@@ -124,8 +128,8 @@ function GameTableMobile(props) {
                     key={position}
                     player={player}
                     position={position}
-                    placement={MOBILE_LAYOUT.seats[position]}
-                    size={MOBILE_LAYOUT.seats.size}
+                    placement={layout.seats[position]}
+                    size={layout.seats.size}
                     isTurn={gameState.currentTurn === player?.id}
                     infoOn={infoOn}
                     acc={acc}
@@ -152,35 +156,34 @@ function GameTableMobile(props) {
                 showControlToast={showControlToast}
                 onOpenLog={() => setLogOpen(true)}
                 hasLog={log.length > 0}
-                frame={MOBILE_LAYOUT.pile.frame}
-                scale={MOBILE_LAYOUT.pile.scale}
-                stackHeight={MOBILE_LAYOUT.pile.stackHeight}
+                frame={layout.pile.frame}
+                scale={layout.pile.scale}
+                stackHeight={layout.pile.stackHeight}
             />
-
-            {/* The mobile banner floats at a fixed offset and the coach bubble
-                lands on top of it, so a bright accent pill would sit directly
-                behind the coach's first line. The bubble says more than "Your
-                turn" does, so the banner stands down while it is up. Desktop
-                needs no such rule — there the bubble clears the banner. */}
-            {!(coach?.enabled && coach.message) && (
-            <StatusBanner
-                isMyTurn={!isSpectator && isMyTurn && !trickWinPending}
-                mustBeat={!isSpectator && mustBeat}
-                trickWinPending={trickWinPending}
-                trickWinnerName={trickWinner}
-                currentPlayerName={currentPlayer?.name}
-                isFirstLead={isFirstLead}
-                acc={acc}
-                accGrad={accGrad}
-                rm={rm}
-                pusoyMode={pusoyMode}
-                placement={MOBILE_LAYOUT.banner}
-            />
-            )}
 
             {/* Bottom controls + hand. Spectators get the watched seat's hand
-                face-up and no controls at all. */}
+                face-up and no controls at all. The banner leads the stack in
+                normal flow (placement=null) so it can never collide with the
+                pile the way its old fixed `bottom: 308` offset did on short
+                viewports. The coach bubble replaces it while up — a bright
+                accent pill would sit directly behind the coach's first line,
+                and the bubble says more than "Your turn" does. */}
             <div style={{ position: 'absolute', bottom: 'calc(10px + env(safe-area-inset-bottom))', left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, zIndex: 30 }}>
+                {!(coach?.enabled && coach.message) && (
+                <StatusBanner
+                    isMyTurn={!isSpectator && isMyTurn && !trickWinPending}
+                    mustBeat={!isSpectator && mustBeat}
+                    trickWinPending={trickWinPending}
+                    trickWinnerName={trickWinner}
+                    currentPlayerName={currentPlayer?.name}
+                    isFirstLead={isFirstLead}
+                    acc={acc}
+                    accGrad={accGrad}
+                    rm={rm}
+                    pusoyMode={pusoyMode}
+                    placement={layout.banner}
+                />
+                )}
                 {isSpectator ? (
                     <SpectatorHandV2
                         sortedHand={sortedHand}
@@ -189,7 +192,7 @@ function GameTableMobile(props) {
                         fourColor={fourColorMode}
                         pusoyMode={pusoyMode}
                         ownerName={getRelativePlayer(0)?.name}
-                        geometry={MOBILE_LAYOUT.hand}
+                        geometry={layout.hand}
                     />
                 ) : (<>
                 {/* Anchored to the bottom stack, which is already positioned,
@@ -234,7 +237,7 @@ function GameTableMobile(props) {
                     acc={acc}
                     fourColor={fourColorMode}
                     pusoyMode={pusoyMode}
-                    geometry={MOBILE_LAYOUT.hand}
+                    geometry={layout.hand}
                 />
                 </>)}
             </div>

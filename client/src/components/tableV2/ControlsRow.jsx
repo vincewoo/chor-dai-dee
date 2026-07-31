@@ -117,13 +117,21 @@ function ControlsRow({
         whiteSpace: 'nowrap',
     };
 
+    // Fades the clipped edges of the scrollable chip strip so a half-visible
+    // chip reads as "more to scroll" rather than a layout bug.
+    const edgeFade = `linear-gradient(90deg, transparent 0, #000 ${HELPER_ROW_INSET}px, #000 calc(100% - ${HELPER_ROW_INSET}px), transparent 100%)`;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, width: '100%' }}>
-            {/* Hand-type chips get the full-width scrolling row. */}
+            {/* One row: the chips scroll in the space that remains after the
+                pinned Reset / Sort actions. A single row (rather than chips
+                above a utility row) keeps the stack short enough to clear the
+                pile on viewports with mobile-browser chrome. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: `0 ${HELPER_ROW_INSET}px`, boxSizing: 'border-box' }}>
             <div
                 ref={helperRowRef}
                 className="scrollbar-thin"
-                style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', padding: `2px ${HELPER_ROW_INSET}px`, boxSizing: 'border-box' }}
+                style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0, overflowX: 'auto', padding: '2px 0', WebkitMaskImage: edgeFade, maskImage: edgeFade }}
             >
                 {showChips && availableHandTypes.map(({ type, count }) => {
                     const isActive = activeType === type && isActiveTypeValid;
@@ -181,23 +189,22 @@ function ControlsRow({
                 })}
             </div>
 
-            {/* Utility actions stay anchored to the right without reducing the
-                horizontal space available to the hand helpers. */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%', padding: '0 12px', boxSizing: 'border-box' }}>
-                {((activeType && isActiveTypeValid) || (selectedCards && selectedCards.length > 0)) && (
-                    <button
-                        onClick={handleClear}
-                        style={{ ...chipBase, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7' }}
-                    >
-                        ↺ Reset
-                    </button>
-                )}
+            {/* Utility actions pinned to the right of the same row, outside
+                the scroll area, so they are always visible and reachable. */}
+            {((activeType && isActiveTypeValid) || (selectedCards && selectedCards.length > 0)) && (
                 <button
-                    onClick={onSortClick}
+                    onClick={handleClear}
                     style={{ ...chipBase, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7' }}
                 >
-                    {sortLabel}
+                    ↺ Reset
                 </button>
+            )}
+            <button
+                onClick={onSortClick}
+                style={{ ...chipBase, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7' }}
+            >
+                {sortLabel}
+            </button>
             </div>
 
             {/* Coach / Pass / Play. The owl is positioned rather than laid out

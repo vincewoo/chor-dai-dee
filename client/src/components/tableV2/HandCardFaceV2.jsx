@@ -35,9 +35,14 @@ const HandCardFaceV2 = ({ card, isSelected, width, height, acc, fourColor, pusoy
                 userSelect: 'none',
             }}
         >
-            <div style={{ position: 'absolute', top: t(7), left: t(8), lineHeight: 0.92, color }}>
-                <div style={{ fontWeight: 800, fontSize: t(23) }}>{card.rank}</div>
-                <div style={{ fontSize: t(15) }}>{sym}</div>
+            {/* "10" is the only two-glyph rank: drawn at the standard 23px it
+                is wider than the ~24px sliver a card shows in a full 13-card
+                hand, so it read as "1C". Tighten it to fit the sliver. */}
+            <div style={{ position: 'absolute', top: t(7), left: card.rank === '10' ? t(5) : t(8), lineHeight: 0.92, color }}>
+                <div style={card.rank === '10'
+                    ? { fontWeight: 800, fontSize: t(19), letterSpacing: '-0.08em' }
+                    : { fontWeight: 800, fontSize: t(23) }}>{card.rank}</div>
+                <div style={{ fontSize: t(15), paddingLeft: card.rank === '10' ? t(3) : 0 }}>{sym}</div>
             </div>
             {FACE_EMOJI[card.rank] ? (
                 <div style={{ position: 'absolute', left: '50%', top: '60%', transform: 'translate(-50%,-50%)', fontSize: t(38) }}>{FACE_EMOJI[card.rank]}</div>

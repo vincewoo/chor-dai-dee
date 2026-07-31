@@ -33,6 +33,14 @@ function PWAUpdatePrompt() {
     };
   }, []);
 
+  // "Ready to work offline" is purely informational — dismiss it on its own
+  // so it never sits over the UI waiting for a tap.
+  useEffect(() => {
+    if (!offlineReady) return;
+    const t = setTimeout(() => setOfflineReady(false), 4000);
+    return () => clearTimeout(t);
+  }, [offlineReady, setOfflineReady]);
+
   const handleInstall = async () => {
     if (!deferredPrompt) {
       return;
@@ -61,10 +69,14 @@ function PWAUpdatePrompt() {
     return null;
   }
 
-  // Mobile: top-centered banner (clears the v2 screens' bottom footer/CTAs).
-  // Desktop (sm+): original bottom-right card.
+  // Mobile: bottom-centered, floated above the home screen's bottom nav so it
+  // never covers the primary CTAs at the top of the screen (it used to sit at
+  // top-3, directly over "Create a room" / the top seats, and intercepted
+  // taps). Desktop (sm+): original bottom-right card. pointer-events-none on
+  // the wrapper so only the visible cards — not the full-width container —
+  // catch taps.
   return (
-    <div className="fixed z-[60] top-3 left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] max-w-sm sm:top-auto sm:left-auto sm:translate-x-0 sm:right-4 sm:bottom-4 sm:w-auto sm:max-w-md">
+    <div className="fixed z-[60] pointer-events-none [&>div]:pointer-events-auto bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] max-w-sm sm:left-auto sm:translate-x-0 sm:right-4 sm:bottom-4 sm:w-auto sm:max-w-md">
       {/* Update Available Notification */}
       {needRefresh && (
         <div className="bg-slate-800 text-white p-4 rounded-lg shadow-lg border border-slate-700 mb-2">
