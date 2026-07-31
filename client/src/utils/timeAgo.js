@@ -18,5 +18,3 @@ export function timeAgo(iso, now) {
     if (d < 365) return `${Math.floor(d / 30)}mo ago`;
     return `${Math.floor(d / 365)}y ago`;
 }
-
-export default timeAgo;

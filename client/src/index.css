@@ -41,8 +41,9 @@ body {
   height: 100svh;
   /* In a standalone PWA with viewport-fit=cover the web view spans the full
      screen, so the viewport units include the status bar and home indicator.
-     Fall back to the plain viewport when the insets are 0 (browser tabs,
-     Android). */
+     Wherever env() parses, this calc line wins the cascade — at zero insets
+     (browser tabs, Android) it simply equals 100svh. The declarations above
+     only apply on engines that don't parse env() at all. */
   height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 

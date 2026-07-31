@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
 function PWAUpdatePrompt() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  // In-game the bottom of the screen is the hand and Pass/Play — nothing may
+  // sit over it. Install/offline toasts wait until the player leaves the
+  // game; an available update collapses to a compact pill in the HUD's empty
+  // middle instead of a card over the controls.
+  const inGame = useLocation().pathname.startsWith('/game/');
 
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -67,6 +73,31 @@ function PWAUpdatePrompt() {
 
   if (!offlineReady && !needRefresh && !showInstallPrompt) {
     return null;
+  }
+
+  if (inGame) {
+    // Only an available update is worth showing mid-game (a Fly deploy
+    // restarts the server and in-memory rooms with it, so the player will
+    // shortly need this). Rendered as a small top-center pill in the HUD's
+    // empty middle — never over the hand or Pass/Play.
+    if (!needRefresh) return null;
+    return (
+      <div
+        className="fixed z-40 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-slate-800 border border-slate-600 text-white shadow-lg px-3 py-1.5"
+        style={{ top: 'calc(env(safe-area-inset-top) + 14px)', fontSize: 12 }}
+      >
+        <span className="font-semibold whitespace-nowrap">⟳ Update ready</span>
+        <button
+          onClick={handleUpdate}
+          className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 rounded-full font-medium"
+        >
+          Reload
+        </button>
+        <button onClick={close} className="text-slate-400 hover:text-white" aria-label="Close">
+          ✕
+        </button>
+      </div>
+    );
   }
 
   // Mobile: bottom-centered, floated above the home screen's bottom nav so it

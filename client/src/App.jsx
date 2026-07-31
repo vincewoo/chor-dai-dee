@@ -114,8 +114,10 @@ function App() {
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>
             </Suspense>
+            {/* Inside Router so it can read the route: the toasts render
+                differently on /game/* (see PWAUpdatePrompt). */}
+            <PWAUpdatePrompt />
           </Router>
-          <PWAUpdatePrompt />
         </VoiceProvider>
       </SuitColorProvider>
     </UserPreferencesProvider>

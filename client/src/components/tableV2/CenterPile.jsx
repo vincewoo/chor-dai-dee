@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import PileCardGlyph from './PileCardGlyph';
 import { describeHand } from '../../theme/tableTheme';
+import { MOBILE_LAYOUT } from './layout';
 
 // Offsets per depth-from-top (0 = newest, on top). Translations scale with the
 // pile; rotations do not, so the stack keeps the same silhouette at any size.
@@ -12,10 +13,9 @@ const OFF = [
     { dx: 34, dy: 24, r: 6 },
 ];
 
-// The mobile pile frame, used when no explicit frame is passed. Mirrors
-// MOBILE_LAYOUT.pile.frame in layout.js (anchored top and bottom so the well
-// can never extend under the bottom controls on short viewports).
-const DEFAULT_FRAME = { top: 268, left: 26, right: 26, bottom: 344, maxHeight: 216, minHeight: 132, borderRadius: 24 };
+// The mobile pile frame, used when no explicit frame is passed — the single
+// source of truth in layout.js, not a hand-mirrored copy that could drift.
+const DEFAULT_FRAME = MOBILE_LAYOUT.pile.frame;
 
 // Maps a relative seat offset (0=self bottom, 1=right, 2=top, 3=left) to a fly-in keyframe.
 const FLY = { 0: 'cddFlyUp', 1: 'cddFlyRight', 2: 'cddFlyDown', 3: 'cddFlyLeft' };

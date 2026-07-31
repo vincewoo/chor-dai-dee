@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { shouldShowJoinError } from '../utils/joinErrors';
 import { useNavigate, useLocation } from 'react-router-dom';
 import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
@@ -187,20 +188,27 @@ const Lobby = ({ user, socket, setUser }) => {
         setSelectedGame(gameDialogData);
     };
 
-    const createRoom = () => {
-        if (isJoining) return;
+    // The single place a user-initiated join starts: state and ref move
+    // together here, so a new call site can't forget the mirror. The ref is
+    // set synchronously (not effect-synced) because a localhost server can
+    // answer before an effect would flush.
+    const beginJoin = (targetRoomId) => {
+        if (isJoining) return false;
         setIsJoining(true);
         isJoiningRef.current = true;
+        socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
+        return true;
+    };
+
+    const createRoom = () => {
         console.log('createRoom called, socket connected:', socket.connected);
-        socket.emit('join_room', { roomId: 'create', username: user.username, isGuest: user.isGuest });
+        beginJoin('create');
     };
 
     const joinRoom = () => {
-        if (!roomId || isJoining) return;
-        setIsJoining(true);
-        isJoiningRef.current = true;
+        if (!roomId) return;
         setSpectateOffer(null);
-        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, isGuest: user.isGuest });
+        beginJoin(roomId.toUpperCase());
     };
 
     // Watch a game we couldn't join. The server is the authority on whether we
@@ -210,10 +218,7 @@ const Lobby = ({ user, socket, setUser }) => {
     };
 
     const joinInProgressRoom = (targetRoomId) => {
-        if (isJoining) return;
-        setIsJoining(true);
-        isJoiningRef.current = true;
-        socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
+        beginJoin(targetRoomId);
     };
 
     // Fetch joinable rooms on mount and periodically
@@ -300,7 +305,7 @@ const Lobby = ({ user, socket, setUser }) => {
             console.log('error received:', err);
             // "Room not found" with no user join in flight is a reconnect
             // probe finding nothing to rejoin — expected, not worth a toast.
-            if (err !== 'Room not found' || isJoiningRef.current) {
+            if (shouldShowJoinError(err, isJoiningRef.current)) {
                 setError(err);
             }
             setReconnecting(false);

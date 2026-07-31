@@ -3,13 +3,13 @@ import { SUIT_SYMBOLS } from '../../theme/tableTheme';
 import { displaySuit } from '../../utils/suitLens';
 
 // The status banner above the hand. Communicates whose turn it is / what to do.
-// `placement` positions the banner absolutely and defaults to the mobile
-// offset. Pass `null` to render it in normal flow, which is what the desktop
-// table does — there it lives in the bottom section above the controls.
+// `placement` positions the banner absolutely; the default (null) renders it
+// in normal flow, which is what both tables do — each places it in its bottom
+// section above the controls, where it cannot collide with the pile.
 const StatusBanner = memo(function StatusBanner({
     isMyTurn, mustBeat, trickWinPending, trickWinnerName,
     currentPlayerName, isFirstLead, acc, accGrad, rm, pusoyMode,
-    placement = { bottom: 308, left: 0, right: 0 },
+    placement = null,
 }) {
     let text;
     let mine = false;

@@ -27,7 +27,6 @@ const MODE_FILTERS = [
     { id: 'standard', label: '🏆 Standard' },
 ];
 
-
 function formatDuration(seconds) {
     if (!seconds) return null;
     const h = Math.floor(seconds / 3600);
