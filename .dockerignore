@@ -11,6 +11,20 @@ node_modules
 *.md
 .env*
 .vscode
+.venv-rl
+
+# Offline training artifacts
+server/.rl-generations
+server/.ppo-generations
+server/.ppo-distillation
+server/training-data
+fly-export
+full-export*
+*.rl-experience.bin
+*.rl-experience.bin.json
+*.ppo.actions.bin
+*.ppo.decisions.bin
+*.ppo.json
 
 # Database files (will be created in volume)
 *.sqlite
