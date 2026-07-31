@@ -14,16 +14,20 @@
 export const MOBILE_LAYOUT = {
     seats: {
         size: 'sm',
-        top: { top: 96, left: '50%', transform: 'translateX(-50%)', alignItems: 'center' },
-        left: { top: 178, left: 12, alignItems: 'flex-start' },
-        right: { top: 178, right: 12, alignItems: 'flex-end' },
+        // Tight to the HUD: the run of header → top seat → side seats used to
+        // start at 96 and burn ~100px of felt before the pile. The seats sit
+        // higher now and the reclaimed space goes to the pile well, where the
+        // played cards need it.
+        top: { top: 72, left: '50%', transform: 'translateX(-50%)', alignItems: 'center' },
+        left: { top: 142, left: 12, alignItems: 'flex-start' },
+        right: { top: 142, right: 12, alignItems: 'flex-end' },
     },
     pile: {
         // Anchored top AND bottom (rather than a fixed height) so the well can
         // never extend under the bottom controls/hand stack on a viewport
         // shorter than the ~844px phone these offsets were tuned on. maxHeight
-        // reproduces the old fixed 216px whenever there is room for it.
-        frame: { top: 268, left: 26, right: 26, bottom: 344, maxHeight: 216, minHeight: 132, borderRadius: 24 },
+        // caps the well on tall viewports.
+        frame: { top: 236, left: 26, right: 26, bottom: 344, maxHeight: 248, minHeight: 132, borderRadius: 24 },
         scale: 1,
         stackHeight: 118,
     },
@@ -42,12 +46,12 @@ export const MOBILE_COMPACT_LAYOUT = {
     ...MOBILE_LAYOUT,
     seats: {
         size: 'sm',
-        top: { top: 62, left: '50%', transform: 'translateX(-50%)', alignItems: 'center' },
-        left: { top: 128, left: 12, alignItems: 'flex-start' },
-        right: { top: 128, right: 12, alignItems: 'flex-end' },
+        top: { top: 58, left: '50%', transform: 'translateX(-50%)', alignItems: 'center' },
+        left: { top: 114, left: 12, alignItems: 'flex-start' },
+        right: { top: 114, right: 12, alignItems: 'flex-end' },
     },
     pile: {
-        frame: { top: 200, left: 26, right: 26, bottom: 330, maxHeight: 216, minHeight: 124, borderRadius: 24 },
+        frame: { top: 194, left: 26, right: 26, bottom: 330, maxHeight: 232, minHeight: 124, borderRadius: 24 },
         scale: 0.9,
         stackHeight: 104,
     },

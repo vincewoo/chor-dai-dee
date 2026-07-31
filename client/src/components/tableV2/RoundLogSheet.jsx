@@ -30,7 +30,10 @@ function RoundLogSheet({ open, log, acc, fourColor, pusoyMode, rm, onClose }) {
                         }}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 10px' }}>
-                            <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 16 }}>Played this round</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                                <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 16 }}>Played this round</div>
+                                <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 11, fontWeight: 600 }}>newest first</div>
+                            </div>
                             <button
                                 onClick={onClose}
                                 aria-label="Close"

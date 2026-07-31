@@ -63,10 +63,15 @@ function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGr
                             key={r.name}
                             style={{
                                 display: 'flex', alignItems: 'center', gap: 12,
-                                background: winner ? 'linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.03))' : 'rgba(255,255,255,.04)',
+                                // Solid fill + a crisp ring rather than a gradient + blurred
+                                // glow: iOS Safari paints that combination square at the
+                                // corners of a rounded row (bright fill visibly cut off
+                                // beside the border's curve). Both replacements follow
+                                // border-radius reliably.
+                                background: winner ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.04)',
                                 border: `1px solid ${winner ? `${acc}77` : 'rgba(255,255,255,.09)'}`,
                                 borderRadius: 16, padding: '12px 14px',
-                                boxShadow: winner ? `0 0 22px ${soft}` : 'none',
+                                boxShadow: winner ? `0 0 0 3px ${soft}` : 'none',
                                 animation: rm ? 'none' : `cddToast .4s ${(0.08 + i * 0.09).toFixed(2)}s ease-out both`,
                             }}
                         >

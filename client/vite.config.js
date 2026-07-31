@@ -45,8 +45,11 @@ export default defineConfig({
         name: 'Chor Dai Dee - Big 2 Card Game',
         short_name: 'Chor Dai Dee',
         description: 'Multiplayer Big 2 card game with advanced AI and statistics tracking',
-        theme_color: '#166534',
-        background_color: '#166534',
+        // Felt gradient's edge stop — matches index.html's theme-color and
+        // the html/body background, so the PWA splash and system chrome
+        // blend with the table.
+        theme_color: '#0c3a23',
+        background_color: '#0c3a23',
         display: 'standalone',
         orientation: 'any',
         scope: '/',

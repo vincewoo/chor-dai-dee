@@ -5,8 +5,15 @@ import { describeHand } from '../../theme/tableTheme';
 // The per-play rows of the round log, most recent first, with a divider at the
 // head of each trick. Shared by the mobile bottom sheet (RoundLogSheet) and the
 // persistent desktop rail (RoundLogPanel) so there is one renderer.
+//
+// The reverse-chronological order is deliberate (the play you tapped to review
+// is the top row), but on its own it reads like a story told backwards — a
+// trick-opening pass at the top of the list looks illegal. Each row therefore
+// carries its chronological move number, so the direction is legible from any
+// row, not just from a header the reader may have scrolled past.
 function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays yet.' }) {
     const rows = [...log].reverse();
+    const total = rows.length;
 
     if (rows.length === 0) {
         return (
@@ -18,6 +25,7 @@ function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays ye
 
     return rows.map((e, i) => {
         const showHead = i === 0 || rows[i - 1].trick !== e.trick;
+        const moveNo = total - i; // chronological: #1 opened the round
         return (
             <div key={e.key || `${e.trick}-${e.playOrder}`}>
                 {showHead && (
@@ -28,6 +36,9 @@ function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays ye
                     </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 14, padding: '8px 12px' }}>
+                    <div style={{ width: 24, flexShrink: 0, textAlign: 'right', color: 'rgba(244,245,247,.35)', fontSize: 10, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                        #{moveNo}
+                    </div>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: getAvatarTile(e.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
                         {getAvatarEmoji(e.name)}
                     </div>

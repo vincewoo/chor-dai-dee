@@ -22,6 +22,11 @@ body {
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  /* The safe-area bands (status bar, home indicator) sit outside the
+     inset-aware app shell, so in a standalone PWA they show THIS background.
+     Left unset it was white bars framing the table; the felt gradient's edge
+     stop makes them read as the table surface continuing under the system UI. */
+  background-color: #0c3a23;
 }
 
 #root {

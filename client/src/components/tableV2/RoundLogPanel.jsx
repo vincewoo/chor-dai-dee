@@ -18,7 +18,7 @@ function RoundLogPanel({ log, acc, fourColor, pusoyMode }) {
                     PLAYED THIS ROUND
                 </div>
                 <div style={{ color: 'rgba(244,245,247,.35)', fontSize: 11, fontWeight: 700 }}>
-                    {log.length} {log.length === 1 ? 'play' : 'plays'}
+                    {log.length} {log.length === 1 ? 'play' : 'plays'} · newest first
                 </div>
             </div>
             <div
