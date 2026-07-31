@@ -827,7 +827,7 @@ const GameRoom = ({ user, socket }) => {
     };
 
     if (!gameState) return (
-        <div className="h-screen-safe mt-safe w-screen bg-green-800 relative overflow-hidden flex items-center justify-center font-sans">
+        <div className="game-screen-safe w-screen bg-green-800 overflow-hidden flex items-center justify-center font-sans">
             <img
                 src={logoImage}
                 alt="Chor Dai Dee Logo"
@@ -903,7 +903,7 @@ const GameRoom = ({ user, socket }) => {
     };
 
     return (
-        <div className="h-screen-safe mt-safe w-screen bg-[#0b0d10] relative overflow-hidden flex items-center justify-center font-sans">
+        <div className="game-screen-safe w-screen bg-[#0b0d10] overflow-hidden flex items-center justify-center font-sans">
             {/* Owns the room's WebRTC lifecycle; renders nothing itself. */}
             <VoiceChat
                 socket={socket}

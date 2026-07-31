@@ -36,6 +36,25 @@ test('the app shell background matches FELT_EDGE', () => {
     assert.equal(bodyBg[1].toLowerCase(), FELT_EDGE.toLowerCase());
 });
 
+test('the game shell is fixed to the viewport edges without a height unit', () => {
+    const css = read('src/index.css');
+    const shell = /\.game-screen-safe\s*\{([^}]*)\}/m.exec(css);
+    assert.ok(shell, 'game-screen-safe is declared');
+    assert.match(shell[1], /position:\s*fixed/);
+    assert.match(shell[1], /top:\s*env\(safe-area-inset-top,\s*0px\)/);
+    for (const edge of ['right', 'bottom', 'left']) {
+        assert.match(shell[1], new RegExp(`${edge}:\\s*0`));
+    }
+    assert.doesNotMatch(shell[1], /\bheight\s*:/, 'viewport height units reintroduce the iOS PWA gap');
+
+    const room = read('src/components/GameRoom.jsx');
+    assert.equal(
+        (room.match(/className="game-screen-safe\b/g) || []).length,
+        2,
+        'loading and active game shells both use the fixed viewport frame'
+    );
+});
+
 test('index.html theme and tile colors match FELT_EDGE', () => {
     const html = read('index.html');
     for (const name of ['theme-color', 'msapplication-TileColor']) {

@@ -33,25 +33,18 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-.h-screen-safe {
-  height: 100vh;
-  height: 100dvh;
-  /* In a browser tab the shell never scrolls, so the toolbar never
-     auto-collapses. The small viewport is therefore the reliably visible
-     height. */
-  height: 100svh;
-}
-
-/* WebKit currently reports 100svh for an installed PWA with the safe-area
-   insets already removed. Subtracting env() from it again creates the large
-   empty band below the game. In standalone mode 100vh includes the full
-   screen, so pair it with the shell's mt-safe and subtract only that top
-   offset. The table background then reaches the physical bottom; interactive
-   controls still clear the home indicator via safe-area-inset-bottom. */
-@media all and (display-mode: standalone) {
-  .h-screen-safe {
-    height: calc(100vh - env(safe-area-inset-top, 0px));
-  }
+/* Do not size the game with a viewport-height unit. WebKit can report vh/svh
+   with safe-area space already removed in an installed PWA, and an absolutely
+   positioned bottom edge can inherit the same incorrect inset. A fixed shell
+   anchored to both viewport edges bypasses that height calculation entirely.
+   The top edge remains safe for the status bar; the table itself paints to the
+   physical bottom while its controls independently clear the home indicator. */
+.game-screen-safe {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  right: 0;
+  bottom: 0;
+  left: 0;
 }
 
 .min-h-screen-safe {
