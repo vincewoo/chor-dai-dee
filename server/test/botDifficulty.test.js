@@ -267,6 +267,26 @@ test('max-difficulty bots cannot be toggled mid-game', () => {
     assert.strictEqual(room.forceMaxBots, false);
 });
 
+test('only the host can turn max difficulty on', () => {
+    const room = new Room('MAXBOTS-HOST', 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    room.addPlayer({ id: 'human-2', name: 'Bob', isBot: false });
+    assert.strictEqual(room.hostUsername, 'Alice');
+
+    assert.ok(room.setForceMaxBots(true, 'Bob').error,
+        'a non-host must not change what everyone at the table plays against');
+    assert.strictEqual(room.forceMaxBots, false);
+    assert.strictEqual(room.botPolicy.difficulty, DEFAULT_BOT_DIFFICULTY);
+
+    // A socket with no resolved player is not the host either.
+    assert.ok(room.setForceMaxBots(true, null).error);
+    assert.strictEqual(room.forceMaxBots, false);
+
+    assert.deepStrictEqual(room.setForceMaxBots(true, 'Alice'),
+        { success: true, forceMaxBots: true });
+    assert.strictEqual(room.botPolicy.difficulty, MAX_BOT_DIFFICULTY);
+});
+
 test('a new room does not start on max difficulty', () => {
     const room = new Room('MAXBOTS-DEFAULT', 'short');
     assert.strictEqual(room.forceMaxBots, false);

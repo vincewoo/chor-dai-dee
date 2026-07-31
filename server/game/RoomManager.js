@@ -1036,7 +1036,14 @@ class Room {
      * the same reason as setBotDifficulty: a room's policy is snapshotted so an
      * in-flight game cannot change how its bots play.
      */
-    setForceMaxBots(enabled) {
+    setForceMaxBots(enabled, requesterUsername) {
+        // Host guard lives here rather than only in the socket handler, so it
+        // is unit-testable and cannot be bypassed by a second caller. Matches
+        // setPrivacy. Undefined means an internal caller (tests, benchmarks).
+        if (requesterUsername !== undefined &&
+            requesterUsername !== this.hostUsername) {
+            return { error: 'Only the host can change bot difficulty' };
+        }
         if (this.gameState !== 'waiting') {
             return { error: 'Cannot change bot difficulty during game' };
         }

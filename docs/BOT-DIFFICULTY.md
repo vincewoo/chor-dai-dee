@@ -171,10 +171,21 @@ running the heuristic. There is no second field here to disagree, so the label
 cannot lie.
 
 `Room.setBotDifficulty` remains an internal primitive for tests, benchmarks and
-historical replay compatibility. Production game boundaries call
-`Room.configureBotPolicyForRoster`, and no socket or preference API exposes the
-choice. The per-room policy snapshot exists so an in-flight game can never
-change how its bots play.
+historical replay compatibility: no socket or preference API selects an
+arbitrary tier. Production game boundaries call
+`Room.configureBotPolicyForRoster`, and the only player-facing control is the
+binary `set_max_bots` socket event (host only, waiting only), which chooses
+between the roster average and `MAX_BOT_DIFFICULTY`. The per-room policy
+snapshot exists so an in-flight game can never change how its bots play.
+
+**Max difficulty suspends placement.** Adaptive calibration is recorded only
+while the room is on the `adaptive` policy — see the `difficulty === 'adaptive'`
+guards in `RoomManager.recordAdaptiveRoundPlacements` and the game-end handler
+in `server/index.js`. A game played against max-difficulty bots therefore
+contributes no placement evidence, so players in that room make no progress
+toward completing placement and a still-placing player stays Unranked. Hidden
+rating still updates as normal. This applies to everyone at the table, not just
+the host who set it.
 `replaceWithBot` needs no special handling for the same reason: the replacement
 seat has no policy of its own and is answered for by the room's.
 

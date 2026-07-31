@@ -1724,12 +1724,7 @@ io.on('connection', (socket) => {
 
         const { room, roomId, player } = result;
 
-        if (!player || player.name !== room.hostUsername) {
-            return socket.emit('error',
-                'Only the room host can change bot difficulty');
-        }
-
-        const setResult = room.setForceMaxBots(enabled);
+        const setResult = room.setForceMaxBots(enabled, player?.name ?? null);
         if (setResult.error) {
             return socket.emit('error', setResult.error);
         }

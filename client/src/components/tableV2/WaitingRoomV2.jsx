@@ -279,43 +279,53 @@ function WaitingRoomV2({
                             players who have outgrown it and want a fixed,
                             known-strongest opponent — so it reads as a footnote
                             to the settings rather than a headline choice. */}
-                        {isHost && onSetMaxBots && (
-                            <div
-                                className="flex items-center justify-between gap-3"
-                                style={{ marginTop: 2, paddingTop: 11, borderTop: '1px solid rgba(255,255,255,.07)' }}
-                            >
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ color: 'rgba(244,245,247,.62)', fontWeight: 700, fontSize: 12 }}>
-                                        Max difficulty bots
-                                    </div>
-                                    <div style={{ color: 'rgba(244,245,247,.38)', fontSize: 11, fontWeight: 600 }}>
-                                        {forceMaxBots
-                                            ? 'Always the strongest bots'
-                                            : 'Off — bots match the table'}
-                                    </div>
+                        {/* Shown to everyone, not just the host: unlike room
+                            privacy, this changes the game the other players are
+                            about to play and pauses their placement, so they
+                            get to see it. Only the host can change it. */}
+                        <div
+                            className="flex items-center justify-between gap-3"
+                            style={{ marginTop: 2, paddingTop: 11, borderTop: '1px solid rgba(255,255,255,.07)' }}
+                        >
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ color: 'rgba(244,245,247,.62)', fontWeight: 700, fontSize: 12 }}>
+                                    Max difficulty bots
                                 </div>
-                                <button
-                                    onClick={() => onSetMaxBots(!forceMaxBots)}
-                                    role="switch"
-                                    aria-checked={!!forceMaxBots}
-                                    aria-label="Max difficulty bots"
-                                    style={{
-                                        flexShrink: 0, width: 44, height: 26, borderRadius: 999, cursor: 'pointer',
-                                        border: `1px solid ${forceMaxBots ? acc : 'rgba(255,255,255,.18)'}`,
-                                        background: forceMaxBots ? `${acc}33` : 'rgba(0,0,0,.38)',
-                                        padding: 0, position: 'relative',
-                                        transition: rm ? 'none' : 'background .18s ease, border-color .18s ease',
-                                    }}
-                                >
-                                    <span style={{
-                                        position: 'absolute', top: 2, left: forceMaxBots ? 20 : 2,
-                                        width: 20, height: 20, borderRadius: 999,
-                                        background: forceMaxBots ? acc : 'rgba(244,245,247,.5)',
-                                        transition: rm ? 'none' : 'left .18s ease, background .18s ease',
-                                    }} />
-                                </button>
+                                <div style={{ color: 'rgba(244,245,247,.38)', fontSize: 11, fontWeight: 600 }}>
+                                    {forceMaxBots
+                                        // Adaptive calibration only records on the
+                                        // adaptive policy, so this pauses progress
+                                        // toward a public rank for the whole table.
+                                        // Said at the moment of choosing, not buried
+                                        // in a doc.
+                                        ? 'Strongest bots · placement paused'
+                                        : 'Off — bots match the table'}
+                                </div>
                             </div>
-                        )}
+                            <button
+                                onClick={() => isHost && onSetMaxBots?.(!forceMaxBots)}
+                                role="switch"
+                                aria-checked={!!forceMaxBots}
+                                aria-label="Max difficulty bots"
+                                disabled={!isHost || !onSetMaxBots}
+                                style={{
+                                    flexShrink: 0, width: 44, height: 26, borderRadius: 999,
+                                    cursor: isHost && onSetMaxBots ? 'pointer' : 'default',
+                                    border: `1px solid ${forceMaxBots ? acc : 'rgba(255,255,255,.18)'}`,
+                                    background: forceMaxBots ? `${acc}33` : 'rgba(0,0,0,.38)',
+                                    padding: 0, position: 'relative',
+                                    opacity: isHost && onSetMaxBots ? 1 : 0.55,
+                                    transition: rm ? 'none' : 'background .18s ease, border-color .18s ease',
+                                }}
+                            >
+                                <span style={{
+                                    position: 'absolute', top: 2, left: forceMaxBots ? 20 : 2,
+                                    width: 20, height: 20, borderRadius: 999,
+                                    background: forceMaxBots ? acc : 'rgba(244,245,247,.5)',
+                                    transition: rm ? 'none' : 'left .18s ease, background .18s ease',
+                                }} />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
