@@ -128,6 +128,17 @@ const HIGHLIGHT_KINDS = {
 const wireCard = (c) => ({ rank: c.rank, suit: c.suit, value: c.value });
 
 /**
+ * The other seats' hands in seating order RELATIVE to the reviewed seat:
+ * index 0 is the reviewed seat itself (null — you are not your own
+ * opponent), 1 the next player, 2 across, 3 previous. The client labels
+ * rows by index ("Next"/"Across"/"Prev"), so absolute seat order would
+ * mislabel every game where the reviewed player was not seat 0.
+ */
+const relativeOpponentHands = (hands, seat) =>
+    hands.map((_, offset) =>
+        offset === 0 ? null : hands[(seat + offset) % hands.length].map(wireCard));
+
+/**
  * Did this play survive to take the trick?
  *
  * Walks forward through the round's snapshots from the play at `index`.
@@ -293,8 +304,9 @@ function reviewRound(round, actions, seat) {
             // What the player could not see. Replay knows every hand, and this
             // is the half of a review that a live hint could never give: not
             // "this was worse" but "here is what you were up against".
-            opponentHands: snap.hands
-                .map((h, s) => (s === seat ? null : h.map(wireCard))),
+            // Rotated to the reviewed seat so the client's Next/Across/Prev
+            // labels are correct from any chair.
+            opponentHands: relativeOpponentHands(snap.hands, seat),
 
             // The grade.
             quality: quality.quality,
@@ -398,6 +410,7 @@ module.exports = {
     classify,
     playOutcome,
     byImportance,
+    relativeOpponentHands,
     HIGHLIGHT_KINDS,
     TOPICS,
     MATERIAL_LOSS,

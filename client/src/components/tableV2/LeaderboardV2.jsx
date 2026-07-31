@@ -167,7 +167,17 @@ function LeaderboardV2({
                             {podiumOrder.map((p, col) => {
                                 const first = p.rank === 1;
                                 return (
-                                    <div key={p.username} className="flex flex-1 flex-col items-center gap-[6px]" style={anim({ animation: `cddPop .45s ${(col * 0.08).toFixed(2)}s cubic-bezier(.2,.8,.3,1.2) both` })}>
+                                    // A button for the same reason the rows below are:
+                                    // the top three are the players most worth looking
+                                    // up, and they were the only ones whose stats could
+                                    // not be opened.
+                                    <button
+                                        key={p.username}
+                                        onClick={() => onPlayerClick?.(p.username)}
+                                        aria-label={`View ${p.username}'s stats`}
+                                        className="flex flex-1 flex-col items-center gap-[6px] self-end"
+                                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...anim({ animation: `cddPop .45s ${(col * 0.08).toFixed(2)}s cubic-bezier(.2,.8,.3,1.2) both` }) }}
+                                    >
                                         <div style={{ fontSize: 16, height: 18 }}>{first ? '👑' : ''}</div>
                                         <div style={{ width: tileSize(p.rank), height: tileSize(p.rank), borderRadius: 16, background: getAvatarTile(p.username), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: first ? 36 : 28, boxShadow: first ? `0 0 22px ${soft}` : '0 6px 14px rgba(0,0,0,.35)' }}>{getAvatarEmoji(p.username)}</div>
                                         <div className="max-w-full truncate" style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 12 }}>{p.username}</div>
@@ -181,7 +191,7 @@ function LeaderboardV2({
                                                 p.public_rank)}</div>
                                             <div style={{ color: 'rgba(244,245,247,.45)', fontSize: 10, fontWeight: 700 }}>#{p.rank}</div>
                                         </div>
-                                    </div>
+                                    </button>
                                 );
                             })}
                         </div>

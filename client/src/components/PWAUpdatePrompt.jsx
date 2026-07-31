@@ -5,11 +5,13 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 function PWAUpdatePrompt() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  // In-game the bottom of the screen is the hand and Pass/Play — nothing may
-  // sit over it. Install/offline toasts wait until the player leaves the
-  // game; an available update collapses to a compact pill in the HUD's empty
-  // middle instead of a card over the controls.
-  const inGame = useLocation().pathname.startsWith('/game/');
+  // Screens whose lower half is load-bearing: the game table (hand +
+  // Pass/Play) and the login form (password field + Log in, which the card
+  // covered outright on a 650px-tall viewport). On these, the optional
+  // toasts wait and an available update collapses to a compact top pill —
+  // never a card over the controls the user is reaching for.
+  const { pathname } = useLocation();
+  const bottomIsLoadBearing = pathname.startsWith('/game/') || pathname === '/';
 
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -75,11 +77,11 @@ function PWAUpdatePrompt() {
     return null;
   }
 
-  if (inGame) {
-    // Only an available update is worth showing mid-game (a Fly deploy
+  if (bottomIsLoadBearing) {
+    // Only an available update is worth interrupting for (a Fly deploy
     // restarts the server and in-memory rooms with it, so the player will
-    // shortly need this). Rendered as a small top-center pill in the HUD's
-    // empty middle — never over the hand or Pass/Play.
+    // shortly need this). Rendered as a small top-center pill — never over
+    // the hand, Pass/Play, or the login form.
     if (!needRefresh) return null;
     return (
       <div

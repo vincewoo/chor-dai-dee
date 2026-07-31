@@ -4,7 +4,7 @@ import RoundLogRows from './RoundLogRows';
 // Bottom sheet showing every play/pass this round, grouped by trick (latest
 // first). The rows themselves come from RoundLogRows, shared with the desktop
 // RoundLogPanel.
-function RoundLogSheet({ open, log, acc, fourColor, pusoyMode, rm, onClose }) {
+function RoundLogSheet({ open, log, acc, fourColor, pusoyMode, rm, onClose, partial = false }) {
     return (
         <AnimatePresence>
             {open && (
@@ -30,7 +30,10 @@ function RoundLogSheet({ open, log, acc, fourColor, pusoyMode, rm, onClose }) {
                         }}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 10px' }}>
-                            <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 16 }}>Played this round</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                                <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 16 }}>Played this round</div>
+                                <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 11, fontWeight: 600 }}>newest first</div>
+                            </div>
                             <button
                                 onClick={onClose}
                                 aria-label="Close"
@@ -40,7 +43,7 @@ function RoundLogSheet({ open, log, acc, fourColor, pusoyMode, rm, onClose }) {
                             </button>
                         </div>
                         <div className="scrollbar-thin" style={{ overflowY: 'auto', padding: '0 18px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <RoundLogRows log={log} acc={acc} fourColor={fourColor} pusoyMode={pusoyMode} />
+                            <RoundLogRows log={log} acc={acc} fourColor={fourColor} pusoyMode={pusoyMode} partial={partial} />
                         </div>
                     </motion.div>
                 </>

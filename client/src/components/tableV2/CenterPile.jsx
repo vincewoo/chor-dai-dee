@@ -64,9 +64,21 @@ const CenterPile = memo(function CenterPile({
         >
             {stack.length > 0 && (
                 <>
+                    {/* Sits ABOVE the well, not inside it. Any in-well
+                        placement competes with the fan for height, and on a
+                        short viewport the well clamps to minHeight and the fan
+                        (whose older plays drift upward via OFF's negative dy)
+                        overflows back under the label — measured at 402x650,
+                        which is exactly the case this is meant to fix. Outside
+                        the frame there is nothing to compete with: the whole
+                        well is cards, and the label cannot overlap them at any
+                        height. */}
                     <div style={{
+                        position: 'absolute', bottom: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)',
                         background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '4px 12px',
-                        color: 'rgba(244,245,247,.9)', fontSize: Math.round(12 * scale), fontWeight: 700, position: 'relative', zIndex: 8,
+                        color: 'rgba(244,245,247,.9)', fontSize: Math.round(12 * scale), fontWeight: 700, zIndex: 8,
+                        maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        boxSizing: 'border-box',
                     }}>
                         {label}
                     </div>

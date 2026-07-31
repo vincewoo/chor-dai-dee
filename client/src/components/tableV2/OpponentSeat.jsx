@@ -6,6 +6,7 @@ import {
     publicRankColor,
     publicRankLabel
 } from '../../constants/publicRank';
+import { MOBILE_LAYOUT } from './layout';
 
 // Seat metrics per size. 'sm' is the original mobile seat; 'lg' gives the
 // desktop table a badge that reads at arm's length.
@@ -73,14 +74,10 @@ function OpponentSeat({
     const emoji = getAvatarEmoji(player.name);
     const tile = getAvatarTile(player.name);
 
-    // Position of the whole seat cluster. Defaults to the mobile placement.
-    const wrapperStyle = placement || (
-        position === 'top'
-            ? { top: 96, left: '50%', transform: 'translateX(-50%)', alignItems: 'center' }
-            : position === 'left'
-                ? { top: 178, left: 12, alignItems: 'flex-start' }
-                : { top: 178, right: 12, alignItems: 'flex-end' }
-    );
+    // Position of the whole seat cluster. Defaults to the mobile placement,
+    // read from layout.js rather than hand-mirrored here — the copy that used
+    // to live inline had already drifted a full retune out of date.
+    const wrapperStyle = placement || MOBILE_LAYOUT.seats[position];
 
     const avatarTile = (
         <div style={{ position: 'relative', flexShrink: 0 }}>

@@ -90,6 +90,14 @@ function ReviewMoment({ h, fourColor, acc, index, rm, open, onToggle, context = 
                     </div>
 
                     <div style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 14, padding: 12 }}>
+                        {/* The hand held at that moment — without it the table,
+                            the move and the alternative can't be judged. */}
+                        {h.hand?.length > 0 && (
+                            <div className="mb-3">
+                                <Label>YOUR HAND</Label>
+                                <CardRow cards={h.hand} fourColor={fourColor} scale={0.6} />
+                            </div>
+                        )}
                         <Label>{h.pile ? 'ON THE TABLE' : 'YOU WERE ON LEAD'}</Label>
                         {h.pile
                             ? <CardRow cards={h.pile.cards} fourColor={fourColor} />
@@ -132,10 +140,13 @@ function ReviewMoment({ h, fourColor, acc, index, rm, open, onToggle, context = 
                     <div className="mt-3">
                         <Label>WHAT YOU COULDN&apos;T SEE</Label>
                         <div className="flex flex-col gap-[6px]">
-                            {h.opponentHands.map((oppHand, seat) => oppHand && (
-                                <div key={seat} className="flex items-center gap-[7px]">
+                            {/* opponentHands is rotated to the reviewed seat
+                                (0 = you, always null) so these labels hold
+                                from any chair. */}
+                            {h.opponentHands.map((oppHand, offset) => oppHand && (
+                                <div key={offset} className="flex items-center gap-[7px]">
                                     <span style={{ color: FAINT, fontSize: 10, fontWeight: 800, width: 44, flexShrink: 0 }}>
-                                        {['You', 'Next', 'Across', 'Prev'][seat]}
+                                        {['You', 'Next', 'Across', 'Prev'][offset]}
                                     </span>
                                     <CardRow cards={oppHand} fourColor={fourColor} scale={0.56} dim />
                                 </div>
