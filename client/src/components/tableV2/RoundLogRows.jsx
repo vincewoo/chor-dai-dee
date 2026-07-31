@@ -11,7 +11,7 @@ import { describeHand } from '../../theme/tableTheme';
 // trick-opening pass at the top of the list looks illegal. Each row therefore
 // carries its chronological move number, so the direction is legible from any
 // row, not just from a header the reader may have scrolled past.
-function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays yet.' }) {
+function RoundLogRows({ log, acc, fourColor, pusoyMode, partial = false, emptyText = 'No plays yet.' }) {
     const rows = [...log].reverse();
     const total = rows.length;
 
@@ -25,7 +25,12 @@ function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays ye
 
     return rows.map((e, i) => {
         const showHead = i === 0 || rows[i - 1].trick !== e.trick;
-        const moveNo = total - i; // chronological: #1 opened the round
+        // Only number a log we watched from the first move. Joining a round
+        // already in progress (reload, relaunch, reconnect, spectating) loses
+        // an unknowable number of earlier moves, and "#1" on what was really
+        // move 11 is a specific, checkable, wrong claim.
+        const moveNo = partial ? null : total - i;
+        const isOldest = i === rows.length - 1;
         return (
             <div key={e.key || `${e.trick}-${e.playOrder}`}>
                 {showHead && (
@@ -37,7 +42,7 @@ function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays ye
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 14, padding: '8px 12px' }}>
                     <div style={{ width: 24, flexShrink: 0, textAlign: 'right', color: 'rgba(244,245,247,.35)', fontSize: 10, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                        #{moveNo}
+                        {moveNo === null ? '·' : `#${moveNo}`}
                     </div>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: getAvatarTile(e.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
                         {getAvatarEmoji(e.name)}
@@ -64,6 +69,13 @@ function RoundLogRows({ log, acc, fourColor, pusoyMode, emptyText = 'No plays ye
                         </div>
                     )}
                 </div>
+                {/* Below the oldest row we hold, so a partial log says what it
+                    is rather than implying the round started here. */}
+                {partial && isOldest && (
+                    <div style={{ color: 'rgba(244,245,247,.35)', fontSize: 10, fontWeight: 600, textAlign: 'center', padding: '7px 0 2px' }}>
+                        ⋯ earlier moves not recorded (joined mid-round)
+                    </div>
+                )}
             </div>
         );
     });

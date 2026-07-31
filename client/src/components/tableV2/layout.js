@@ -27,7 +27,12 @@ export const MOBILE_LAYOUT = {
         // never extend under the bottom controls/hand stack on a viewport
         // shorter than the ~844px phone these offsets were tuned on. maxHeight
         // caps the well on tall viewports.
-        frame: { top: 236, left: 26, right: 26, bottom: 344, maxHeight: 248, minHeight: 132, borderRadius: 24 },
+        // minHeight fits stackHeight plus the fan's 20px upward drift, so the
+        // cards can never overflow the well (see layoutTiers.test.js). It does
+        // not bind in practice — this tier only applies above 760px, where the
+        // computed height is 181+ — but the invariant is what keeps a future
+        // retune honest.
+        frame: { top: 236, left: 26, right: 26, bottom: 344, maxHeight: 248, minHeight: 140, borderRadius: 24 },
         scale: 1,
         stackHeight: 118,
     },

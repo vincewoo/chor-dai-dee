@@ -382,6 +382,63 @@ test('a highlight carries the position, the alternative and the reason', () => {
     }
 });
 
+test('reviewGame rotates opponent hands for a non-zero seat', () => {
+    // The helper test below covers the rotation itself, but every other
+    // reviewGame test reviews seat 0 — where rotating by 0 is the identity and
+    // the old absolute mapping passes just as well. This pins the CALL SITE:
+    // at seat 2 the two implementations disagree, so a revert there fails here.
+    const REVIEWED_SEAT = 2;
+    const rounds = [];
+    const actionsByRound = {};
+    const dealtHands = {};
+    for (let r = 1; r <= 4; r++) {
+        const hands = deal(makeRng(9100 + r));
+        dealtHands[r] = hands.map(h => h.map(c => ({ ...c })));
+        const tape = [];
+        playRound(seats, hands, null, ply => tape.push(ply));
+        rounds.push({
+            deal: encodeDeal(dealtHands[r]),
+            start_seat: dealtHands[r].findIndex(h => h.some(c => c.rank === '3' && c.suit === 'D')),
+            round_number: r
+        });
+        actionsByRound[r] = tape.map(p => ({
+            ply: p.ply, seat: p.seat, action: p.action, cards_mask: p.cards_mask,
+            hand_type: p.hand_type ?? null, hand_value: p.hand_value ?? null,
+            think_ms: 900, source: 1, flags: 0
+        }));
+    }
+
+    const { highlights } = reviewGame({
+        rounds, actionsByRound, seatForRound: () => REVIEWED_SEAT
+    });
+    assert.ok(highlights.length > 0, 'the fixture produced reviewable moments');
+
+    for (const h of highlights) {
+        assert.strictEqual(h.opponentHands[0], null, 'index 0 is the reviewed seat');
+
+        // The reviewed seat's own cards must not appear under any opponent
+        // label — the exact symptom of the absolute-indexed bug, where seat 0's
+        // hand was rendered as "You" for a seat-2 player.
+        const mine = new Set(h.hand.map(c => `${c.rank}${c.suit}`));
+        for (let offset = 1; offset < 4; offset++) {
+            const other = h.opponentHands[offset];
+            assert.ok(Array.isArray(other), `offset ${offset} is a hand`);
+            assert.ok(
+                other.every(c => !mine.has(`${c.rank}${c.suit}`)),
+                `offset ${offset} holds none of the reviewed seat's cards`
+            );
+            // Wired shape, not raw internals.
+            assert.ok(other.every(c => 'rank' in c && 'suit' in c && 'value' in c));
+        }
+
+        // Every card is dealt exactly once, so the four hands together must be
+        // a partition — which only holds if the rotation picked distinct seats.
+        const all = [h.hand, ...h.opponentHands.slice(1)]
+            .flat().map(c => `${c.rank}${c.suit}`);
+        assert.strictEqual(new Set(all).size, all.length, 'no seat counted twice');
+    }
+});
+
 test('opponent hands are rotated to the reviewed seat, not absolute', () => {
     // Four distinct one-card hands make the rotation directly observable. The
     // client labels rows by index (You/Next/Across/Prev), so absolute seat
@@ -393,16 +450,15 @@ test('opponent hands are rotated to the reviewed seat, not absolute', () => {
         [{ rank: '5', suit: 'D', value: 8 }],
         [{ rank: '6', suit: 'D', value: 12 }],
     ];
-    const wire = (c) => c.rank;
 
     for (let seat = 0; seat < 4; seat++) {
-        const rel = relativeOpponentHands(hands, seat, wire);
+        const rel = relativeOpponentHands(hands, seat);
         assert.strictEqual(rel.length, 4);
         assert.strictEqual(rel[0], null, `seat ${seat}: index 0 is the reviewed seat`);
         for (let offset = 1; offset < 4; offset++) {
             assert.deepStrictEqual(
                 rel[offset],
-                hands[(seat + offset) % 4].map(wire),
+                hands[(seat + offset) % 4],
                 `seat ${seat}: offset ${offset} is the hand ${offset} to the left`
             );
         }

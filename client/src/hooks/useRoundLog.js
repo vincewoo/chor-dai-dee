@@ -24,7 +24,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 // The pile top card should still be driven by gameState.lastPlayedHand directly;
 // this log is advisory (a dropped socket message only affects the review sheet).
 export function useRoundLog(gameState) {
-    const [snapshot, setSnapshot] = useState({ log: [], trickNo: 1, lastPlaySeq: 0 });
+    const [snapshot, setSnapshot] = useState({ log: [], trickNo: 1, lastPlaySeq: 0, partial: false });
 
     // Persistent tracking across renders.
     const seenRef = useRef({});           // playerId -> "playOrder:timestamp" last recorded
@@ -34,6 +34,7 @@ export function useRoundLog(gameState) {
     const trickHasEntriesRef = useRef(false); // any entry since last trick boundary
     const maxOrderRef = useRef(0);         // highest playOrder seen in current trick
     const seqRef = useRef(0);
+    const partialRef = useRef(false);      // joined this round already in progress
 
     const players = gameState?.players;
     const roundNumber = gameState?.roundNumber;
@@ -42,7 +43,8 @@ export function useRoundLog(gameState) {
     // This effect synchronizes derived log state from the socket-driven gameState
     // stream (an external system). setState here is intentional; the parent already
     // re-renders on each game_update, so no extra cascade is introduced in practice.
-    /* eslint-disable react-hooks/set-state-in-effect */
+    // (No eslint-disable for react-hooks/set-state-in-effect: the rule no longer
+    // fires here. Re-add it if a future edit makes it, rather than pre-emptively.)
     useEffect(() => {
         if (!players) return;
         // Accumulate while playing, plus round_over: the hand that empties a player's
@@ -60,7 +62,13 @@ export function useRoundLog(gameState) {
             trickHasEntriesRef.current = false;
             maxOrderRef.current = 0;
             seqRef.current = 0;
-            setSnapshot({ log: [], trickNo: 1, lastPlaySeq: 0 });
+            // A round that is already underway when we first see it (reload,
+            // PWA relaunch, reconnect, spectator joining mid-round) can never
+            // be logged completely — the server's authoritative history is not
+            // sent, so everything before this moment is unrecoverable. Record
+            // that, so the UI can decline to number moves it cannot count.
+            partialRef.current = players.some(p => (p.cardCount ?? 13) < 13);
+            setSnapshot({ log: [], trickNo: 1, lastPlaySeq: 0, partial: partialRef.current });
         }
 
         // Gather newly-appeared events this snapshot.
@@ -95,6 +103,7 @@ export function useRoundLog(gameState) {
             seenRef.current = {};
             // No new entries, but trick number advanced → publish so pile empties.
             setSnapshot({
+                partial: partialRef.current,
                 log: entriesRef.current,
                 trickNo: trickNoRef.current,
                 lastPlaySeq: seqRef.current,
@@ -131,9 +140,9 @@ export function useRoundLog(gameState) {
             log: entriesRef.current.slice(),
             trickNo: trickNoRef.current,
             lastPlaySeq: seqRef.current,
+            partial: partialRef.current,
         });
     }, [players, roundNumber, phase]);
-    /* eslint-enable react-hooks/set-state-in-effect */
 
     const pileTrickPlays = useMemo(() => {
         const currentTrick = snapshot.trickNo;
@@ -144,6 +153,9 @@ export function useRoundLog(gameState) {
 
     return {
         log: snapshot.log,
+        // True when this round was already under way when we first saw it, so
+        // the log is missing an unknowable number of earlier moves.
+        logIsPartial: !!snapshot.partial,
         trickNo: snapshot.trickNo,
         pileTrickPlays,
         lastPlaySeq: snapshot.lastPlaySeq,

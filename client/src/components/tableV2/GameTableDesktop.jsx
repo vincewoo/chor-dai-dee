@@ -47,7 +47,7 @@ function GameTableDesktop(props) {
     } = props;
 
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
-    const { log, pileTrickPlays } = useRoundLog(gameState);
+    const { log, pileTrickPlays, logIsPartial } = useRoundLog(gameState);
     const wide = useIsWide();
     const [infoOn, setInfoOn] = useState(false);
     const [logOpen, setLogOpen] = useState(false);
@@ -279,11 +279,12 @@ function GameTableDesktop(props) {
                     </div>
                 </div>
 
-                {wide && <RoundLogPanel log={log} acc={acc} fourColor={fourColorMode} pusoyMode={pusoyMode} />}
+                {wide && <RoundLogPanel log={log} acc={acc} fourColor={fourColorMode} pusoyMode={pusoyMode} partial={logIsPartial} />}
             </div>
 
             {sheetIsTheLog && (
                 <RoundLogSheet
+                partial={logIsPartial}
                     open={logOpen}
                     log={log}
                     acc={acc}

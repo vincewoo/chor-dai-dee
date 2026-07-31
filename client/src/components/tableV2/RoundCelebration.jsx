@@ -71,7 +71,13 @@ function RoundCelebration({ roundResult, pointThreshold, onNextRound, acc, accGr
                                 background: winner ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.04)',
                                 border: `1px solid ${winner ? `${acc}77` : 'rgba(255,255,255,.09)'}`,
                                 borderRadius: 16, padding: '12px 14px',
-                                boxShadow: winner ? `0 0 0 3px ${soft}` : 'none',
+                                // Inset: the rows live in an overflow-y:auto
+                                // column, which computes overflow-x to auto —
+                                // an outer ring is clipped at the left and
+                                // right edges rather than scrolled to. An
+                                // inset ring needs no space outside the border
+                                // box and still follows border-radius.
+                                boxShadow: winner ? `inset 0 0 0 2px ${acc}55` : 'none',
                                 animation: rm ? 'none' : `cddToast .4s ${(0.08 + i * 0.09).toFixed(2)}s ease-out both`,
                             }}
                         >

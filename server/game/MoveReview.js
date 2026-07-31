@@ -134,9 +134,9 @@ const wireCard = (c) => ({ rank: c.rank, suit: c.suit, value: c.value });
  * rows by index ("Next"/"Across"/"Prev"), so absolute seat order would
  * mislabel every game where the reviewed player was not seat 0.
  */
-const relativeOpponentHands = (hands, seat, wire = wireCard) =>
+const relativeOpponentHands = (hands, seat) =>
     hands.map((_, offset) =>
-        offset === 0 ? null : hands[(seat + offset) % hands.length].map(wire));
+        offset === 0 ? null : hands[(seat + offset) % hands.length].map(wireCard));
 
 /**
  * Did this play survive to take the trick?

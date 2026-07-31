@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import { FELT_EDGE } from './src/theme/feltColor.js'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -45,11 +46,10 @@ export default defineConfig({
         name: 'Chor Dai Dee - Big 2 Card Game',
         short_name: 'Chor Dai Dee',
         description: 'Multiplayer Big 2 card game with advanced AI and statistics tracking',
-        // Felt gradient's edge stop — matches index.html's theme-color and
-        // the html/body background, so the PWA splash and system chrome
-        // blend with the table.
-        theme_color: '#0c3a23',
-        background_color: '#0c3a23',
+        // Felt gradient's edge stop, so the PWA splash and system chrome
+        // blend with the table rather than framing it.
+        theme_color: FELT_EDGE,
+        background_color: FELT_EDGE,
         display: 'standalone',
         orientation: 'any',
         scope: '/',
@@ -114,6 +114,21 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
+          }
+        ],
+        // Carried over from the hand-written public/manifest.json this
+        // replaced. That file used to win the cascade (index.html linked it
+        // explicitly, and per spec the first rel=manifest wins), which is why
+        // it had to go rather than be left as dead weight — it silently
+        // overrode everything configured here.
+        categories: ['games', 'entertainment'],
+        shortcuts: [
+          {
+            name: 'Join Game',
+            short_name: 'Join',
+            description: 'Join a game room',
+            url: '/lobby',
+            icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }]
           }
         ]
       },

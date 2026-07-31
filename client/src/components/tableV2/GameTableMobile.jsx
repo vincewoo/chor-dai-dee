@@ -35,7 +35,7 @@ function GameTableMobile(props) {
     } = props;
 
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
-    const { log, pileTrickPlays } = useRoundLog(gameState);
+    const { log, pileTrickPlays, logIsPartial } = useRoundLog(gameState);
     const [infoOn, setInfoOn] = useState(false);
     const [logOpen, setLogOpen] = useState(false);
     // Short viewports (mobile browser chrome visible) get the compact tier so
@@ -244,6 +244,7 @@ function GameTableMobile(props) {
 
 
             <RoundLogSheet
+                partial={logIsPartial}
                 open={logOpen}
                 log={log}
                 acc={acc}

@@ -12,7 +12,11 @@
          html/body background in index.css, so browser/system chrome blends
          with the table instead of framing it. -->
     <meta name="theme-color" content="#0c3a23" />
-    <link rel="manifest" href="/manifest.json" />
+    <!-- The manifest link is injected by vite-plugin-pwa (points at
+         /manifest.webmanifest); do not add one by hand. Per spec the first
+         rel=manifest in tree order wins, so the hand-written link that used to
+         sit here won and silently overrode every value configured in
+         vite.config.js. -->
 
     <!-- Apple Touch Icon -->
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
@@ -22,7 +26,7 @@
 
     <!-- MS Tile -->
     <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
-    <meta name="msapplication-TileColor" content="#166534" />
+    <meta name="msapplication-TileColor" content="#0c3a23" />
     <!-- Outfit font is self-hosted via @fontsource/outfit, imported in main.jsx -->
   </head>
   <body>

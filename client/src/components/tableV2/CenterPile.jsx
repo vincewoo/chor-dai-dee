@@ -64,22 +64,25 @@ const CenterPile = memo(function CenterPile({
         >
             {stack.length > 0 && (
                 <>
-                    {/* Pinned to the well's top edge, out of the flex flow, so
-                        the card fan (whose older plays drift upward via OFF's
-                        negative dy) can never slide underneath it — the label
-                        used to render on top of the cards it was naming. */}
+                    {/* Sits ABOVE the well, not inside it. Any in-well
+                        placement competes with the fan for height, and on a
+                        short viewport the well clamps to minHeight and the fan
+                        (whose older plays drift upward via OFF's negative dy)
+                        overflows back under the label — measured at 402x650,
+                        which is exactly the case this is meant to fix. Outside
+                        the frame there is nothing to compete with: the whole
+                        well is cards, and the label cannot overlap them at any
+                        height. */}
                     <div style={{
-                        position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+                        position: 'absolute', bottom: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)',
                         background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '4px 12px',
                         color: 'rgba(244,245,247,.9)', fontSize: Math.round(12 * scale), fontWeight: 700, zIndex: 8,
-                        maxWidth: 'calc(100% - 24px)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        boxSizing: 'border-box',
                     }}>
                         {label}
                     </div>
-                    {/* marginTop reserves the label band plus the fan's upward
-                        drift (max |dy| is 20 at scale 1), keeping the cards
-                        clear of the label on the shortest wells. */}
-                    <div style={{ position: 'relative', width: '100%', height: stackHeight, marginTop: Math.round(26 * scale) }}>
+                    <div style={{ position: 'relative', width: '100%', height: stackHeight }}>
                         {stack.map((play, idx) => {
                             const back = topIndex - idx; // 0 = top
                             const isTop = back === 0;
