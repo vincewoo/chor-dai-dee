@@ -36,6 +36,7 @@ const {
     createCoachAdvisor,
     BOT_DIFFICULTIES,
     DEFAULT_BOT_DIFFICULTY,
+    MAX_BOT_DIFFICULTY,
     DEFAULT_PPO_MODEL_PATH
 } = require('../game/BotPolicy');
 const {
@@ -230,6 +231,46 @@ test('the live roster uses adaptive strength without a player choice', () => {
     assert.deepStrictEqual(
         mixed.configureBotPolicyForRoster(), { success: true });
     assert.strictEqual(mixed.botPolicy.difficulty, 'adaptive');
+});
+
+test('max-difficulty bots survive the roster re-calibration', () => {
+    // The whole point of the flag: configureBotPolicyForRoster() runs at every
+    // game boundary and unconditionally chose adaptive, so storing the choice
+    // as a difficulty id alone would let the next game silently drop it.
+    const room = new Room('MAXBOTS-STICKY', 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+
+    assert.deepStrictEqual(room.setForceMaxBots(true),
+        { success: true, forceMaxBots: true });
+    assert.strictEqual(room.botPolicy.difficulty, MAX_BOT_DIFFICULTY);
+    assert.strictEqual(room.getGameState().forceMaxBots, true);
+
+    // A roster average would normally pull the room back to adaptive.
+    room.setAdaptiveCalibration({ lastTemperature: 9 });
+    assert.deepStrictEqual(room.configureBotPolicyForRoster(), { success: true });
+    assert.strictEqual(room.botPolicy.difficulty, MAX_BOT_DIFFICULTY,
+        'the room-level choice outranks the roster average');
+
+    // And turning it back off returns the room to the automatic policy.
+    assert.deepStrictEqual(room.setForceMaxBots(false),
+        { success: true, forceMaxBots: false });
+    assert.strictEqual(room.botPolicy.difficulty, 'adaptive');
+    assert.strictEqual(room.getGameState().forceMaxBots, false);
+});
+
+test('max-difficulty bots cannot be toggled mid-game', () => {
+    const room = seatedRoom('casual');
+    assert.ok(room.setForceMaxBots(true).error,
+        'changing policy mid-game would make the tape describe a bot that ' +
+        'never played the earlier rounds');
+    assert.strictEqual(room.botPolicy.difficulty, 'casual');
+    assert.strictEqual(room.forceMaxBots, false);
+});
+
+test('a new room does not start on max difficulty', () => {
+    const room = new Room('MAXBOTS-DEFAULT', 'short');
+    assert.strictEqual(room.forceMaxBots, false);
+    assert.strictEqual(room.getGameState().forceMaxBots, false);
 });
 
 test('adaptive effort is frozen for a complete game', () => {

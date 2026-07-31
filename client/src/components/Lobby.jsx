@@ -358,6 +358,8 @@ const Lobby = ({ user, socket, setUser }) => {
                 hostUsername={roomLobbyData.hostUsername}
                 gameMode={selectedGameMode}
                 onSetGameMode={handleGameModeChange}
+                forceMaxBots={!!roomLobbyData.forceMaxBots}
+                onSetMaxBots={(on) => socket.emit('set_max_bots', { enabled: on })}
                 onStartGame={handleStartGameFromLobby}
                 onLeave={handleLeaveRoomLobby}
                 voice={{

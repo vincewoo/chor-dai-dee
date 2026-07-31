@@ -5,7 +5,8 @@ const {
     createBotPolicy,
     createCoachAdvisor,
     BOT_DIFFICULTIES,
-    DEFAULT_BOT_DIFFICULTY
+    DEFAULT_BOT_DIFFICULTY,
+    MAX_BOT_DIFFICULTY
 } = require('./BotPolicy');
 const {
     calculateDisplayRating,
@@ -128,6 +129,15 @@ class Room {
         // checkBotTurn dispatches. See docs/GAME-STATE-HISTORY-STORE.md on the
         // decorative `player.difficulty` that made exactly that mistake.
         this.botDifficulty = DEFAULT_BOT_DIFFICULTY;
+        // Opt-in escape hatch from the roster-averaged Adaptive policy: play
+        // the strongest tier regardless of how the table calibrates. Off by
+        // default and deliberately unobtrusive in the UI — Adaptive is the
+        // right experience for almost everyone, and this exists for players
+        // who have outgrown it and want a known-fixed opponent. Held as its
+        // own flag rather than by leaving `botDifficulty` on 'competitive',
+        // because configureBotPolicyForRoster() re-applies Adaptive at every
+        // game boundary and would otherwise silently undo the choice.
+        this.forceMaxBots = false;
         // Snapshotted per room so an in-flight game never changes policy when
         // configuration changes during a rolling deploy.
         this.botPolicy = createBotPolicy({ difficulty: this.botDifficulty });
@@ -1015,9 +1025,25 @@ class Room {
             return { error: 'Cannot configure bots during game' };
         }
 
-        this.botDifficulty = 'adaptive';
+        // The room's opt-in max-difficulty choice outranks the roster average.
+        this.botDifficulty = this.forceMaxBots ? MAX_BOT_DIFFICULTY : 'adaptive';
         this.refreshBotPolicy();
         return { success: true };
+    }
+
+    /**
+     * Turn the max-difficulty escape hatch on or off. Waiting-state only, for
+     * the same reason as setBotDifficulty: a room's policy is snapshotted so an
+     * in-flight game cannot change how its bots play.
+     */
+    setForceMaxBots(enabled) {
+        if (this.gameState !== 'waiting') {
+            return { error: 'Cannot change bot difficulty during game' };
+        }
+        this.forceMaxBots = !!enabled;
+        this.botDifficulty = this.forceMaxBots ? MAX_BOT_DIFFICULTY : 'adaptive';
+        this.refreshBotPolicy();
+        return { success: true, forceMaxBots: this.forceMaxBots };
     }
 
     /**
@@ -1894,6 +1920,10 @@ class Room {
             debugMode: this.debugMode,
             gameMode: this.gameMode,
             botDifficulty: this.botPolicy.difficulty,
+            // The room's own setting, not a description of the live policy:
+            // the waiting room renders a toggle from it, and during a game it
+            // still reports what was chosen for the game that is running.
+            forceMaxBots: this.forceMaxBots,
             adaptiveCalibration: this.botPolicy.difficulty === 'adaptive'
                 ? publicCalibration(this.adaptiveCalibration)
                 : null,

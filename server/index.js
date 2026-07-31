@@ -1716,6 +1716,27 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('room_update', room.getGameState());
     });
 
+    socket.on('set_max_bots', ({ enabled }) => {
+        const result = roomManager.findRoomBySocketId(socket.id);
+        if (!result) {
+            return socket.emit('error', 'Not in a room');
+        }
+
+        const { room, roomId, player } = result;
+
+        if (!player || player.name !== room.hostUsername) {
+            return socket.emit('error',
+                'Only the room host can change bot difficulty');
+        }
+
+        const setResult = room.setForceMaxBots(enabled);
+        if (setResult.error) {
+            return socket.emit('error', setResult.error);
+        }
+
+        io.to(roomId).emit('room_update', room.getGameState());
+    });
+
     socket.on('start_game', async ({ roomId }) => {
         const room = roomManager.getRoom(roomId);
         if (room) {

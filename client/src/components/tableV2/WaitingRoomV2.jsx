@@ -20,6 +20,8 @@ function WaitingRoomV2({
     isPrivate,
     onSetPrivacy,
     onSetGameMode,
+    forceMaxBots,
+    onSetMaxBots,
     onAddBot,
     onStartGame,
     onLeave,
@@ -268,6 +270,50 @@ function WaitingRoomV2({
                                         />
                                     )}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Advanced, and deliberately quiet: bots normally
+                            calibrate to the table, which is the right default
+                            for almost everyone. This is the escape hatch for
+                            players who have outgrown it and want a fixed,
+                            known-strongest opponent — so it reads as a footnote
+                            to the settings rather than a headline choice. */}
+                        {isHost && onSetMaxBots && (
+                            <div
+                                className="flex items-center justify-between gap-3"
+                                style={{ marginTop: 2, paddingTop: 11, borderTop: '1px solid rgba(255,255,255,.07)' }}
+                            >
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ color: 'rgba(244,245,247,.62)', fontWeight: 700, fontSize: 12 }}>
+                                        Max difficulty bots
+                                    </div>
+                                    <div style={{ color: 'rgba(244,245,247,.38)', fontSize: 11, fontWeight: 600 }}>
+                                        {forceMaxBots
+                                            ? 'Always the strongest bots'
+                                            : 'Off — bots match the table'}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => onSetMaxBots(!forceMaxBots)}
+                                    role="switch"
+                                    aria-checked={!!forceMaxBots}
+                                    aria-label="Max difficulty bots"
+                                    style={{
+                                        flexShrink: 0, width: 44, height: 26, borderRadius: 999, cursor: 'pointer',
+                                        border: `1px solid ${forceMaxBots ? acc : 'rgba(255,255,255,.18)'}`,
+                                        background: forceMaxBots ? `${acc}33` : 'rgba(0,0,0,.38)',
+                                        padding: 0, position: 'relative',
+                                        transition: rm ? 'none' : 'background .18s ease, border-color .18s ease',
+                                    }}
+                                >
+                                    <span style={{
+                                        position: 'absolute', top: 2, left: forceMaxBots ? 20 : 2,
+                                        width: 20, height: 20, borderRadius: 999,
+                                        background: forceMaxBots ? acc : 'rgba(244,245,247,.5)',
+                                        transition: rm ? 'none' : 'left .18s ease, background .18s ease',
+                                    }} />
+                                </button>
                             </div>
                         )}
                     </div>
