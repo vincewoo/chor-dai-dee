@@ -125,7 +125,16 @@ test('the sweep detects a tape with plies removed', async () => {
         `SELECT game_key, round_number, ply_count FROM mlog_round
           WHERE end_reason = 'normal' ORDER BY game_key LIMIT 1`
     );
-    const cutoff = victim.ply_count - 3;
+    // The cut must remove at least one card-playing ply to be detectable. A
+    // round won with a lone 2♠ records three server AUTO_PASS plies AFTER the
+    // winning play (the house rule auto-passes the other seats), and deleting
+    // only those leaves a tape that replays to exactly the recorded hand
+    // sizes -- the sweep rightly sees nothing. Anchor the cut at the last
+    // PLAY so the winning play always goes.
+    const lastPlay = await get(
+        `SELECT MAX(ply) AS ply FROM mlog_action WHERE game_key = ? AND action = ?`,
+        [victim.game_key, ACTION.PLAY]);
+    const cutoff = Math.min(victim.ply_count - 3, lastPlay.ply);
     await run('DELETE FROM mlog_action WHERE game_key = ? AND ply >= ?',
         [victim.game_key, cutoff]);
 
