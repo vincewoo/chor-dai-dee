@@ -86,13 +86,48 @@ test('the phone tab bar stays in normal flow', () => {
     assert.match(bar, /\bshrink-0\b/, 'the bar must not be squeezed by the scroller');
     assert.match(bar, /\bmd:hidden\b/, 'desktop uses the header destinations instead');
 
-    // The column shell the bar is the last row of, and the single scroller
-    // between its two flow rows.
-    assert.match(home, /className="relative flex h-full w-full flex-col overflow-hidden/);
-    assert.match(
-        home,
-        /className="relative z-10 min-h-0 flex-1 overflow-y-auto/,
-        'min-h-0 is load-bearing: without it the column outgrows the viewport instead of scrolling'
+    // className alone is not enough — an inline style={{position:'fixed'}} would
+    // reintroduce the bug with every class assertion above still green.
+    const barTag = /<nav\s+className="[^"]*pb-safe-bar[^"]*"[\s\S]*?>/.exec(home);
+    assert.ok(barTag, 'the tab bar opening tag parses');
+    assert.doesNotMatch(barTag[0], /position:\s*['"]?(fixed|absolute)/, 'no inline position override');
+
+    // The column shell and the single scroller between its two flow rows. Token
+    // checks, not whole ordered class-list literals, so reordering classes or
+    // inserting one does not redden a behaviour-preserving refactor.
+    const shellTag = /<div\s+className="([^"]*h-full[^"]*)"/.exec(home);
+    assert.ok(shellTag, 'the column shell is the first classed div');
+    for (const token of ['relative', 'flex', 'h-full', 'flex-col', 'overflow-hidden']) {
+        assert.match(shellTag[1], new RegExp(`\\b${token}\\b`), `shell keeps ${token}`);
+    }
+    assert.doesNotMatch(shellTag[1], /\boverflow-y-auto\b/, 'the shell itself must not scroll');
+
+    const scroller = /<div className="([^"]*\bflex-1\b[^"]*)">/.exec(home);
+    assert.ok(scroller, 'the scroller is declared');
+    for (const token of ['min-h-0', 'flex-1', 'overflow-y-auto']) {
+        assert.match(scroller[1], new RegExp(`\\b${token.replace('-', '-')}\\b`), `scroller keeps ${token}`);
+    }
+
+    // The property the whole change is about: the bar is a FOLLOWING SIBLING of
+    // the scroller, not a descendant. Nested inside it, the bar scrolls away
+    // with the content — the original "footer rides up onto the game list" bug,
+    // which every assertion above would still pass.
+    const scrollerOpen = home.indexOf(scroller[0]);
+    const barOpen = home.indexOf(barTag[0]);
+    assert.ok(scrollerOpen !== -1 && barOpen !== -1, 'both tags located');
+    assert.ok(barOpen > scrollerOpen, 'the tab bar is written after the scroller');
+
+    // Between the scroller's opening tag and the bar's, the <div>s must balance
+    // with exactly one surplus close — the scroller's own. Fewer means the bar
+    // is still nested inside it. Counted rather than string-matched on the
+    // closing tag so re-indenting the block does not redden this.
+    const between = home.slice(scrollerOpen + scroller[0].length, barOpen);
+    const opens = (between.match(/<div\b(?![^>]*\/>)/g) || []).length;
+    const closes = (between.match(/<\/div>/g) || []).length;
+    assert.equal(
+        closes - opens,
+        1,
+        'the tab bar must be a following SIBLING of the scroller, not a descendant — nested inside it, it scrolls away with the content'
     );
 
     const css = read('src/index.css');
