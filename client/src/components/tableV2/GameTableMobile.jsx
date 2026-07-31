@@ -72,12 +72,26 @@ function GameTableMobile(props) {
     const playLabel = canPlay ? `Play ${selectedCards.length}` : 'Play';
 
     const rootStyle = useMemo(() => ({
-        position: 'absolute', inset: 0, overflow: 'hidden',
+        // This must itself be fixed. WebKit can inset an absolute bottom edge
+        // in an installed viewport-fit=cover PWA even when its parent reaches
+        // the screen edge. Owning the fixed viewport here keeps the visible
+        // table and all bottom-anchored children in one reliable containing
+        // block instead of relying on the outer GameRoom shell to correct it.
+        position: 'fixed',
+        top: 'env(safe-area-inset-top, 0px)',
+        right: 0,
+        bottom: 0,
+        left: 0,
+        overflow: 'hidden',
+        // Paint the felt on the fixed layer itself. TableBackground adds the
+        // decorative overlays, but the physical bottom no longer depends on
+        // one of its absolutely positioned children reaching that edge.
+        background: `${surface.tint},${surface.base}`,
         fontFamily: "'Outfit',ui-sans-serif,system-ui,sans-serif",
         // Accent CSS vars consumed by keyframes (cddGlow / cddPulse).
         '--cdd-acc': acc,
         '--cdd-acc-soft': soft,
-    }), [acc, soft]);
+    }), [acc, soft, surface]);
 
     return (
         <div style={rootStyle}>

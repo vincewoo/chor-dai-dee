@@ -53,6 +53,20 @@ test('the game shell is fixed to the viewport edges without a height unit', () =
         2,
         'loading and active game shells both use the fixed viewport frame'
     );
+
+    const mobile = read('src/components/tableV2/GameTableMobile.jsx');
+    const tableRoot = /const rootStyle = useMemo\(\(\) => \(\{([\s\S]*?)\}\), \[/m.exec(mobile);
+    assert.ok(tableRoot, 'mobile table root style is declared');
+    assert.match(tableRoot[1], /position:\s*'fixed'/);
+    assert.match(tableRoot[1], /top:\s*'env\(safe-area-inset-top,\s*0px\)'/);
+    for (const edge of ['right', 'bottom', 'left']) {
+        assert.match(tableRoot[1], new RegExp(`${edge}:\\s*0`));
+    }
+    assert.match(
+        tableRoot[1],
+        /background:\s*`\$\{surface\.tint\},\$\{surface\.base\}`/,
+        'the fixed table layer itself paints the felt to the bottom edge'
+    );
 });
 
 test('index.html theme and tile colors match FELT_EDGE', () => {
