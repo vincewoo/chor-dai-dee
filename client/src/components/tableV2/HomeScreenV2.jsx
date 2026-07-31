@@ -428,8 +428,11 @@ function HomeScreenV2({
                         // No bottom padding of its own: the bar's pb-safe-bar
                         // owns the space below the labels, so the two do not
                         // stack into a tall half-empty bar on a device with a
-                        // home indicator.
-                        style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '4px 2px 0', border: 'none', background: 'none', color: 'rgba(244,245,247,.6)', fontFamily: FONT, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
+                        // home indicator. minHeight replaces the tap area that
+                        // padding used to provide — the bar's padding sits
+                        // OUTSIDE the button box, so without this the target
+                        // shrinks to 41px, under the 44pt minimum.
+                        style={{ flex: 1, minWidth: 0, minHeight: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 2px 0', border: 'none', background: 'none', color: 'rgba(244,245,247,.6)', fontFamily: FONT, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
                     >
                         <NavIcon name={d.icon} />
                         <span className="truncate" style={{ maxWidth: '100%' }}>{d.label}</span>
