@@ -218,9 +218,13 @@ to its compact layout tier for viewports with mobile-browser chrome visible.
   the page opens on identity + the one button that starts a game, then a single
   Live/Recent switch over one hairline-separated list (joinable rooms in
   progress / finished games) instead of a stack of panels. Destinations are a
-  viewport-`fixed` bottom bar on phones - an absolutely-positioned footer inside
-  the scroller lands on top of the content once the page grows - and header
-  links from 768px up.
+  bottom bar on phones and header links from 768px up. The screen is a
+  **column shell** - a `flex-1 min-h-0` scroller between the content and a
+  bottom bar that is the last row **in normal flow**. It has been both of the
+  other two things and neither works: absolute inside the scroller rides up
+  onto the game list once the page grows, and `position: fixed` breaks in the
+  installed iOS PWA. See `docs/IOS-PWA-LAYOUT.md`, which is required reading
+  before moving anything to a screen edge.
 - `useHandGeometry.js` (in `hooks/`) - card size and overlap for the hand fan.
   Type scales only *above* the 75px mobile card (`typeScale`), so no mobile
   width can be altered by a desktop change.

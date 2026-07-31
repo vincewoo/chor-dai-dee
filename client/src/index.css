@@ -47,13 +47,6 @@ body {
   left: 0;
 }
 
-.min-h-screen-safe {
-  min-height: 100vh;
-  min-height: 100dvh;
-  min-height: 100svh;
-  min-height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-}
-
 /* Legacy/desktop screens size themselves with Tailwind's min-h-screen (100vh).
    Inside the #root scroller that overflows by the safe-area insets, so retarget
    it at the same inset-aware height the v2 screens use. */
@@ -67,17 +60,23 @@ body {
 /* Safe-area helpers. These are plain CSS rather than Tailwind arbitrary values
    (mt-[env(...)], pb-[calc(...+env(...))]) because Tailwind v4 silently drops
    arbitrary values containing a bare env(), producing no rule at all. Each
-   helper adds the inset on top of the screen's existing base padding. */
-.mt-safe {
-  margin-top: env(safe-area-inset-top);
-}
+   helper adds the inset on top of the screen's existing base padding.
 
-.pt-safe {
-  padding-top: env(safe-area-inset-top);
-}
+   Every helper below is referenced by at least one screen, and safeAreaHelpers
+   .test.js fails if that stops being true — a hand-authored rule is not purged
+   by Tailwind's content scan, so a dead one ships forever, and a *dangling*
+   reference silently does nothing in the one environment with no devtools. */
 
 /* Bottom bars that sit ON the home indicator (the mobile tab bar), as opposed
    to scroll content that merely has to clear it (the pb-safe-N helpers below).
+
+   The bar wearing this must be in NORMAL FLOW at the bottom of a full-height
+   column. Anchored with `position: fixed; bottom: 0` it was measured landing one
+   safe-area-inset-top (~60pt) above the screen in an installed
+   viewport-fit=cover iOS PWA. In flow, this padding is what paints the bar
+   through the home-indicator band. Read docs/IOS-PWA-LAYOUT.md before adding any
+   new bottom-anchored fixed element — it records what was measured on device
+   and, just as importantly, what was not.
 
    `max()` rather than `base + env()`: a bar that ADDS the inset to its own
    padding grows to ~90px in a standalone PWA with its labels crammed against
@@ -91,14 +90,11 @@ body {
 
 /* Scrollable v2 screens: base padding + the inset, so content clears the
    status bar and home indicator rather than hiding underneath them. */
-.pt-safe-16 { padding-top: calc(4rem + env(safe-area-inset-top)); } /* Tailwind pt-16 */
 .pt-safe-18 { padding-top: calc(18px + env(safe-area-inset-top)); }
 .pb-safe-6 { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
 .pb-safe-26 { padding-bottom: calc(26px + env(safe-area-inset-bottom)); }
 .pb-safe-36 { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
-.pb-safe-88 { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 .pb-safe-92 { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
-.pb-safe-104 { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
 
 /* Fixed-position toasts (PWAUpdatePrompt): floated above the home screen's
    bottom nav, plus the home indicator inset. Scoped to mobile widths — this
