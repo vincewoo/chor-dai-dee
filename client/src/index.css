@@ -81,8 +81,17 @@ body {
   padding-top: env(safe-area-inset-top);
 }
 
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+/* Bottom bars that sit ON the home indicator (the mobile tab bar), as opposed
+   to scroll content that merely has to clear it (the pb-safe-N helpers below).
+
+   `max()` rather than `base + env()`: a bar that ADDS the inset to its own
+   padding grows to ~90px in a standalone PWA with its labels crammed against
+   the top edge, which is what made the tab bar look wrong. Absorbing the inset
+   instead keeps the bar the same height it has in a browser tab and puts the
+   labels directly above the indicator, the way a native tab bar sits. The
+   `max()` keeps the base padding on devices with no inset. */
+.pb-safe-bar {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 /* Scrollable v2 screens: base padding + the inset, so content clears the

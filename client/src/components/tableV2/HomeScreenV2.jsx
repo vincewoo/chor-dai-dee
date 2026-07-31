@@ -418,14 +418,21 @@ function HomeScreenV2({
                 the scroller, which is what let the old footer land on top of the
                 game list once the page grew. */}
             <nav
-                className="fixed inset-x-0 bottom-0 z-20 flex items-stretch justify-around gap-1 px-2 pb-safe pt-[7px] md:hidden"
+                className="fixed inset-x-0 bottom-0 z-20 flex items-stretch justify-around gap-1 px-2 pb-safe-bar pt-[7px] md:hidden"
                 style={{ background: 'rgba(8,26,18,.82)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderTop: '1px solid rgba(255,255,255,.09)' }}
             >
                 {destinations.map((d) => (
                     <button
                         key={d.key}
                         onClick={d.onClick}
-                        style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '4px 2px 8px', border: 'none', background: 'none', color: 'rgba(244,245,247,.6)', fontFamily: FONT, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
+                        // No bottom padding of its own: the bar's pb-safe-bar
+                        // owns the space below the labels, so the two do not
+                        // stack into a tall half-empty bar on a device with a
+                        // home indicator. minHeight replaces the tap area that
+                        // padding used to provide — the bar's padding sits
+                        // OUTSIDE the button box, so without this the target
+                        // shrinks to 41px, under the 44pt minimum.
+                        style={{ flex: 1, minWidth: 0, minHeight: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 2px 0', border: 'none', background: 'none', color: 'rgba(244,245,247,.6)', fontFamily: FONT, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
                     >
                         <NavIcon name={d.icon} />
                         <span className="truncate" style={{ maxWidth: '100%' }}>{d.label}</span>
