@@ -13,7 +13,7 @@ const {
     COLD_START_TEMPERATURE
 } = require('./AdaptiveBotController');
 
-const PPO_POLICY_GENERATION = 14;
+const PPO_POLICY_GENERATION = 18;
 const DEFAULT_PPO_MODEL_PATH = path.resolve(
     __dirname, '../ai/ppo-policy-gpu-v1.json');
 

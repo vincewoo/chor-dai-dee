@@ -49,7 +49,7 @@ actions remain available while biased outcome/value labels can be filtered.
 
 ## The dial
 
-The live bots run the promoted generation-14 PPO actor. Before this feature they
+The live bots run the promoted generation-18 PPO actor. Before this feature they
 ran it in pure argmax mode: `BotPolicy.ppoPolicy()` built `new PPOBot(model, {
 overrideMargin })` and never passed `sample` or `temperature`, so every bot
 always played its single best move — which is both why they felt sharp and why

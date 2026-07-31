@@ -483,7 +483,7 @@ original implementation got wrong. Recorded as `mlog_seat.difficulty`, with
 which is historically accurate.)*
 
 *(The `bot_ppo` occupant and `advanced_bots` are no longer fossils either — the
-promoted generation-14 PPO actor is the live policy and both are written on
+promoted generation-18 PPO actor is the live policy and both are written on
 every production game. `SOURCE.BOT_FALLBACK` is still written by nothing.)*
 
 **Policy is not stable within a seat.** If `getAdvancedBotMove` rejected, the
