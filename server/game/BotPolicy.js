@@ -67,6 +67,13 @@ const BOT_DIFFICULTIES = {
 
 const DEFAULT_BOT_DIFFICULTY = 'competitive';
 
+// The strongest tier available to a room. `competitive` is argmax — it never
+// samples, so it cannot play below its own best judgement, which is what makes
+// it the ceiling rather than merely the lowest temperature. Named so the
+// waiting room's max-difficulty toggle does not hardcode a tier id that a
+// future retune might move.
+const MAX_BOT_DIFFICULTY = 'competitive';
+
 function resolveDifficulty(difficulty) {
     const id = difficulty === undefined || difficulty === null
         ? DEFAULT_BOT_DIFFICULTY
@@ -335,6 +342,7 @@ module.exports = {
     createCoachAdvisor,
     BOT_DIFFICULTIES,
     DEFAULT_BOT_DIFFICULTY,
+    MAX_BOT_DIFFICULTY,
     DEFAULT_PPO_MODEL_PATH,
     PPO_POLICY_GENERATION
 };

@@ -1,16 +1,26 @@
 # Bot difficulty
 
-Bot strength is selected automatically rather than exposed as a lobby choice:
+Bot strength is selected automatically, with one opt-in override:
 
 - A solo human plays against `adaptive` bots at the continuous PPO temperature
   chosen from that player's persistent placement calibration.
 - A table with multiple humans averages every player's saved calibration and
   uses that middle temperature for its `adaptive` bots. Guests and players
   without any placement history contribute the neutral cold-start estimate.
+- **Max difficulty bots** (waiting room, host only, off by default) pins the
+  room to `MAX_BOT_DIFFICULTY` — currently `competitive`, the argmax policy —
+  instead of the roster average. It is a deliberately quiet, advanced control:
+  Adaptive is the right experience for almost everyone, and this exists for
+  players who have outgrown it and want a fixed, known-strongest opponent.
+
+The override is held as `Room.forceMaxBots`, not by leaving `botDifficulty` on
+`competitive`, because `configureBotPolicyForRoster()` re-applies Adaptive at
+every game boundary and would otherwise silently undo the choice. Like the
+tier itself, it can only change while the room is `waiting`.
 
 The former `casual` and `balanced` ids remain valid so old preferences, logs,
-replays and command-line benchmarks keep their meaning. They are no longer
-shown in the waiting-room picker.
+replays and command-line benchmarks keep their meaning. They are not shown in
+the waiting room.
 
 The selected room average is frozen for the complete game. Each registered
 human's placement evidence updates their own estimate after the game; the
@@ -161,10 +171,21 @@ running the heuristic. There is no second field here to disagree, so the label
 cannot lie.
 
 `Room.setBotDifficulty` remains an internal primitive for tests, benchmarks and
-historical replay compatibility. Production game boundaries call
-`Room.configureBotPolicyForRoster`, and no socket or preference API exposes the
-choice. The per-room policy snapshot exists so an in-flight game can never
-change how its bots play.
+historical replay compatibility: no socket or preference API selects an
+arbitrary tier. Production game boundaries call
+`Room.configureBotPolicyForRoster`, and the only player-facing control is the
+binary `set_max_bots` socket event (host only, waiting only), which chooses
+between the roster average and `MAX_BOT_DIFFICULTY`. The per-room policy
+snapshot exists so an in-flight game can never change how its bots play.
+
+**Max difficulty suspends placement.** Adaptive calibration is recorded only
+while the room is on the `adaptive` policy — see the `difficulty === 'adaptive'`
+guards in `RoomManager.recordAdaptiveRoundPlacements` and the game-end handler
+in `server/index.js`. A game played against max-difficulty bots therefore
+contributes no placement evidence, so players in that room make no progress
+toward completing placement and a still-placing player stays Unranked. Hidden
+rating still updates as normal. This applies to everyone at the table, not just
+the host who set it.
 `replaceWithBot` needs no special handling for the same reason: the replacement
 seat has no policy of its own and is answered for by the room's.
 

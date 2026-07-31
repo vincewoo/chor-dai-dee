@@ -71,6 +71,10 @@ const Lobby = ({ user, socket, setUser }) => {
                     players: state.players || prev.players,
                     hostUsername: state.hostUsername || prev.hostUsername,
                     gameMode: state.gameMode || prev.gameMode,
+                    // `??`, not `||`: this is a boolean whose false value is
+                    // meaningful, so falling back on it would make the toggle
+                    // impossible to turn off from this mount.
+                    forceMaxBots: state.forceMaxBots ?? prev.forceMaxBots,
                 }));
                 if (state.gameMode) {
                     setSelectedGameMode(state.gameMode);
@@ -358,6 +362,8 @@ const Lobby = ({ user, socket, setUser }) => {
                 hostUsername={roomLobbyData.hostUsername}
                 gameMode={selectedGameMode}
                 onSetGameMode={handleGameModeChange}
+                forceMaxBots={!!roomLobbyData.forceMaxBots}
+                onSetMaxBots={(on) => socket.emit('set_max_bots', { enabled: on })}
                 onStartGame={handleStartGameFromLobby}
                 onLeave={handleLeaveRoomLobby}
                 voice={{

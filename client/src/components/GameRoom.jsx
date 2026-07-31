@@ -1121,6 +1121,8 @@ const GameRoom = ({ user, socket }) => {
                     isPrivate={gameState.isPrivate}
                     onSetPrivacy={(priv) => socket.emit('set_privacy', { isPrivate: priv })}
                     onSetGameMode={(mode) => socket.emit('set_game_mode', { gameMode: mode })}
+                    forceMaxBots={!!gameState.forceMaxBots}
+                    onSetMaxBots={(on) => socket.emit('set_max_bots', { enabled: on })}
                     voice={{
                         enabled: !!voiceContext?.voiceEnabled,
                         connected: !!voiceContext?.isVoiceConnected,
