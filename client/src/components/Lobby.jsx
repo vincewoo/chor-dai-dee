@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { shouldShowJoinError } from '../utils/joinErrors';
 import { useNavigate, useLocation } from 'react-router-dom';
 import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
@@ -11,6 +12,14 @@ const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
     const [error, setError] = useState('');
     const [reconnecting, setReconnecting] = useState(false);
+    // Mirrors isJoining for the socket error handler, which would otherwise
+    // read a stale closure value. "Room not found" is only worth showing when
+    // a user-initiated join is actually in flight — the lobby's own reconnect
+    // probes (mount + every socket connect) also come back as "Room not
+    // found" when there is no game to rejoin, and the old reconnecting-state
+    // check let the second racing probe's error surface as a toast the user
+    // never caused.
+    const isJoiningRef = useRef(false);
     const [isJoining, setIsJoining] = useState(false);
     // Room id we can offer to watch after a join was refused for being full
     const [spectateOffer, setSpectateOffer] = useState(null);
@@ -179,18 +188,27 @@ const Lobby = ({ user, socket, setUser }) => {
         setSelectedGame(gameDialogData);
     };
 
-    const createRoom = () => {
-        if (isJoining) return;
+    // The single place a user-initiated join starts: state and ref move
+    // together here, so a new call site can't forget the mirror. The ref is
+    // set synchronously (not effect-synced) because a localhost server can
+    // answer before an effect would flush.
+    const beginJoin = (targetRoomId) => {
+        if (isJoining) return false;
         setIsJoining(true);
+        isJoiningRef.current = true;
+        socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
+        return true;
+    };
+
+    const createRoom = () => {
         console.log('createRoom called, socket connected:', socket.connected);
-        socket.emit('join_room', { roomId: 'create', username: user.username, isGuest: user.isGuest });
+        beginJoin('create');
     };
 
     const joinRoom = () => {
-        if (!roomId || isJoining) return;
-        setIsJoining(true);
+        if (!roomId) return;
         setSpectateOffer(null);
-        socket.emit('join_room', { roomId: roomId.toUpperCase(), username: user.username, isGuest: user.isGuest });
+        beginJoin(roomId.toUpperCase());
     };
 
     // Watch a game we couldn't join. The server is the authority on whether we
@@ -200,9 +218,7 @@ const Lobby = ({ user, socket, setUser }) => {
     };
 
     const joinInProgressRoom = (targetRoomId) => {
-        if (isJoining) return;
-        setIsJoining(true);
-        socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
+        beginJoin(targetRoomId);
     };
 
     // Fetch joinable rooms on mount and periodically
@@ -232,6 +248,15 @@ const Lobby = ({ user, socket, setUser }) => {
             console.error('Error fetching recent games:', error);
         }
     };
+
+    // Error toasts are transient: they concern the last action, not lasting
+    // state, so they clear themselves rather than sitting on screen until the
+    // next navigation.
+    useEffect(() => {
+        if (!error) return;
+        const t = setTimeout(() => setError(''), 5000);
+        return () => clearTimeout(t);
+    }, [error]);
 
     // Attempt to reconnect to an existing game on mount
     const attemptReconnect = () => {
@@ -278,14 +303,14 @@ const Lobby = ({ user, socket, setUser }) => {
 
         socket.on('error', (err) => {
             console.log('error received:', err);
-            // Only show error if it's not "Room not found" during reconnect attempt
-            setReconnecting(prev => {
-                if (err !== 'Room not found' || !prev) {
-                    setError(err);
-                }
-                return false;
-            });
+            // "Room not found" with no user join in flight is a reconnect
+            // probe finding nothing to rejoin — expected, not worth a toast.
+            if (shouldShowJoinError(err, isJoiningRef.current)) {
+                setError(err);
+            }
+            setReconnecting(false);
             setIsJoining(false);
+            isJoiningRef.current = false;
         });
 
         // A full room is a dead end for joining, but it's the ideal room to watch.

@@ -4,6 +4,7 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import SuitWatermark from './SuitWatermark';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
+import { timeAgo } from '../../utils/timeAgo';
 
 const TEXT = '#f4f5f7';
 const MUTED = 'rgba(244,245,247,.5)';
@@ -360,11 +361,7 @@ function HomeScreenV2({
                             {!showLive && finishedGames.slice(0, 4).map((game, i) => {
                                 // `nowTs` is sampled once by Lobby, so the
                                 // relative times don't drift on re-render.
-                                const ms = nowTs ? nowTs - new Date(game.end_time) : null;
-                                const hours = ms === null ? 0 : Math.floor(ms / 3600000);
-                                const timeStr = ms === null
-                                    ? null
-                                    : hours > 0 ? `${hours}h ago` : `${Math.max(0, Math.floor(ms / 60000))}m ago`;
+                                const timeStr = nowTs ? timeAgo(game.end_time, nowTs) : null;
                                 const ranked = [...(game.participants || [])].sort((a, b) => a.placement - b.placement);
                                 const winner = ranked[0];
                                 const meta = [

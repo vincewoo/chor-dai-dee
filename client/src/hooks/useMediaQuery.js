@@ -30,4 +30,11 @@ export const WIDE_QUERY = '(min-width: 1024px)';
 export const useIsDesktop = () => useMediaQuery(DESKTOP_QUERY);
 export const useIsWide = () => useMediaQuery(WIDE_QUERY);
 
+// Height breakpoint for the mobile game table. MOBILE_LAYOUT's offsets were
+// tuned on a ~844px-tall phone; with mobile-browser chrome visible the usable
+// height drops to ~650-760px, and the fixed offsets need the compact tier
+// (see layout.js) to keep the pile clear of the banner and controls.
+export const SHORT_QUERY = '(max-height: 760px)';
+export const useIsShortViewport = () => useMediaQuery(SHORT_QUERY);
+
 export default useMediaQuery;

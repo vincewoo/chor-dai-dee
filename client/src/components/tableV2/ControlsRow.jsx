@@ -18,6 +18,10 @@ const SHOWN_HAND_TYPES = [
     HAND_TYPES.FULL_HOUSE, HAND_TYPES.QUADS, HAND_TYPES.STRAIGHT_FLUSH,
 ];
 const HELPER_ROW_INSET = 12;
+// Width of the scroll-edge fade on the chip strip. Deliberately its own
+// constant: HELPER_ROW_INSET also drives wrapper padding and the
+// scroll-into-view offset, and a padding tweak shouldn't change the fade.
+const EDGE_FADE_WIDTH = 12;
 const THREE_OF_DIAMONDS = { rank: '3', suit: 'D' };
 const HAND_SHORT_NAMES = {
     [HAND_TYPES.PAIR]: 'Pair', [HAND_TYPES.TRIPLE]: 'Triple', [HAND_TYPES.STRAIGHT]: 'Straight',
@@ -36,6 +40,7 @@ function ControlsRow({
     const [activeType, setActiveType] = useState(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [activeCanPlay, setActiveCanPlay] = useState(false);
+    const [chipsOverflow, setChipsOverflow] = useState(false);
     const helperRowRef = useRef(null);
     const chipRefs = useRef({});
 
@@ -43,6 +48,20 @@ function ControlsRow({
         const all = findAvailableHandTypes(playerHand, null);
         return all.filter(h => SHOWN_HAND_TYPES.includes(h.type));
     }, [playerHand]);
+
+    // The edge fade only earns its keep when there is actually something to
+    // scroll to — a permanent fade on a row whose chips all fit reads as the
+    // very layout bug it exists to prevent. Re-checked when the chip set
+    // changes (dep) and when the row's box resizes (observer).
+    useEffect(() => {
+        const row = helperRowRef.current;
+        if (!row) return;
+        const check = () => setChipsOverflow(row.scrollWidth > row.clientWidth + 1);
+        check();
+        const ro = new ResizeObserver(check);
+        ro.observe(row);
+        return () => ro.disconnect();
+    }, [availableHandTypes]);
 
     const playableHandTypes = useMemo(() => {
         if (!isMyTurn) return new Set();
@@ -117,73 +136,83 @@ function ControlsRow({
         whiteSpace: 'nowrap',
     };
 
+    // Fades the clipped edges of the scrollable chip strip so a half-visible
+    // chip reads as "more to scroll" rather than a layout bug.
+    const edgeFade = `linear-gradient(90deg, transparent 0, #000 ${EDGE_FADE_WIDTH}px, #000 calc(100% - ${EDGE_FADE_WIDTH}px), transparent 100%)`;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, width: '100%' }}>
-            {/* Hand-type chips get the full-width scrolling row. */}
-            <div
-                ref={helperRowRef}
-                className="scrollbar-thin"
-                style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', padding: `2px ${HELPER_ROW_INSET}px`, boxSizing: 'border-box' }}
-            >
-                {showChips && availableHandTypes.map(({ type, count }) => {
-                    const isActive = activeType === type && isActiveTypeValid;
-                    const canPlayType = playableHandTypes.has(type);
-                    const activeIsPlayable = isMyTurn && isActive && activeCanPlay;
-                    const currentIndex = isActive ? activeIndex + 1 : 0;
-                    const title = !isMyTurn
-                        ? `${HAND_SHORT_NAMES[type]} preview. Click to review and cycle while you wait for your turn.`
-                        : (canPlayType
-                            ? `${HAND_SHORT_NAMES[type]} can be played. Click to select the lowest option; click again to cycle.`
-                            : (isFirstLead
-                                ? `${HAND_SHORT_NAMES[type]} cannot open because none include the 3 of Diamonds. Click to preview and cycle anyway.`
-                                : `${HAND_SHORT_NAMES[type]} cannot beat the current hand. Click to preview and cycle anyway.`));
-                    return (
-                        <button
-                            ref={(element) => {
-                                if (element) chipRefs.current[type] = element;
-                                else delete chipRefs.current[type];
-                            }}
-                            key={type}
-                            onClick={() => handleTypeClick(type)}
-                            title={title}
-                            aria-label={title}
-                            style={{
-                                ...chipBase,
-                                border: `1px solid ${activeIsPlayable ? acc : (isActive ? 'rgba(255,255,255,.48)' : (canPlayType ? `${acc}88` : 'rgba(255,255,255,.18)'))}`,
-                                background: activeIsPlayable
-                                    ? acc
-                                    : (isActive ? 'rgba(255,255,255,.1)' : (canPlayType ? `${acc}18` : 'rgba(0,0,0,.38)')),
-                                color: activeIsPlayable ? '#0b0d10' : (canPlayType ? acc : 'rgba(244,245,247,.42)'),
-                                opacity: canPlayType || isActive ? 1 : .72,
-                                boxShadow: canPlayType && !isActive ? `inset 0 0 0 1px ${acc}18` : 'none',
-                            }}
-                        >
-                            <span
-                                aria-hidden="true"
-                                style={{
-                                    width: 6, height: 6, borderRadius: 999,
-                                    background: canPlayType ? acc : 'rgba(244,245,247,.28)',
-                                    boxShadow: canPlayType ? `0 0 7px ${acc}` : 'none',
+            {/* One row: the chips scroll in the space that remains after the
+                pinned Reset / Sort actions. A single row (rather than chips
+                above a utility row) keeps the stack short enough to clear the
+                pile on viewports with mobile-browser chrome. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: `0 ${HELPER_ROW_INSET}px`, boxSizing: 'border-box' }}>
+                <div
+                    ref={helperRowRef}
+                    className="scrollbar-thin"
+                    style={{
+                        display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0, overflowX: 'auto', padding: '2px 0',
+                        ...(chipsOverflow ? { WebkitMaskImage: edgeFade, maskImage: edgeFade } : null),
+                    }}
+                >
+                    {showChips && availableHandTypes.map(({ type, count }) => {
+                        const isActive = activeType === type && isActiveTypeValid;
+                        const canPlayType = playableHandTypes.has(type);
+                        const activeIsPlayable = isMyTurn && isActive && activeCanPlay;
+                        const currentIndex = isActive ? activeIndex + 1 : 0;
+                        const title = !isMyTurn
+                            ? `${HAND_SHORT_NAMES[type]} preview. Click to review and cycle while you wait for your turn.`
+                            : (canPlayType
+                                ? `${HAND_SHORT_NAMES[type]} can be played. Click to select the lowest option; click again to cycle.`
+                                : (isFirstLead
+                                    ? `${HAND_SHORT_NAMES[type]} cannot open because none include the 3 of Diamonds. Click to preview and cycle anyway.`
+                                    : `${HAND_SHORT_NAMES[type]} cannot beat the current hand. Click to preview and cycle anyway.`));
+                        return (
+                            <button
+                                ref={(element) => {
+                                    if (element) chipRefs.current[type] = element;
+                                    else delete chipRefs.current[type];
                                 }}
-                            />
-                            <span>{HAND_ICONS[type]}</span>
-                            <span>{HAND_SHORT_NAMES[type]}</span>
-                            {count > 1 && (
-                                <span style={{
-                                    fontSize: 9, padding: '1px 5px', borderRadius: 999,
-                                    background: activeIsPlayable ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.15)',
-                                }}>
-                                    {isActive ? `${currentIndex}/${count}` : count}
-                                </span>
-                            )}
-                        </button>
-                    );
-                })}
-            </div>
+                                key={type}
+                                onClick={() => handleTypeClick(type)}
+                                title={title}
+                                aria-label={title}
+                                style={{
+                                    ...chipBase,
+                                    border: `1px solid ${activeIsPlayable ? acc : (isActive ? 'rgba(255,255,255,.48)' : (canPlayType ? `${acc}88` : 'rgba(255,255,255,.18)'))}`,
+                                    background: activeIsPlayable
+                                        ? acc
+                                        : (isActive ? 'rgba(255,255,255,.1)' : (canPlayType ? `${acc}18` : 'rgba(0,0,0,.38)')),
+                                    color: activeIsPlayable ? '#0b0d10' : (canPlayType ? acc : 'rgba(244,245,247,.42)'),
+                                    opacity: canPlayType || isActive ? 1 : .72,
+                                    boxShadow: canPlayType && !isActive ? `inset 0 0 0 1px ${acc}18` : 'none',
+                                }}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    style={{
+                                        width: 6, height: 6, borderRadius: 999,
+                                        background: canPlayType ? acc : 'rgba(244,245,247,.28)',
+                                        boxShadow: canPlayType ? `0 0 7px ${acc}` : 'none',
+                                    }}
+                                />
+                                <span>{HAND_ICONS[type]}</span>
+                                <span>{HAND_SHORT_NAMES[type]}</span>
+                                {count > 1 && (
+                                    <span style={{
+                                        fontSize: 9, padding: '1px 5px', borderRadius: 999,
+                                        background: activeIsPlayable ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.15)',
+                                    }}>
+                                        {isActive ? `${currentIndex}/${count}` : count}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
 
-            {/* Utility actions stay anchored to the right without reducing the
-                horizontal space available to the hand helpers. */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%', padding: '0 12px', boxSizing: 'border-box' }}>
+                {/* Utility actions pinned to the right of the same row, outside
+                    the scroll area, so they are always visible and reachable. */}
                 {((activeType && isActiveTypeValid) || (selectedCards && selectedCards.length > 0)) && (
                     <button
                         onClick={handleClear}

@@ -181,8 +181,10 @@ in `index.css`. There is no second, older UI: the legacy green/white Tailwind
 screens were removed when desktop moved to v2.
 
 The split is by **composition, not design**. `hooks/useMediaQuery.js` is the one
-place breakpoints are defined — `useIsDesktop()` (768px) picks the composition,
-`useIsWide()` (1024px) decides whether the desktop table's rails fit.
+place breakpoints are defined — `useIsDesktop()` (768px width) picks the
+composition, `useIsWide()` (1024px width) decides whether the desktop table's
+rails fit, and `useIsShortViewport()` (760px height) switches the mobile table
+to its compact layout tier for viewports with mobile-browser chrome visible.
 
 - `GameTableMobile.jsx` / `GameTableDesktop.jsx` - the two in-game orchestrators.
   They take an **identical prop bundle** (built once in `GameRoom.jsx`) and share
@@ -191,10 +193,16 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
   `RoundLogPanel` permanently. Below `useIsWide()` those rails are dropped and
   the desktop table falls back to the mobile affordances for the same
   information — the HUD's Info toggle (`ScoreStrip`) and `RoundLogSheet`.
-- `layout.js` - `MOBILE_LAYOUT` / `DESKTOP_LAYOUT`: seat placements, pile frame
-  and scale, banner placement, hand geometry caps. The v2 table was built with
-  these offsets inline for a ~390x844 phone; they live here now so a second
-  composition does not mean a second set of components. **Every leaf still
+- `layout.js` - `MOBILE_LAYOUT` / `MOBILE_COMPACT_LAYOUT` / `DESKTOP_LAYOUT`:
+  seat placements, pile frame and scale, banner placement, hand geometry caps.
+  The v2 table was built with these offsets inline for a ~390x844 phone; they
+  live here now so a second composition does not mean a second set of
+  components. The compact tier (picked by `useIsShortViewport()`) shifts seats
+  and pile up and shrinks the pile so the table also fits ~650px-tall
+  viewports; the pile frame is anchored top *and* bottom (`maxHeight` restores
+  the tall-viewport look) so it can never extend under the bottom controls.
+  The status banner renders in the bottom stack's normal flow on both tables
+  (`placement=null`), so it cannot collide with the pile. **Every leaf still
   defaults to the mobile values**, so a component rendered without a placement
   prop looks exactly as it did before desktop existed.
 - `RoundLogRows.jsx` - the log rows, shared by the mobile sheet and the desktop
@@ -229,6 +237,10 @@ place breakpoints are defined — `useIsDesktop()` (768px) picks the composition
 - `handFinder.js` - Hand detection and validation, backing the quick-select
   chips in `tableV2/ControlsRow.jsx`
 - `gameModes.js` - Game mode definitions (Short: 50pts, Standard: 100pts)
+- `timeAgo.js` - Compact relative-time labels ("7mo ago"), shared by the
+  activity feed and the home screen's recent-games list
+- `joinErrors.js` - Pure predicate deciding whether a `join_room` error is
+  worth a toast (the lobby's reconnect probes also miss with "Room not found")
 
 ### Backend Structure (`server/`)
 
@@ -675,7 +687,8 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
     the playable responses
   - At the start of a turn, the chip scroller aligns the first playable type to
     its left inset, bounded by the scroller's maximum position
-  - Reset and Sort live in a separate right-aligned row below the chips
+  - Reset and Sort are pinned to the right of the chip row, outside its
+    scrollable area, so they stay visible while the chips scroll
 - **Drag & Drop Card Reordering:**
   - Tap cards to select them or reorder them by dragging (@dnd-kit); touch and
     mouse. There is deliberately no swipe-across selection gesture.
