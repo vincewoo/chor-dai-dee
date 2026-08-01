@@ -314,6 +314,7 @@ function GameTableDesktop(props) {
                             acc={acc}
                             accGrad={accGrad}
                             rm={rm}
+                            maxWidth={DESKTOP_LAYOUT.controls.maxWidth}
                         />
                         <MobileHandV2
                             sortedHand={sortedHand}
