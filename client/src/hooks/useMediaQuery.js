@@ -23,12 +23,12 @@ export function useMediaQuery(query) {
 // above it the v2 desktop layouts.
 export const DESKTOP_QUERY = '(min-width: 768px)';
 
-// Second breakpoint, used only by the desktop game table: the persistent score
-// and round-log rails need this much width before they earn their space.
-export const WIDE_QUERY = '(min-width: 1024px)';
-
+// There is deliberately no second width breakpoint. The desktop table used to
+// have one (1024px), below which its score and round-log rails were dropped for
+// the mobile affordances — a third composition to keep honest. The rails are
+// gone: the scoreboard is a corner panel and the log a slide-in, both of which
+// fit at 768px, so one desktop composition now covers every width above it.
 export const useIsDesktop = () => useMediaQuery(DESKTOP_QUERY);
-export const useIsWide = () => useMediaQuery(WIDE_QUERY);
 
 // Height breakpoint for the mobile game table. MOBILE_LAYOUT's offsets were
 // tuned on a ~844px-tall phone; with mobile-browser chrome visible the usable

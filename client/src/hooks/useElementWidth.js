@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import useElementSize from './useElementSize';
 
 /**
  * Measures an element's content width and keeps it current across resizes.
@@ -6,25 +6,11 @@ import { useEffect, useRef, useState } from 'react';
  * Returns `[ref, width]`. Attach the ref to the element whose *available* width
  * you need — typically a full-width container, not a shrink-wrapping flex row,
  * which would report the width of its contents instead.
+ *
+ * A width-only view of useElementSize, so there is one ResizeObserver to reason
+ * about rather than two that could drift.
  */
 export default function useElementWidth() {
-    const ref = useRef(null);
-    const [width, setWidth] = useState(0);
-
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return undefined;
-
-        setWidth(el.getBoundingClientRect().width);
-
-        const observer = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setWidth(entry.contentRect.width);
-            }
-        });
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, []);
-
-    return [ref, width];
+    const [ref, size] = useElementSize();
+    return [ref, size.width];
 }

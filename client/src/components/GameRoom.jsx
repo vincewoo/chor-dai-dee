@@ -886,7 +886,10 @@ const GameRoom = ({ user, socket }) => {
         sensors, handleDragEnd,
         handContainerRef,
         containerWidth, voiceState,
-        isSpectator, viewerIndex,
+        // Every seat's cards, keyed by player id, and sent by the server only to
+        // spectators. The desktop table draws the opponents' fans face-up from
+        // it; the mobile table only ever shows the watched seat's own hand.
+        isSpectator, viewerIndex, spectatorHands,
         onSelectSeat: (player) => setSpectatorSeatId(player?.id ?? null),
         onOpenSpectators: () => setShowSpectators(true),
         // One bundle for both coach surfaces: the owl button in ControlsRow and

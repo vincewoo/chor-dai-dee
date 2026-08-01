@@ -39,6 +39,8 @@ const CenterPile = memo(function CenterPile({
     frame,          // positioning + size of the pile well; defaults to mobile
     scale = 1,      // card + fan scale
     stackHeight = 118,
+    labelInside = false,
+    reviewVerb = 'tap',
 }) {
     // Resolve label from authoritative lastPlayedHand.
     let label = '';
@@ -64,17 +66,17 @@ const CenterPile = memo(function CenterPile({
         >
             {stack.length > 0 && (
                 <>
-                    {/* Sits ABOVE the well, not inside it. Any in-well
+                    {/* Defaults to ABOVE the well, not inside it. An in-well
                         placement competes with the fan for height, and on a
                         short viewport the well clamps to minHeight and the fan
                         (whose older plays drift upward via OFF's negative dy)
                         overflows back under the label — measured at 402x650,
-                        which is exactly the case this is meant to fix. Outside
-                        the frame there is nothing to compete with: the whole
-                        well is cards, and the label cannot overlap them at any
-                        height. */}
+                        which is exactly the case this default is meant to fix.
+                        `labelInside` is for the desktop well, which is sized in
+                        one piece with its stack and has the headroom to spare. */}
                     <div style={{
-                        position: 'absolute', bottom: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)',
+                        position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                        ...(labelInside ? { top: 16 } : { bottom: 'calc(100% + 5px)' }),
                         background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '4px 12px',
                         color: 'rgba(244,245,247,.9)', fontSize: Math.round(12 * scale), fontWeight: 700, zIndex: 8,
                         maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -143,7 +145,7 @@ const CenterPile = memo(function CenterPile({
                     background: 'rgba(0,0,0,.42)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
                     padding: '3px 9px', color: 'rgba(244,245,247,.65)', fontSize: 10, fontWeight: 700,
                 }}>
-                    {logCount} · tap to review
+                    {logCount} · {reviewVerb} to review
                 </div>
             )}
 

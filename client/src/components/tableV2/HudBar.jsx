@@ -2,7 +2,11 @@ import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { GAME_MODES } from '../../constants/gameModes';
 
 // Top HUD bar: logo + room/round on the left, Info toggle + gear on the right.
-function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, onOpenSettings, isGuest, onCreateAccount, acc, voiceControl, spectatorCount = 0, onOpenSpectators }) {
+//
+// `showInfo` is off on the desktop table, where the corner scoreboard already
+// carries everything the Info layer revealed — scores always, and cards left,
+// rank and points-to-threshold when it is expanded.
+function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, showInfo = true, onOpenSettings, isGuest, onCreateAccount, acc, voiceControl, spectatorCount = 0, onOpenSpectators }) {
     const modeName = gameMode ? (GAME_MODES[gameMode.toUpperCase()]?.name || 'Standard Game') : '';
     const subtitle = [modeName, roundNumber > 0 ? `Round ${roundNumber}` : null].filter(Boolean).join(' · ');
 
@@ -45,19 +49,21 @@ function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, onOpenSet
                         👁 {spectatorCount}
                     </button>
                 )}
-                <button
-                    onClick={onToggleInfo}
-                    aria-pressed={infoOn}
-                    style={{
-                        height: 32, padding: '0 12px', borderRadius: 10,
-                        border: `1px solid ${infoOn ? acc : 'rgba(255,255,255,.14)'}`,
-                        background: infoOn ? acc : 'rgba(0,0,0,.38)',
-                        color: infoOn ? '#0b0d10' : '#f4f5f7',
-                        fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                    }}
-                >
-                    Info
-                </button>
+                {showInfo && (
+                    <button
+                        onClick={onToggleInfo}
+                        aria-pressed={infoOn}
+                        style={{
+                            height: 32, padding: '0 12px', borderRadius: 10,
+                            border: `1px solid ${infoOn ? acc : 'rgba(255,255,255,.14)'}`,
+                            background: infoOn ? acc : 'rgba(0,0,0,.38)',
+                            color: infoOn ? '#0b0d10' : '#f4f5f7',
+                            fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                        }}
+                    >
+                        Info
+                    </button>
+                )}
                 <button
                     onClick={onOpenSettings}
                     aria-label="Settings"

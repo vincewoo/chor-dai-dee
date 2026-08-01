@@ -182,17 +182,34 @@ screens were removed when desktop moved to v2.
 
 The split is by **composition, not design**. `hooks/useMediaQuery.js` is the one
 place breakpoints are defined — `useIsDesktop()` (768px width) picks the
-composition, `useIsWide()` (1024px width) decides whether the desktop table's
-rails fit, and `useIsShortViewport()` (760px height) switches the mobile table
+composition, and `useIsShortViewport()` (760px height) switches the mobile table
 to its compact layout tier for viewports with mobile-browser chrome visible.
+There is deliberately **no second width breakpoint**: the desktop table used to
+drop its rails below 1024px and fall back to the mobile affordances, which was a
+third composition to keep honest. The rails are gone, and what replaced them
+fits at 768px.
 
 - `GameTableMobile.jsx` / `GameTableDesktop.jsx` - the two in-game orchestrators.
   They take an **identical prop bundle** (built once in `GameRoom.jsx`) and share
   every leaf component; only the arrangement differs. Mobile is a full-bleed
-  stack; desktop is a three-column grid whose rails hold `ScorePanel` and
-  `RoundLogPanel` permanently. Below `useIsWide()` those rails are dropped and
-  the desktop table falls back to the mobile affordances for the same
-  information — the HUD's Info toggle (`ScoreStrip`) and `RoundLogSheet`.
+  stack. Desktop spends its extra room on the table rather than on chrome:
+  - Opponents' hands are drawn as **fans of real cards** (`OpponentFanSeat`),
+    one back per card held and no number — how close a seat is to going out is
+    a shape rather than a digit. Spectators see the same fans face-up, from
+    `spectatorHands`. The phone keeps `OpponentSeat`'s count badge.
+  - The scoreboard is `ScoreCorner`, a corner panel that expands on hover (or
+    click) to add cards left, Bot/rank and points-to-threshold. It replaced a
+    244px rail, and it is why `HudBar` takes `showInfo={false}` on desktop —
+    there is nothing left for the Info layer to reveal.
+  - The round log is `RoundLogDrawer`, a right slide-in opened by clicking the
+    pile, in place of a permanent 304px rail.
+- `fanGeometry.js` - the fan's geometry as pure functions of card count and
+  available height, so its constraints are testable without a DOM
+  (`test/desktopFan.test.js`). The side seats' step **compresses** when the band
+  is short rather than letting a 13-card fan overflow onto the pile. A rotated
+  card's vertical extent is the card's *width*, and its cards are placed by
+  their centres — placing them by the unrotated box bleeds them past the width
+  their seat reserved.
 - `layout.js` - `MOBILE_LAYOUT` / `MOBILE_COMPACT_LAYOUT` / `DESKTOP_LAYOUT`:
   seat placements, pile frame and scale, banner placement, hand geometry caps.
   The v2 table was built with these offsets inline for a ~390x844 phone; they
@@ -201,12 +218,19 @@ to its compact layout tier for viewports with mobile-browser chrome visible.
   and pile up and shrinks the pile so the table also fits ~650px-tall
   viewports; the pile frame is anchored top *and* bottom (`maxHeight` restores
   the tall-viewport look) so it can never extend under the bottom controls.
+  On desktop, `DESKTOP_UPPER_RESERVE` is the band at the top of the table area
+  that the top seat and the corner scoreboard occupy; the side seats and the
+  pile are centred in **what is left**, rather than each carrying its own offset
+  from the viewport edge, so the composition holds at any height.
   The status banner renders in the bottom stack's normal flow on both tables
   (`placement=null`), so it cannot collide with the pile. **Every leaf still
   defaults to the mobile values**, so a component rendered without a placement
   prop looks exactly as it did before desktop existed.
-- `RoundLogRows.jsx` - the log rows, shared by the mobile sheet and the desktop
-  rail so the two can't drift.
+- `RoundLogRows.jsx` - the log rows, shared by the mobile sheet
+  (`RoundLogSheet`) and the desktop drawer (`RoundLogDrawer`) so the two can't
+  drift.
+- `suitShapes.jsx` - the four suit paths, shared by `SuitWatermark` and the card
+  back (`CardBackGlyph`).
 - `SuitWatermark.jsx` - the oversized faded suit shapes every v2 screen
   background uses, drawn as **SVG paths, never text glyphs**. iOS resolves
   ♠ ♥ ♦ ♣ to Apple Color Emoji, and a colour font ignores `color` - as text
@@ -701,15 +725,17 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
 - Card size and overlap come from `useHandGeometry`, driven by the active
   table layout: the fan fills a phone's width and spreads out on desktop.
 - Seats are positioned relative to the viewer, so you are always at the bottom.
-- Opponent card counts show on each seat; on desktop the score rail repeats
-  them alongside ratings.
+- Opponent card counts show as a number on each phone seat; on desktop the seat
+  draws the cards themselves and there is no number, with the count repeated in
+  the expanded corner scoreboard.
 - **Low-card alert:** at or below `LOW_CARD_THRESHOLD` (3) cards an opponent's
   seat switches to `ALERT_RED` — warmed badge, red ring (`cddAlertRing`, off
-  under reduced motion) and a "N LEFT" chip in place of the plain count — and
-  the score rail reddens their card line. The colour is deliberately fixed
-  rather than accent-driven, so it never collides with the accent turn glow and
-  never gets themed away. Only opponents alert: your own short hand is the goal,
-  not a warning (`isLowCards` + the `!isMe` guard in `ScorePanel`).
+  under reduced motion), and on the phone a "N LEFT" chip in place of the plain
+  count — and the expanded scoreboard reddens their card line. The colour is
+  deliberately fixed rather than accent-driven, so it never collides with the
+  accent turn glow and never gets themed away. Only opponents alert: your own
+  short hand is the goal, not a warning (`isLowCards` + the `!isMe` guard in
+  `ScoreCorner`).
 
 ### Visual Features
 - Custom logo and favicon
