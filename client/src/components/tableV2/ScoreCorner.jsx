@@ -11,7 +11,7 @@ import { publicRankLabel } from '../../constants/publicRank';
 // a touch-capable desktop) expands it with the three things that decide *how*
 // to play the rest of the round — cards left, who is a bot, and how many points
 // each player has before the game ends.
-function ScoreCorner({ players, myPlayerId, currentTurn, pointThreshold, acc, side = 'right', top = 62, inset = 18 }) {
+function ScoreCorner({ players, myPlayerId, currentTurn, pointThreshold, acc, side = 'left', top = 62, inset = 18 }) {
     const [expanded, setExpanded] = useState(false);
 
     if (!players || players.length === 0) return null;

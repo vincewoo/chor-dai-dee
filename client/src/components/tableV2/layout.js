@@ -167,6 +167,11 @@ export const DESKTOP_LAYOUT = {
     // more of themselves than the phone's tight 52%. `maxCardWidth` is the
     // ceiling; desktopHandCardWidth lowers it on a short viewport.
     hand: { maxCardWidth: HAND_CARD_MAX, minVisibleRatio: 0.34, maxVisibleRatio: 0.78 },
-    // The corner scoreboard, offset to clear the HUD row above it.
-    scoreboard: { side: 'right', top: 62, inset: 18 },
+    // The corner scoreboard. It sits on the left, under the room block, so the
+    // right corner is left to the voice/spectator/settings cluster alone —
+    // stacking the scores there too made that side of the table read as the
+    // busy one. `top` is what drops it clear of whichever HUD block is above
+    // it, which is why the scoreboard is its own layer rather than part of the
+    // HUD row.
+    scoreboard: { side: 'left', top: 62, inset: 18 },
 };

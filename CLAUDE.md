@@ -200,7 +200,12 @@ fits at 768px.
   - The scoreboard is `ScoreCorner`, a corner panel that expands on hover (or
     click) to add cards left, Bot/rank and points-to-threshold. It replaced a
     244px rail, and it is why `HudBar` takes `showInfo={false}` on desktop —
-    there is nothing left for the Info layer to reveal.
+    there is nothing left for the Info layer to reveal. It sits **top-left**,
+    under the room block, leaving the right corner to the voice/spectator/
+    settings cluster; both in one corner made that side read as the busy one.
+    That is also why it is its own layer at `DESKTOP_LAYOUT.scoreboard.top`
+    rather than part of the HUD row — it has to drop below whatever HUD block
+    shares its corner.
   - The round log is `RoundLogDrawer`, a right slide-in opened by clicking the
     pile, in place of a permanent 304px rail.
 - `fanGeometry.js` - the fan's geometry as pure functions of card count and
