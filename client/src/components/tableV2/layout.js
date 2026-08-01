@@ -167,6 +167,14 @@ export const DESKTOP_LAYOUT = {
     // more of themselves than the phone's tight 52%. `maxCardWidth` is the
     // ceiling; desktopHandCardWidth lowers it on a short viewport.
     hand: { maxCardWidth: HAND_CARD_MAX, minVisibleRatio: 0.34, maxVisibleRatio: 0.78 },
+    // How wide the quick-select chips and the Reset/Sort actions may spread.
+    // Deliberately much narrower than the hand they act on: a full 13-card fan
+    // is ~1250px here, and a row stretched to match put the chips under the
+    // left seat and Sort under the right. These are clicked constantly and
+    // between clicks the pointer wants to be on the cards, so the row is capped
+    // just inside the pile above it — one centred column of controls rather
+    // than a shelf spanning the table.
+    controls: { maxWidth: 760 },
     // The corner scoreboard. It sits on the left, under the room block, so the
     // right corner is left to the voice/spectator/settings cluster alone —
     // stacking the scores there too made that side of the table read as the

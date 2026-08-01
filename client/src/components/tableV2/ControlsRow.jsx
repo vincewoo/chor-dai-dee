@@ -36,6 +36,11 @@ function ControlsRow({
     canPlay, canPass, playLabel, onPlay, onPass,
     coach,
     acc, accGrad, rm,
+    // Caps how wide the row may spread. Unset on the phone, where the row is
+    // already only a thumb wide. On desktop the row would otherwise stretch the
+    // full table: the quick-select chips ended up under the left seat and Sort
+    // under the right, a ~1200px round trip for two buttons used constantly.
+    maxWidth,
 }) {
     const [activeType, setActiveType] = useState(null);
     const [activeIndex, setActiveIndex] = useState(0);
@@ -141,7 +146,7 @@ function ControlsRow({
     const edgeFade = `linear-gradient(90deg, transparent 0, #000 ${EDGE_FADE_WIDTH}px, #000 calc(100% - ${EDGE_FADE_WIDTH}px), transparent 100%)`;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, width: '100%', maxWidth }}>
             {/* One row: the chips scroll in the space that remains after the
                 pinned Reset / Sort actions. A single row (rather than chips
                 above a utility row) keeps the stack short enough to clear the
