@@ -39,8 +39,10 @@ const { encodeDeal } = require('./game/TapeCodec');
  *       accurate - every bot before this played at full strength.
  *   3 - game-frozen Adaptive provenance: mlog_seat.bot_mode and
  *       mlog_seat.policy_temperature.
+ *   4 - hidden PPO personas: mlog_seat.bot_style. NULL on earlier rows means
+ *       the unmodified classic actor, which is what those bots used.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const isProduction = process.env.NODE_ENV === 'production';
 const dbPath = process.env.GAMELOG_PATH || (isProduction
@@ -156,6 +158,9 @@ const SCHEMA = [
         difficulty      TEXT,
         bot_mode        TEXT,
         policy_temperature REAL,
+        -- Secret in the live UI, retained privately for measuring whether a
+        -- persona is recognizable and exploitable over games/rematches.
+        bot_style       TEXT,
         user_id         INTEGER,
         rating_mu       REAL,
         rating_sigma    REAL,
@@ -214,6 +219,7 @@ const ADDED_COLUMNS = [
     ['mlog_seat', 'difficulty', 'difficulty TEXT'],
     ['mlog_seat', 'bot_mode', 'bot_mode TEXT'],
     ['mlog_seat', 'policy_temperature', 'policy_temperature REAL'],
+    ['mlog_seat', 'bot_style', 'bot_style TEXT'],
     ['mlog_game', 'weakened_bots', 'weakened_bots INTEGER NOT NULL DEFAULT 0']
 ];
 
@@ -356,14 +362,15 @@ function insertSeat(gameKey, seat) {
         `INSERT INTO mlog_seat
             (game_key, seat, segment, from_round, to_round, occupant, subject_key,
              policy_gen, policy_ref, difficulty, bot_mode, policy_temperature,
-             user_id, rating_mu, rating_sigma, joined_mid_game)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             bot_style, user_id, rating_mu, rating_sigma, joined_mid_game)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(game_key, seat, segment) DO NOTHING`,
         [
             gameKey, seat.seat, seat.segment || 0, seat.fromRound, seat.toRound ?? null,
             seat.occupant, seat.subjectKey ?? null, seat.policyGen ?? null,
             seat.policyRef ?? null, seat.difficulty ?? null,
             seat.botMode ?? null, seat.policyTemperature ?? null,
+            seat.botStyle ?? null,
             seat.userId ?? null,
             seat.ratingMu ?? null, seat.ratingSigma ?? null,
             seat.joinedMidGame ? 1 : 0

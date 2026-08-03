@@ -2192,6 +2192,11 @@ io.on('connection', (socket) => {
             console.error("Failed to save game history for rematch:", e);
         }
 
+        // A rematch is a new ML game linked to its predecessor. Besides deals
+        // and outcomes, this snapshots the same hidden persona on each named
+        // bot so adaptation across the pair can be measured offline.
+        await gamelogRecorder.recordGameStart(room);
+
         // Check for dragon
         if (room.gameState === 'dragon_win' && room.dragonWinner) {
             room.players.forEach(p => {

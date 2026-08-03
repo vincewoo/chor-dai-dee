@@ -97,6 +97,22 @@ test('adaptive seats record the frozen continuous strength', async () => {
     assert.strictEqual(game.weakened_bots, 1);
 });
 
+test('hidden bot personas round-trip as private seat provenance', async () => {
+    const gameKey = await gamelog.openGame(baseGame(), botSeats().map(
+        (seat, index) => ({
+            ...seat,
+            occupant: 'bot_ppo',
+            botStyle: ['sprinter', 'keeper', 'pressure', 'builder'][index]
+        })));
+    const { all } = await gamelog.openForRead();
+    const seats = await all(
+        'SELECT bot_style FROM mlog_seat WHERE game_key = ? ORDER BY seat',
+        [gameKey]);
+    assert.deepStrictEqual(
+        seats.map(seat => seat.bot_style),
+        ['sprinter', 'keeper', 'pressure', 'builder']);
+});
+
 test('a human seat records no difficulty', async () => {
     const gameKey = await gamelog.openGame(baseGame(), [
         { seat: 0, fromRound: 1, occupant: 'human', subjectKey: 'Alice', userId: 7 },

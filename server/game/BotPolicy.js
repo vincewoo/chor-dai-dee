@@ -7,6 +7,7 @@ const { BotLogic, BOT_LOGIC_VERSION } = require('./BotLogic');
 const { PPOModel } = require('./PPOModel');
 const { PPOBot } = require('./PPOBot');
 const { decisionOptions } = require('./RLValueBot');
+const { DEFAULT_BOT_STYLE } = require('./BotStyle');
 const {
     MIN_TEMPERATURE,
     MAX_TEMPERATURE,
@@ -114,6 +115,7 @@ function heuristicPolicy({ difficulty, temperature } = {}) {
     return {
         kind: 'heuristic',
         occupant: 'bot_heuristic',
+        supportsStyles: false,
         difficulty: tier.id,
         sample: tier.sample,
         temperature: tier.temperature,
@@ -171,6 +173,7 @@ function ppoPolicy({
     return {
         kind: 'ppo',
         occupant: 'bot_ppo',
+        supportsStyles: true,
         difficulty: tier.id,
         sample: tier.sample,
         temperature: tier.temperature,
@@ -236,13 +239,15 @@ function ppoPolicy({
             };
         },
         getMove(hand, lastPlayedHand, isFirstTurn, gameContext, {
-            captureReasoning = false
+            captureReasoning = false,
+            style = DEFAULT_BOT_STYLE
         } = {}) {
             let decision = null;
             const bot = new PPOBot(model, {
                 sample: tier.sample,
                 temperature: tier.temperature,
                 overrideMargin,
+                style,
                 onDecision: value => {
                     decision = value;
                 }

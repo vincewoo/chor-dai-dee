@@ -8,6 +8,7 @@
     "test": "node --test test/*.test.js",
     "bench": "node test/botBench.js",
     "bench:difficulty": "node scripts/bench-bot-difficulty.js",
+    "bench:styles": "node scripts/bench-bot-styles.js",
     "bot:rl:train": "node scripts/train-rl-value-bot.js",
     "bot:rl:bench": "node scripts/bench-rl-value-bot.js",
     "bot:rl:experience": "node scripts/generate-rl-experience.js",

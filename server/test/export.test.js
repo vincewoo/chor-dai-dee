@@ -168,7 +168,8 @@ test('export produces readable shards with the expected shape', async () => {
     assert.ok(records.length > 50, `expected a real corpus, got ${records.length}`);
 
     const r = records[0];
-    for (const key of ['game', 'round', 'ply', 'seat', 'occupant', 'obs', 'hidden',
+    for (const key of ['game', 'round', 'ply', 'seat', 'occupant', 'bot_style',
+                       'obs', 'hidden',
                        'action', 'labels', 'rules_version', 'schema_version']) {
         assert.ok(key in r, `missing key ${key}`);
     }

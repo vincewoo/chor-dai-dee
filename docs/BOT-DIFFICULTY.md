@@ -1,5 +1,9 @@
 # Bot difficulty
 
+Difficulty is independent from the hidden move-preference personas documented
+in [BOT-PLAYSTYLES.md](BOT-PLAYSTYLES.md). Temperature controls how hard a bot
+tries; persona changes what similarly rated alternatives it tends to prefer.
+
 Bot strength is selected automatically, with one opt-in override:
 
 - A solo human plays against `adaptive` bots at the continuous PPO temperature

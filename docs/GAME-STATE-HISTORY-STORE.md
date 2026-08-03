@@ -233,6 +233,10 @@ CREATE TABLE mlog_seat (
     subject_key     TEXT,                      -- pseudonymous human id, or bot profile name
     policy_gen      INTEGER,                   -- bot logic generation; NULL for humans
     policy_ref      TEXT,                      -- legible policy id, e.g. 'modelParameters136500'
+    difficulty      TEXT,                      -- frozen tier; NULL on older rows/humans
+    bot_mode        TEXT,                      -- adaptive or fixed
+    policy_temperature REAL,                   -- exact frozen Adaptive strength
+    bot_style       TEXT,                      -- secret PPO persona; never sent to players
     user_id         INTEGER,                   -- NULL for bots/guests; never exported raw
     rating_mu       REAL,                      -- rating at game start, for quality filtering
     rating_sigma    REAL,
@@ -296,7 +300,7 @@ should not duplicate what they do well. The gaps are why it exists:
 | *Which* bot policy | **absent** | `occupant` (`advanced_bots` while a second policy existed) |
 | Bot logic generation | **absent** | `policy_gen`, `policy_ref` |
 | Per-ply policy fallback | **absent** | `mlog_action.source = 4` (historical) |
-| Bot personality | name string only, unmarked | `subject_key` |
+| Bot personality | name string only, unmarked | `subject_key` for identity; `bot_style` for the hidden PPO persona |
 | Seat identity across swaps | **lost** | seat + segment |
 | Rule-set in force | **absent** | `rules_version`, `server_build` |
 
@@ -485,6 +489,13 @@ which is historically accurate.)*
 *(The `bot_ppo` occupant and `advanced_bots` are no longer fossils either — the
 promoted generation-18 PPO actor is the live policy and both are written on
 every production game. `SOURCE.BOT_FALLBACK` is still written by nothing.)*
+
+*(Hidden PPO personas add one intentionally per-seat behavioural field:
+`mlog_seat.bot_style`. Unlike the discarded decorative difficulty property,
+this is the exact value passed to `PPOBot` for that seat. It is omitted from
+`getGameState()` and debug reasoning, retained across an immediate rematch, and
+exported only for offline measurement. NULL on older rows means the unmodified
+classic actor.)*
 
 **Policy is not stable within a seat.** If `getAdvancedBotMove` rejected, the
 catch block fell back to `BotLogic.getBotMove` **for that ply only** and the

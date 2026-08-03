@@ -2,6 +2,12 @@
 // from the same canonical encoder as RLValueBot.
 
 const { decisionOptions } = require('./RLValueBot');
+const { stableSoftmax } = require('./PPOModel');
+const {
+    DEFAULT_BOT_STYLE,
+    resolveBotStyle,
+    applyBotStyle
+} = require('./BotStyle');
 
 function sampleIndex(probabilities, rng) {
     const threshold = rng();
@@ -18,6 +24,7 @@ class PPOBot {
         sample = false,
         temperature = 1,
         overrideMargin = 0,
+        style = DEFAULT_BOT_STYLE,
         rng = Math.random,
         captureTrajectory = false,
         onDecision = null
@@ -26,6 +33,7 @@ class PPOBot {
         this.sample = sample;
         this.temperature = temperature;
         this.overrideMargin = overrideMargin;
+        this.style = resolveBotStyle(style).id;
         this.rng = rng;
         this.captureTrajectory = captureTrajectory;
         this.onDecision = onDecision;
@@ -37,8 +45,19 @@ class PPOBot {
         });
         if (!options.length) return null;
 
-        const evaluation = this.model.evaluate(
-            options.map(option => option.features), this.temperature);
+        const featureRows = options.map(option => option.features);
+        const baseEvaluation = this.model.evaluate(
+            featureRows, this.temperature);
+        const styled = applyBotStyle(
+            featureRows, baseEvaluation.logits, this.style);
+        const evaluation = styled.style.id === DEFAULT_BOT_STYLE
+            ? baseEvaluation
+            : {
+                ...baseEvaluation,
+                logits: styled.logits,
+                probabilities: stableSoftmax(
+                    styled.logits, this.temperature)
+            };
         const heuristicIndex = options.findIndex(
             option => option.isHeuristicChoice);
         const rawIndex = this.sample
@@ -74,6 +93,8 @@ class PPOBot {
                 overrodeHeuristic:
                     heuristicIndex !== -1 && chosenIndex !== heuristicIndex,
                 guardFallback,
+                style: styled.style.id,
+                styleAdjustment: styled.adjustments[chosenIndex],
                 valueMargin: heuristicIndex === -1
                     ? null
                     : evaluation.logits[rawIndex] -

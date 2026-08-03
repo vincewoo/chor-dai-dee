@@ -1,0 +1,209 @@
+// Hidden PPO personas: bounded overlays, legal play, room secrecy, and rematch
+// continuity. Difficulty tests live separately because temperature and persona
+// are intentionally independent axes.
+
+const test = require('node:test');
+const assert = require('node:assert');
+
+process.env.BOT_POLICY = 'ppo';
+
+const {
+    BOT_PERSONA_IDS,
+    DEFAULT_BOT_STYLE,
+    MAX_STYLE_LOGIT_ADJUSTMENT,
+    styleAdjustment,
+    applyBotStyle
+} = require('../game/BotStyle');
+const { FEATURE_NAMES } = require('../game/RLValueModel');
+const {
+    createBotPolicy,
+    DEFAULT_PPO_MODEL_PATH
+} = require('../game/BotPolicy');
+const { Room } = require('../game/RoomManager');
+const { makeRng, deal, playRound } = require('./botHarness');
+
+const index = Object.fromEntries(
+    FEATURE_NAMES.map((name, featureIndex) => [name, featureIndex]));
+
+function row(values = {}) {
+    const features = FEATURE_NAMES.map(() => 0);
+    features[index.bias] = 1;
+    for (const [name, value] of Object.entries(values)) {
+        features[index[name]] = value;
+    }
+    return features;
+}
+
+test('classic leaves promoted PPO logits exactly unchanged', () => {
+    const logits = [1.25, -0.5, 3];
+    const styled = applyBotStyle(
+        [row(), row({ action_pass: 1 }), row({ spends_two: 1 })],
+        logits,
+        DEFAULT_BOT_STYLE);
+    assert.strictEqual(styled.logits, logits);
+    assert.deepStrictEqual(styled.adjustments, [0, 0, 0]);
+});
+
+test('every persona adjustment is finite and strictly bounded', () => {
+    const extremes = FEATURE_NAMES.map((_, featureIndex) =>
+        featureIndex % 2 ? 1 : -1);
+    for (const style of BOT_PERSONA_IDS) {
+        const adjustment = styleAdjustment(extremes, style);
+        assert.ok(Number.isFinite(adjustment), style);
+        assert.ok(Math.abs(adjustment) <= MAX_STYLE_LOGIT_ADJUSTMENT, style);
+    }
+    assert.throws(
+        () => styleAdjustment(row(), 'mystery'),
+        /bot style must be one of/);
+});
+
+test('persona scores express distinct strategic preferences', () => {
+    assert.ok(
+        styleAdjustment(row({ action_size: 1 }), 'sprinter') >
+        styleAdjustment(row({ action_pass: 1 }), 'sprinter'),
+        'sprinter should prefer shedding a large play to passing');
+
+    const spendsTwo = row({ spends_two: 1 });
+    assert.ok(
+        styleAdjustment(spendsTwo, 'keeper') < 0,
+        'keeper should protect a two in an ordinary position');
+    assert.ok(
+        styleAdjustment(row({ spends_two: 1, opponent_at_one: 1 }), 'keeper') >
+        styleAdjustment(spendsTwo, 'keeper'),
+        'keeper should release controls when an opponent is about to go out');
+
+    assert.ok(
+        styleAdjustment(row({ action_strength: 1, spends_two: 1 }), 'pressure') >
+        styleAdjustment(row({ action_strength: 0.1 }), 'pressure'),
+        'pressure should favor forceful control plays');
+
+    assert.ok(
+        styleAdjustment(row({
+            remaining_pairs: 0.5,
+            remaining_triples: 0.5,
+            remaining_five_card_hands: 0.25
+        }), 'builder') >
+        styleAdjustment(row(), 'builder'),
+        'builder should favor actions that preserve combinations');
+});
+
+test('every persona and difficulty combination completes legal rounds', () => {
+    const strengths = [
+        { difficulty: 'competitive' },
+        { difficulty: 'balanced' },
+        { difficulty: 'casual' },
+        { difficulty: 'adaptive', temperature: 7.25 }
+    ];
+    for (const strength of strengths) {
+        const policy = createBotPolicy({
+            mode: 'ppo',
+            modelPath: DEFAULT_PPO_MODEL_PATH,
+            ...strength
+        });
+        for (const style of BOT_PERSONA_IDS) {
+            const logic = {
+                getBotMove(hand, pile, first, context) {
+                    return policy.getMove(
+                        hand, pile, first, context, { style });
+                }
+            };
+            for (let seed = 1; seed <= 4; seed++) {
+                const result = playRound(
+                    [0, 1, 2, 3].map(seat => ({
+                        name: `${strength.difficulty}-${style}-${seat}`,
+                        logic
+                    })),
+                    deal(makeRng(seed)));
+                assert.ok(result.cardsLeft.some(count => count === 0),
+                    `${strength.difficulty}/${style}`);
+            }
+        }
+    }
+});
+
+test('debug reasoning does not disclose the hidden persona', () => {
+    const policy = createBotPolicy({
+        mode: 'ppo',
+        modelPath: DEFAULT_PPO_MODEL_PATH,
+        difficulty: 'competitive'
+    });
+    const cards = deal(makeRng(1776))[0];
+    const context = {
+        playerCardCounts: [13, 13, 13],
+        lastPlayedByRelative: null,
+        passedPlayers: [],
+        passCount: 0,
+        playedCards: [],
+        playHistory: []
+    };
+    const result = policy.getMove(cards, null, false, context, {
+        captureReasoning: true,
+        style: 'keeper'
+    });
+    assert.doesNotMatch(JSON.stringify(result.reasoning), /keeper|botStyle/);
+});
+
+function personaRoom(id) {
+    const room = new Room(id, 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    room.startGame();
+    return room;
+}
+
+test('a game independently deals secret personas and keeps them private', () => {
+    const room = personaRoom('PERSONA-SECRET');
+    const bots = room.players.filter(player => player.isBot);
+    const styles = bots.map(bot => bot.botStyle);
+
+    assert.strictEqual(styles.length, 3);
+    assert.ok(styles.every(style => BOT_PERSONA_IDS.includes(style)));
+
+    const publicState = room.getGameState();
+    assert.strictEqual('botStyle' in publicState, false);
+    for (const player of publicState.players) {
+        assert.strictEqual('botStyle' in player, false);
+    }
+
+    const loggedStyles = room.describeSeats()
+        .filter(seat => seat.occupant === 'bot_ppo')
+        .map(seat => seat.botStyle);
+    assert.deepStrictEqual(loggedStyles, styles,
+        'private provenance must describe the policy that actually played');
+});
+
+test('independent persona draws permit every bot to share one style', () => {
+    const originalRandom = Math.random;
+    try {
+        Math.random = () => 0;
+        const room = personaRoom('PERSONA-DUPLICATES');
+        const styles = room.players
+            .filter(player => player.isBot)
+            .map(player => player.botStyle);
+        assert.deepStrictEqual(styles, ['sprinter', 'sprinter', 'sprinter']);
+    } finally {
+        Math.random = originalRandom;
+    }
+});
+
+test('an immediate rematch keeps each named bot persona', () => {
+    const room = personaRoom('PERSONA-REMATCH');
+    const before = new Map(room.players
+        .filter(player => player.isBot)
+        .map(player => [player.name, player.botStyle]));
+
+    room.gameState = 'finished';
+    const result = room.startRematch();
+    assert.ok(!result.error, result.error);
+
+    const after = new Map(room.players
+        .filter(player => player.isBot)
+        .map(player => [player.name, player.botStyle]));
+    assert.deepStrictEqual(after, before);
+});
+
+test('a mid-game replacement receives a valid independent secret persona', () => {
+    const room = personaRoom('PERSONA-REPLACEMENT');
+    const replacement = room.replaceWithBot('human-1');
+    assert.ok(replacement);
+    assert.ok(BOT_PERSONA_IDS.includes(replacement.botPlayer.botStyle));
+});

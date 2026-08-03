@@ -249,6 +249,10 @@ async function main() {
                     // reads correctly as full strength.
                     difficulty: occupant.difficulty ?? null,
                     bot_mode: occupant.bot_mode ?? null,
+                    // Hidden from players during the game, but essential for
+                    // measuring whether persona-specific behaviour is both
+                    // recognizable and exploitable in later analysis.
+                    bot_style: occupant.bot_style ?? null,
                     policy_temperature:
                         occupant.policy_temperature ?? null,
                     rating_mu: occupant.rating_mu,

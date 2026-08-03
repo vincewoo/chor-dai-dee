@@ -9,6 +9,10 @@ const {
     MAX_BOT_DIFFICULTY
 } = require('./BotPolicy');
 const {
+    BOT_PERSONA_IDS,
+    DEFAULT_BOT_STYLE
+} = require('./BotStyle');
+const {
     calculateDisplayRating,
     botRatingForDifficulty,
     DEFAULT_MU,
@@ -39,6 +43,11 @@ const COACH_CREDITS_PER_ROUND = 1;
 // clearest read available on control-card management.
 const CONTROL_RANKS = new Set(['A', '2']);
 const countControls = (cards) => cards.filter(c => CONTROL_RANKS.has(c.rank)).length;
+
+function randomBotPersona() {
+    return BOT_PERSONA_IDS[
+        Math.floor(Math.random() * BOT_PERSONA_IDS.length)];
+}
 
 class Room {
     constructor(roomId, gameMode = 'short') {
@@ -141,6 +150,10 @@ class Room {
         // Snapshotted per room so an in-flight game never changes policy when
         // configuration changes during a rolling deploy.
         this.botPolicy = createBotPolicy({ difficulty: this.botDifficulty });
+        // Immediate rematches rebuild bot seat objects, but the named
+        // opponents are meant to be the same players. startRematch snapshots
+        // this private name -> persona map and startGame consumes it once.
+        this.rematchBotPersonas = null;
         // Room-level estimate averaged from the current humans before a game.
         // It chooses the next complete game's frozen Adaptive temperature and
         // never changes live bot behaviour.
@@ -201,6 +214,11 @@ class Room {
     addPlayer(player) {
         if (this.players.length >= 4) return false;
         player.isDisconnected = false;
+        if (player.isBot && !player.botStyle) {
+            // The real persona is dealt when the game starts. Classic here is
+            // a safe waiting-room placeholder and the heuristic rollback path.
+            player.botStyle = DEFAULT_BOT_STYLE;
+        }
         this.players.push(player);
 
         // Update activity timestamp
@@ -471,6 +489,9 @@ class Room {
             id: botId,
             name: `Bot (${oldPlayer.name})`,
             isBot: true,
+            // A replacement independently draws a hidden persona, then freezes
+            // it on the seat for the rest of this game and its rematches.
+            botStyle: this.nextReplacementBotPersona(),
             rating_mu: botRating.mu,
             rating_sigma: botRating.sigma,
             rating: calculateDisplayRating(botRating.mu, botRating.sigma),
@@ -764,12 +785,20 @@ class Room {
                     // it would silently change that temperament.
                     name: `Bot ${this.players.length + 1}`,
                     isBot: true,
+                    botStyle: DEFAULT_BOT_STYLE,
                     rating_mu: botRating.mu,
                     rating_sigma: botRating.sigma,
                     rating: calculateDisplayRating(botRating.mu, botRating.sigma)
                 });
             }
         }
+
+        // Deal secret personas only after the final bot roster is known. They
+        // are intentionally absent from getGameState(), so players have to
+        // infer them from behaviour. An immediate rematch preserves each named
+        // bot's persona; a lobby restart deals again.
+        this.assignBotPersonas(this.rematchBotPersonas);
+        this.rematchBotPersonas = null;
 
         // Initialize cumulative scores for all players (only on first game start)
         if (this.roundNumber === 0) {
@@ -1012,6 +1041,34 @@ class Room {
         this.botDifficulty = difficulty;
         this.refreshBotPolicy();
         return { success: true };
+    }
+
+    assignBotPersonas(preservedByName = null) {
+        const bots = this.players.filter(player => player.isBot);
+        if (!this.botPolicy.supportsStyles) {
+            for (const bot of bots) bot.botStyle = DEFAULT_BOT_STYLE;
+            return bots.map(bot => bot.botStyle);
+        }
+        const keptBots = new Set();
+        for (const bot of bots) {
+            const style = preservedByName?.get(bot.name);
+            if (BOT_PERSONA_IDS.includes(style)) {
+                bot.botStyle = style;
+                keptBots.add(bot);
+            }
+        }
+        for (const bot of bots) {
+            if (keptBots.has(bot)) continue;
+            // Independent sampling is intentional: real opponents can share a
+            // temperament, and recognizing that is part of reading the table.
+            bot.botStyle = randomBotPersona();
+        }
+        return bots.map(bot => bot.botStyle);
+    }
+
+    nextReplacementBotPersona() {
+        if (!this.botPolicy.supportsStyles) return DEFAULT_BOT_STYLE;
+        return randomBotPersona();
     }
 
     /**
@@ -1881,7 +1938,10 @@ class Room {
                     this.lastPlayedHand,
                     isFirstTurn,
                     gameContext,
-                    { captureReasoning: this.debugMode }
+                    {
+                        captureReasoning: this.debugMode,
+                        style: currentPlayer.botStyle || DEFAULT_BOT_STYLE
+                    }
                 );
 
                 // Extract move and reasoning based on debug mode
@@ -1963,6 +2023,10 @@ class Room {
                     subjectKey: p.name,
                     policyGen: this.botPolicy.policyGen,
                     policyRef: this.botPolicy.policyRef,
+                    // Private training provenance only. getGameState() omits
+                    // this field so a player must identify the persona from
+                    // its choices over the course of the game.
+                    botStyle: p.botStyle || DEFAULT_BOT_STYLE,
                     // How hard this seat was trying. A tape from a weakened
                     // table is still real data - a human's moves in it are
                     // genuine human moves - but its outcome labels were earned
@@ -2113,6 +2177,7 @@ class Room {
         this.previousGameId = this.gameId;
         this.chainKind = 'lobby_restart';
         this.gameKey = null;
+        this.rematchBotPersonas = null;
 
         // Generate new game ID for next game
         this.gameId = `game_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -2143,7 +2208,14 @@ class Room {
             return { error: 'Can only start rematch from finished state' };
         }
 
-        // Remove all bots (new ones will be added)
+        // Re-created bot objects keep the same named opponent's secret persona.
+        // This is deliberately stronger continuity than a lobby restart: a
+        // player can exploit what they learned about Bot 2 in the first game.
+        this.rematchBotPersonas = new Map(this.players
+            .filter(player => player.isBot)
+            .map(player => [player.name, player.botStyle]));
+
+        // Remove all bots (new objects with the same names will be added)
         this.players = this.players.filter(p => !p.isBot);
 
         // Reset game state
