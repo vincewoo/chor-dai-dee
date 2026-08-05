@@ -285,14 +285,32 @@ test('the last-card emergency is graded but not confident', () => {
     // selectBestMove abandons scoring outright to block here, and whether a
     // given block works depends on the one card they hold - unknowable from
     // this side of the table.
-    const myHand = hand('3D', '5C', '8H', 'TS', 'QD', 'KC', 'AH');
+    //
+    // The hand carries a pair deliberately. With the next player on one card
+    // the highest-single rule leaves exactly one legal single, so a hand of all
+    // distinct ranks would have a single legal lead and grade as forced - a
+    // different branch from the one under test here.
+    const myHand = hand('3D', '3C', '8H', 'TS', 'QD', 'KC', 'AH');
     const result = evaluateMove({
         hand: myHand, lastPlayedHand: null, gameContext: context([1, 7, 7]),
-        action: 'play', cards: hand('3D')
+        action: 'play', cards: hand('3D', '3C')
     });
 
     assert.strictEqual(result.scored, true);
     assert.strictEqual(result.confident, false);
+});
+
+test('the highest-single rule leaves a single legal lead forced', () => {
+    // Same position, but every rank distinct: no pair, triple or five-card
+    // shape to lead, so restricting singles to the highest leaves exactly one
+    // legal move. Nothing was chosen, so nothing is graded.
+    const myHand = hand('3D', '5C', '8H', 'TS', 'QD', 'KC', 'AH');
+    const result = evaluateMove({
+        hand: myHand, lastPlayedHand: null, gameContext: context([1, 7, 7]),
+        action: 'play', cards: hand('AH')
+    });
+
+    assert.strictEqual(result.scored, false);
 });
 
 test('an ordinary midgame decision is confident', () => {

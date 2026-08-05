@@ -9,13 +9,22 @@ import { displaySuit } from '../../utils/suitLens';
 const StatusBanner = memo(function StatusBanner({
     isMyTurn, mustBeat, trickWinPending, trickWinnerName,
     currentPlayerName, isFirstLead, acc, accGrad, rm, pusoyMode,
-    placement = null,
+    placement = null, endgameNotice = null,
 }) {
     let text;
     let mine = false;
 
     if (trickWinPending) {
         text = trickWinnerName ? `${trickWinnerName} wins the trick` : 'Trick won';
+    } else if (isMyTurn && endgameNotice) {
+        // The highest-single endgame rule is live and constrains this turn.
+        // It outranks the ordinary turn prompt because it is the thing the
+        // player has to know before choosing, and it names no card — the
+        // Pusoy Dos lens would make any suit in it wrong for half the table.
+        // No "Your turn —" prefix: the accent fill and pulse already say that,
+        // and the row has to hold one line at 320px.
+        text = endgameNotice;
+        mine = true;
     } else if (isMyTurn && mustBeat) {
         text = 'Your turn — beat it or pass';
         mine = true;

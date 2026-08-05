@@ -44,6 +44,7 @@ function GameTableDesktop(props) {
         user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode,
         sortedHand, myHand, selectedCards, toggleCard, handleSelectCards,
         playCards, passTurn, isSubmitting, isMyTurn, getRelativePlayer,
+        endgameSingleError, passForbidden, endgameNotice,
         canKickPlayer, handlePlayerClick,
         sortMode, isCustomOrder, handleSortClick,
         roundResult, nextRound, onOpenSettings, onCreateAccount,
@@ -87,8 +88,14 @@ function GameTableDesktop(props) {
         ? players.find(p => p.id === gameState.trickWinner)?.name
         : null;
 
-    const canPlay = !isSpectator && isMyTurn && selectedCards.length > 0 && !trickWinPending && !isSubmitting;
-    const canPass = !isSpectator && isMyTurn && !!lastPlayedHand && !trickWinPending && !isSubmitting;
+    // `endgameSingleError` and `passForbidden` are the highest-single endgame
+    // rule, computed once in GameRoom and handed to both compositions. The
+    // server enforces it either way; blocking here just means the player sees
+    // why rather than watching a play bounce.
+    const canPlay = !isSpectator && isMyTurn && selectedCards.length > 0 &&
+        !trickWinPending && !isSubmitting && !endgameSingleError;
+    const canPass = !isSpectator && isMyTurn && !!lastPlayedHand &&
+        !trickWinPending && !isSubmitting && !passForbidden;
     const playLabel = canPlay ? `Play ${selectedCards.length}` : 'Play';
 
     // Both side fans use one step, so the seats stay level and read as a matched
@@ -265,6 +272,7 @@ function GameTableDesktop(props) {
                     <StatusBanner
                         isMyTurn={!isSpectator && isMyTurn && !trickWinPending}
                         mustBeat={!isSpectator && mustBeat}
+                        endgameNotice={endgameNotice}
                         trickWinPending={trickWinPending}
                         trickWinnerName={trickWinner}
                         currentPlayerName={currentPlayer?.name}

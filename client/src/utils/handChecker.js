@@ -205,4 +205,57 @@ export const canBeatWithAnyHand = (playerHand, lastPlayedHand) => {
     return false;
 };
 
-export default { canBeatWithAnyHand, validateHand, canBeat };
+// --- Highest-single endgame rule -------------------------------------------
+//
+// Mirror of server/game/Big2Rules.highestSingleRuleApplies / mustBeatSingle.
+// This file is a deliberate second copy of the rules (see the header), not
+// shared code, so the rule has to be restated here. The server is still the
+// authority - these exist so the UI can disable and explain a move rather than
+// let the player fire it off and take a rejection.
+//
+// `nextPlayerCards` is the card count of the seat that plays immediately after
+// you, which is the only seat your move can hand the lead to.
+
+export const highestSingleRuleApplies = (nextPlayerCards) => nextPlayerCards === 1;
+
+/** The highest card in a hand, or null for an empty one. */
+export const highestCard = (playerHand) => {
+    const withValues = ensureCardValues(playerHand || []);
+    if (withValues.length === 0) return null;
+    return withValues.reduce((best, c) => (c.value > best.value ? c : best));
+};
+
+/**
+ * Why the current selection is illegal under the rule, or null if it is fine.
+ *
+ * Names no card: the Pusoy Dos lens remaps suits per viewer, so a string
+ * naming one would be wrong for half the table.
+ */
+export const highestSingleViolation = (playerHand, selectedCards, nextPlayerCards) => {
+    if (!highestSingleRuleApplies(nextPlayerCards)) return null;
+    if (!selectedCards || selectedCards.length !== 1) return null;
+    const highest = highestCard(playerHand);
+    if (!highest) return null;
+    const [selected] = ensureCardValues(selectedCards);
+    if (selected.value === highest.value) return null;
+    return 'The next player is on their last card - a single must be your highest card';
+};
+
+/**
+ * Is passing forbidden? True when the next player is on one card, the pile is a
+ * single, and something in hand beats it.
+ *
+ * Auto-pass is unaffected by construction: it only fires when nothing in hand
+ * beats the pile, which is exactly when this returns false.
+ */
+export const mustBeatSingle = (playerHand, lastPlayedHand, nextPlayerCards) => {
+    if (!highestSingleRuleApplies(nextPlayerCards)) return false;
+    if (!lastPlayedHand || !lastPlayedHand.cards || lastPlayedHand.cards.length !== 1) return false;
+    const pileValue = ensureCardValues(lastPlayedHand.cards)[0].value;
+    return ensureCardValues(playerHand || []).some(c => c.value > pileValue);
+};
+
+export default {
+    canBeatWithAnyHand, validateHand, canBeat,
+    highestSingleRuleApplies, highestCard, highestSingleViolation, mustBeatSingle
+};

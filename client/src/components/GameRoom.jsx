@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useSpectator from '../hooks/useSpectator';
 import { AnimatePresence, motion } from 'framer-motion';
-import { canBeatWithAnyHand } from '../utils/handChecker';
+import {
+    canBeatWithAnyHand, highestSingleViolation, mustBeatSingle, highestSingleRuleApplies
+} from '../utils/handChecker';
 import { sortByRank, sortBySuit } from '../utils/cardUtils';
 import { lensServerMessage } from '../utils/suitLens';
 import ScoreDialog from './ScoreDialog';
@@ -869,6 +871,30 @@ const GameRoom = ({ user, socket }) => {
         return isHost && player && !player.isBot && player.id !== myPlayerId;
     };
 
+    // Highest-single endgame rule, mirrored from the server so the controls can
+    // disable and explain the move instead of letting it be rejected. The
+    // server is still the authority - RoomManager.playHand and passTurn enforce
+    // it regardless of what this says.
+    //
+    // Offset 1 is the seat that acts after the viewer, and for a seated player
+    // the viewer is themselves. Spectators never play, so the rule is inert for
+    // them and the guard below keeps it that way.
+    const nextPlayerCardCount = isSpectator ? 0 : (getRelativePlayer(1)?.cardCount ?? 0);
+    const endgameSingleError = isSpectator
+        ? null
+        : highestSingleViolation(myHand, selectedCards, nextPlayerCardCount);
+    const passForbidden = !isSpectator &&
+        mustBeatSingle(myHand, lastPlayedHand, nextPlayerCardCount);
+    // Two different instructions, because the rule binds differently either
+    // side of the pile. Following a single, you must beat it. Leading, you may
+    // still play any shape you like — only a single is constrained — so telling
+    // the player to "play your highest card" there would be plain wrong.
+    const endgameNotice = !isMyTurn || !highestSingleRuleApplies(nextPlayerCardCount)
+        ? null
+        : passForbidden
+            ? 'Play your highest card'
+            : 'Singles must be your highest';
+
     // The in-game screen. The waiting room replaces it entirely, and the
     // orchestrator is picked by viewport; everything else (modals, voice,
     // toasts, spectator panel) is shared by both.
@@ -878,6 +904,7 @@ const GameRoom = ({ user, socket }) => {
         user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode,
         sortedHand, myHand, selectedCards, toggleCard, handleSelectCards,
         playCards, passTurn, isSubmitting, isMyTurn, getRelativePlayer,
+        endgameSingleError, passForbidden, endgameNotice,
         canKickPlayer, handlePlayerClick,
         sortMode, isCustomOrder, handleSortClick,
         roundResult, nextRound,
