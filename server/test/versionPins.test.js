@@ -45,21 +45,21 @@ const fingerprint = (relPaths) => crypto
 // unrelated reasons, and `source`/`action` on the tape record those two rules
 // explicitly rather than relying on replay to re-derive them.
 const RULES_FILES = ['game/Big2Rules.js', 'game/Scoring.js', 'game/Deck.js'];
-// Re-pinned when calculateRoundScores began passing isGuest/joinedMidGame
-// through to the persistence layer. No scoring behaviour changed -- the points,
-// card counts and multipliers are computed exactly as before -- so
-// RULES_VERSION stays where it is.
-const RULES_PIN = '679109ebc4aa29579533a88cb687fe067d6b66b6c8724f9ad8870212e056a5a2';
+// Re-pinned for the highest-single endgame rule: a single played while the next
+// player holds one card must be the player's highest card, and such a single on
+// the pile may not be passed up. That is a change to what is legal, so
+// RULES_VERSION went to 2. Replayer deliberately does not enforce it, so tapes
+// written at version 1 still replay.
+const RULES_PIN = '1d43e422b61fe90325fd8a4beefb3d51f241ff9fca6cd8d23dde5874822228f8';
 
 // --- Bot logic -------------------------------------------------------------
 // BotLogic.js is the heuristics; BotContext.js is the observation they run on.
 // Changing either changes what the bot plays.
 const BOT_FILES = ['game/BotLogic.js', 'game/BotContext.js'];
-// Re-pinned when the advanced (PPO) bot was removed: getAdvancedBotMove and the
-// worker it called are gone, and with them the PPO checkpoint constants. That
-// code never ran inside the heuristic path -- it was an alternative to it -- so
-// what the bot plays is unchanged and BOT_LOGIC_VERSION stays at 5.
-const BOT_PIN = '6689a9ef86b635f2fcb433ec3cb31a408841f0e55093d30695a8b97f20f656a2';
+// Re-pinned when legalCandidates began enforcing the highest-single endgame
+// rule. It changes the candidate list every policy picks from, so it changes
+// what the bot plays, and BOT_LOGIC_VERSION went to 6.
+const BOT_PIN = '713de268443657bbcf1d8d9b97705c747767be4ae47e51febc33f87eaa021311';
 
 const explain = (label, constant, version, actual, pin) => `
 ${label} changed but ${constant} is still ${version}.

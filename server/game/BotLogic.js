@@ -179,14 +179,26 @@ const BotLogic = {
      * hands containing 3D on the opening turn), otherwise whatever beats the
      * pile. Shared with the move-quality evaluator so both agree on what the
      * player was actually choosing between.
+     *
+     * This is the single gate every bot passes through - the heuristic below,
+     * MoveQuality.rankOptions, and through it RLValueBot.decisionOptions and
+     * the promoted PPO actor. All of them score a candidate list; none of them
+     * generate moves. So a rule enforced here binds every policy structurally,
+     * whatever its weights say, and a persona overlay can reorder the list but
+     * never add to it.
+     *
+     * `playerCardCounts` is [next, across, previous]; omitting it skips the
+     * highest-single rule, which is what the pre-rule callers and the unit
+     * tests of pure hand enumeration want.
      */
-    legalCandidates: (validMoves, lastPlayedHand, isFirstTurn) => {
-        if (!lastPlayedHand) {
-            return isFirstTurn
+    legalCandidates: (validMoves, lastPlayedHand, isFirstTurn, playerCardCounts = null) => {
+        const legal = !lastPlayedHand
+            ? (isFirstTurn
                 ? validMoves.filter(move => move.cards.some(c => c.rank === '3' && c.suit === 'D'))
-                : validMoves;
-        }
-        return validMoves.filter(move => Big2Rules.canBeat(move, lastPlayedHand));
+                : validMoves)
+            : validMoves.filter(move => Big2Rules.canBeat(move, lastPlayedHand));
+        if (!playerCardCounts) return legal;
+        return Big2Rules.restrictToHighestSingle(legal, playerCardCounts[0]);
     },
 
     getBotMove: (hand, lastPlayedHand, isFirstTurn, gameContext = {}, captureReasoning = false) => {
@@ -235,7 +247,8 @@ const BotLogic = {
         }
 
         // Filter by what can beat the current hand
-        const candidates = BotLogic.legalCandidates(validMoves, lastPlayedHand, isFirstTurn);
+        const candidates = BotLogic.legalCandidates(
+            validMoves, lastPlayedHand, isFirstTurn, ctx.playerCardCounts);
 
         if (candidates.length === 0) {
             if (reasoning) {
@@ -2010,7 +2023,13 @@ const BotLogic = {
  *       because a triple had been dismantled to make it. evaluateFollowUp
  *       counts triples for the same reason: without it a remainder of 444
  *       scored below a remainder of 44.
+ *   6 - legalCandidates enforces the highest-single endgame rule (RULES_VERSION
+ *       2): with the next player on one card, only the highest single survives
+ *       the filter. Every policy inherits it, since none of them generate
+ *       moves. The heuristic already chose the highest card in this position
+ *       via selectBestMove's emergency branch, so its own play changes only
+ *       where the emergency did not reach - notably a lead.
  */
-const BOT_LOGIC_VERSION = 5;
+const BOT_LOGIC_VERSION = 6;
 
 module.exports = { BotLogic, BOT_LOGIC_VERSION };

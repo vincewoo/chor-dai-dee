@@ -63,14 +63,14 @@ test('persona scores express distinct strategic preferences', () => {
         styleAdjustment(row({ action_pass: 1 }), 'sprinter'),
         'sprinter should prefer shedding a large play to passing');
 
-    const spendsTwo = row({ spends_two: 1 });
+    const spendsTwo = row({ spends_two: 1, next_cards: 8 / 13 });
     assert.ok(
         styleAdjustment(spendsTwo, 'keeper') < 0,
         'keeper should protect a two in an ordinary position');
     assert.ok(
-        styleAdjustment(row({ spends_two: 1, opponent_at_one: 1 }), 'keeper') >
+        styleAdjustment(row({ spends_two: 1, next_cards: 1 / 13 }), 'keeper') >
         styleAdjustment(spendsTwo, 'keeper'),
-        'keeper should release controls when an opponent is about to go out');
+        'keeper should release controls when the next player is about to go out');
 
     assert.ok(
         styleAdjustment(row({ action_strength: 1, spends_two: 1 }), 'pressure') >
@@ -85,6 +85,43 @@ test('persona scores express distinct strategic preferences', () => {
         }), 'builder') >
         styleAdjustment(row(), 'builder'),
         'builder should favor actions that preserve combinations');
+});
+
+// Personas used to read `opponent_at_one` / `opponent_at_two`, which are a min
+// over all three opponents (RLValueBot.encodeCandidate). That made keeper and
+// pressure flip into endgame mode for a seat their move cannot hand the lead
+// to, and stay relaxed for the one it can - the reported "erratic endgame".
+// It is also the "extend to any opponent" variant the heuristic measured at
+// -4.77pp before rejecting it (docs/BOT-HEURISTICS-REVIEW.md section 15).
+test('persona urgency tracks the next seat, not the whole table', () => {
+    // Across the table is on one card; the next player is comfortable. Our move
+    // cannot hand the lead to across, so nothing should change.
+    const acrossOnOne = { next_cards: 9 / 13, across_cards: 1 / 13, opponent_at_one: 1 };
+    // The mirror: the next player is the one about to go out.
+    const nextOnOne = { next_cards: 1 / 13, across_cards: 9 / 13, opponent_at_one: 1 };
+    const calm = { next_cards: 9 / 13, across_cards: 9 / 13 };
+
+    for (const style of ['keeper', 'pressure', 'sprinter', 'builder']) {
+        assert.strictEqual(
+            styleAdjustment(row({ ...acrossOnOne, spends_two: 1, action_size: 1 }), style),
+            styleAdjustment(row({ ...calm, spends_two: 1, action_size: 1 }), style),
+            `${style} must ignore a one-card opponent it does not play into`);
+    }
+
+    // And must still react when it is the next seat.
+    assert.notStrictEqual(
+        styleAdjustment(row({ ...nextOnOne, spends_two: 1 }), 'keeper'),
+        styleAdjustment(row({ ...calm, spends_two: 1 }), 'keeper'),
+        'keeper must react to the next player on one card');
+
+    // sprinter and builder had no endgame term at all: a Sprinter would shed
+    // its widest, weakest shape in front of a seat about to go out.
+    for (const style of ['sprinter', 'builder']) {
+        assert.ok(
+            styleAdjustment(row({ ...nextOnOne, action_strength: 1 }), style) >
+            styleAdjustment(row({ ...calm, action_strength: 1 }), style),
+            `${style} should value a strong play more when the next player is on one card`);
+    }
 });
 
 test('every persona and difficulty combination completes legal rounds', () => {

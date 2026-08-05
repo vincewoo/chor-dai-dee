@@ -100,6 +100,72 @@ test('does spend the 2 of Spades when the next player is about to go out', () =>
     assert.strictEqual(move[0].rank, '2');
 });
 
+// --- the highest-single endgame rule ---------------------------------------
+// A legality constraint, not a preference: with the next player on one card, a
+// single must be your highest card. It is enforced in legalCandidates, which is
+// the one gate every bot passes through -- the heuristic here, and through
+// MoveQuality.rankOptions the PPO actor and its persona overlays too. None of
+// them generate moves, so filtering the list is what makes them all comply.
+
+test('the highest-single rule leaves only the highest single, and only singles', () => {
+    const myHand = hand('4S 6C 8H 10C JD KD AH 2C');
+    const all = BotLogic.getAllValidMoves(myHand).filter(Boolean);
+
+    // Next player comfortable: the rule is off, every single is available.
+    const relaxed = BotLogic.legalCandidates(all, null, false, [8, 8, 8]);
+    const relaxedSingles = relaxed.filter(m => m.type === HAND_TYPES.SINGLE);
+    assert.strictEqual(relaxedSingles.length, myHand.length);
+
+    // Next player on one card: exactly one single survives, and it is the 2C.
+    const restricted = BotLogic.legalCandidates(all, null, false, [1, 8, 8]);
+    const singles = restricted.filter(m => m.type === HAND_TYPES.SINGLE);
+    assert.strictEqual(singles.length, 1);
+    assert.strictEqual(singles[0].cards[0].rank, '2');
+
+    // Everything that is not a single is untouched. The rule constrains which
+    // single you may play, never which shape.
+    const nonSingles = (moves) => moves.filter(m => m.type !== HAND_TYPES.SINGLE).length;
+    assert.strictEqual(nonSingles(restricted), nonSingles(relaxed));
+});
+
+test('the rule fires on the next seat only, not on any opponent at one card', () => {
+    const myHand = hand('4S 6C 8H 10C JD KD AH 2C');
+    const all = BotLogic.getAllValidMoves(myHand).filter(Boolean);
+    const singles = (counts) => BotLogic
+        .legalCandidates(all, null, false, counts)
+        .filter(m => m.type === HAND_TYPES.SINGLE).length;
+
+    assert.strictEqual(singles([1, 8, 8]), 1, 'next player on one card restricts');
+    assert.strictEqual(singles([8, 1, 8]), myHand.length, 'across does not');
+    assert.strictEqual(singles([8, 8, 1]), myHand.length, 'previous does not');
+});
+
+test('the bot answers a single with its highest card when the next player is out in one', () => {
+    // Without the rule the cost model answers a 7 with the cheapest sufficient
+    // card. The rule overrides that, and the bot cannot do otherwise: the
+    // cheaper answers are no longer in the list it picks from.
+    const move = BotLogic.getBotMove(
+        hand('4S 6C 8H 10C JD KD AH 2C'),
+        Big2Rules.validateHand(hand('7D')),
+        false, ctx({ playerCardCounts: [1, 8, 8] }), false
+    );
+
+    assert.ok(move, 'must not pass - the pass would hand over the round');
+    assert.strictEqual(move.length, 1);
+    assert.strictEqual(move[0].rank, '2');
+});
+
+test('omitting card counts leaves candidate enumeration unrestricted', () => {
+    // The pre-rule callers and the pure enumeration tests pass no counts. That
+    // has to keep meaning "no rule", or every one of them changes meaning.
+    const myHand = hand('4S 6C 8H 10C JD KD AH 2C');
+    const all = BotLogic.getAllValidMoves(myHand).filter(Boolean);
+    assert.deepStrictEqual(
+        BotLogic.legalCandidates(all, null, false),
+        BotLogic.legalCandidates(all, null, false, null)
+    );
+});
+
 // --- why the block emergency is next-player-only ---------------------------
 // selectBestMove overrides the cost model on playerCardCounts[0] === 1 and
 // nothing else, which reads like it is ignoring the other two opponents. It is

@@ -12,14 +12,20 @@ const { SUITS, RANKS } = require('./Deck');
  *   - the 2-of-Spades single auto-pass rule in RoomManager.playHand
  *   - round scoring, including the 1x/2x/3x penalty tiers in Scoring.js
  *   - who leads: 3-of-Diamonds on round 1, previous winner thereafter
+ *   - the highest-single endgame rule below
  *
  * That list is the contract. A change not on it does not affect replay.
  * test/versionPins.test.js fails if the covered source changes without a bump.
  *
  * Changelog:
  *   1 - as of the first logged game. Earlier history is not backfillable.
+ *   2 - the highest-single endgame rule. A single played while the next player
+ *       holds one card must be the player's highest card, and a single on the
+ *       pile in that position may not be passed up. Tapes at version 1 contain
+ *       plays this version forbids; Replayer deliberately does not enforce it,
+ *       so they still replay.
  */
-const RULES_VERSION = 1;
+const RULES_VERSION = 2;
 
 // Hand Types
 const HAND_TYPES = {
@@ -235,6 +241,65 @@ const Big2Rules = {
         }
 
         return false;
+    },
+
+    /**
+     * Is the highest-single endgame rule in force right now?
+     *
+     * `nextPlayerCards` is the card count of the seat that acts immediately
+     * after the player to move - `playerCardCounts[0]` in bot-context terms.
+     * Exactly one card, never zero: the round ends the instant a hand empties
+     * (RoomManager.playHand), so a seated player is never on nothing.
+     *
+     * Deliberately the NEXT seat rather than any opponent on their last card.
+     * Turn order is us -> next -> across -> previous, so only the next player
+     * can be handed the lead by our move; the seats between us and anyone else
+     * still act. The same asymmetry is why BotLogic's emergency branch tests
+     * playerCardCounts[0] and nothing else, measured at a 4.8pp win-rate cost
+     * to widen. See docs/BOT-HEURISTICS-REVIEW.md section 15.
+     */
+    highestSingleRuleApplies: (nextPlayerCards) => nextPlayerCards === 1,
+
+    /**
+     * The subset of `moves` the highest-single rule permits, given the next
+     * player's card count.
+     *
+     * Only singles are touched: the rule constrains which single you may play,
+     * not whether you may play something else. A lead of a pair, a triple or a
+     * five-card hand is unaffected, which is the whole point - the rule exists
+     * to stop a cheap single handing over the lead, not to force a shape.
+     *
+     * `moves` must already be legal (validated, and beating the pile if there
+     * is one). Card values are unique across the deck, so the highest single is
+     * unambiguous, and it is always playable whenever any single is: beating a
+     * single means exceeding its value, which the highest card does if any card
+     * does.
+     */
+    restrictToHighestSingle: (moves, nextPlayerCards) => {
+        if (!Big2Rules.highestSingleRuleApplies(nextPlayerCards)) return moves;
+        const singles = moves.filter(m => m.type === HAND_TYPES.SINGLE);
+        if (singles.length <= 1) return moves;
+        const highest = singles.reduce((best, m) => (m.value > best.value ? m : best));
+        return moves.filter(m => m.type !== HAND_TYPES.SINGLE || m.value === highest.value);
+    },
+
+    /**
+     * Is passing forbidden right now?
+     *
+     * The forced half of the rule: with the next player on one card and a
+     * single on the pile you can beat, you must beat it. Scoped to a single
+     * pile because that is the shape the rule speaks about - a pair or a
+     * five-card hand on the pile stays a priced decision, and passing it
+     * remains legal.
+     *
+     * `legalMoves` are the moves that beat the pile, before restriction. If
+     * none of them exist there is nothing to force and passing is legal, which
+     * is what makes auto-pass unaffected by this rule.
+     */
+    mustBeatSingle: (legalMoves, lastPlayedHand, nextPlayerCards) => {
+        if (!Big2Rules.highestSingleRuleApplies(nextPlayerCards)) return false;
+        if (!lastPlayedHand || lastPlayedHand.type !== HAND_TYPES.SINGLE) return false;
+        return legalMoves.some(m => m.type === HAND_TYPES.SINGLE);
     },
 
     // Check if a hand is a dragon (one card of each rank: A-2-3-4-5-6-7-8-9-10-J-Q-K)

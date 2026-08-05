@@ -1,6 +1,6 @@
 // server/game/RoomManager.js
 const { Deck } = require('./Deck');
-const { Big2Rules } = require('./Big2Rules');
+const { Big2Rules, HAND_TYPES } = require('./Big2Rules');
 const {
     createBotPolicy,
     createCoachAdvisor,
@@ -1279,6 +1279,24 @@ class Room {
             }
         }
 
+        // Highest-single endgame rule. Bots are bound by it structurally, in
+        // BotLogic.legalCandidates - they only ever pick from a list that has
+        // already been filtered. A human play arrives here as raw cards, so
+        // this is the only place it binds them.
+        //
+        // Names no card, because it must not: the Pusoy Dos lens remaps suits
+        // per viewer, so a server string naming one is wrong for half the
+        // table. "Your highest card" is unambiguous under any lens.
+        if (validatedHand.type === HAND_TYPES.SINGLE &&
+            Big2Rules.highestSingleRuleApplies(this.nextPlayerCardCount(playerIndex))) {
+            const highest = player.hand.reduce((best, c) => (c.value > best.value ? c : best));
+            if (validatedHand.cards[0].value !== highest.value) {
+                return {
+                    error: 'The next player is on their last card - a single must be your highest card'
+                };
+            }
+        }
+
         // Move is valid
         const timing = this.turnTiming(player);
         this.tape.recordPlay({
@@ -1450,6 +1468,18 @@ class Room {
      * Used both to drive live bot play and to grade human decisions, so a
      * player is measured against exactly the position a bot would have faced.
      */
+    /**
+     * Cards held by the seat that acts immediately after `seat`.
+     *
+     * Turn order only ever advances by one (`currentTurnIndex + 1) % 4`), and
+     * the round ends the instant a hand empties, so this is always a seated
+     * player holding at least one card.
+     */
+    nextPlayerCardCount(seat) {
+        const next = this.players[(seat + 1) % 4];
+        return next ? next.hand.length : 0;
+    }
+
     buildSeatContext(seat, profile = null) {
         const lastPlayerIdx = this.lastPlayedHand && this.lastPlayedHand.playerId
             ? this.players.findIndex(p => p.id === this.lastPlayedHand.playerId)
@@ -1678,6 +1708,25 @@ class Room {
         if (playerIndex !== this.currentTurnIndex) return { error: 'Not your turn' };
 
         if (!this.lastPlayedHand) return { error: 'Cannot pass on free turn' }; // Can't pass if you are leading
+
+        // The forced half of the highest-single rule: with the next player on
+        // one card and a single on the pile you can beat, you must beat it.
+        //
+        // Scoped to a single pile, matching Big2Rules.mustBeatSingle - a pair
+        // or a five-card hand on the pile stays a priced decision. Beating a
+        // single is exactly holding a higher card, so no move enumeration is
+        // needed here.
+        //
+        // Auto-pass never trips this: the client only fires it when nothing in
+        // hand beats the pile (GameRoom's canBeatWithAnyHand check), which is
+        // precisely the case where the rule forces nothing.
+        if (this.lastPlayedHand.type === HAND_TYPES.SINGLE &&
+            Big2Rules.highestSingleRuleApplies(this.nextPlayerCardCount(playerIndex)) &&
+            this.players[playerIndex].hand.some(c => c.value > this.lastPlayedHand.value)) {
+            return {
+                error: 'The next player is on their last card - you must beat this single'
+            };
+        }
 
         // Update activity timestamp
         this.updateActivity();

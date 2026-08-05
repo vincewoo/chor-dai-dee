@@ -641,6 +641,21 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
 - When all other players pass, the last player who played gets free control
 - First to empty hand wins the round
 - **Hong Kong Dragon Rule:** If a player is dealt all 13 different ranks (3-4-5-6-7-8-9-10-J-Q-K-A-2), they instantly win the entire game. All other players receive 39 penalty points.
+- **Highest single vs. a player on their last card:** when the seat that acts
+  *next* holds exactly one card, any single you play must be your highest card,
+  and a single on the pile you can beat may not be passed up. Only singles are
+  constrained — a player on one card cannot beat a pair or a five-card hand at
+  all, so any multi-card lead already blocks them, and the heuristic deliberately
+  leads the *cheapest* such shape. Only the next seat counts: turn order is
+  us → next → across → previous, so nobody else can be handed the lead by our
+  move (`docs/BOT-HEURISTICS-REVIEW.md` §§ 15, 18).
+  The rule lives in `Big2Rules` (`highestSingleRuleApplies`,
+  `restrictToHighestSingle`, `mustBeatSingle`) and binds in three places: bots
+  structurally via `BotLogic.legalCandidates`, humans via `RoomManager.playHand`
+  and `passTurn`, and the client mirror in `utils/handChecker.js` which only
+  disables and explains. **`Replayer` deliberately does not enforce it** — tapes
+  written at `RULES_VERSION` 1 contain plays it forbids, and replay has to keep
+  reproducing the game that was actually played.
 
 ### Game Modes
 - **Short Game:** First to 50 points ends the game (~30 minutes)

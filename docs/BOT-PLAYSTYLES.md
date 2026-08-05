@@ -21,9 +21,31 @@ over a multi-round game and its immediate rematches.
 | Persona | Preference |
 |---|---|
 | Sprinter | Shed more cards and avoid passing with a playable response |
-| Keeper | Preserve aces and twos until an opponent is near going out |
+| Keeper | Preserve aces and twos until the next player is near going out |
 | Pressure | Spend strong cards freely to take and retain control |
 | Builder | Leave useful pairs, triples, and five-card shapes behind |
+
+### Endgame urgency
+
+Every persona damps its signature preference as the **next player** approaches
+going out, through `BotStyle.nextPlayerUrgency`. Keeper releases its controls,
+Pressure leans harder into strength, Sprinter stops valuing width over strength,
+and Builder stops hoarding shapes it will not live to play.
+
+The seat matters and is not interchangeable with "an opponent". Turn order is us
+-> next -> across -> previous, so only the next player can be handed the lead by
+our move. Keeper and Pressure originally read `opponent_at_one` /
+`opponent_at_two`, which `RLValueBot.encodeCandidate` computes as a min over all
+three opponents; they consequently went urgent for a seat they could not affect
+and stayed relaxed for the one they could. That is the same widening the
+heuristic measured at -4.77pp before rejecting it
+(`docs/BOT-HEURISTICS-REVIEW.md` sections 15 and 18). Sprinter and Builder had no
+endgame term at all.
+
+`nextPlayerUrgency` is derived from the existing `next_cards` feature rather than
+from a new one, deliberately: `RLValueModel.load` asserts an artifact's
+`featureNames` match `FEATURE_NAMES` exactly, so adding a feature would
+invalidate the promoted checkpoint and turn a bug fix into a retrain.
 
 The unmodified generation-18 actor remains `classic`. It is the compatibility
 default for benchmarks, training collectors, the coach, and the heuristic

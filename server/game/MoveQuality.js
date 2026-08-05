@@ -103,6 +103,10 @@ const bandFor = (lossFraction) =>
  */
 function passIsAvailable(candidates, hand, ctx, gamePhase) {
     if (candidates.some(m => m.cards.length === hand.length)) return false; // can play out
+    // Against a single pile this is now a rule rather than a preference
+    // (Big2Rules.mustBeatSingle); against every other shape it stays the
+    // heuristic's refusal to hand over the lead. Both land on the same answer,
+    // so the test does not need to distinguish them.
     if (ctx.playerCardCounts[0] <= 1) return false;                         // must contest
     if (hand.length <= 4 || gamePhase === 'late') return false;             // need the tempo
     return true;
@@ -189,7 +193,8 @@ function rankOptions({
     trim = true
 }) {
     const ctx = BotLogic.buildDecisionContext(hand, { ...gameContext, profile: null });
-    const candidates = BotLogic.legalCandidates(ctx.allValidMoves, lastPlayedHand, isFirstTurn);
+    const candidates = BotLogic.legalCandidates(
+        ctx.allValidMoves, lastPlayedHand, isFirstTurn, ctx.playerCardCounts);
     const gamePhase = BotLogic.getGamePhase(hand.length);
 
     if (candidates.length === 0) {

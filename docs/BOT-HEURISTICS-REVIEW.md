@@ -839,3 +839,113 @@ no hold-probability term outside `dangerLevel >= 2`. It computes
 `4S` at 44% hold sat only 8 points behind the pair of Kings on the round-7 board from the
 same session. The player's instinct in both reports — "what does this lead do to my ability
 to win later" — is the term the lead path does not have.
+
+## 18. Shipped as a rule: the highest single against a player on their last card
+
+Requested as a game rule rather than a tuning change: **if the next player is on their
+last card and you play a single, it must be your highest card** — and a single on the pile
+you can beat may not be passed up.
+
+### Why no retraining was needed
+
+None of the bots generate moves. Every policy — the heuristic, `RLValueBot`, and the
+promoted PPO actor with its persona overlays — scores a candidate list produced upstream,
+and that list has exactly one source:
+
+```
+BotLogic.legalCandidates()
+  └─> MoveQuality.rankOptions()
+        └─> RLValueBot.decisionOptions()
+              ├─> PPOBot
+              └─> RLValueBot
+```
+
+`PPOBot.getBotMove` encodes one feature row per supplied option and softmaxes over exactly
+those rows, so it cannot emit a move that was not in the list. `applyBotStyle` adds a
+bounded logit (`MAX_STYLE_LOGIT_ADJUSTMENT = 2.5`) to each row: a persona can reorder
+options, never add one. Filtering `legalCandidates` therefore makes compliance
+**structural** for every policy at once, whatever the weights say.
+
+Retraining would help only for *strength*, and only marginally. The policy already has the
+information — `next_cards` and `opponent_at_one` are existing features — but a line it used
+to price as optional is now forced, so its valuations of the surviving branches are
+slightly miscalibrated. That is a regeneration run whenever convenient, not a prerequisite.
+
+### Why the rule is narrower than it looks
+
+It restricts **singles only**, and reads the **next seat only**.
+
+Restricting singles alone is not a softening. A player on one card cannot beat a pair, a
+triple or a five-card hand — they have nothing to build one from — so any multi-card lead
+is already a guaranteed block. Constraining those shapes would forbid nothing useful and
+forbid a great deal that is correct. The heuristic has exploited this for a while:
+`selectBestMove`'s emergency branch, when leading, picks the *cheapest* multi-card shape it
+holds rather than the strongest, because they all block equally.
+
+Reading the next seat only is section 15's result, reused. Turn order is us → next →
+across → previous, so only the next player can be handed the lead by our move; extending
+the same urgency to any opponent on one card measured at **−4.77pp** of win rate.
+
+### What actually changed for the heuristic
+
+Less than it appears. `shouldStrategicPass` already refused to pass on
+`playerCardCounts[0] <= 1`, and the emergency branch already picked the highest candidate
+when responding — which, against a single pile, is the highest single. So the heuristic's
+*responses* were already compliant. The rule binds it where the emergency did not reach,
+mainly leads, and binds the PPO actor and the personas everywhere.
+
+### The related bug the rule does not fix
+
+The rule masks part of a separate defect rather than addressing it, so both shipped
+together. Personas read `opponent_at_one` / `opponent_at_two`, which
+`RLValueBot.encodeCandidate` computes as a **min over all three opponents**. `keeper` and
+`pressure` therefore flipped into endgame mode when the player *across* the table was on
+one card — a seat their move cannot hand the lead to — and stayed relaxed in the mirror
+case. That is precisely the "extend to any opponent" variant measured at −4.77pp above,
+reintroduced through the persona layer.
+
+`sprinter` and `builder` referenced opponent proximity not at all, so a Sprinter would shed
+its widest, weakest shape in front of a seat about to go out.
+
+Both are fixed by `BotStyle.nextPlayerUrgency`, derived from the existing `next_cards`
+feature. Deriving rather than adding a feature is load-bearing: `RLValueModel.load` asserts
+an artifact's `featureNames` match `FEATURE_NAMES` exactly, so a new feature would
+invalidate the promoted generation-18 checkpoint and make a retrain a prerequisite for
+shipping a bug fix. The information was never missing — only the wiring was wrong.
+
+### Measured
+
+`npm run bench` (heuristic self-play, 2000 rounds) is **byte-identical** before and after.
+That is the expected result, not a broken harness: the heuristic already played the highest
+single in every position the rule covers, so the filter removes nothing it wanted. It is
+also the cleanest evidence the rule is scoped correctly — a filter that changed the
+heuristic's play would be reaching past the positions section 15 validated.
+
+The live policy is PPO, so the ladder is where the change shows up.
+`npm run bench:difficulty` (2000 rounds x 2 seeds):
+
+| Tier | REF win% before → after | bot points before → after |
+|---|---|---|
+| casual | 37.7% → 38.0% | 3.50 → 3.37 |
+| balanced | 31.6% → 31.6% | 3.32 → 3.24 |
+| competitive | 24.7% → 24.7% | 3.22 → 3.18 |
+
+Win rates are unmoved and the monotonicity gate still passes. Round points improve slightly
+at every tier, which is the shape you would expect: the rule spends a high card to deny the
+next player the lead, and the round it saves is a round nobody pays penalty points for.
+
+`npm run bench:styles -- 4000 91827`, covering the persona fixes:
+
+| Persona | win% before → after | pass% | signature |
+|---|---|---|---|
+| classic | 26.72 → 26.77 | 7.41 → 7.40 | unchanged |
+| sprinter | 26.38 → 26.45 | 5.47 → 5.47 | still the lowest pass rate |
+| keeper | 26.97 → 27.00 | 8.85 → 8.86 | still the highest pass rate |
+| pressure | 25.17 → 25.20 | 5.25 → 5.25 | still the largest action size |
+| builder | 26.82 → 26.90 | 7.77 → 7.75 | still the most shapes retained |
+
+Every persona keeps a distinct measured signature and none moved beyond noise at 4,000
+rounds. Expected: endgame urgency fires only as the next player approaches going out, which
+is a small fraction of decisions, so it cannot move a whole-game aggregate. The fix is
+justified by the position it corrects, not by a win-rate claim — the same argument as
+section 14.
