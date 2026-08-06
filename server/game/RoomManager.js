@@ -116,6 +116,13 @@ class Room {
         this.trickIndex = 0; // Tricks resolved this round, for tricks-contested counting
         this.lastRoundResults = null; // Store round results for reconnection handling
         this.lastGameResults = null; // Store game over results for reconnection handling
+        // Each human's rank outcome for the game that just ended, keyed by
+        // username. The client holds the final scoreboard back until its own
+        // result lands (a promotion gets a splash screen first), so a player who
+        // reconnects onto the game-over screen has to be told the same thing the
+        // live socket was told -- otherwise they wait out the client's timeout.
+        // Cleared alongside lastGameResults.
+        this.lastRankResults = {};
 
         // Spectators watch the game read-only. Keyed by username (not socket id) so a
         // spectator survives a reconnect without the socket-id migration that players
@@ -2210,6 +2217,7 @@ class Room {
         this.cumulativeScores = {};
         this.lastGameResults = null;
         this.lastRoundResults = null;
+        this.lastRankResults = {};
         this.postGameReadyPlayers.clear();
 
         this.clearAllTimeouts();
@@ -2273,6 +2281,7 @@ class Room {
         this.cumulativeScores = {};
         this.lastGameResults = null;
         this.lastRoundResults = null;
+        this.lastRankResults = {};
         this.postGameReadyPlayers.clear();
 
         // Clear player hands

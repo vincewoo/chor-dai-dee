@@ -125,6 +125,65 @@ test('placement stays Unranked and can place no higher than Platinum', () => {
     assert.strictEqual(placed.change, 'placed');
 });
 
+test('every result reports the rank it moved away from', () => {
+    // The promotion splash animates from previousRank to rank, so a wrong (or
+    // missing) previousRank is a wrong animation, not a cosmetic detail.
+    let state = {
+        publicRank: 3,
+        promotionProgress: 2,
+        demotionProgress: 0
+    };
+
+    // A game that changes nothing still reports where the player stands.
+    const held = updatePublicRank(state, {
+        mu: 25,
+        sigma: 25 / 3,
+        placement: 3
+    });
+    assert.strictEqual(held.change, null);
+    assert.strictEqual(held.previousRank.label, 'Gold');
+    assert.strictEqual(held.rank.label, 'Gold');
+
+    state = updatePublicRank(state, {
+        mu: 32,
+        sigma: 4,
+        placement: 1
+    });
+    assert.strictEqual(state.change, 'promoted');
+    assert.strictEqual(state.previousRank.label, 'Gold');
+    assert.strictEqual(state.rank.label, 'Platinum');
+
+    // Placing comes from Unranked, which is off the ladder entirely.
+    const placed = updatePublicRank({
+        publicRank: 0,
+        promotionProgress: 0,
+        demotionProgress: 0,
+        rankPlacementComplete: false
+    }, {
+        mu: 30,
+        sigma: 5,
+        placement: 1,
+        placementMatchesComplete: true
+    });
+    assert.strictEqual(placed.change, 'placed');
+    assert.strictEqual(placed.previousRank.label, 'Unranked');
+
+    // And a demotion reports the tier it fell out of.
+    let falling = {
+        publicRank: 2,
+        promotionProgress: 0,
+        demotionProgress: 2
+    };
+    falling = updatePublicRank(falling, {
+        mu: 25,
+        sigma: 25 / 3,
+        placement: 4
+    });
+    assert.strictEqual(falling.change, 'demoted');
+    assert.strictEqual(falling.previousRank.label, 'Silver');
+    assert.strictEqual(falling.rank.label, 'Bronze');
+});
+
 test('the public stats view removes every shadow-rating field', () => {
     const visible = publicStatsView({
         username: 'Alice',

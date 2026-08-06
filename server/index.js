@@ -150,6 +150,45 @@ const createUserLookup = () => {
 // a duration measured from 1970 rather than an obviously wrong small number.
 const gameStartTime = (room) => new Date(room.gameStartedAt ?? room.createdAt);
 
+// ============ Rank Result Helpers ============
+
+// Exactly the seats whose rank moves at the end of a game: the same predicate
+// the stats and rating loops use. Bots have no account, guests have no row to
+// write to, and a mid-game joiner did not play the game being rated.
+const rankEligible = (player) =>
+    !player.isBot && !player.isGuest && !player.joinedMidGame;
+
+// Who the client should expect a `rank_update` for. It ships on the game_over
+// payload so a promoted player's client knows to hold the final scoreboard for
+// its rank result rather than racing it -- the rank is only known after the
+// stats transaction, several hundred ms after game_over goes out.
+const pendingRankNames = (room) =>
+    room.players.filter(rankEligible).map(player => player.name);
+
+// One place decides what a rank result looks like on the wire. `change` is null
+// on most games; the client needs that too, as the signal to stop waiting and
+// show the scoreboard. `previousRank` is what the splash animates away from.
+const sendRankResult = (room, player, rankState) => {
+    if (!rankState) return;
+    const payload = {
+        change: rankState.change,
+        rank: rankState.rank.label,
+        previousRank: rankState.previousRank
+            ? rankState.previousRank.label
+            : null
+    };
+    room.lastRankResults[player.name] = payload;
+    if (player.socket) player.socket.emit('rank_update', payload);
+};
+
+// Replays a stored rank result to a reconnecting socket. Must follow the
+// game_over emit, not precede it: the client only holds the scoreboard once it
+// has seen game_over, and a result arriving first would be dropped.
+const replayRankResult = (socket, room, username) => {
+    const stored = room.lastRankResults && room.lastRankResults[username];
+    if (stored) socket.emit('rank_update', stored);
+};
+
 // Voice Chat WebRTC Signaling - Global voice rooms tracker
 const voiceRooms = {}; // Track voice participants by room
 
@@ -490,6 +529,7 @@ io.on('connection', (socket) => {
                     } else {
                         socket.emit('game_over', room.lastGameResults);
                     }
+                    replayRankResult(socket, room, username);
                 }
 
                 // Notify everyone in room about the reconnection
@@ -542,6 +582,7 @@ io.on('connection', (socket) => {
                     } else {
                         socket.emit('game_over', targetRoom.lastGameResults);
                     }
+                    replayRankResult(socket, targetRoom, username);
                 }
 
                 // Check if current player is a bot and trigger bot turn processing
@@ -613,6 +654,7 @@ io.on('connection', (socket) => {
                 } else {
                     socket.emit('game_over', room.lastGameResults);
                 }
+                replayRankResult(socket, room, username);
             }
 
             // Send joined confirmation
@@ -818,7 +860,10 @@ io.on('connection', (socket) => {
             finalScores: room.cumulativeScores,
             roundNumber: room.roundNumber,
             isDragonWin: true,
-            gameId: room.gameId
+            gameId: room.gameId,
+            // Whose client should wait for a rank_update before showing the
+            // final scoreboard. See sendRankResult.
+            pendingRankFor: pendingRankNames(room)
         };
 
         // Store dragon win results for reconnection handling
@@ -985,12 +1030,7 @@ io.on('connection', (socket) => {
 
                     if (rankState) {
                         player.publicRank = rankState.rank.label;
-                        if (rankState.change && player.socket) {
-                            player.socket.emit('rank_update', {
-                                change: rankState.change,
-                                rank: rankState.rank.label
-                            });
-                        }
+                        sendRankResult(room, player, rankState);
                     }
                 } catch (e) {
                     console.error("Failed to update stats for", player.name, e);
@@ -1130,7 +1170,10 @@ io.on('connection', (socket) => {
                 roundNumber: room.roundNumber,
                 // Lets the game-over screen link straight to the review. Not
                 // sensitive - the same id is already on every activity feed row.
-                gameId: room.gameId
+                gameId: room.gameId,
+                // Whose client should wait for a rank_update before showing the
+                // final scoreboard. See sendRankResult.
+                pendingRankFor: pendingRankNames(room)
             };
 
             // Store game results for reconnection handling
@@ -1419,12 +1462,7 @@ io.on('connection', (socket) => {
                             // state; the continuous update remains server-side.
                             if (rankState) {
                                 p.publicRank = rankState.rank.label;
-                                if (rankState.change && p.socket) {
-                                    p.socket.emit('rank_update', {
-                                        change: rankState.change,
-                                        rank: rankState.rank.label
-                                    });
-                                }
+                                sendRankResult(room, p, rankState);
                             }
                         } catch (e) {
                             console.error("Failed to update stats for", p.name, e);
@@ -1648,6 +1686,9 @@ io.on('connection', (socket) => {
                 } else {
                     socket.emit('game_over', room.lastGameResults);
                 }
+                // Keyed on seat, since this handler has no username in hand.
+                const seated = room.players.find(p => p.id === socket.id);
+                if (seated) replayRankResult(socket, room, seated.name);
             }
         }
     });

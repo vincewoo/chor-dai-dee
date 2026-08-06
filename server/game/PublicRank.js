@@ -72,6 +72,12 @@ function updatePublicRank(current = {}, {
     // Public rank stays at the starting tier during placement matches. Once
     // calibration completes, place from the current shadow score but never
     // above Platinum: Diamond and Champ remain available to earn through play.
+    // What the player saw before this update. The promotion splash animates
+    // from it, so it has to be captured before rankIndex moves.
+    const previousRank = rankPlacementComplete
+        ? rankForIndex(rankIndex)
+        : { ...UNRANKED_PUBLIC_RANK };
+
     if (!rankPlacementComplete) {
         if (!placementMatchesComplete) {
             return {
@@ -80,6 +86,7 @@ function updatePublicRank(current = {}, {
                 demotionProgress: 0,
                 rankPlacementComplete: false,
                 change: null,
+                previousRank,
                 rank: { ...UNRANKED_PUBLIC_RANK }
             };
         }
@@ -95,6 +102,7 @@ function updatePublicRank(current = {}, {
             demotionProgress: 0,
             rankPlacementComplete,
             change: 'placed',
+            previousRank,
             rank: rankForIndex(rankIndex)
         };
     }
@@ -140,6 +148,7 @@ function updatePublicRank(current = {}, {
         demotionProgress,
         rankPlacementComplete,
         change,
+        previousRank,
         rank: rankForIndex(rankIndex)
     };
 }
