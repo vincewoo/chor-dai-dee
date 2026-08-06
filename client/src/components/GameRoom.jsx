@@ -17,7 +17,11 @@ import VoiceChat from './VoiceChat';
 import VoiceControlBubble from './VoiceControlBubble';
 import { useVoice } from '../contexts/VoiceContext';
 import { SettingsModal, LeaveConfirmModal, KickConfirmModal } from './modals';
-import { GameTableMobile, GameTableDesktop, WaitingRoomV2, GameOverV2 } from './tableV2';
+import { GameTableMobile, GameTableDesktop, WaitingRoomV2, GameOverV2, RankPromotionSplash } from './tableV2';
+import {
+    RANK_RESULT_GRACE_MS, awaitsRankResult, shouldSplashRank,
+    rankSplashSeen, markRankSplashSeen, rankSplashStore,
+} from '../utils/rankSplash';
 import { useIsDesktop } from '../hooks/useMediaQuery';
 import useGameSounds from '../hooks/useGameSounds';
 import { playSound } from '../utils/sounds';
@@ -73,6 +77,14 @@ const GameRoom = ({ user, socket }) => {
     const [error, setError] = useState('');
     const [roundResult, setRoundResult] = useState(null);
     const [gameOver, setGameOver] = useState(null);
+
+    // ---- Rank result / promotion splash ----
+    // The server can only know a rank after the game-over stats transaction, so
+    // `game_over` arrives first and names the seats a rank_update is coming for.
+    // For those players the final scoreboard waits (briefly, and with a hard
+    // cap) so a promotion gets the screen to itself first.
+    const [awaitingRank, setAwaitingRank] = useState(false);
+    const [rankSplash, setRankSplash] = useState(null);
     const autoPassTriggered = useRef(false);
     const [notification, setNotification] = useState(null);
     const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
@@ -153,6 +165,27 @@ const GameRoom = ({ user, socket }) => {
         return sortByRank(bottomHandSource);
     }, [bottomHandSource, isSpectator, sortMode, isCustomOrder, customHandOrder]);
 
+    // Hard cap on the scoreboard's wait. The rank result normally lands well
+    // inside it; this is what stops a failed stats write from stranding the
+    // player on the table with no way forward.
+    useEffect(() => {
+        if (!awaitingRank) return undefined;
+        const timer = setTimeout(() => setAwaitingRank(false), RANK_RESULT_GRACE_MS);
+        return () => clearTimeout(timer);
+    }, [awaitingRank]);
+
+    // One ceremony per game. A reconnect replays both game_over and the stored
+    // rank result, so without this a refresh on the game-over screen would run
+    // the promotion again every time.
+    const rankSplashGameId = gameOver?.gameId;
+    const showRankSplash = useMemo(
+        () => !!rankSplash && !rankSplashSeen(rankSplashGameId, rankSplashStore()),
+        [rankSplash, rankSplashGameId]
+    );
+    useEffect(() => {
+        if (showRankSplash) markRankSplashSeen(rankSplashGameId, rankSplashStore());
+    }, [showRankSplash, rankSplashGameId]);
+
     useEffect(() => {
         // Spectators must never emit join_room - that would seat them (or bounce
         // them as 'Room full') and would evict them from any room they're watching.
@@ -227,6 +260,8 @@ const GameRoom = ({ user, socket }) => {
             setGameState(state);
             setRoundResult(null);
             setGameOver(null);
+            setAwaitingRank(false);
+            setRankSplash(null);
             setReadyStatus(null); // Reset post-game state
             setIsReady(false);
             clearTimeout(roomLoadTimeout); // Room exists, clear timeout
@@ -251,23 +286,34 @@ const GameRoom = ({ user, socket }) => {
 
         socket.on('game_over', (data) => {
             setGameOver(data);
+            setAwaitingRank(awaitsRankResult(data, user?.username));
         });
 
         socket.on('dragon_win', (data) => {
             // Dragon win is treated like game_over but with special messaging
             setGameOver({ ...data, isDragonWin: true });
+            setAwaitingRank(awaitsRankResult(data, user?.username));
         });
 
-        socket.on('rank_update', ({ change, rank }) => {
-            const promoted = change === 'promoted';
-            const placed = change === 'placed';
+        socket.on('rank_update', (result) => {
+            // Whatever it says, it ends the scoreboard's wait — the event is
+            // emitted for every eligible seat, including the common case of no
+            // rank change at all.
+            setAwaitingRank(false);
+
+            const { change, rank } = result || {};
+            if (!change) return;
+
+            if (shouldSplashRank(result)) {
+                // gameId comes from the game_over payload, which always precedes
+                // this event on the same socket (including on reconnect).
+                setRankSplash((current) => current || { ...result });
+                return;
+            }
+
             setNotification({
-                type: promoted || placed ? 'success' : 'warning',
-                message: placed
-                    ? `Placement complete — ranked ${rank}!`
-                    : promoted
-                    ? `Promoted to ${rank}!`
-                    : `Rank adjusted to ${rank}`
+                type: 'warning',
+                message: `Rank adjusted to ${rank}`
             });
             setTimeout(() => setNotification(null), 5000);
         });
@@ -970,8 +1016,21 @@ const GameRoom = ({ user, socket }) => {
                 )}
             </AnimatePresence>
 
+            {/* Rank promotion — a full-screen takeover ABOVE the game-over
+                screen, and the reason that screen is held back: the achievement
+                gets its own moment before the standings arrive. */}
+            {showRankSplash && (
+                <RankPromotionSplash
+                    playerName={user?.username}
+                    rank={rankSplash.rank}
+                    previousRank={rankSplash.previousRank}
+                    change={rankSplash.change}
+                    onDone={() => setRankSplash(null)}
+                />
+            )}
+
             {/* Game Over — shared post-game action buttons (host / non-host / solo) */}
-            {gameOver && (() => {
+            {gameOver && !awaitingRank && !showRankSplash && (() => {
                 const gameOverActions = (() => {
                         const humanPlayers = gameState?.players?.filter(p => !p.isBot) || [];
                         const hasMultipleHumans = humanPlayers.length >= 2;

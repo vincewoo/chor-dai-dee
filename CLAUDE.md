@@ -234,6 +234,21 @@ fits at 768px.
 - `RoundLogRows.jsx` - the log rows, shared by the mobile sheet
   (`RoundLogSheet`) and the desktop drawer (`RoundLogDrawer`) so the two can't
   drift.
+- `RankPromotionSplash.jsx` / `RankBadge.jsx` - the promotion celebration, shown
+  **before** the final scoreboard on a game a player ranked up (or completed
+  placement) in. The badge is an SVG hex shield in the rank's colour, never a
+  glyph, for the same reason `SuitWatermark` is.
+  The ordering is the whole design problem: the server cannot know a rank until
+  the game-over stats transaction, so `game_over` is emitted several hundred ms
+  *before* the rank is decided. It therefore carries `pendingRankFor` - the seats
+  a `rank_update` is coming for - and `GameRoom` holds `GameOverV2` back until
+  that seat's result arrives or `RANK_RESULT_GRACE_MS` expires
+  (`utils/rankSplash.js`, which owns every rule here and is the tested part).
+  Consequences worth keeping straight: `rank_update` is emitted for **every**
+  eligible seat, including the common no-change case, because that is the signal
+  to stop waiting; only upward moves get the splash, a demotion keeps its toast;
+  and a reconnect replays both events, so the splash is fired at most once per
+  `gameId` via sessionStorage.
 - `suitShapes.jsx` - the four suit paths, shared by `SuitWatermark` and the card
   back (`CardBackGlyph`).
 - `SuitWatermark.jsx` - the oversized faded suit shapes every v2 screen
@@ -528,8 +543,18 @@ to offer and would otherwise be locked out of its own settings.
 - `hand_update` - Player's hand cards
 - `game_update` - Game state changes (plays, turns, etc.)
 - `round_over` - Round has ended with scores
-- `game_over` - Game has ended with final results
-- `dragon_win` - Dragon detected, instant game win (Hong Kong variation)
+- `game_over` - Game has ended with final results. `pendingRankFor` names the
+  seats a `rank_update` is still coming for; their clients hold the scoreboard
+  back for it.
+- `dragon_win` - Dragon detected, instant game win (Hong Kong variation).
+  Carries `pendingRankFor` too — a dragon ends a game and moves ranks like any
+  other ending.
+- `rank_update` - One seat's public rank after the game, to that seat only:
+  `{ change, rank, previousRank }`. Emitted for every eligible human even when
+  `change` is null, since it is also how the client learns to stop waiting.
+  Stored on the room (`lastRankResults`) and replayed after `game_over` on every
+  reconnect path, or a player who refreshes onto the game-over screen waits out
+  the client's grace period for a result that already happened.
 - `bot_reasoning` - Bot decision analysis (for debug panel)
 - `coach_hint` - The coach's suggested move + reasoning (to the asker only)
 - `coach_note` - The coach's unprompted reaction to the move just made (to the

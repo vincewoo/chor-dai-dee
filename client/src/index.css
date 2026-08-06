@@ -198,3 +198,47 @@ body {
   0%, 100% { transform: rotate(-4deg); }
   50%      { transform: rotate(4deg); }
 }
+
+/* ------------------------------------------------------------
+   Rank promotion splash (tableV2/RankPromotionSplash.jsx).
+   The old badge leaves, the new one lands, and the impact is
+   drawn as a flash + shockwave + sparks rather than as motion on
+   the badge itself, so the badge stays readable throughout.
+   Every one of these is suppressed under reduced motion; the
+   splash renders its settled state instead.
+   ------------------------------------------------------------ */
+@keyframes cddRankRise {
+  0%   { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
+  55%  { transform: translateY(-12px) scale(1.06); opacity: .9; }
+  100% { transform: translateY(-74px) scale(.72); opacity: 0; filter: blur(5px); }
+}
+@keyframes cddRankSlam {
+  0%   { transform: scale(2.4) translateY(-40px); opacity: 0; filter: blur(7px); }
+  55%  { transform: scale(.9) translateY(0); opacity: 1; filter: blur(0); }
+  72%  { transform: scale(1.08); }
+  86%  { transform: scale(.97); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes cddRankShock {
+  0%   { transform: scale(.35); opacity: .85; border-width: 8px; }
+  100% { transform: scale(2.6); opacity: 0; border-width: 1px; }
+}
+@keyframes cddRankFlash {
+  0%   { opacity: 0; }
+  12%  { opacity: .9; }
+  100% { opacity: 0; }
+}
+/* Sparks read their own vector from --cdd-spark-x / --cdd-spark-y, set inline
+   per particle, so one keyframe serves the whole burst. */
+@keyframes cddRankSpark {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--cdd-spark-x, 0), var(--cdd-spark-y, 0)) scale(.2); opacity: 0; }
+}
+@keyframes cddRankRays {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes cddRankHalo {
+  0%, 100% { opacity: .45; transform: scale(1); }
+  50%      { opacity: .8; transform: scale(1.07); }
+}
