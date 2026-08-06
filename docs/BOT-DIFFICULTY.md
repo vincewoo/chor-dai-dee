@@ -197,10 +197,25 @@ seat has no policy of its own and is answered for by the room's.
 
 `game_history.bot_difficulty` records the frozen tier for the whole game,
 written from `room.botPolicy.difficulty` at every `saveGameHistory` call site.
-The activity feed, the home screen's Recent list and the score dialog they open
-render exactly one thing from it: a gold **⚔️ MAX BOTS** chip
+The activity feed, the home screen's Recent list and the score dialog that list
+opens render exactly one thing from it: a gold **⚔️ MAX BOTS** chip
 (`tableV2/MaxBotsChip.jsx`), and only on a game that was pinned to
-`MAX_BOT_DIFFICULTY` *and* actually contained a bot.
+`MAX_BOT_DIFFICULTY` *and* actually seated a bot. (The `/activity` page expands
+standings in place and never mounts `ScoreDialog`; only the home screen's Recent
+list does.) It is the only *per-game* difficulty label anything shows a viewer —
+the hand-strength stats' "Easy bots" scope also reflects difficulty, but as an
+aggregate over rounds that never names a game or a tier.
+
+`GameOverV2` draws the same chip at the moment the game ends, since that is what
+the badge is for; the feed is where you go to find it again. It is the one
+surface that does **not** read the recorded tier — it has the live room in hand
+and uses `gameState.forceMaxBots`, which can only be changed while `waiting` and
+therefore still describes the game that just finished. It applies the same
+seated-a-bot gate, so the two sources cannot disagree about which games qualify.
+
+The tier string itself is stripped from the `/api/activity` payload. What the
+endpoint publishes is the derived boolean, so the client never sees the
+vocabulary and a retune has no wire compatibility to preserve.
 
 **Adaptive strength is never shown, and that is the whole design.** It is a
 continuous hidden temperature derived from the table's private skill
@@ -214,12 +229,20 @@ why it gets the accent colour rather than the caveat styling that `QUIT` and
 Three consequences worth keeping:
 
 - **The client never compares tier ids.** `db.getActivityFeed` derives one
-  boolean, `maxBots`, against `MAX_BOT_DIFFICULTY_ID` — db.js's local copy of
+  boolean, `max_bots`, against `MAX_BOT_DIFFICULTY_ID` — db.js's local copy of
   the ceiling, pinned to `BotPolicy.MAX_BOT_DIFFICULTY` by
-  `botDifficulty.test.js`. A retune that moves the ceiling moves the badge.
+  `botDifficulty.test.js` — and strips the raw column from the payload. A retune
+  that moves the ceiling moves the badge, with no wire format to keep compatible.
 - **The "were there bots" half is answered in the same place.** Max difficulty
   is a *room* setting, so a table that filled with four humans carries it with
-  nothing to apply it to.
+  nothing to apply it to. Read this as "no bot ever sat here", not "the game
+  started with four humans": `saveGameParticipant` upserts on
+  `(game_id, username)`, so a human who quits mid-game leaves their own row
+  behind *and* the substitute bot inserts its own. A completed four-human
+  max-bots game that someone walked out of therefore does earn the chip — a
+  max-difficulty bot really did play it. The abandoned path differs, and
+  correctly: `describeParticipants()` reattributes a bot-filled seat to the
+  human who owned it, so that game is not badged.
 - **NULL is never backfilled.** Rows written before difficulty tiers existed all
   ran full-strength argmax, so reconstructing them from `round_stats` would badge
   almost the entire archive and make the chip meaningless. Unknown is the honest

@@ -1769,9 +1769,9 @@ io.on('connection', (socket) => {
                         durationSeconds: null,
                         totalRounds: 0,
                         maxPoints: room.pointThreshold,
-                        // Read off the policy the room snapshotted in
-                        // startGame(), not room.forceMaxBots: the toggle is what
-                        // was asked for, botPolicy.difficulty is what is
+                        // Read off the policy configureBotsForRoom() just
+                        // snapshotted above, not room.forceMaxBots: the toggle
+                        // is what was asked for, botPolicy.difficulty is what is
                         // actually about to play. They agree today, and this is
                         // the one that cannot start disagreeing.
                         botDifficulty: room.botPolicy.difficulty

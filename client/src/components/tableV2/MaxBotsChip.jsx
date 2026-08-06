@@ -1,8 +1,9 @@
 import { useTableTheme } from '../../theme/tableTheme';
 
 // The badge for a game whose bots were pinned to max difficulty by the waiting
-// room's toggle, drawn wherever a finished game is summarised: the activity
-// feed, the home screen's Recent list and the score dialog those two open.
+// room's toggle, drawn wherever a finished game is summarised: `GameOverV2` at
+// the moment it ends, then the activity feed, the home screen's Recent list and
+// the score dialog that list opens.
 //
 // Accent gold rather than the warm red QUIT wears or the faint grey of PRIVATE.
 // Those two are caveats on a game; this is the opposite - an opt-in, host-chosen
@@ -15,10 +16,11 @@ import { useTableTheme } from '../../theme/tableTheme';
 // publish every player's hidden estimate to everyone else. See
 // docs/BOT-DIFFICULTY.md.
 //
-// Whether to draw it is never decided here - `maxBots` is computed once by the
-// server (db.getActivityFeed), which also knows whether the game contained any
-// bots for the setting to apply to.
-function MaxBotsChip({ style }) {
+// Whether to draw it is never decided here. For a recorded game the server
+// computes it once (`max_bots`, db.getActivityFeed), which also answers whether
+// the game seated a bot for the setting to apply to; `GameOverV2` applies the
+// same two-part gate to the live room.
+function MaxBotsChip() {
     const { acc } = useTableTheme();
 
     return (
@@ -36,7 +38,6 @@ function MaxBotsChip({ style }) {
                 borderRadius: 7,
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
-                ...style,
             }}
         >
             ⚔️ MAX BOTS

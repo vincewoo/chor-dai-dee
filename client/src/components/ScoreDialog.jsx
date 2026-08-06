@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import MaxBotsChip from './tableV2/MaxBotsChip';
+import { MaxBotsChip } from './tableV2';
 
 const ScoreDialog = ({
     isOpen,
@@ -67,8 +67,9 @@ const ScoreDialog = ({
                                     </div>
                                 )}
                                 {/* Only ever set for a finished game opened from
-                                    the activity feed, which is the only caller
-                                    that has the game's recorded bot policy. */}
+                                    the home screen's Recent list, the only
+                                    caller that has the game's recorded bot
+                                    policy. */}
                                 {gameData.maxBots && (
                                     <div className="mb-4 flex justify-center">
                                         <MaxBotsChip />

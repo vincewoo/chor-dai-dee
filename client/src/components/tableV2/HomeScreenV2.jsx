@@ -401,7 +401,7 @@ function HomeScreenV2({
                                             {/* Outside the truncating block, so
                                                 a long winner name shortens
                                                 instead of hiding the badge. */}
-                                            {game.maxBots && <MaxBotsChip />}
+                                            {game.max_bots && <MaxBotsChip />}
                                             <span style={{ color: FAINT, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{timeStr}</span>
                                         </button>
                                     );

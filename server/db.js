@@ -620,20 +620,24 @@ function initDb() {
         // `page.*`, so every column here is shipped to every client. The
         // Adaptive temperature is hidden state (docs/BOT-DIFFICULTY.md) and
         // putting it here would publish it by accident.
-        db.all("PRAGMA table_info(game_history)", (err, columns) => {
-            if (err) {
-                console.error("Error checking game_history schema", err);
-                return;
-            }
-            if (columns.length > 0 &&
-                !columns.some(c => c.name === 'bot_difficulty')) {
-                db.run(`ALTER TABLE game_history ADD COLUMN bot_difficulty TEXT`, (err) => {
-                    if (err && !err.message.includes('duplicate column')) {
-                        console.error('Error adding bot_difficulty to game_history:', err.message);
-                    } else {
-                        console.log('Successfully added bot_difficulty column to game_history');
-                    }
-                });
+        // Issued unconditionally from the serialize() body rather than from a
+        // PRAGMA table_info callback, which is how the four blocks above do it.
+        // Deliberate, and the difference matters here: a callback-scheduled
+        // ALTER lands at the *back* of sqlite3's queue, after whatever the
+        // server has already started accepting -- and server.listen() does not
+        // wait for initDb() to drain. Every other migrated column degrades to a
+        // missing value if it loses that race; this one is named unconditionally
+        // by saveGameHistory's INSERT, so losing it throws and takes the
+        // surrounding transaction's game_participants rows down with it. Queued
+        // inline, it is ordered against the CREATE TABLE above and against every
+        // later write by serialize() itself.
+        //
+        // On a fresh database the CREATE TABLE already declares the column, so
+        // this is expected to fail with "duplicate column name" and that error
+        // alone is swallowed.
+        db.run(`ALTER TABLE game_history ADD COLUMN bot_difficulty TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('Error adding bot_difficulty to game_history:', err.message);
             }
         });
 
@@ -2150,9 +2154,9 @@ const BOT_DIFFICULTY_IDS = [
 ];
 
 // The strongest tier a room can pin itself to, mirroring BotPolicy's
-// MAX_BOT_DIFFICULTY for the same reason as the list above -- and pinned by the
-// same test. The activity feed compares against this rather than exporting the
-// raw tier id to the client, so a future retune that moves the ceiling to a
+// MAX_BOT_DIFFICULTY for the same reason as the list above -- and pinned by a
+// sibling test. The activity feed compares against this rather than exporting
+// the raw tier id to the client, so a future retune that moves the ceiling to a
 // different tier moves the badge with it instead of stranding it.
 const MAX_BOT_DIFFICULTY_ID = 'competitive';
 
@@ -2542,9 +2546,21 @@ const getActivityFeed = (options = {}) => {
                     // that draws the badge. Max difficulty is a room setting, so
                     // a four-human table can carry it with nothing to apply it
                     // to; badging that game would be a lie.
-                    maxBots: row.bot_difficulty === MAX_BOT_DIFFICULTY_ID &&
+                    // snake_case to match every other top-level key on this
+                    // payload, including the one existing computed field
+                    // (event_count). Nested participants[] are camelCase; that
+                    // split is the convention, not an accident.
+                    max_bots: row.bot_difficulty === MAX_BOT_DIFFICULTY_ID &&
                         participants.some(p => p.isBot),
-                    participants_json: undefined
+                    participants_json: undefined,
+                    // Dropped for the same reason participants_json is: the CTE
+                    // selects page.*, and the raw tier is not this endpoint's
+                    // output -- the derived boolean above is. Leaving it in
+                    // would publish that a host had toggled Max Bots even for a
+                    // four-human game the badge deliberately withholds, and
+                    // would make the client's view of the tier vocabulary
+                    // something a future retune has to stay compatible with.
+                    bot_difficulty: undefined
                 };
             });
 

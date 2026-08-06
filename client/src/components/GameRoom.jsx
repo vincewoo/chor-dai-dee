@@ -1121,8 +1121,17 @@ const GameRoom = ({ user, socket }) => {
                         }
                     })();
 
+                // maxBots is the room's own setting, which can only be changed
+                // while waiting -- so at game over it still describes the game
+                // that just ended. The feed reads the tier recorded on the game
+                // instead; this screen has the live room in hand and does not
+                // need the round trip.
                 return (
-                    <GameOverV2 gameOver={gameOver} myName={user?.username}>
+                    <GameOverV2
+                        gameOver={gameOver}
+                        myName={user?.username}
+                        maxBots={!!gameState.forceMaxBots}
+                    >
                         {gameOverActions}
                         {/* Guests have no account to attribute decisions to, so
                             there is nothing to review. */}

@@ -98,9 +98,11 @@ function ActivityFeedV2({
                     mode: g.game_mode,
                     abandoned,
                     isPrivate: !g.is_public,
-                    // Server-derived: it already knows both the frozen tier and
-                    // whether the game had bots for it to apply to.
-                    maxBots: !!g.maxBots,
+                    // Server-derived, and already a real boolean: it knows both
+                    // the frozen tier and whether the game seated a bot for it
+                    // to apply to. Consumed bare here, in the Recent list and in
+                    // the score dialog, so the three agree about the type.
+                    maxBots: g.max_bots,
                     when: timeAgo(g.end_time, nowTs),
                     rounds: g.total_rounds,
                     duration: formatDuration(g.duration_seconds),
