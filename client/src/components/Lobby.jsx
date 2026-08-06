@@ -181,6 +181,7 @@ const Lobby = ({ user, socket, setUser }) => {
             roundNumber: game.total_rounds || 0,
             gameMode: game.game_mode || 'standard',
             isDragonWin: false, // We could detect this from events if needed
+            maxBots: !!game.maxBots,
             // Carried so the dialog can offer a review, but only for a game
             // this player actually sat in - reviews show every hand at the
             // table and are scoped to your own games.

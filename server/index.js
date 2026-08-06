@@ -269,7 +269,8 @@ async function recordAbandonedGame(room, abandonReason) {
                 endTime: endTime.toISOString(),
                 durationSeconds: Math.floor((endTime - startTime) / 1000),
                 totalRounds: room.roundNumber,
-                maxPoints: room.pointThreshold
+                maxPoints: room.pointThreshold,
+                botDifficulty: room.botPolicy.difficulty
             });
 
             // Seats, not the players currently sitting in them: a human who
@@ -846,7 +847,8 @@ io.on('connection', (socket) => {
                     endTime: endTime.toISOString(),
                     durationSeconds: durationSeconds,
                     totalRounds: 1,
-                    maxPoints: room.pointThreshold
+                    maxPoints: room.pointThreshold,
+                    botDifficulty: room.botPolicy.difficulty
                 });
 
                 // Save participants with dragon win placements
@@ -1202,7 +1204,8 @@ io.on('connection', (socket) => {
                         endTime: endTime.toISOString(),
                         durationSeconds: durationSeconds,
                         totalRounds: room.roundNumber,
-                        maxPoints: room.pointThreshold
+                        maxPoints: room.pointThreshold,
+                        botDifficulty: room.botPolicy.difficulty
                     });
 
                     // Update participants with final placements
@@ -1765,7 +1768,13 @@ io.on('connection', (socket) => {
                         endTime: null,
                         durationSeconds: null,
                         totalRounds: 0,
-                        maxPoints: room.pointThreshold
+                        maxPoints: room.pointThreshold,
+                        // Read off the policy the room snapshotted in
+                        // startGame(), not room.forceMaxBots: the toggle is what
+                        // was asked for, botPolicy.difficulty is what is
+                        // actually about to play. They agree today, and this is
+                        // the one that cannot start disagreeing.
+                        botDifficulty: room.botPolicy.difficulty
                     });
 
                     // Save initial participants
@@ -2170,7 +2179,8 @@ io.on('connection', (socket) => {
                     endTime: null,
                     durationSeconds: null,
                     totalRounds: 0,
-                    maxPoints: room.pointThreshold
+                    maxPoints: room.pointThreshold,
+                    botDifficulty: room.botPolicy.difficulty
                 });
 
                 // Save initial participants

@@ -242,6 +242,7 @@ function initDb() {
             duration_seconds INTEGER,
             total_rounds INTEGER DEFAULT 0,
             max_points INTEGER,
+            bot_difficulty TEXT,
             FOREIGN KEY(winner_id) REFERENCES users(id)
         )`);
 
@@ -599,6 +600,40 @@ function initDb() {
                 // not read as beating the real thing.
                 addColumn('bot_difficulty', 'bot_difficulty TEXT');
                 addColumn('bot_temperature', 'bot_temperature REAL');
+            }
+        });
+
+        // Migrations for game_history on existing databases.
+        //
+        // Which policy the room's bots ran for this game, snapshotted from
+        // `room.botPolicy.difficulty` -- the same value round_stats records per
+        // round, and named identically so the two read as one vocabulary. The
+        // activity feed derives its "Max bots" badge from it.
+        //
+        // NULL means unknown and is deliberately never backfilled. Rows written
+        // before difficulty tiers existed were all full-strength argmax, so
+        // reconstructing them from round_stats would mark almost the entire
+        // archive as max-difficulty and make the badge meaningless. Unknown is
+        // the honest label, and the badge simply does not appear.
+        //
+        // Nothing continuous belongs in this table: getActivityFeed selects
+        // `page.*`, so every column here is shipped to every client. The
+        // Adaptive temperature is hidden state (docs/BOT-DIFFICULTY.md) and
+        // putting it here would publish it by accident.
+        db.all("PRAGMA table_info(game_history)", (err, columns) => {
+            if (err) {
+                console.error("Error checking game_history schema", err);
+                return;
+            }
+            if (columns.length > 0 &&
+                !columns.some(c => c.name === 'bot_difficulty')) {
+                db.run(`ALTER TABLE game_history ADD COLUMN bot_difficulty TEXT`, (err) => {
+                    if (err && !err.message.includes('duplicate column')) {
+                        console.error('Error adding bot_difficulty to game_history:', err.message);
+                    } else {
+                        console.log('Successfully added bot_difficulty column to game_history');
+                    }
+                });
             }
         });
 
@@ -2114,6 +2149,13 @@ const BOT_DIFFICULTY_IDS = [
     'adaptive', 'competitive', 'balanced', 'casual'
 ];
 
+// The strongest tier a room can pin itself to, mirroring BotPolicy's
+// MAX_BOT_DIFFICULTY for the same reason as the list above -- and pinned by the
+// same test. The activity feed compares against this rather than exporting the
+// raw tier id to the client, so a future retune that moves the ceiling to a
+// different tier moves the badge with it instead of stranding it.
+const MAX_BOT_DIFFICULTY_ID = 'competitive';
+
 const getUserPreferences = (userId) => {
     return new Promise((resolve, reject) => {
         db.get(`SELECT * FROM user_preferences WHERE user_id = ?`, [userId], (err, row) => {
@@ -2321,13 +2363,19 @@ const saveGameHistory = (gameData) => {
             endTime,
             durationSeconds,
             totalRounds,
-            maxPoints
+            maxPoints,
+            botDifficulty = null
         } = gameData;
 
+        // bot_difficulty is re-applied on conflict even though a room's policy
+        // is frozen for the whole game and cannot disagree between the opening
+        // 'in_progress' write and the terminal one. That makes the terminal
+        // write heal a row opened by an older build, which would otherwise keep
+        // a NULL for a game whose difficulty is perfectly well known.
         const query = `INSERT INTO game_history
             (game_id, room_name, game_mode, is_public, status, winner_id, winner_username,
-             start_time, end_time, duration_seconds, total_rounds, max_points)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             start_time, end_time, duration_seconds, total_rounds, max_points, bot_difficulty)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(game_id) DO UPDATE SET
                 status = ?,
                 winner_id = ?,
@@ -2335,12 +2383,14 @@ const saveGameHistory = (gameData) => {
                 end_time = ?,
                 duration_seconds = ?,
                 total_rounds = ?,
-                max_points = ?`;
+                max_points = ?,
+                bot_difficulty = COALESCE(?, bot_difficulty)`;
 
         db.run(query, [
             gameId, roomName, gameMode, isPublic ? 1 : 0, status, winnerId, winnerUsername,
-            startTime, endTime, durationSeconds, totalRounds, maxPoints,
-            status, winnerId, winnerUsername, endTime, durationSeconds, totalRounds, maxPoints
+            startTime, endTime, durationSeconds, totalRounds, maxPoints, botDifficulty,
+            status, winnerId, winnerUsername, endTime, durationSeconds, totalRounds, maxPoints,
+            botDifficulty
         ], (err) => {
             if (err) reject(err);
             else resolve();
@@ -2485,6 +2535,15 @@ const getActivityFeed = (options = {}) => {
                 return {
                     ...row,
                     participants,
+                    // Derived here, not on the client, for two reasons: the
+                    // client must not hardcode a tier id that a retune could
+                    // move, and the "were there actually bots" half of the
+                    // question has to be answered the same way on every surface
+                    // that draws the badge. Max difficulty is a room setting, so
+                    // a four-human table can carry it with nothing to apply it
+                    // to; badging that game would be a lie.
+                    maxBots: row.bot_difficulty === MAX_BOT_DIFFICULTY_ID &&
+                        participants.some(p => p.isBot),
                     participants_json: undefined
                 };
             });
@@ -2983,6 +3042,7 @@ module.exports = {
     getBotCalibration,
     saveBotCalibration,
     BOT_DIFFICULTY_IDS,
+    MAX_BOT_DIFFICULTY_ID,
     getAvatarsByUsernames,
     // Leaderboard
     getLeaderboard,

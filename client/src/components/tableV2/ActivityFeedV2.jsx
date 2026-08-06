@@ -3,6 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import SuitWatermark from './SuitWatermark';
+import MaxBotsChip from './MaxBotsChip';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -97,6 +98,9 @@ function ActivityFeedV2({
                     mode: g.game_mode,
                     abandoned,
                     isPrivate: !g.is_public,
+                    // Server-derived: it already knows both the frozen tier and
+                    // whether the game had bots for it to apply to.
+                    maxBots: !!g.maxBots,
                     when: timeAgo(g.end_time, nowTs),
                     rounds: g.total_rounds,
                     duration: formatDuration(g.duration_seconds),
@@ -203,7 +207,12 @@ function ActivityFeedV2({
                                 >
                                     {/* Meta row */}
                                     <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-[6px]">
+                                        {/* Wraps rather than overflows: mode is
+                                            always there, and a game can carry
+                                            all three of QUIT, PRIVATE and MAX
+                                            BOTS at once, which does not fit one
+                                            line beside the timestamp at 320px. */}
+                                        <div className="flex flex-wrap items-center gap-[6px]" style={{ minWidth: 0 }}>
                                             <span style={{ background: 'rgba(255,255,255,.09)', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(244,245,247,.75)', fontSize: 10, fontWeight: 800, letterSpacing: .6, padding: '3px 8px', borderRadius: 7, whiteSpace: 'nowrap' }}>
                                                 {c.mode === 'short' ? '⚡ SHORT' : '🏆 STANDARD'}
                                             </span>
@@ -217,6 +226,7 @@ function ActivityFeedV2({
                                                     PRIVATE
                                                 </span>
                                             )}
+                                            {c.maxBots && <MaxBotsChip />}
                                         </div>
                                         <span style={{ color: 'rgba(244,245,247,.42)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
                                             {c.when || 'In progress'}

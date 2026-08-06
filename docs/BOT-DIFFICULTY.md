@@ -193,6 +193,42 @@ the host who set it.
 `replaceWithBot` needs no special handling for the same reason: the replacement
 seat has no policy of its own and is answered for by the room's.
 
+## What a viewer is shown
+
+`game_history.bot_difficulty` records the frozen tier for the whole game,
+written from `room.botPolicy.difficulty` at every `saveGameHistory` call site.
+The activity feed, the home screen's Recent list and the score dialog they open
+render exactly one thing from it: a gold **⚔️ MAX BOTS** chip
+(`tableV2/MaxBotsChip.jsx`), and only on a game that was pinned to
+`MAX_BOT_DIFFICULTY` *and* actually contained a bot.
+
+**Adaptive strength is never shown, and that is the whole design.** It is a
+continuous hidden temperature derived from the table's private skill
+calibration, and the feed is global — a per-game difficulty label would publish
+every player's hidden estimate to everyone else, and would let anyone
+reverse-engineer their own by watching their feed. Max difficulty is the
+opposite kind of setting: opt-in, host-chosen, and worth showing off, which is
+why it gets the accent colour rather than the caveat styling that `QUIT` and
+`PRIVATE` wear.
+
+Three consequences worth keeping:
+
+- **The client never compares tier ids.** `db.getActivityFeed` derives one
+  boolean, `maxBots`, against `MAX_BOT_DIFFICULTY_ID` — db.js's local copy of
+  the ceiling, pinned to `BotPolicy.MAX_BOT_DIFFICULTY` by
+  `botDifficulty.test.js`. A retune that moves the ceiling moves the badge.
+- **The "were there bots" half is answered in the same place.** Max difficulty
+  is a *room* setting, so a table that filled with four humans carries it with
+  nothing to apply it to.
+- **NULL is never backfilled.** Rows written before difficulty tiers existed all
+  ran full-strength argmax, so reconstructing them from `round_stats` would badge
+  almost the entire archive and make the chip meaningless. Unknown is the honest
+  label and simply shows nothing.
+
+Nothing continuous belongs in `game_history`: `getActivityFeed` selects
+`page.*`, so every column on that table is shipped to every client. A
+`bot_temperature` there would publish the hidden dial by accident.
+
 ## Rating
 
 `rating_mu` and `rating_sigma` are now shadow state. They update after every

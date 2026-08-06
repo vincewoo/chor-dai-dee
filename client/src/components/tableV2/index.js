@@ -13,3 +13,4 @@ export { default as GameReviewV2 } from './GameReviewV2';
 export { default as ReviewMoment } from './ReviewMoment';
 export { default as TrainingV2 } from './TrainingV2';
 export { default as SuitWatermark } from './SuitWatermark';
+export { default as MaxBotsChip } from './MaxBotsChip';

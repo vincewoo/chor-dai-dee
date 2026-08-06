@@ -235,3 +235,126 @@ test('comeback stats count placed participants and ignore unplaced ones', async 
     assert.strictEqual(stats.led_at_half, 1);
     assert.strictEqual(stats.collapses, 1);
 });
+
+// --- the "Max bots" badge ---------------------------------------------------
+//
+// game_history.bot_difficulty is the frozen tier the room's bots actually ran.
+// The feed does not hand that string to the client to compare: it derives one
+// boolean, so all three surfaces that draw the badge (the feed, the home
+// screen's Recent list, and the score dialog they open) agree by construction.
+
+const feedGame = async (gameId) => {
+    const games = await getActivityFeed({ includeStatus: ['completed'], limit: 200 });
+    return games.find(g => g.game_id === gameId);
+};
+
+const completedGame = async (botDifficulty, seats) => {
+    const gameId = await startedGame({ botDifficulty });
+    await saveGameHistory({
+        gameId,
+        roomName: 'ROOM1',
+        gameMode: 'short',
+        isPublic: true,
+        status: 'completed',
+        winnerId: null,
+        winnerUsername: seats[0].username,
+        startTime: '2026-01-01T00:00:00.000Z',
+        endTime: '2026-01-01T00:30:00.000Z',
+        durationSeconds: 1800,
+        totalRounds: 6,
+        maxPoints: 50,
+        botDifficulty
+    });
+    for (const [idx, seat] of seats.entries()) {
+        await saveGameParticipant({
+            gameId, userId: null, username: seat.username, isBot: seat.isBot,
+            finalPlacement: idx + 1, finalScore: idx * 10, roundsWon: 0
+        });
+    }
+    return gameId;
+};
+
+test('a max-difficulty game against bots is badged', async () => {
+    const gameId = await completedGame('competitive', [
+        { username: 'MaxHuman', isBot: false },
+        { username: 'MaxBot1', isBot: true },
+        { username: 'MaxBot2', isBot: true },
+        { username: 'MaxBot3', isBot: true }
+    ]);
+
+    assert.strictEqual((await feedGame(gameId)).maxBots, true);
+});
+
+test('an adaptive game is never badged', async () => {
+    // The whole point of the binary badge: Adaptive strength is a continuous
+    // hidden temperature, and the feed is public. Nothing about it is shown.
+    const gameId = await completedGame('adaptive', [
+        { username: 'AdaptHuman', isBot: false },
+        { username: 'AdaptBot1', isBot: true },
+        { username: 'AdaptBot2', isBot: true },
+        { username: 'AdaptBot3', isBot: true }
+    ]);
+
+    assert.strictEqual((await feedGame(gameId)).maxBots, false);
+});
+
+test('a max-difficulty game with no bots in it is not badged', async () => {
+    // Max difficulty is a room setting, so a table that filled with four humans
+    // carries it with nothing to apply it to. Badging that game would claim a
+    // challenge nobody faced.
+    const gameId = await completedGame('competitive', [
+        { username: 'AllHuman1', isBot: false },
+        { username: 'AllHuman2', isBot: false },
+        { username: 'AllHuman3', isBot: false },
+        { username: 'AllHuman4', isBot: false }
+    ]);
+
+    assert.strictEqual((await feedGame(gameId)).maxBots, false);
+});
+
+test('a game recorded before the column existed is not badged', async () => {
+    // NULL means unknown and is deliberately never backfilled: every row
+    // predating difficulty tiers ran full-strength argmax, so reconstructing
+    // them would badge almost the whole archive and make the badge meaningless.
+    const gameId = await completedGame(undefined, [
+        { username: 'OldHuman', isBot: false },
+        { username: 'OldBot1', isBot: true },
+        { username: 'OldBot2', isBot: true },
+        { username: 'OldBot3', isBot: true }
+    ]);
+
+    const row = await get(`SELECT bot_difficulty FROM game_history WHERE game_id = ?`, [gameId]);
+    assert.strictEqual(row.bot_difficulty, null);
+    assert.strictEqual((await feedGame(gameId)).maxBots, false);
+});
+
+test('the terminal write heals a row opened by a build without the column', async () => {
+    // A rolling deploy can open a game on the old build and finish it on the
+    // new one. The policy is frozen for the whole game, so the completion write
+    // knows a difficulty the 'in_progress' row could not record.
+    const gameId = nextGameId();
+    await run(
+        `INSERT INTO game_history
+            (game_id, room_name, game_mode, is_public, status, start_time, total_rounds, max_points)
+         VALUES (?, 'ROOM1', 'short', 1, 'in_progress', '2026-01-01T00:00:00.000Z', 0, 50)`,
+        [gameId]);
+
+    await saveGameHistory({
+        gameId,
+        roomName: 'ROOM1',
+        gameMode: 'short',
+        isPublic: true,
+        status: 'completed',
+        winnerId: null,
+        winnerUsername: 'Healer',
+        startTime: '2026-01-01T00:00:00.000Z',
+        endTime: '2026-01-01T00:30:00.000Z',
+        durationSeconds: 1800,
+        totalRounds: 6,
+        maxPoints: 50,
+        botDifficulty: 'competitive'
+    });
+
+    const row = await get(`SELECT bot_difficulty FROM game_history WHERE game_id = ?`, [gameId]);
+    assert.strictEqual(row.bot_difficulty, 'competitive');
+});
