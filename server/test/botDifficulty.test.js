@@ -45,7 +45,7 @@ const {
     DEFAULT_MU,
     DEFAULT_SIGMA
 } = require('../game/RatingSystem');
-const { BOT_DIFFICULTY_IDS } = require('../db');
+const { BOT_DIFFICULTY_IDS, MAX_BOT_DIFFICULTY_ID } = require('../db');
 const { Room } = require('../game/RoomManager');
 const { makeRng, deal, playRound } = require('./botHarness');
 
@@ -437,6 +437,13 @@ test('db.js and BotPolicy.js agree on the valid tiers', () => {
     assert.deepStrictEqual(
         [...BOT_DIFFICULTY_IDS].sort(),
         Object.keys(BOT_DIFFICULTIES).sort());
+});
+
+test('db.js and BotPolicy.js agree on which tier is the ceiling', () => {
+    // The activity feed's "Max bots" badge is derived from this copy, so a
+    // retune that moves the ceiling to a different tier has to move the badge
+    // with it rather than silently leaving it on a tier nothing selects.
+    assert.strictEqual(MAX_BOT_DIFFICULTY_ID, MAX_BOT_DIFFICULTY);
 });
 
 test('setGameMode rejects an unknown mode', () => {

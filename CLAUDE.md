@@ -507,6 +507,11 @@ to offer and would otherwise be locked out of its own settings.
 - `start_game` - Begin game (auto-fills bots if < 4 players)
   Bot strength is automatic: the server averages every human player's saved
   placement calibration and snapshots that policy for the complete game.
+- `set_max_bots` - Host-only, waiting-only. Pins the room to the strongest tier
+  instead of the roster average. The activity feed's "MAX BOTS" chip is the only
+  *per-game* difficulty label anything shows a viewer; the hand-strength stats'
+  "Easy bots" scope also reflects difficulty, but as an aggregate over rounds
+  that never names a game or a tier.
 - `play_card` - Submit a hand
 - `pass_turn` - Pass current turn
 - `next_round` - Start the next round after round ends
@@ -579,6 +584,20 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   the inactivity sweep, or the last human walking out. `in_progress` is
   therefore a *live* game and no feed filter selects it; a row stuck there is a
   bug, and `db.sweepAbandonedGames()` converts any survivors at boot.
+  `bot_difficulty` is the frozen tier the game's bots ran, written from
+  `room.botPolicy.difficulty`. The feed renders one thing from it — a gold
+  "MAX BOTS" chip on games pinned to the ceiling that actually seated a bot —
+  and never anything about Adaptive, whose strength is a hidden per-player
+  calibration the public feed must not publish. `getActivityFeed` selects
+  `page.*`, so **every column added to this table ships to every client** unless
+  it is explicitly stripped from the row mapper, as `bot_difficulty` and
+  `participants_json` both are; the derived `max_bots` boolean is what the
+  endpoint publishes instead. Nothing continuous may be stored here. Its
+  `ALTER TABLE` is deliberately issued inline in `db.serialize()` rather than
+  from a `PRAGMA table_info` callback like its four neighbours — `saveGameHistory`
+  names the column unconditionally, so losing the boot race would throw and roll
+  back the opening `game_participants` rows rather than merely drop a badge.
+  See `docs/BOT-DIFFICULTY.md`.
   Note both this table and `game_participants` store the **username**, not just
   the id — they are the only two places in the schema that do, and therefore the
   only two a rename has to backfill (`db.renameUser`, one transaction with the

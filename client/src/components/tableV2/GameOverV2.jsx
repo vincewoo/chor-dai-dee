@@ -2,12 +2,13 @@ import { useMemo } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
+import MaxBotsChip from './MaxBotsChip';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; shadow-rating
 // changes stay server-side. Post-game action buttons are
 // passed as children (all wiring stays in GameRoom).
-function GameOverV2({ gameOver, myName, children }) {
+function GameOverV2({ gameOver, myName, maxBots = false, children }) {
     const { acc, accGrad, soft, rm } = useTableTheme();
     // Standings show each player's chosen avatar; avatarsVersion re-runs the
     // memo below once the lookup lands.
@@ -85,6 +86,16 @@ function GameOverV2({ gameOver, myName, children }) {
                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 800, letterSpacing: 2.5, ...anim({ animation: 'cddToast .4s ease-out both' }) }}>
                         GAME OVER · {gameOver?.roundNumber || 0} ROUNDS
                     </div>
+                    {/* Gated on a bot actually having played, exactly as the
+                        activity feed gates it: max difficulty is a room setting,
+                        so a table that filled with four humans carries it with
+                        nothing to apply it to. This is the moment the badge is
+                        for -- the feed is where you go to find it again. */}
+                    {maxBots && rows.some(r => r.isBot) && (
+                        <div style={anim({ animation: 'cddToast .4s .05s ease-out both' })}>
+                            <MaxBotsChip />
+                        </div>
+                    )}
                     <div style={{ position: 'relative', marginTop: 6, ...anim({ animation: 'cddPop .5s .1s cubic-bezier(.2,.8,.3,1.3) both' }) }}>
                         <div style={{ fontSize: 30, position: 'absolute', top: -24, left: '50%', transform: 'translateX(-50%)' }}>👑</div>
                         <div style={{ width: 96, height: 96, borderRadius: 26, background: heroTile, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 56, boxShadow: `0 0 44px ${soft},0 18px 40px rgba(0,0,0,.5)`, position: 'relative', overflow: 'hidden' }}>

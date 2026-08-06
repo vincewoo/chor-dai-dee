@@ -3,6 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import SuitWatermark from './SuitWatermark';
+import MaxBotsChip from './MaxBotsChip';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -397,6 +398,10 @@ function HomeScreenV2({
                                                 </div>
                                                 <div className="truncate" style={{ color: MUTED, fontSize: 11, fontWeight: 600 }}>{meta}</div>
                                             </div>
+                                            {/* Outside the truncating block, so
+                                                a long winner name shortens
+                                                instead of hiding the badge. */}
+                                            {game.max_bots && <MaxBotsChip />}
                                             <span style={{ color: FAINT, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{timeStr}</span>
                                         </button>
                                     );

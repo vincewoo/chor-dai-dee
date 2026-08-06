@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MaxBotsChip } from './tableV2';
 
 const ScoreDialog = ({
     isOpen,
@@ -63,6 +64,15 @@ const ScoreDialog = ({
                                 ) : (
                                     <div className="text-lg mb-4 text-gray-400 text-center">
                                         Completed in {gameData.roundNumber} rounds
+                                    </div>
+                                )}
+                                {/* Only ever set for a finished game opened from
+                                    the home screen's Recent list, the only
+                                    caller that has the game's recorded bot
+                                    policy. */}
+                                {gameData.maxBots && (
+                                    <div className="mb-4 flex justify-center">
+                                        <MaxBotsChip />
                                     </div>
                                 )}
                             </>
