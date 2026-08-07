@@ -522,3 +522,29 @@ test('an empty review is not stored at all', async () => {
     await saveGameRoundReview(gameId, {});
     assert.strictEqual(await getGameRoundReview(gameId), null);
 });
+
+test('an abandoned game keeps its review, under the seat-owner names', async () => {
+    // The "Rage quits" filter is a whole tab of games that were really played,
+    // with real deals behind them. Their participant rows are attributed to
+    // whoever OWNED each seat rather than to the bot sitting in it at teardown,
+    // so the review has to be keyed the same way or the feed looks up a name
+    // that has no entry.
+    const { Room } = require('../game/RoomManager');
+    const room = new Room('ABANDON-REVIEW', 'short');
+    room.addPlayer({ id: 'p1', name: 'Alice', isBot: false });
+    ['Bot 2', 'Bot 3', 'Bot 4'].forEach((n, i) =>
+        room.addPlayer({ id: `b${i}`, name: n, isBot: true }));
+    room.startGame();
+
+    // The walkout: the seat is botified but still owned by Alice.
+    room.players[0].isBot = true;
+    room.players[0].name = 'Bot (Alice)';
+    room.players[0].replacedHuman = { name: 'Alice', isGuest: false };
+
+    const seats = room.describeParticipants();
+    const review = room.describeRoundReview(seats.map(s => s.username));
+
+    assert.deepStrictEqual(Object.keys(review).sort(), seats.map(s => s.username).sort(),
+        'review keys must match the participant rows the feed renders');
+    assert.ok('Alice' in review, 'the rage quit is attributed to the human, not the bot');
+});

@@ -294,6 +294,15 @@ async function recordAbandonedGame(room, abandonReason) {
         const endTime = new Date();
         const startTime = gameStartTime(room);
         const lookupUser = createUserLookup();
+        // Captured before the writes below, and keyed the same way the
+        // participant rows are: an abandoned game's rows are attributed to
+        // whoever owned each seat, so the review has to answer to the same
+        // names or the feed would look them up and miss. A rage quit is a real
+        // game with real deals behind it -- the "Rage quits" filter is where it
+        // is read back, so leaving it out would make that whole tab the one
+        // place the review is missing.
+        const seats = room.describeParticipants();
+        const roundReview = room.describeRoundReview(seats.map(s => s.username));
 
         await withTransaction(async () => {
             await saveGameHistory({
@@ -315,7 +324,7 @@ async function recordAbandonedGame(room, abandonReason) {
             // Seats, not the players currently sitting in them: a human who
             // walked out has already been swapped for a bot, and they are who
             // this game is a rage quit by.
-            for (const seat of room.describeParticipants()) {
+            for (const seat of seats) {
                 const participant = (seat.isBot || seat.isGuest) ? null : await lookupUser(seat.username);
                 await saveGameParticipant({
                     gameId: room.gameId,
@@ -328,6 +337,15 @@ async function recordAbandonedGame(room, abandonReason) {
                 });
             }
         });
+
+        // Outside the transaction and separately guarded, like the game-log
+        // flush below: a summary is worth less than the terminal status write
+        // it follows, and must not be able to roll it back.
+        try {
+            await saveGameRoundReview(room.gameId, roundReview);
+        } catch (e) {
+            console.error('Failed to save round review on abandon:', e);
+        }
     } catch (e) {
         console.error('Failed to save game history on abandon:', e);
     }
