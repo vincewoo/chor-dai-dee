@@ -328,17 +328,23 @@ function ActivityFeedV2({
                                                                 dash because there is no final standing. */}
                                                             <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 10, fontWeight: 600 }}>
                                                                 {[
+                                                                    // No placement means no gutter number to be
+                                                                    // redundant with, so this still earns its space.
                                                                     p.placement
                                                                         ? null
                                                                         : (c.abandoned ? 'Score when abandoned' : 'Unranked'),
-                                                                    deal?.dealRank
-                                                                        ? `Deals: ${deal.dealRank}${ordinalSuffix(deal.dealRank)}`
-                                                                          + ` (${deal.avgPercentile}${ordinalSuffix(deal.avgPercentile)} pct)`
-                                                                        // Nothing recorded for this game: fall back to
-                                                                        // the placement rather than an empty line.
-                                                                        : (p.placement ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`) : null),
+                                                                    // Nothing recorded for this game: fall back to the
+                                                                    // placement rather than leaving an empty line.
+                                                                    (!deal?.dealRank && p.placement)
+                                                                        ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
+                                                                        : null,
+                                                                    // What they did, then the cards they did it with.
                                                                     p.roundsWon
                                                                         ? `${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won`
+                                                                        : null,
+                                                                    deal?.dealRank
+                                                                        ? `Deal strength: ${deal.dealRank}${ordinalSuffix(deal.dealRank)}`
+                                                                          + ` (${deal.avgPercentile}${ordinalSuffix(deal.avgPercentile)} pct)`
                                                                         : null,
                                                                 ].filter(Boolean).join(' · ')}
                                                             </div>
