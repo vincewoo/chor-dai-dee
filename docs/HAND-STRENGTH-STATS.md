@@ -42,8 +42,10 @@ residual SD of 0.415 means ±10pp needs ~67 rounds.
 **The game-over screen** shows **deal luck only, never Edge.** A game is six to
 ten rounds, so an Edge figure there would be noise presented as a verdict.
 
-Each standings row carries the **mean percentile** of that player's deals, and
-a "Deal luck by round" drill-in opens a rounds × players grid
+Each standings row reads `Deal strength: 1st (61st percentile)` — the player's
+rank by deal quality across the whole game, and the mean percentile behind it.
+It replaces the finishing place, which the number in the left gutter already
+gives. A "Deal luck by round" drill-in opens a rounds × players grid
 (`tableV2/DealLuckPanel.jsx`) where **the number is the deal's percentile and
 the colour is its rank at the table**. Two channels, two questions: "were my
 cards good" and "were they good *for this table*". They usually agree; the

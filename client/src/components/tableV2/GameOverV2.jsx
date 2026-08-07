@@ -31,6 +31,7 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             // label because the label is nearly constant once averaged -- see
             // Room.describeDealLuck.
             dealPercentile: gameOver?.dealLuck?.[s.name]?.avgPercentile ?? null,
+            dealRank: gameOver?.dealLuck?.[s.name]?.dealRank ?? null,
             delay: `${(0.35 + i * 0.09).toFixed(2)}s`,
         }));
         // avatarsVersion isn't read here, but it changes when a looked-up
@@ -147,11 +148,17 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                                     <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 14 }}>
                                         {r.name}{r.isYou ? ' (You)' : ''}{r.isBot ? ' · bot' : ''}
                                     </div>
+                                    {/* Finishing place is the number in the left
+                                        gutter, so repeating it here spent the
+                                        subtitle on nothing. This line answers
+                                        the other question instead: how the deal
+                                        treated them. Falls back to the placement
+                                        text only when a server too old to send
+                                        dealLuck leaves nothing to say. */}
                                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>
-                                        {r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`}
-                                        {r.dealPercentile != null
-                                            ? ` · deals ${r.dealPercentile}${ordinalSuffix(r.dealPercentile)} percentile`
-                                            : ''}
+                                        {r.dealRank != null
+                                            ? `Deal strength: ${r.dealRank}${ordinalSuffix(r.dealRank)} (${r.dealPercentile}${ordinalSuffix(r.dealPercentile)} percentile)`
+                                            : (r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`)}
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap' }}>

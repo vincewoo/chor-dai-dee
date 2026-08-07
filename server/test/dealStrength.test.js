@@ -261,3 +261,29 @@ test('a single round reports that round percentile exactly', () => {
         assert.strictEqual(entry.avgPercentile, Math.round(entry.rounds[0].percentile));
     }
 });
+
+test('deal strength is ranked across the game, ties sharing the better rank', () => {
+    // The standings row prints this instead of the finishing place, which the
+    // left gutter already shows. Ranked server-side so the tie convention
+    // matches rankTable's rather than being reinvented on the client.
+    const room = seatFour(new Room('DEAL-RANK', 'short'));
+    room.startGame();
+    room.roundNumber++; room.startRound();
+
+    const luck = room.describeDealLuck();
+    const entries = Object.values(luck);
+    const ranks = entries.map(e => e.dealRank).sort();
+
+    assert.strictEqual(ranks.length, 4);
+    assert.strictEqual(ranks[0], 1, 'somebody got the best cards over the game');
+    for (const r of ranks) assert.ok(r >= 1 && r <= 4);
+
+    // Better mean percentile must never rank worse.
+    const byRank = entries.slice().sort((a, b) => a.dealRank - b.dealRank);
+    for (let i = 1; i < byRank.length; i++) {
+        assert.ok(byRank[i - 1].avgPercentile >= byRank[i].avgPercentile,
+            'ranking must follow the percentiles it is derived from');
+    }
+    // The unrounded mean is an implementation detail of the ordering.
+    for (const e of entries) assert.ok(!('mean' in e));
+});

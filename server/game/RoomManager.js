@@ -1010,8 +1010,23 @@ class Room {
         for (const [name, rounds] of Object.entries(this.dealHistoryByName || {})) {
             if (!rounds.length) continue;
             const mean = rounds.reduce((sum, r) => sum + r.percentile, 0) / rounds.length;
-            out[name] = { avgPercentile: Math.round(mean), rounds };
+            // Mean kept unrounded for the ordering below, so two players whose
+            // percentiles round to the same whole number are still ranked by
+            // the difference that produced them.
+            out[name] = { avgPercentile: Math.round(mean), mean, rounds };
         }
+
+        // Who got the best cards across the whole game. Distinct from the
+        // per-round rank in the grid, and computed here rather than on the
+        // client so the tie convention matches DealStrength.rankTable: ties
+        // share the better rank, so two equal games are not arbitrarily
+        // declared better and worse than each other.
+        const order = Object.keys(out).sort((a, b) => out[b].mean - out[a].mean);
+        order.forEach((name, i) => {
+            const tied = i > 0 && out[name].mean === out[order[i - 1]].mean;
+            out[name].dealRank = tied ? out[order[i - 1]].dealRank : i + 1;
+            delete out[name].mean;
+        });
         return out;
     }
 
