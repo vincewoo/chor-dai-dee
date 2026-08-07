@@ -139,3 +139,90 @@ test('an empty hand scores zero rather than throwing', () => {
 test('BASELINE_VERSION is a positive integer', () => {
     assert.ok(Number.isInteger(BASELINE_VERSION) && BASELINE_VERSION > 0);
 });
+
+// --- the game-over drill-in --------------------------------------------------
+//
+// Room.describeDealLuck() is the only thing that ever shows a player anything
+// about the deal, and only at game over. What is pinned here is the accumulator
+// (which outlives a round, unlike roundDealStrength) and the leak boundary: the
+// per-round rank compares all four dealt hands, so it must not appear anywhere
+// a round can still be played.
+
+const { Room } = require('../game/RoomManager');
+
+const seatFour = (room) => {
+    room.addPlayer({ id: 'p1', name: 'Alice', isBot: false });
+    room.addPlayer({ id: 'p2', name: 'Bot Ada', isBot: true });
+    room.addPlayer({ id: 'p3', name: 'Bot Bea', isBot: true });
+    room.addPlayer({ id: 'p4', name: 'Bot Cy', isBot: true });
+    return room;
+};
+
+test('deal luck accumulates across rounds and covers every seat', () => {
+    const room = seatFour(new Room('DEAL-LUCK', 'short'));
+    room.startGame();
+    room.roundNumber++;
+    room.startRound();
+
+    const luck = room.describeDealLuck();
+
+    // Bots included: the accumulator reads the table, not the stats tables.
+    // round_stats only carries registered humans, which is why the game-over
+    // screen cannot be built from it.
+    assert.deepStrictEqual(
+        Object.keys(luck).sort(),
+        ['Alice', 'Bot Ada', 'Bot Bea', 'Bot Cy']);
+
+    for (const entry of Object.values(luck)) {
+        assert.strictEqual(entry.rounds.length, 2,
+            'roundDealStrength is wiped every round; this must not be');
+        assert.ok(typeof entry.avgTierLabel === 'string' && entry.avgTierLabel);
+        assert.ok(entry.avgTier >= 0 && entry.avgTier < TIERS.length);
+    }
+});
+
+test('every round ranks the four seats 1-4', () => {
+    const room = seatFour(new Room('DEAL-LUCK-RANKS', 'short'));
+    room.startGame();
+
+    const ranks = Object.values(room.describeDealLuck())
+        .map(entry => entry.rounds[0].rank)
+        .sort();
+
+    assert.strictEqual(ranks.length, 4);
+    for (const rank of ranks) {
+        assert.ok(rank >= 1 && rank <= 4, `rank out of range: ${rank}`);
+    }
+    // Ties share the better rank, so 1,1,3,4 is legal and 1,2,3,5 is not.
+    assert.strictEqual(ranks[0], 1, 'somebody held the best hand');
+});
+
+test('a new game does not inherit the previous game deals', () => {
+    const room = seatFour(new Room('DEAL-LUCK-RESET', 'short'));
+    room.startGame();
+    room.roundNumber++;
+    room.startRound();
+    assert.strictEqual(room.describeDealLuck()['Alice'].rounds.length, 2);
+
+    // What a lobby restart does: roundNumber back to 0, then start again. This
+    // is the same signal roundsWonByName and gameStartedAt reset on.
+    room.roundNumber = 0;
+    room.gameState = 'waiting';
+    room.startGame();
+
+    assert.strictEqual(room.describeDealLuck()['Alice'].rounds.length, 1,
+        'a rematch that re-counted the last game would report the wrong deals');
+});
+
+test('deal ranks never appear in live room state', () => {
+    // The leak boundary. rank is derived from all four dealt hands, so anything
+    // a client can read mid-round must not carry it -- see the SECURITY note on
+    // rankTable. getGameState() is sent on every room_update.
+    const room = seatFour(new Room('DEAL-LUCK-LEAK', 'short'));
+    room.startGame();
+
+    const serialized = JSON.stringify(room.getGameState());
+    assert.ok(!serialized.includes('dealLuck'), 'room state must not carry deal luck');
+    assert.ok(!serialized.includes('tierLabel'), 'room state must not carry deal tiers');
+    assert.ok(!('dealHistoryByName' in room.getGameState()));
+});

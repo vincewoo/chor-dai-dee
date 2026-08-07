@@ -863,7 +863,11 @@ io.on('connection', (socket) => {
             gameId: room.gameId,
             // Whose client should wait for a rank_update before showing the
             // final scoreboard. See sendRankResult.
-            pendingRankFor: pendingRankNames(room)
+            pendingRankFor: pendingRankNames(room),
+            // A dragon ends the game on round 1, so this is a single round --
+            // and the dragon holder is rank 1 by definition, since 13 distinct
+            // ranks is the strongest deal there is.
+            dealLuck: room.describeDealLuck()
         };
 
         // Store dragon win results for reconnection handling
@@ -1173,7 +1177,11 @@ io.on('connection', (socket) => {
                 gameId: room.gameId,
                 // Whose client should wait for a rank_update before showing the
                 // final scoreboard. See sendRankResult.
-                pendingRankFor: pendingRankNames(room)
+                pendingRankFor: pendingRankNames(room),
+                // Safe only because the game is over: the per-round ranks in
+                // here compare all four dealt hands. Never put this on
+                // round_over or getGameState.
+                dealLuck: room.describeDealLuck()
             };
 
             // Store game results for reconnection handling

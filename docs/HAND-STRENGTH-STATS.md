@@ -31,6 +31,36 @@ Two headline numbers fall out:
   Deal-luck-neutral. This is the skill number, and it is the point of the
   whole feature.
 
+## Where a player sees this
+
+Two places, and they show deliberately different things.
+
+**Career stats** (`/api/stats/:username/hand-strength`) show **Edge**, because
+only there is the sample big enough — `MIN_ROUNDS_FOR_EDGE` is 50, and the
+residual SD of 0.415 means ±10pp needs ~67 rounds.
+
+**The game-over screen** shows **deal luck only, never Edge.** A game is six to
+ten rounds, so an Edge figure there would be noise presented as a verdict. Each
+standings row carries the *absolute* tier averaged over the game's deals
+(comparable between games), and a "Deal luck by round" drill-in opens a
+rounds × players grid of the per-round **rank** at the table
+(`tableV2/DealLuckPanel.jsx`).
+
+The two numbers answer different questions — the tier is "were my cards good",
+the rank is "were they good *for this table*" — which is why averaging the rank
+would blend them and is not done.
+
+`Room.dealHistoryByName` accumulates this across a game, keyed by name for the
+same reason `roundsWonByName` is: `roundPlayStats` is keyed by socket id and has
+to be hand-copied between ids on every reconnect and bot swap. It resets on
+`roundNumber === 0`, the room's only "new game" signal.
+
+**The rank must never reach a client mid-round.** It compares all four dealt
+hands, so it is a live read on opponents' holdings. `Room.describeDealLuck()`
+has exactly one caller — the game-over handler — and is deliberately absent from
+`getGameState()` and from `round_over`. `dealStrength.test.js` pins that
+boundary by serializing room state and asserting the fields are absent.
+
 ## Part 1: scoring a dealt hand
 
 ### Why not reuse `calculateHandStrength`

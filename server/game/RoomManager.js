@@ -20,7 +20,7 @@ const {
 } = require('./RatingSystem');
 const { GAME_MODES, getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
-const { rankTable, playsNeeded, BASELINE_VERSION } = require('./DealStrength');
+const { rankTable, playsNeeded, BASELINE_VERSION, TIERS } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
 const { evaluateMove } = require('./MoveQuality');
 const Coach = require('./Coach');
@@ -816,6 +816,12 @@ class Room {
             // starting" signal a room gets -- both startRematch() and the lobby
             // restart come back through here.
             this.roundsWonByName = {};
+            // Every round's deal, kept for the game-over screen. Same lifetime
+            // and the same name keying as roundsWonByName, deliberately:
+            // roundPlayStats is keyed by socket id and has to be hand-copied
+            // between ids in three places when a player reconnects or a seat is
+            // swapped for a bot. A name survives all of that untouched.
+            this.dealHistoryByName = {};
             // Stamped here for the same reason, and in lockstep with the new
             // gameId those two paths mint: this is the moment the game whose
             // duration we report actually begins.
@@ -970,6 +976,40 @@ class Room {
     }
 
     /**
+     * How the game's deals treated each seat, for the game-over screen.
+     *
+     * ONLY safe at game over. Every round's `rank` compares all four dealt
+     * hands, so this leaks opponents' holdings if it reaches a client while a
+     * round can still be played -- see the SECURITY note on
+     * DealStrength.rankTable. It is deliberately absent from getGameState() and
+     * from the round_over payload, and the one caller is the game-over handler.
+     *
+     * The headline is the *absolute* tier, averaged on the raw tier index and
+     * rounded, so it means the same thing from one game to the next. Rank is
+     * per-round only: it answers a different question ("were my cards good for
+     * this table") and averaging it would blend the two.
+     *
+     * Keyed by name to match dealHistoryByName. Seats that never received a
+     * deal -- someone who joined mid-game, or a round in flight when the server
+     * restarted -- simply have fewer rounds, which is why avgTier is computed
+     * over the entries present rather than over roundNumber.
+     */
+    describeDealLuck() {
+        const out = {};
+        for (const [name, rounds] of Object.entries(this.dealHistoryByName || {})) {
+            if (!rounds.length) continue;
+            const mean = rounds.reduce((sum, r) => sum + r.tier, 0) / rounds.length;
+            const tier = Math.round(mean);
+            out[name] = {
+                avgTier: tier,
+                avgTierLabel: TIERS[tier].label,
+                rounds
+            };
+        }
+        return out;
+    }
+
+    /**
      * Score every dealt hand and rank them against each other, for the
      * deal-strength stats. Called once per round, immediately after the deal.
      *
@@ -979,6 +1019,7 @@ class Room {
      */
     recordDealStrength() {
         this.roundDealStrength = {};
+        this.dealHistoryByName ||= {};
         const humanCount = this.players.filter(p => !p.isBot).length;
         const scored = rankTable(this.players.map(p => p.hand));
 
@@ -1001,6 +1042,17 @@ class Room {
                 botDifficulty: this.botPolicy.difficulty,
                 botTemperature: this.botPolicy.temperature
             };
+
+            // Kept for the game-over screen, which is the only place any of
+            // this may ever be shown: `rank` compares all four hands, so it
+            // must not reach a client while a round can still be played.
+            // Only the three display fields, not the whole scoring record.
+            (this.dealHistoryByName[player.name] ||= []).push({
+                round: this.roundNumber,
+                tier: scored[seat].tier,
+                tierLabel: scored[seat].tierLabel,
+                rank: scored[seat].rank
+            });
         });
     }
 

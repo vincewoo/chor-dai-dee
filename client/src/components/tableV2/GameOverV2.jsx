@@ -3,6 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import MaxBotsChip from './MaxBotsChip';
+import DealLuckPanel from './DealLuckPanel';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; shadow-rating
@@ -26,6 +27,9 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             animal: getAvatarEmoji(s.name),
             tile: getAvatarTile(s.name),
             total: s.cumulativeScore,
+            // The absolute tier, averaged over the game's deals. Comparable
+            // between games, unlike the per-round rank in the drill-in.
+            dealTierLabel: gameOver?.dealLuck?.[s.name]?.avgTierLabel || null,
             delay: `${(0.35 + i * 0.09).toFixed(2)}s`,
         }));
         // avatarsVersion isn't read here, but it changes when a looked-up
@@ -142,7 +146,10 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                                     <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 14 }}>
                                         {r.name}{r.isYou ? ' (You)' : ''}{r.isBot ? ' · bot' : ''}
                                     </div>
-                                    <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>{r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`}</div>
+                                    <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>
+                                        {r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`}
+                                        {r.dealTierLabel ? ` · deals ${r.dealTierLabel.toLowerCase()}` : ''}
+                                    </div>
                                 </div>
                                 <div style={{ textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap' }}>
                                     <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 17 }}>{r.total} <span style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>pts</span></div>
@@ -150,6 +157,13 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                             </div>
                         ))}
                     </div>
+
+                    <DealLuckPanel
+                        rows={rows}
+                        dealLuck={gameOver?.dealLuck}
+                        acc={acc}
+                        rm={rm}
+                    />
                 </div>
 
                 {/* Actions slot (buttons supplied by GameRoom) */}
