@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
-import SuitWatermark from './SuitWatermark';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import ReviewMoment from './ReviewMoment';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
@@ -71,15 +71,20 @@ function GameReviewV2({
     const [openIndex, setOpenIndex] = useState(0);
 
     const shell = (children) => (
-        <div
-            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
+        <ScreenShell
+            className="relative h-full w-full font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            backdrop={
+                <ScreenBackdrop
+                    tint={surface.tint}
+                    soft={soft}
+                    watermarks={[
+                        { suit: 'H', size: 150, rotate: -14, style: { top: 220, left: -46 } },
+                        { suit: 'D', size: 165, rotate: 12, opacity: 0.03, style: { top: 580, right: -52 } },
+                    ]}
+                />
+            }
         >
-            <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
-            <div className="absolute pointer-events-none" style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }} />
-            <SuitWatermark suit="H" size={150} rotate={-14} style={{ top: 220, left: -46 }} />
-            <SuitWatermark suit="D" size={165} rotate={12} opacity={0.03} style={{ top: 580, right: -52 }} />
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-36 pt-safe-18 md:max-w-[720px] md:px-8">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -94,7 +99,7 @@ function GameReviewV2({
                 </div>
                 {children}
             </div>
-        </div>
+        </ScreenShell>
     );
 
     if (loading) {

@@ -1,5 +1,5 @@
 import { useTableTheme } from '../../theme/tableTheme';
-import SuitWatermark from './SuitWatermark';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // Presentational frame for the profile page, following the same split as the
@@ -16,18 +16,20 @@ export function ProfileShell({ title, subtitle, onBack, children }) {
     const { acc, soft, surface } = useTableTheme();
 
     return (
-        <div
-            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
+        <ScreenShell
+            className="relative h-full w-full font-sans"
             style={{ background: surface.base, fontFamily: FONT, '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            backdrop={
+                <ScreenBackdrop
+                    tint={surface.tint}
+                    soft={soft}
+                    watermarks={[
+                        { suit: 'S', size: 150, rotate: -14, style: { top: 250, left: -46 } },
+                        { suit: 'D', size: 165, rotate: 12, opacity: 0.03, style: { top: 620, right: -52 } },
+                    ]}
+                />
+            }
         >
-            <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
-            <div
-                className="absolute pointer-events-none"
-                style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
-            />
-            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: 250, left: -46 }} />
-            <SuitWatermark suit="D" size={165} rotate={12} opacity={0.03} style={{ top: 620, right: -52 }} />
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-92 pt-safe-18 md:max-w-[560px] md:px-8">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px] min-w-0">
@@ -48,7 +50,7 @@ export function ProfileShell({ title, subtitle, onBack, children }) {
 
                 <div className="mt-5 flex flex-col gap-4">{children}</div>
             </div>
-        </div>
+        </ScreenShell>
     );
 }
 
