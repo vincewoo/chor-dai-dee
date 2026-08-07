@@ -150,6 +150,34 @@ test('BASELINE_VERSION is a positive integer', () => {
 
 const { Room } = require('../game/RoomManager');
 
+// A valid competition ranking over the seats, checked as a *property* rather
+// than as the literal sequence [1,2,3,4]. Deals are random and ties share the
+// better rank by design, so an honest table can legitimately rank 1,1,3,4;
+// asserting the literal sequence failed whenever two seats drew equal strength.
+//
+// Checked against avgPercentile because that is what the implementation now
+// orders on -- the number the row prints. An earlier version of both the
+// ranking and this helper disagreed about that (rank on the unrounded mean,
+// tie-check on the rounded one), which flaked at the same ~20% rate for a
+// subtler reason. If they ever diverge again this helper is what catches it.
+const assertValidRanking = (entries, label) => {
+    const byMean = [...entries].sort((a, b) => b.avgPercentile - a.avgPercentile);
+    assert.strictEqual(byMean[0].dealRank, 1, `${label}: somebody must be 1st`);
+    byMean.forEach((e, i) => {
+        assert.ok(e.dealRank >= 1 && e.dealRank <= entries.length,
+            `${label}: rank ${e.dealRank} out of range`);
+        if (i === 0) return;
+        const prev = byMean[i - 1];
+        if (e.avgPercentile === prev.avgPercentile) {
+            assert.strictEqual(e.dealRank, prev.dealRank,
+                `${label}: equal strength must share a rank`);
+        } else {
+            assert.ok(e.dealRank > prev.dealRank,
+                `${label}: weaker deals must rank strictly worse`);
+        }
+    });
+};
+
 const seatFour = (room) => {
     room.addPlayer({ id: 'p1', name: 'Alice', isBot: false });
     room.addPlayer({ id: 'p2', name: 'Bot Ada', isBot: true });
@@ -285,7 +313,7 @@ test('deal strength is ranked across the game, ties sharing the better rank', ()
             'ranking must follow the percentiles it is derived from');
     }
     // The unrounded mean is an implementation detail of the ordering.
-    for (const e of entries) assert.ok(!('mean' in e));
+    for (const e of entries) assert.ok(!('mean' in e), 'ordering scratch value must not ship');
 });
 
 test('the review records what each round actually cost', () => {
@@ -351,9 +379,7 @@ test('deal strength ranks exactly the seats on the game-over screen', () => {
     assert.strictEqual(Object.keys(review).length, 4, 'one entry per seat, never per name');
     assert.ok(!(departed in review), 'a name that no longer holds a seat is not a row');
 
-    const seated = room.players.map(p => review[p.name].dealRank);
-    assert.deepStrictEqual([...seated].sort(), [1, 2, 3, 4],
-        'the four seats on screen must rank 1-4 with no gaps');
+    assertValidRanking(room.players.map(p => review[p.name]), 'seated');
 
     // The ordering scratch value must never reach the client.
     for (const e of Object.values(review)) assert.ok(!('mean' in e));
@@ -455,6 +481,5 @@ test('the review keys off the caller snapshot, not names read later', () => {
     assert.deepStrictEqual(Object.keys(review).sort(), [...standingsNames].sort(),
         'keys must be the names the standings will render');
 
-    const ranks = standingsNames.map(n => review[n].dealRank).sort();
-    assert.deepStrictEqual(ranks, [1, 2, 3, 4], 'every row ranks, and somebody is 1st');
+    assertValidRanking(standingsNames.map(n => review[n]), 'snapshot');
 });

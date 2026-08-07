@@ -1048,12 +1048,8 @@ class Room {
             const rounds = this.roundHistoryBySeat?.[seat] || [];
             if (!rounds.length) return;
             const mean = rounds.reduce((sum, r) => sum + r.percentile, 0) / rounds.length;
-            // Mean kept unrounded for the ordering below, so two players whose
-            // percentiles round to the same whole number are still ranked by
-            // the difference that produced them.
             out[name] = {
                 avgPercentile: Math.round(mean),
-                mean,
                 // The scoreboard half. Totalled from the scored rounds only,
                 // so it agrees with the standings even when a dealt round was
                 // never scored.
@@ -1073,14 +1069,18 @@ class Room {
         // screen: 1..4 with no gaps. Keying on name instead let a walkout or a
         // mid-game join leave orphaned entries behind, which produced
         // "Deal strength: 5th" at a four-seat table.
-        const order = Object.keys(out).sort((a, b) => out[b].mean - out[a].mean);
+        // Ordered on the rounded percentile -- the number the row actually
+        // prints -- not on the unrounded mean behind it. Ranking on the mean
+        // meant two players both showing "62nd percentile" could render as 2nd
+        // and 3rd, with nothing on screen to explain the difference. A tie the
+        // player can see is a tie.
+        const order = Object.keys(out)
+            .sort((a, b) => out[b].avgPercentile - out[a].avgPercentile);
         order.forEach((name, i) => {
-            const tied = i > 0 && out[name].mean === out[order[i - 1]].mean;
+            const tied = i > 0 &&
+                out[name].avgPercentile === out[order[i - 1]].avgPercentile;
             out[name].dealRank = tied ? out[order[i - 1]].dealRank : i + 1;
         });
-        // Every entry, not just the ranked ones: the unrounded mean is an
-        // ordering detail and has no business on the wire.
-        for (const entry of Object.values(out)) delete entry.mean;
         return out;
     }
 
