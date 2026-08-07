@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActivityFeedV2 } from './tableV2';
 
@@ -59,20 +59,34 @@ const ActivityFeed = ({ serverUrl, user }) => {
     // Cached by game id so re-expanding the same card is free.
     const [reviews, setReviews] = useState({});
 
+    // In-flight is its own value. Marking it `null` -- which is also what "this
+    // game has no review" means -- made a failed request indistinguishable from
+    // a legitimately empty one, so the card was stuck on the plain standings
+    // forever and reopening it could never retry.
+    // Two refs rather than reading `reviews`: a state updater is not run
+    // synchronously, so deciding "already in flight" inside one and checking it
+    // on the next line always saw an empty set and skipped the fetch entirely.
+    // Refs also keep this callback out of the reviews dependency, which would
+    // otherwise rebuild it on every resolved fetch.
+    const inFlight = useRef(new Set());
+    const loaded = useRef(new Set());
+
     const loadReview = useCallback(async (gameId) => {
-        if (!gameId || reviews[gameId] !== undefined) return;
-        // Marked in-flight so a double tap cannot fire two requests.
-        setReviews(prev => ({ ...prev, [gameId]: null }));
+        if (!gameId || inFlight.current.has(gameId) || loaded.current.has(gameId)) return;
+        inFlight.current.add(gameId);
         try {
             const response = await fetch(`${serverUrl}/api/game/${gameId}/review`);
-            if (!response.ok) return;
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             setReviews(prev => ({ ...prev, [gameId]: data.review || null }));
+            loaded.current.add(gameId);
         } catch (err) {
-            // A missing review just leaves the plain standings in place.
+            // Left unresolved on purpose, so closing and reopening retries.
             console.error('Error fetching round review:', err);
+        } finally {
+            inFlight.current.delete(gameId);
         }
-    }, [serverUrl, reviews]);
+    }, [serverUrl]);
 
     // Filter changes always restart at page 1 with a fresh list.
     const applyFilters = (next) => {

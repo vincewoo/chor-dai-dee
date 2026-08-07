@@ -205,14 +205,26 @@ function ActivityFeedV2({
                                     key={c.id}
                                     role={canExpand ? 'button' : undefined}
                                     tabIndex={canExpand ? 0 : undefined}
-                                    onClick={() => {
+                                    onClick={(e) => {
                                         if (!canExpand) return;
+                                        // Same reasoning as onKeyDown: a click on
+                                        // the review's toggle must not also toggle
+                                        // the card underneath it.
+                                        if (e.target.closest('button') ) return;
                                         const next = open ? null : c.id;
                                         setExpandedId(next);
                                         if (next) onExpandGame?.(c.id);
                                     }}
                                     onKeyDown={(e) => {
                                         if (!canExpand) return;
+                                        // Only the card's own key events. The
+                                        // expanded body holds the round review's
+                                        // toggle, and Enter/Space on that bubbles
+                                        // up here -- which swallowed the keypress
+                                        // and collapsed the whole card instead of
+                                        // opening the grid, leaving the inner
+                                        // control reachable by mouse only.
+                                        if (e.target !== e.currentTarget) return;
                                         if (e.key !== 'Enter' && e.key !== ' ') return;
                                         e.preventDefault();
                                         const next = open ? null : c.id;

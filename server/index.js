@@ -895,12 +895,6 @@ io.on('connection', (socket) => {
             roundReview: room.describeRoundReview(scoresWithCumulative.map(x => x.name))
         };
 
-        try {
-            await saveGameRoundReview(room.gameId, dragonResults.roundReview);
-        } catch (e) {
-            console.error('Failed to save round review (dragon):', e);
-        }
-
         // Store dragon win results for reconnection handling
         room.lastGameResults = dragonResults;
 
@@ -950,6 +944,13 @@ io.on('connection', (socket) => {
                     winner: dragonWinner.name
                 });
             });
+
+            // After the history row, not before: game_round_review references
+            // game_history, so the child would precede its parent and break the
+            // moment foreign_keys is ever enabled. And after the emit above,
+            // because a summary must never hold four players' scoreboards
+            // behind a contended SQLite write.
+            await saveGameRoundReview(room.gameId, dragonResults.roundReview);
         } catch (e) {
             console.error("Failed to save game history for dragon win:", e);
         }
@@ -1215,15 +1216,6 @@ io.on('connection', (socket) => {
                 roundReview: room.describeRoundReview(scoresWithCumulative.map(x => x.name))
             };
 
-            // Persisted from the payload rather than rebuilt, so the feed can
-            // never show a different review from the one the players saw. Its
-            // own try/catch: a summary is not worth failing a game over.
-            try {
-                await saveGameRoundReview(room.gameId, gameResults.roundReview);
-            } catch (e) {
-                console.error('Failed to save round review:', e);
-            }
-
             // Store game results for reconnection handling
             room.lastGameResults = gameResults;
             room.gameState = 'finished';
@@ -1327,6 +1319,16 @@ io.on('connection', (socket) => {
                         });
                     }
                 });
+
+                // After the history row, not before: game_round_review
+                // references game_history, so the child would precede its
+                // parent and break the moment foreign_keys is ever enabled.
+                // And after the game_over emit, because a summary must never
+                // hold four players' scoreboards behind a contended SQLite
+                // write. Persisted from the payload rather than rebuilt, so
+                // the feed cannot show a different review from the one the
+                // players just saw.
+                await saveGameRoundReview(room.gameId, gameResults.roundReview);
             } catch (e) {
                 console.error("Failed to save game history on completion:", e);
             }
