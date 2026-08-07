@@ -258,6 +258,36 @@ fits at 768px.
   page. Anywhere a suit *must* stay text (card pips, hand-type chips) the
   symbol carries the U+FE0E text-presentation selector for the same reason;
   `SUIT_SYMBOLS` in `theme/tableTheme.js` is the canonical copy.
+- `ScreenShell.jsx` - the shell every scrolling v2 screen sits in, and the one
+  rule it exists to enforce: **the box carrying a screen's backdrop is never the
+  box that scrolls.** It renders a non-scrolling root (the caller's position and
+  height, plus `overflow-hidden`, carrying the base gradient) with the scroller
+  as a child, and the backdrop layers as the scroller's *siblings*.
+  Painted onto the scroller instead, the backdrop is sized to the scroll port -
+  one viewport - while the content inside is `min-h-full` and free to be taller.
+  Past one viewport the vignette tint (`inset-0`, so also one viewport) stops,
+  *and* the base gradient starts tiling a second copy, because
+  `background-repeat` defaults to `repeat` and a gradient is an image like any
+  other. Both land on the same line and drew a hard horizontal seam across every
+  screen long enough to scroll. The root's `overflow-hidden` is the other half:
+  the glow and watermarks bleed past both edges on purpose, and on a scroller
+  that bleed is horizontally *scrollable* rather than clipped - a per-screen
+  `overflow-x-hidden` used to suppress it, and two of the ten screens had
+  forgotten it.
+  Ten screens go through it: `LoginV2`, `StatsV2`, `ActivityFeedV2`,
+  `LeaderboardV2`, `ProfileV2`, `AvatarPickerV2`, `GameReviewV2`, `TrainingV2`,
+  `WaitingRoomV2`, `GameOverV2`. `client/test/screenShellInvariant.test.js`
+  fails if an eleventh screen rolls its own `overflow-y-auto`.
+  Two consequences worth keeping straight: the caller supplies the root's
+  position *and* a definite height, because two position utilities on one
+  element are resolved by the cascade rather than by the order they are written
+  in - a `relative` hardcoded in the shell silently outranked the `absolute` the
+  waiting room passes. And because the backdrop no longer scrolls, a watermark
+  placed below the fold can no longer be reached at all, which is why the lower
+  one sits at `top: 460` on every screen rather than tracking content length.
+  `ScreenBackdrop` (same file) is the tint + glow + watermark trio; it reads the
+  theme itself, so a screen passes only its two suits, and `tint={false}` where
+  it wants no vignette.
 - `HomeScreenV2.jsx` - the home screen. The logo is a corner mark, not a hero:
   the page opens on identity + the one button that starts a game, then a single
   Live/Recent switch over one hairline-separated list (joinable rooms in

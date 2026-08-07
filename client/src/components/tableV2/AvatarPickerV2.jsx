@@ -36,11 +36,9 @@ function AvatarPickerV2({ user }) {
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
             backdrop={
                 <ScreenBackdrop
-                    tint={surface.tint}
-                    soft={soft}
                     watermarks={[
                         { suit: 'S', size: 150, rotate: -14, style: { top: 250, left: -46 } },
-                        { suit: 'C', size: 165, rotate: 12, opacity: 0.03, style: { top: 560, right: -52 } },
+                        { suit: 'C', size: 165, rotate: 12, opacity: 0.03, style: { top: 460, right: -52 } },
                     ]}
                 />
             }

@@ -1,3 +1,4 @@
+import { useTableTheme } from '../../theme/tableTheme';
 import SuitWatermark from './SuitWatermark';
 
 // The shell every scrolling v2 screen sits in: a root that carries the felt
@@ -20,9 +21,16 @@ import SuitWatermark from './SuitWatermark';
 // used to have to remember `overflow-x-hidden` for themselves, and the waiting
 // room was the one that didn't.
 //
-// Deliberately not solved with `position: fixed` or `background-attachment:
-// fixed`. Read docs/IOS-PWA-LAYOUT.md before reaching for either — it records
-// what viewport-anchored boxes actually measured on device in an installed PWA.
+// The backdrop is deliberately not pinned with `position: fixed` or
+// `background-attachment: fixed`. Keep the two halves of that straight, because
+// docs/IOS-PWA-LAYOUT.md's whole discipline is separating measured from
+// inferred: what was measured there is a *bottom-anchored* `position: fixed`
+// bar landing 62pt off in an installed viewport-fit=cover iOS PWA. The
+// `background-attachment: fixed` half is inference from the same root cause,
+// not a second measurement.
+//
+// Note this is a rule about the backdrop layer, not about the root — the root
+// may well be fixed, and GameOverV2 renders this shell as `fixed inset-0`.
 //
 // HomeScreenV2 is not built on this: it arrived at the same split independently
 // because its bottom nav has to sit below the scroller in normal flow, so its
@@ -60,14 +68,25 @@ function ScreenShell({
 // base gradient, one accent glow bleeding off the top, and two faded suit
 // watermarks bleeding off the sides. Which suits, and where, is the only thing
 // screens vary — so that is all they pass.
+//
+// `tint` and `soft` come from the theme by default rather than being threaded
+// in from each screen's own `useTableTheme()` call, since every screen was
+// passing the same two values from the same hook. Pass `tint={false}` to draw
+// no vignette at all: GameOverV2 does, because its root gradient is its own
+// darker celebration surface rather than the felt. That is why the default is
+// keyed on `undefined` and not on falsiness — an explicit opt-out has to be
+// distinguishable from not having said anything.
 export function ScreenBackdrop({ tint, soft, glow = {}, watermarks = [] }) {
+    const theme = useTableTheme();
+    const resolvedTint = tint === undefined ? theme.surface.tint : tint;
+    const resolvedSoft = soft ?? theme.soft;
     const { width = 520, height = 340, top = '-140px' } = glow;
     return (
         <>
-            {tint && <div className="absolute inset-0 pointer-events-none" style={{ background: tint }} />}
+            {resolvedTint && <div className="absolute inset-0 pointer-events-none" style={{ background: resolvedTint }} />}
             <div
                 className="absolute pointer-events-none"
-                style={{ top, left: '50%', transform: 'translateX(-50%)', width, height, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
+                style={{ top, left: '50%', transform: 'translateX(-50%)', width, height, borderRadius: '50%', background: `radial-gradient(ellipse,${resolvedSoft},transparent 70%)` }}
             />
             {watermarks.map((w, i) => (
                 <SuitWatermark key={i} {...w} />

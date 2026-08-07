@@ -76,9 +76,11 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             }}
             backdrop={
                 <>
-                    {/* No vignette tint here — this screen's gradient is its own,
-                        darker celebration surface rather than the felt. */}
-                    <ScreenBackdrop soft={soft} glow={{ width: 560, height: 380 }} />
+                    {/* tint={false}, not omitted: this screen's gradient is its
+                        own darker celebration surface rather than the felt, so
+                        it wants no vignette at all. Leaving it out would now
+                        get the felt's. */}
+                    <ScreenBackdrop tint={false} glow={{ width: 560, height: 380 }} />
                     {/* Confetti rains down the screen, so it belongs to the
                         backdrop and not to the scroll: inside the scroller it
                         slid away with the scoreboard. */}
