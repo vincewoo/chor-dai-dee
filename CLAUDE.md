@@ -444,6 +444,28 @@ fits at 768px.
   - Formula: Display Rating = 1200 + (mu - 3*sigma) * 40
   - Updates based on game placement (not just win/loss)
   - Only updates ratings for human players
+- `PublicRank.js` - The seven coarse tiers, and the only translation of the
+  shadow OpenSkill estimate into something a player sees. Three separate rules
+  that are easy to conflate:
+  - **The settled ladder** (`PUBLIC_RANKS.entryScore`, read via
+    `rankIndexForShadow`) governs the promotion and demotion series, on the real
+    conservative `mu - 3 * sigma`. Its thresholds are fitted to a player whose
+    sigma has decayed to ~4, which takes 50-100 games.
+  - **Placement has its own ladder** (`placementRankIndex`,
+    `PLACEMENT_ENTRY_SCORES`), because it fires at 5-10 games with sigma still
+    at 7.5-7.9, where `3 * sigma` is a flat ~420-point tax - three whole tiers -
+    on nothing but being new. Measured, a player winning 55% of games landed in
+    Iron half the time and Platinum was unreachable. Placement therefore scores
+    mu at `PLACEMENT_REFERENCE_SIGMA`, which also stops the tier depending on
+    whether calibration happened to take 5 games or 10. Re-fit the entry scores
+    and the reference sigma together, never one alone.
+  - **A rank is per game mode; calibration is not.** `rating_mu` lives in
+    `stats_short` / `stats_standard`, but `bot_calibration` is one row per
+    player, so finishing placement in one mode used to place the other off a
+    row one game old - which tops out below the Bronze line, making every
+    player's second mode a guaranteed Iron. `MIN_PLACEMENT_MODE_GAMES` is the
+    second gate. Anything reading a rank must read it for the mode in hand;
+    `join_room` hardcoded `'standard'` and showed Short players the wrong badge.
 - `DealStrength.js` - Scores a 13-card deal before play, so stats can separate
   card luck from skill. Control (2s/aces/kings) against the plays needed to shed,
   mapped to five tiers with a measured win-rate baseline. See

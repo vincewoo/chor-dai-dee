@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const sqlite3 = require('sqlite3').verbose();
+const { PLACEMENT_RANK_CAP } = require('../game/PublicRank');
 
 const tmpDir = fs.mkdtempSync(path.join(
     os.tmpdir(), 'public-rank-migration-test-'));
@@ -98,17 +99,20 @@ test.before(async () => {
                 migratedDb, 'PRAGMA table_info(stats_standard)');
             const placementColumn = columns.some(
                 column => column.name === 'rank_placement_complete');
-            let migration = null;
+            let migrations = [];
             try {
-                migration = await get(
+                // Both rank migrations, because the second is chained off the
+                // first and would otherwise still be in flight here.
+                migrations = await all(
                     migratedDb,
                     `SELECT key FROM schema_meta
-                     WHERE key = 'reset_incomplete_rank_placements_v1'`
+                     WHERE key IN ('reset_incomplete_rank_placements_v1',
+                                   'replace_placement_ranks_v1')`
                 );
             } catch {
                 // schema_meta is created asynchronously during startup.
             }
-            if (placementColumn && migration) {
+            if (placementColumn && migrations.length === 2) {
                 return;
             }
             await new Promise(resolve => setTimeout(resolve, 20));
@@ -125,7 +129,7 @@ test.after(async () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('rank migration resets unfinished placements and caps completed ones', async () => {
+test('rank migrations reset unfinished placements and re-place the rest', async () => {
     for (const table of ['stats', 'stats_short', 'stats_standard']) {
         const rows = await all(
             migratedDb,
@@ -133,29 +137,19 @@ test('rank migration resets unfinished placements and caps completed ones', asyn
                     demotion_progress, rank_placement_complete
              FROM ${table}
              ORDER BY user_id`);
-        assert.deepStrictEqual(rows, [
-            {
-                user_id: 1,
-                public_rank: 2,
-                promotion_progress: 0,
-                demotion_progress: 0,
-                rank_placement_complete: 1
-            },
-            {
-                user_id: 2,
-                public_rank: 0,
-                promotion_progress: 0,
-                demotion_progress: 0,
-                rank_placement_complete: 0
-            },
-            {
-                user_id: 3,
-                public_rank: 4,
-                promotion_progress: 0,
-                demotion_progress: 0,
-                rank_placement_complete: 1
-            }
-        ]);
+        // Everyone is Unranked and awaiting placement: user 2 because their
+        // calibration never finished, users 1 and 3 because the tiers the
+        // first migration preserved were placed on the old snapshot, which
+        // scored them at a sigma they had no way to have reached yet. They
+        // re-place off the placement ladder on their next completed game.
+        const unranked = userId => ({
+            user_id: userId,
+            public_rank: 0,
+            promotion_progress: 0,
+            demotion_progress: 0,
+            rank_placement_complete: 0
+        });
+        assert.deepStrictEqual(rows, [unranked(1), unranked(2), unranked(3)]);
 
         const unfinished = await get(
             migratedDb,
@@ -199,5 +193,43 @@ test('rank migration resets unfinished placements and caps completed ones', asyn
     assert.deepStrictEqual(completedCalibration, {
         completed_games: 8,
         calibration_complete: 1
+    });
+});
+
+test('re-placement leaves ranks earned above the placement cap alone', async () => {
+    const { replacePlacementRanks } = require('../db');
+    // Above the cap, a rank can only have come from winning a promotion
+    // series on the settled scoring - which this changes nothing about, so
+    // re-placing it would be a silent demotion.
+    await run(migratedDb,
+        `UPDATE stats_standard
+         SET public_rank = ${PLACEMENT_RANK_CAP + 1},
+             promotion_progress = 2,
+             rank_placement_complete = 1
+         WHERE user_id = 1`);
+    await run(migratedDb,
+        `UPDATE stats_standard
+         SET public_rank = ${PLACEMENT_RANK_CAP},
+             rank_placement_complete = 1
+         WHERE user_id = 3`);
+
+    await new Promise((resolve, reject) =>
+        replacePlacementRanks(err => err ? reject(err) : resolve()));
+
+    const kept = await get(migratedDb,
+        `SELECT public_rank, promotion_progress, rank_placement_complete
+         FROM stats_standard WHERE user_id = 1`);
+    assert.deepStrictEqual(kept, {
+        public_rank: PLACEMENT_RANK_CAP + 1,
+        promotion_progress: 2,
+        rank_placement_complete: 1
+    });
+
+    const cleared = await get(migratedDb,
+        `SELECT public_rank, rank_placement_complete
+         FROM stats_standard WHERE user_id = 3`);
+    assert.deepStrictEqual(cleared, {
+        public_rank: 0,
+        rank_placement_complete: 0
     });
 });

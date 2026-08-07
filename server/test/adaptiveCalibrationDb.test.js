@@ -18,6 +18,7 @@ const {
     updateUserStatsByMode,
     getLeaderboard
 } = require('../db');
+const { MIN_PLACEMENT_MODE_GAMES } = require('../game/PublicRank');
 
 const ready = new Promise(resolve => {
     const poll = () => db.get(
@@ -81,20 +82,23 @@ test('completed placement assigns a public rank without leaking shadow rating', 
         completedRounds: 15,
         calibrationComplete: true
     });
-    for (let game = 0; game < 3; game++) {
-        await updateUserStatsByMode(
-            user.username,
-            'standard',
-            game === 2,
-            5,
-            28,
-            25 / 3,
-            game === 2 ? 1 : 2
-        );
-    }
+    const playGame = (placement) => updateUserStatsByMode(
+        user.username, 'standard', placement === 1, 5, 28, 25 / 3, placement);
 
+    // Calibration is one row per player, but a rank is per mode. Completing it
+    // elsewhere is not enough to place someone here.
+    for (let game = 0; game < MIN_PLACEMENT_MODE_GAMES - 1; game++) {
+        await playGame(2);
+    }
+    const unplaced = await getUserStatsByMode(user.username, 'standard');
+    assert.strictEqual(unplaced.rank_placement_complete, 0);
+    assert.strictEqual(unplaced.public_rank, 0);
+
+    // The game that satisfies the mode gate places them, off mu alone: 28 at
+    // the placement reference sigma is 1840, which is Gold.
+    await playGame(1);
     const internal = await getUserStatsByMode(user.username, 'standard');
-    assert.strictEqual(internal.public_rank, 1);
+    assert.strictEqual(internal.public_rank, 3);
     assert.strictEqual(internal.rank_placement_complete, 1);
     assert.strictEqual(internal.rating_mu, 28);
 
@@ -103,8 +107,35 @@ test('completed placement assigns a public rank without leaking shadow rating', 
         minGames: 0
     })).find(entry => entry.username === user.username);
     assert.deepStrictEqual(
-        row.public_rank, { id: 'bronze', label: 'Bronze' });
+        row.public_rank, { id: 'gold', label: 'Gold' });
     assert.strictEqual('rating_mu' in row, false);
     assert.strictEqual('rating_sigma' in row, false);
     assert.strictEqual('rating_display' in row, false);
+});
+
+test('a rank is never placed from one mode\'s games onto another', async () => {
+    const user = await createUser('mode_split', 'hunter22');
+    await saveBotCalibration(user.id, {
+        completedGames: 8,
+        meaningfulDecisions: 120,
+        completedRounds: 20,
+        calibrationComplete: true
+    });
+
+    // A full placement's worth of Short games, then a single Standard one.
+    for (let game = 0; game < MIN_PLACEMENT_MODE_GAMES; game++) {
+        await updateUserStatsByMode(
+            user.username, 'short', true, 5, 31, 25 / 3, 1);
+    }
+    await updateUserStatsByMode(
+        user.username, 'standard', true, 5, 26, 25 / 3, 1);
+
+    const short = await getUserStatsByMode(user.username, 'short');
+    assert.strictEqual(short.rank_placement_complete, 1);
+
+    // One game of evidence used to place this row - always at the bottom,
+    // because a single result cannot move mu far enough to clear any line.
+    const standard = await getUserStatsByMode(user.username, 'standard');
+    assert.strictEqual(standard.rank_placement_complete, 0);
+    assert.strictEqual(standard.public_rank, 0);
 });

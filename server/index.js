@@ -383,26 +383,6 @@ io.on('connection', (socket) => {
         // spectator - that would break the hand-emit invariant in emitSpectatorHands.
         dropSpectatorEverywhere(username, socket);
 
-        // Fetch only the coarse public rank. OpenSkill mu/sigma never enter a
-        // room payload; game-end rating calculations read them directly from
-        // the database.
-        let publicRank = isGuest ? 'Unranked' : DEFAULT_PUBLIC_RANK_LABEL;
-        if (isGuest) {
-            publicRank = 'Unranked';
-        } else if (username) {
-            try {
-                const stats = await getUserStatsByMode(username, 'standard');
-                if (stats) {
-                    publicRank = publicRankPayload(
-                        stats.public_rank,
-                        Boolean(stats.rank_placement_complete)
-                    ).label;
-                }
-            } catch (e) {
-                console.error('Error fetching stats for join_room:', e);
-            }
-        }
-
         // OPTION 2: Auto-leave any previous rooms before joining a new one
         // Find all rooms this username is currently in
         const existingRooms = roomManager.findAllRoomsByUsername(username);
@@ -427,6 +407,38 @@ io.on('connection', (socket) => {
                 // The final policy is selected automatically from the roster
                 // when the host starts the game.
                 createdRoom?.setBotDifficulty('adaptive');
+            }
+        }
+
+        // Fetch only the coarse public rank. OpenSkill mu/sigma never enter a
+        // room payload; game-end rating calculations read them directly from
+        // the database.
+        //
+        // Read for the mode this room is actually on. A rank is per mode - the
+        // shadow rating it comes from lives in stats_short or stats_standard,
+        // and set_game_mode already re-reads the badge on the mode it switches
+        // to. This lookup used to be hardcoded to 'standard', so a player who
+        // plays Short wore their Standard rank at a Short table, and that is
+        // the row least likely to have any games behind it.
+        // Resolved after targetRoomId, which is where a 'create' join mints the
+        // room this reads the mode from.
+        let publicRank = isGuest ? 'Unranked' : DEFAULT_PUBLIC_RANK_LABEL;
+        if (isGuest) {
+            publicRank = 'Unranked';
+        } else if (username) {
+            try {
+                const stats = await getUserStatsByMode(
+                    username,
+                    roomManager.getRoom(targetRoomId)?.gameMode || 'standard'
+                );
+                if (stats) {
+                    publicRank = publicRankPayload(
+                        stats.public_rank,
+                        Boolean(stats.rank_placement_complete)
+                    ).label;
+                }
+            } catch (e) {
+                console.error('Error fetching stats for join_room:', e);
             }
         }
 

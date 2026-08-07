@@ -3,12 +3,22 @@
 // this module is the only translation into something a player sees.
 
 const { calculateDisplayRating } = require('./RatingSystem');
+const { MIN_PLACEMENT_GAMES } = require('./AdaptiveBotController');
 
 const PROMOTION_RESULTS = 3;
 const DEMOTION_RESULTS = 3;
 const DEMOTION_BUFFER = 75;
 const PLACEMENT_RANK_CAP = 4;
 const UNRANKED_PUBLIC_RANK = { id: 'unranked', label: 'Unranked' };
+
+// A rank is per game mode, because the shadow rating is. Adaptive calibration
+// is not - it is one row per player - so calibration completing in Short used
+// to place the player in Standard as well, off whatever their untouched
+// Standard row said. That row is one game old at most, and one game vs the
+// cold-start bots tops out at 1296 against a 1300 Bronze line: every player's
+// second mode was a guaranteed Iron. Placement therefore needs its own
+// per-mode evidence, and the controller's floor is the natural amount.
+const MIN_PLACEMENT_MODE_GAMES = MIN_PLACEMENT_GAMES;
 
 // Entry scores are expressed in the old continuous display scale only because
 // that gives us stable migration thresholds. The score itself is never sent to
@@ -23,6 +33,35 @@ const PUBLIC_RANKS = [
     { id: 'champ', label: 'Champ', entryScore: 2050 }
 ];
 const DEFAULT_PUBLIC_RANK_LABEL = UNRANKED_PUBLIC_RANK.label;
+
+// Placement is scored on its own ladder, and has to be: PUBLIC_RANKS' entry
+// scores are fitted to the settled regime, where sigma has decayed to ~4 after
+// 50-100 games. Placement fires after 5-10 (AdaptiveBotController), with sigma
+// still at 7.5-7.9, and `mu - 3 * sigma` charges the difference as a flat
+// ~420-point tax - three whole tiers - on nothing but being new. Measured, that
+// put a player winning 55% of their games (more than double the 25% a seat wins
+// by chance) in Iron half the time, and made Platinum unreachable despite
+// PLACEMENT_RANK_CAP naming it.
+//
+// So the placement snapshot evaluates mu at the sigma a settled player
+// converges to, against thresholds fitted to what mu actually looks like at
+// that point. Using a fixed sigma rather than the player's own also stops the
+// tier depending on whether calibration happened to take 5 games or 10 - a
+// 48-point swing that says nothing about how they played.
+//
+// After placement, nothing here applies: the promotion and demotion series run
+// on the real conservative `mu - 3 * sigma` against PUBLIC_RANKS, so an
+// optimistic placement is corrected by results rather than left standing.
+const PLACEMENT_REFERENCE_SIGMA = 4;
+
+// Index-aligned with PUBLIC_RANKS. Fitted from 3000 simulated placement runs
+// per skill cohort with the Adaptive controller in the loop, so the bots each
+// cohort faces track their measured skill the way they do live. Targets: the
+// median chance-level player lands on the Iron/Bronze line, the median
+// 45%-win player on Bronze/Silver, 70% on Gold, 85% on Platinum. Diamond and
+// Champ are absent because PLACEMENT_RANK_CAP reserves them for promotion.
+// Re-fit these together with PLACEMENT_REFERENCE_SIGMA, never one alone.
+const PLACEMENT_ENTRY_SCORES = [-Infinity, 1450, 1620, 1800, 1990];
 
 const clampIndex = value => Math.max(
     0,
@@ -46,11 +85,33 @@ function rankIndexForShadow(mu, sigma) {
     return result;
 }
 
+/**
+ * The tier a player is placed into at the end of calibration. Reads mu only -
+ * see PLACEMENT_ENTRY_SCORES for why the player's own sigma is deliberately
+ * not consulted here - and never returns above PLACEMENT_RANK_CAP.
+ *
+ * @param {number} mu - shadow skill mean
+ * @returns {number} rank index
+ */
+function placementRankIndex(mu) {
+    const score = calculateDisplayRating(mu, PLACEMENT_REFERENCE_SIGMA);
+    let result = 0;
+    for (let index = 1; index < PLACEMENT_ENTRY_SCORES.length; index++) {
+        if (score < PLACEMENT_ENTRY_SCORES[index]) break;
+        result = index;
+    }
+    return Math.min(result, PLACEMENT_RANK_CAP);
+}
+
 function updatePublicRank(current = {}, {
     mu,
     sigma,
     placement,
-    placementMatchesComplete = true
+    placementMatchesComplete = true,
+    // Completed games in *this* mode, counting the one being recorded. Absent
+    // (an older caller, or a test that only cares about the promotion series)
+    // means the mode gate is not consulted.
+    modeGamesPlayed = null
 } = {}) {
     let rankIndex = clampIndex(
         current.publicRank ?? current.public_rank);
@@ -69,17 +130,19 @@ function updatePublicRank(current = {}, {
         ? true
         : Boolean(storedPlacementState);
 
-    // Public rank stays at the starting tier during placement matches. Once
-    // calibration completes, place from the current shadow score but never
-    // above Platinum: Diamond and Champ remain available to earn through play.
+    // Public rank stays Unranked during placement matches. Once calibration
+    // completes, place from the placement ladder but never above Platinum:
+    // Diamond and Champ remain available to earn through play.
     // What the player saw before this update. The promotion splash animates
     // from it, so it has to be captured before rankIndex moves.
     const previousRank = rankPlacementComplete
         ? rankForIndex(rankIndex)
         : { ...UNRANKED_PUBLIC_RANK };
+    const modeEvidenceComplete = modeGamesPlayed === null ||
+        Number(modeGamesPlayed) >= MIN_PLACEMENT_MODE_GAMES;
 
     if (!rankPlacementComplete) {
-        if (!placementMatchesComplete) {
+        if (!placementMatchesComplete || !modeEvidenceComplete) {
             return {
                 publicRank: 0,
                 promotionProgress: 0,
@@ -91,10 +154,7 @@ function updatePublicRank(current = {}, {
             };
         }
 
-        rankIndex = Math.min(
-            rankIndexForShadow(mu, sigma),
-            PLACEMENT_RANK_CAP
-        );
+        rankIndex = placementRankIndex(mu);
         rankPlacementComplete = true;
         return {
             publicRank: rankIndex,
@@ -188,8 +248,12 @@ module.exports = {
     DEMOTION_RESULTS,
     DEMOTION_BUFFER,
     PLACEMENT_RANK_CAP,
+    PLACEMENT_REFERENCE_SIGMA,
+    PLACEMENT_ENTRY_SCORES,
+    MIN_PLACEMENT_MODE_GAMES,
     rankForIndex,
     rankIndexForShadow,
+    placementRankIndex,
     updatePublicRank,
     publicRankPayload,
     publicStatsView
