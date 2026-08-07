@@ -261,6 +261,26 @@ function initDb() {
             UNIQUE(game_id, username)
         )`);
 
+        // The game-over round-by-round review, so the activity feed can show
+        // the same summary the players saw at the table.
+        //
+        // Deliberately its own table rather than a column on game_history:
+        // getActivityFeed selects `page.*`, so anything on that table ships to
+        // every client on every page of the feed. This is a few KB per game and
+        // is only ever read for one game at a time, when a card is expanded.
+        //
+        // Stored as JSON because it is only ever read whole, for display -- the
+        // same reason game_events.event_data is JSON. Nothing queries inside it.
+        // It covers every seat including bots and guests, which is exactly why
+        // round_stats cannot serve this: that table holds registered humans
+        // only, so three seats of a typical game would be blank.
+        db.run(`CREATE TABLE IF NOT EXISTS game_round_review (
+            game_id TEXT PRIMARY KEY,
+            review TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(game_id) REFERENCES game_history(game_id)
+        )`);
+
         // Notable events in games (for highlights)
         db.run(`CREATE TABLE IF NOT EXISTS game_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2433,6 +2453,67 @@ const saveGameParticipant = (participantData) => {
     });
 };
 
+/**
+ * Store a finished game's round-by-round review.
+ *
+ * ON CONFLICT DO NOTHING: the review describes a game that has ended, so the
+ * first write is the true one. A rematch mints a new gameId, so this cannot
+ * collide with a later game in the same room.
+ */
+const ROUND_REVIEW_FORMAT = 1;
+
+const saveGameRoundReview = (gameId, review) => {
+    if (!review || Object.keys(review).length === 0) return Promise.resolve();
+    // Through withTransaction like every other write: sqlite3 shares one
+    // connection, so a bare db.run issued while another room is between BEGIN
+    // and COMMIT joins that transaction and is lost if it rolls back.
+    return withTransaction(async () => {
+        // Wrapped with a format version rather than stored bare. The seats map
+        // is keyed by player name, so no in-band marker is safe -- a player can
+        // legitimately be called `version`. Same reasoning as the deal columns'
+        // baselineVersion: the blob outlives the code that wrote it.
+        const payload = JSON.stringify({ version: ROUND_REVIEW_FORMAT, seats: review });
+        await runSql(
+            `INSERT INTO game_round_review (game_id, review) VALUES (?, ?)
+             ON CONFLICT(game_id) DO NOTHING`,
+            [gameId, payload]);
+    });
+};
+
+/**
+ * The review for one game, or null for a game played before this was recorded.
+ * Null is the honest answer and the feed simply falls back to its plain
+ * standings; there is nothing to reconstruct it from after the fact, since the
+ * deals only ever existed in the room's memory.
+ */
+const getGameRoundReview = (gameId) => {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT review FROM game_round_review WHERE game_id = ?`, [gameId],
+            (err, row) => {
+                if (err) return reject(err);
+                if (!row) return resolve(null);
+                try {
+                    const parsed = JSON.parse(row.review);
+                    // A bare map is the unversioned first format; anything from
+                    // a newer writer is refused rather than guessed at, and the
+                    // feed falls back to its plain standings.
+                    if (!parsed || typeof parsed !== 'object') return resolve(null);
+                    if (parsed.version === undefined) return resolve(parsed);
+                    if (parsed.version > ROUND_REVIEW_FORMAT) {
+                        console.warn(
+                            `Round review for ${gameId} is format ${parsed.version}, ` +
+                            `this build reads ${ROUND_REVIEW_FORMAT}`);
+                        return resolve(null);
+                    }
+                    resolve(parsed.seats || null);
+                } catch (e) {
+                    console.error('Malformed round review for', gameId, e);
+                    resolve(null);
+                }
+            });
+    });
+};
+
 // Save notable game event
 const saveGameEvent = (gameId, eventType, eventData, roundNumber = null) => {
     return new Promise((resolve, reject) => {
@@ -2987,6 +3068,43 @@ const renameUser = (userId, newUsername) => withTransaction(async () => {
     // prefix (server/username.js) is what makes that unreachable; the
     // transaction is what keeps it harmless if it ever becomes reachable again.
     await runSql('UPDATE game_participants SET username = ? WHERE user_id = ?', [newUsername, userId]);
+
+    // The third place a username is denormalized, and the only one that stores
+    // it as a *key* rather than a column. The stored round review is keyed by
+    // the seat's name because that is what the standings rows are named after,
+    // so a rename that skipped it left the feed looking up the new name in a
+    // map that still held the old one -- the panel opened to a grid of dashes.
+    //
+    // Rewritten row by row rather than with SQLite's json functions: the key
+    // being replaced is arbitrary player text, and json_remove/json_set paths
+    // would need it escaped into a path expression. Scoped to this account's
+    // own games, so it touches a handful of rows, not the table.
+    const reviewRows = await allRows(
+        `SELECT game_id, review FROM game_round_review
+         WHERE game_id IN (SELECT game_id FROM game_participants WHERE user_id = ?)`,
+        [userId]);
+    for (const row of reviewRows) {
+        let parsed;
+        try {
+            parsed = JSON.parse(row.review);
+        } catch {
+            continue;   // a malformed blob is already unreadable; leave it be
+        }
+        const seats = parsed && parsed.version !== undefined ? parsed.seats : parsed;
+        if (!seats || !Object.prototype.hasOwnProperty.call(seats, user.username)) continue;
+        // Rebuilt in place so the seat keeps its position in the map, and
+        // null-prototype for the same reason describeRoundReview is: a player
+        // may legitimately be called `__proto__`.
+        const renamed = Object.create(null);
+        for (const [name, entry] of Object.entries(seats)) {
+            renamed[name === user.username ? newUsername : name] = entry;
+        }
+        const payload = parsed && parsed.version !== undefined
+            ? JSON.stringify({ ...parsed, seats: renamed })
+            : JSON.stringify(renamed);
+        await runSql('UPDATE game_round_review SET review = ? WHERE game_id = ?',
+            [payload, row.game_id]);
+    }
     await runSql(
         'INSERT INTO username_history (user_id, old_username, new_username) VALUES (?, ?, ?)',
         [userId, user.username, newUsername]
@@ -3067,6 +3185,8 @@ module.exports = {
     saveGameHistory,
     saveGameParticipant,
     saveGameEvent,
+    saveGameRoundReview,
+    getGameRoundReview,
     getActivityFeed,
     getGameEvents,
     getActivityFeedCount,

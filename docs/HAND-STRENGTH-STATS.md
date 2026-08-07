@@ -96,6 +96,12 @@ same reason `roundsWonByName` is: `roundPlayStats` is keyed by socket id and has
 to be hand-copied between ids on every reconnect and bot swap. It resets on
 `roundNumber === 0`, the room's only "new game" signal.
 
+The same review is persisted to `game_round_review` at game over, dragon win
+and abandon, so the activity feed renders it from the identical recorded data
+rather than recomputing it. It is written *after* the `game_history` row it
+references and *after* the game-over emit, so a summary can neither invert the
+foreign key nor hold four players' scoreboards behind a disk write.
+
 **The rank must never reach a client mid-round.** It compares all four dealt
 hands, so it is a live read on opponents' holdings. `Room.describeRoundReview()`
 has exactly one caller — the game-over handler — and is deliberately absent from

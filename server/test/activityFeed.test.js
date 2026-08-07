@@ -32,6 +32,8 @@ const {
     sweepAbandonedGames,
     getComebackStats,
     createUser,
+    saveGameRoundReview,
+    getGameRoundReview,
     MAX_BOT_DIFFICULTY_ID
 } = require('../db');
 const { Room } = require('../game/RoomManager');
@@ -474,4 +476,120 @@ test('a room whose host chose max bots records the ceiling tier', async () => {
         { username: 'MaxedBot3', isBot: true }
     ]);
     assert.strictEqual((await feedGame(gameId)).max_bots, true);
+});
+
+// --- the round-by-round review in the feed ----------------------------------
+//
+// The feed cannot rebuild this from anything else it stores: round_stats holds
+// registered humans only, so three seats of a typical game would be blank, and
+// game_participants keeps no per-round data at all. It is persisted verbatim
+// from the game-over payload so the feed and the table cannot disagree.
+
+test('a stored review round-trips for every seat, bots included', async () => {
+    const gameId = nextGameId();
+    const review = {
+        Alice: { avgPercentile: 61, dealRank: 1, totalPoints: 12, roundsWon: 2,
+                 rounds: [{ round: 1, percentile: 61, tierLabel: 'Strong', rank: 1, points: 0, cardsLeft: 0, won: true }] },
+        'Bot 2': { avgPercentile: 30, dealRank: 2, totalPoints: 40, roundsWon: 0,
+                   rounds: [{ round: 1, percentile: 30, tierLabel: 'Rough', rank: 2, points: 40, cardsLeft: 13, won: false }] }
+    };
+    await saveGameRoundReview(gameId, review);
+
+    const back = await getGameRoundReview(gameId);
+    assert.deepStrictEqual(back, review);
+    assert.ok('Bot 2' in back, 'bots must survive; round_stats would drop them');
+});
+
+test('a game with no stored review answers null rather than failing', async () => {
+    // Every game played before this shipped. The feed renders its plain
+    // standings; there is nothing to reconstruct the deals from afterwards.
+    assert.strictEqual(await getGameRoundReview('game_never_reviewed'), null);
+});
+
+test('the first review written for a game is the one kept', async () => {
+    // The review describes a finished game, so a second write is a bug or a
+    // retry, never a correction.
+    const gameId = nextGameId();
+    await saveGameRoundReview(gameId, { A: { avgPercentile: 50, rounds: [] } });
+    await saveGameRoundReview(gameId, { A: { avgPercentile: 99, rounds: [] } });
+    assert.strictEqual((await getGameRoundReview(gameId)).A.avgPercentile, 50);
+});
+
+test('an empty review is not stored at all', async () => {
+    // A game that ended before any deal was scored has nothing to say, and a
+    // row of "{}" would be indistinguishable from a real but empty answer.
+    const gameId = nextGameId();
+    await saveGameRoundReview(gameId, {});
+    assert.strictEqual(await getGameRoundReview(gameId), null);
+});
+
+test('an abandoned game keeps its review, under the seat-owner names', async () => {
+    // The "Rage quits" filter is a whole tab of games that were really played,
+    // with real deals behind them. Their participant rows are attributed to
+    // whoever OWNED each seat rather than to the bot sitting in it at teardown,
+    // so the review has to be keyed the same way or the feed looks up a name
+    // that has no entry.
+    const { Room } = require('../game/RoomManager');
+    const room = new Room('ABANDON-REVIEW', 'short');
+    room.addPlayer({ id: 'p1', name: 'Alice', isBot: false });
+    ['Bot 2', 'Bot 3', 'Bot 4'].forEach((n, i) =>
+        room.addPlayer({ id: `b${i}`, name: n, isBot: true }));
+    room.startGame();
+
+    // The walkout: the seat is botified but still owned by Alice.
+    room.players[0].isBot = true;
+    room.players[0].name = 'Bot (Alice)';
+    room.players[0].replacedHuman = { name: 'Alice', isGuest: false };
+
+    const seats = room.describeParticipants();
+    const review = room.describeRoundReview(seats.map(s => s.username));
+
+    assert.deepStrictEqual(Object.keys(review).sort(), seats.map(s => s.username).sort(),
+        'review keys must match the participant rows the feed renders');
+    assert.ok('Alice' in review, 'the rage quit is attributed to the human, not the bot');
+});
+
+test('a rename follows the review, which stores the name as a key', async () => {
+    // game_round_review is the third place a username is denormalized and the
+    // only one holding it as a KEY. A rename that rewrote the other two left
+    // the feed looking up the new name in a map still holding the old one, and
+    // the panel opened to a grid of dashes.
+    const { renameUser } = require('../db');
+    const user = await createUser(`renamer_${Date.now()}`, 'pw');
+    const gameId = nextGameId();
+
+    await saveGameHistory({
+        gameId, roomName: 'R', gameMode: 'short', isPublic: true, status: 'completed',
+        winnerId: user.id, winnerUsername: user.username,
+        startTime: '2026-01-01T00:00:00.000Z', endTime: '2026-01-01T00:20:00.000Z',
+        durationSeconds: 1200, totalRounds: 3, maxPoints: 50
+    });
+    await saveGameParticipant({
+        gameId, userId: user.id, username: user.username, isBot: false,
+        finalPlacement: 1, finalScore: 0, roundsWon: 3
+    });
+    await saveGameRoundReview(gameId, {
+        [user.username]: { avgPercentile: 61, dealRank: 1, totalPoints: 0, roundsWon: 3, rounds: [] },
+        'Bot 2': { avgPercentile: 40, dealRank: 2, totalPoints: 30, roundsWon: 0, rounds: [] }
+    });
+
+    const newName = `renamed_${Date.now()}`;
+    await renameUser(user.id, newName);
+
+    const review = await getGameRoundReview(gameId);
+    assert.ok(newName in review, 'the review must follow the rename');
+    assert.ok(!(user.username in review), 'the retired name must not linger');
+    assert.strictEqual(review[newName].dealRank, 1, 'the entry travels intact');
+    assert.ok('Bot 2' in review, 'other seats are untouched');
+
+    // And it still matches the participant row the feed renders it against.
+    const row = await get(`SELECT username FROM game_participants WHERE game_id = ?`, [gameId]);
+    assert.strictEqual(row.username, newName);
+});
+
+test('a review from a newer format is refused rather than guessed at', async () => {
+    const gameId = nextGameId();
+    await run(`INSERT INTO game_round_review (game_id, review) VALUES (?, ?)`,
+        [gameId, JSON.stringify({ version: 99, seats: { A: { avgPercentile: 1 } } })]);
+    assert.strictEqual(await getGameRoundReview(gameId), null);
 });

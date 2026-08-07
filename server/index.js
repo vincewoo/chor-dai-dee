@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, saveGameRoundReview, getGameRoundReview, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
 const { validateUsername, validatePassword } = require('./username');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
@@ -294,6 +294,15 @@ async function recordAbandonedGame(room, abandonReason) {
         const endTime = new Date();
         const startTime = gameStartTime(room);
         const lookupUser = createUserLookup();
+        // Captured before the writes below, and keyed the same way the
+        // participant rows are: an abandoned game's rows are attributed to
+        // whoever owned each seat, so the review has to answer to the same
+        // names or the feed would look them up and miss. A rage quit is a real
+        // game with real deals behind it -- the "Rage quits" filter is where it
+        // is read back, so leaving it out would make that whole tab the one
+        // place the review is missing.
+        const seats = room.describeParticipants();
+        const roundReview = room.describeRoundReview(seats.map(s => s.username));
 
         await withTransaction(async () => {
             await saveGameHistory({
@@ -315,7 +324,7 @@ async function recordAbandonedGame(room, abandonReason) {
             // Seats, not the players currently sitting in them: a human who
             // walked out has already been swapped for a bot, and they are who
             // this game is a rage quit by.
-            for (const seat of room.describeParticipants()) {
+            for (const seat of seats) {
                 const participant = (seat.isBot || seat.isGuest) ? null : await lookupUser(seat.username);
                 await saveGameParticipant({
                     gameId: room.gameId,
@@ -328,6 +337,15 @@ async function recordAbandonedGame(room, abandonReason) {
                 });
             }
         });
+
+        // Outside the transaction and separately guarded, like the game-log
+        // flush below: a summary is worth less than the terminal status write
+        // it follows, and must not be able to roll it back.
+        try {
+            await saveGameRoundReview(room.gameId, roundReview);
+        } catch (e) {
+            console.error(`Failed to save round review on abandon for ${room.gameId}:`, e);
+        }
     } catch (e) {
         console.error('Failed to save game history on abandon:', e);
     }
@@ -926,6 +944,13 @@ io.on('connection', (socket) => {
                     winner: dragonWinner.name
                 });
             });
+
+            // After the history row, not before: game_round_review references
+            // game_history, so the child would precede its parent and break the
+            // moment foreign_keys is ever enabled. And after the emit above,
+            // because a summary must never hold four players' scoreboards
+            // behind a contended SQLite write.
+            await saveGameRoundReview(room.gameId, dragonResults.roundReview);
         } catch (e) {
             console.error("Failed to save game history for dragon win:", e);
         }
@@ -1294,6 +1319,16 @@ io.on('connection', (socket) => {
                         });
                     }
                 });
+
+                // After the history row, not before: game_round_review
+                // references game_history, so the child would precede its
+                // parent and break the moment foreign_keys is ever enabled.
+                // And after the game_over emit, because a summary must never
+                // hold four players' scoreboards behind a contended SQLite
+                // write. Persisted from the payload rather than rebuilt, so
+                // the feed cannot show a different review from the one the
+                // players just saw.
+                await saveGameRoundReview(room.gameId, gameResults.roundReview);
             } catch (e) {
                 console.error("Failed to save game history on completion:", e);
             }
@@ -2567,6 +2602,26 @@ app.get('/api/debug/game/:gameId', async (req, res) => {
     } catch (error) {
         console.error('Debug endpoint error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// The round-by-round review for one finished game. Its own endpoint rather
+// than a field on /api/activity: the feed selects `page.*` and would otherwise
+// ship every game's review on every page, when a client needs at most the one
+// card the player expanded.
+app.get('/api/games/:gameId/round-review', async (req, res) => {
+    try {
+        const review = await getGameRoundReview(req.params.gameId);
+        // A finished game's review never changes, so it is worth caching hard.
+        // Private: the feed is unauthenticated but this is still per-game data
+        // a shared proxy has no business holding for other people.
+        if (review) res.set('Cache-Control', 'private, max-age=3600');
+        // 200 with null, not 404: "this game predates the feature" is a normal
+        // answer the client renders as the plain standings, not an error.
+        res.json({ review });
+    } catch (error) {
+        console.error(`Error fetching round review for ${req.params.gameId}:`, error);
+        res.status(500).json({ error: 'Failed to fetch round review' });
     }
 });
 

@@ -4,6 +4,7 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import MaxBotsChip from './MaxBotsChip';
+import RoundReviewPanel from './RoundReviewPanel';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -54,6 +55,10 @@ function ActivityFeedV2({
     onRetry,
     onBack,
     username,
+    // Fetched per expanded card; undefined = not loaded, null = this game
+    // predates the feature and has nothing to show.
+    reviews = {},
+    onExpandGame,
 }) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const [expandedId, setExpandedId] = useState(null);
@@ -191,12 +196,45 @@ function ActivityFeedV2({
                             // are no standings to open.
                             const canExpand = c.participants.length > 0;
                             const open = canExpand && expandedId === c.id;
+                            const review = reviews[c.id] || null;
                             return (
-                                <button
+                                // A div with button semantics, not a <button>:
+                                // the expanded body now contains the round
+                                // review's own toggle, and a button inside a
+                                // button is not parseable HTML. Keyboard and
+                                // ARIA behaviour are kept by hand so this is a
+                                // change of element, not of affordance.
+                                <div
                                     key={c.id}
-                                    onClick={() => canExpand && setExpandedId(open ? null : c.id)}
+                                    role={canExpand ? 'button' : undefined}
+                                    tabIndex={canExpand ? 0 : undefined}
+                                    onClick={(e) => {
+                                        if (!canExpand) return;
+                                        // Same reasoning as onKeyDown: a click on
+                                        // the review's toggle must not also toggle
+                                        // the card underneath it.
+                                        if (e.target.closest('button') ) return;
+                                        const next = open ? null : c.id;
+                                        setExpandedId(next);
+                                        if (next) onExpandGame?.(c.id);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (!canExpand) return;
+                                        // Only the card's own key events. The
+                                        // expanded body holds the round review's
+                                        // toggle, and Enter/Space on that bubbles
+                                        // up here -- which swallowed the keypress
+                                        // and collapsed the whole card instead of
+                                        // opening the grid, leaving the inner
+                                        // control reachable by mouse only.
+                                        if (e.target !== e.currentTarget) return;
+                                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                                        e.preventDefault();
+                                        const next = open ? null : c.id;
+                                        setExpandedId(next);
+                                        if (next) onExpandGame?.(c.id);
+                                    }}
                                     aria-expanded={canExpand ? open : undefined}
-                                    disabled={!canExpand}
                                     className="text-left"
                                     style={{
                                         background: c.hasMe
@@ -283,6 +321,7 @@ function ActivityFeedV2({
                                             {c.participants.map((p, idx) => {
                                                 const first = p.placement === 1;
                                                 const isMe = p.username === username;
+                                                const deal = review?.[p.username];
                                                 return (
                                                     <div key={`${p.username}-${idx}`} className="flex items-center gap-[10px]">
                                                         <div style={{ width: 16, textAlign: 'center', color: first ? acc : 'rgba(244,245,247,.4)', fontWeight: 800, fontSize: 12 }}>
@@ -296,11 +335,33 @@ function ActivityFeedV2({
                                                                 {p.username}
                                                                 {p.isBot ? <span style={{ color: 'rgba(244,245,247,.4)', fontWeight: 600 }}> · bot</span> : null}
                                                             </div>
+                                                            {/* Placement is the number in the left
+                                                                gutter, so naming it again here spends the
+                                                                line on nothing -- same reasoning as the
+                                                                game-over standings. It survives only for
+                                                                an abandoned game, where the gutter shows a
+                                                                dash because there is no final standing. */}
                                                             <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 10, fontWeight: 600 }}>
-                                                                {p.placement
-                                                                    ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
-                                                                    : (c.abandoned ? 'Score when abandoned' : 'Unranked')}
-                                                                {p.roundsWon ? ` · ${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won` : ''}
+                                                                {[
+                                                                    // No placement means no gutter number to be
+                                                                    // redundant with, so this still earns its space.
+                                                                    p.placement
+                                                                        ? null
+                                                                        : (c.abandoned ? 'Score when abandoned' : 'Unranked'),
+                                                                    // Nothing recorded for this game: fall back to the
+                                                                    // placement rather than leaving an empty line.
+                                                                    (!deal?.dealRank && p.placement)
+                                                                        ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
+                                                                        : null,
+                                                                    // What they did, then the cards they did it with.
+                                                                    p.roundsWon
+                                                                        ? `${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won`
+                                                                        : null,
+                                                                    deal?.dealRank
+                                                                        ? `Deal strength: ${deal.dealRank}${ordinalSuffix(deal.dealRank)}`
+                                                                          + ` (${deal.avgPercentile}${ordinalSuffix(deal.avgPercentile)} pct)`
+                                                                        : null,
+                                                                ].filter(Boolean).join(' · ')}
                                                             </div>
                                                         </div>
                                                         <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>
@@ -309,9 +370,27 @@ function ActivityFeedV2({
                                                     </div>
                                                 );
                                             })}
+
+                                            {/* The same panel the game-over screen
+                                                draws, from the same recorded data,
+                                                so the two cannot describe one game
+                                                differently. Absent for games played
+                                                before it was recorded. */}
+                                            <div onClick={(e) => e.stopPropagation()}>
+                                                <RoundReviewPanel
+                                                    rows={c.participants.map((p) => ({
+                                                        key: p.username,
+                                                        name: p.username,
+                                                        isYou: p.username === username,
+                                                    }))}
+                                                    roundReview={review}
+                                                    acc={acc}
+                                                    rm={rm}
+                                                />
+                                            </div>
                                         </div>
                                     )}
-                                </button>
+                                </div>
                             );
                         })}
 
