@@ -55,7 +55,8 @@ const Leaderboard = ({ user }) => {
                 user={user}
                 loading={loading}
                 error={error}
-                onBack={() => navigate('/lobby')}
+                // Tab root: the persistent tab bar is the way out, no arrow.
+                onBack={null}
                 onPlayerClick={(username) => navigate(`/stats/${username}?mode=${mode}`)}
                 sortBy={sortBy}
                 onSetSortBy={setSortBy}

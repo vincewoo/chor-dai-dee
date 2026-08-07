@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ActivityFeedV2 } from './tableV2';
 
 const ActivityFeed = ({ serverUrl, user }) => {
@@ -15,7 +14,6 @@ const ActivityFeed = ({ serverUrl, user }) => {
     // the v2 mobile feed appends via "Load more".
     const [page, setPage] = useState({ number: 1, append: false });
     const [totalPages, setTotalPages] = useState(1);
-    const navigate = useNavigate();
 
     const currentPage = page.number;
 
@@ -107,7 +105,8 @@ const ActivityFeed = ({ serverUrl, user }) => {
             onRetry={fetchActivityFeed}
             reviews={reviews}
             onExpandGame={loadReview}
-            onBack={() => navigate('/lobby')}
+            // Tab root: the persistent tab bar is the way out, no arrow.
+            onBack={null}
             username={user?.username}
         />
     );

@@ -88,30 +88,37 @@ background extension. It also tried `env(safe-area-inset-bottom)` padding
 twice and reverted both times, because padding never fixed a problem that was
 really about flow.
 
-## What the home screen does now
+## Where the bar lives now
 
-`client/src/components/tableV2/HomeScreenV2.jsx`:
+The tab bar is no longer the home screen's. It moved to
+`client/src/components/tableV2/AppShell.jsx`, the layout route around every
+screen outside a game, so it persists across Home, Leaders, Activity and
+Stats. The shape the measurement produced is unchanged — the bar is still the
+last row in normal flow of a full-height column, just one level up:
 
 ```
-<div class="relative flex h-full w-full flex-col overflow-hidden">   ← column shell, no scroll
-  …decorative absolute layers…
-  <div class="relative z-10 min-h-0 flex-1 overflow-y-auto">         ← the only scroller
-    …page content…
-  </div>
-  <nav class="relative z-20 shrink-0 … pb-safe-bar md:hidden">       ← flow row, owns its inset
+<div class="flex h-full w-full flex-col overflow-hidden">        ← column shell, no scroll
+  <nav class="hidden shrink-0 … md:flex">                        ← desktop header strip
+  <div class="relative min-h-0 flex-1">                          ← Outlet row: screens render here
+  <nav class="relative z-20 shrink-0 … pb-safe-bar md:hidden">   ← flow row, owns its inset
 </div>
 ```
 
-`min-h-0` on the scroller is load-bearing: without it a flex item refuses to
-shrink below its content and the column grows past the viewport instead of
-scrolling inside it.
+`min-h-0` on the middle row is load-bearing: without it a flex item refuses to
+shrink below its content and the column grows past the viewport instead of the
+screen scrolling inside it. Each screen brings its own scroller inside that
+row; `HomeScreenV2.jsx` hand-rolls the same split ScreenShell enforces
+elsewhere — a non-scrolling `overflow-hidden` root carrying the backdrop, with
+a `flex-1 min-h-0 overflow-y-auto` scroller as an inner child.
 
-The bar used to be `absolute` inside the scroller (it rode up onto the game
-list once the page grew), then `fixed` (this bug). As the last row of the
-column it can be neither.
+The bar used to be `absolute` inside the home screen's scroller (it rode up
+onto the game list once the page grew), then `fixed` (this bug), then the last
+flow row of the home screen's own column — the fix the measurement above
+produced. The move into AppShell changed which column it is the last row of,
+not the shape.
 
-The decorative layers (tint, radial glow, both `SuitWatermark`s) are siblings
-of the scroller, not children of it, so they are now **pinned to the viewport
+The home screen's decorative layers (tint, radial glow, both `SuitWatermark`s)
+are siblings of its scroller, not children of it, so they are **pinned to the
 frame and no longer scroll with the content**. That is a deliberate consequence
 of the root ceasing to be the scroller: the tint now covers the visible area at
 all scroll offsets, and the `top: 520` watermark is simply not reachable on
@@ -131,12 +138,14 @@ while its `min-h-full` content is not, so past one viewport the tint stops and
 the base gradient tiles a second copy of itself, drawing a visible seam. Getting
 the tab bar right had incidentally got the backdrop right.
 
-`HomeScreenV2` still hand-rolls the shape rather than using `ScreenShell`, and
-should keep doing so: its bottom nav has to be a flow row **below** the
-scroller, which is exactly what the measurement in this document is about, and
-`ScreenShell` provides no such slot. **If that ever changes, the ASCII diagram
-above must change with it** — its whole value is being an accurate record of a
-measured fix.
+`HomeScreenV2` still hand-rolls the shape rather than using `ScreenShell`. The
+original reason — its bottom nav had to be a flow row **below** the scroller,
+and `ScreenShell` provides no such slot — is gone now that the bar lives in
+`AppShell`; the screen kept its hand-rolled split rather than migrating because
+migrating buys no visual change (`client/test/screenShellInvariant.test.js`
+records the exemption and pins the root's shape). **If the structure ever
+changes again, the ASCII diagram above must change with it** — its whole value
+is being an accurate record of a measured fix.
 
 The consequence recorded in the paragraph above now applies to all eleven: a
 watermark below the fold cannot be scrolled to. The ten shell screens therefore

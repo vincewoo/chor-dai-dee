@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import { GameReviewV2 } from './tableV2';
+import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
@@ -17,6 +18,9 @@ const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' :
 const GameReview = ({ user }) => {
     const { gameId } = useParams();
     const navigate = useNavigate();
+    // Reviews are finished games, which is what the activity feed lists, so a
+    // deep link with no history falls back there rather than to the lobby.
+    const goBack = useBackNavigation('/activity');
     const { fourColorMode } = useUserPreferences();
 
     // One settled result rather than three flags. It carries the id it was
@@ -80,7 +84,7 @@ const GameReview = ({ user }) => {
             loading={!settled}
             error={settled ? result.error : ''}
             errorReason={settled ? result.errorReason : ''}
-            onBack={() => navigate(-1)}
+            onBack={goBack}
         />
     );
 };

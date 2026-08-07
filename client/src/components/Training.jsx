@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TrainingV2 } from './tableV2';
+import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
@@ -15,6 +16,9 @@ const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' :
 const Training = ({ user }) => {
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
+    // Drills are launched from the Stats page's topics, so a deep link with no
+    // history falls back there rather than to the lobby.
+    const goBack = useBackNavigation('/stats');
     const { fourColorMode } = useUserPreferences();
 
     const topic = searchParams.get('topic') || 'mistakes';
@@ -67,7 +71,7 @@ const Training = ({ user }) => {
             fourColor={fourColorMode}
             loading={!settled}
             error={settled ? result.error : ''}
-            onBack={() => navigate(-1)}
+            onBack={goBack}
             onOpenGame={(gameId) => navigate(`/review/${gameId}`)}
         />
     );

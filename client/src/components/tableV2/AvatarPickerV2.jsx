@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useBackNavigation } from '../../hooks/useBackNavigation';
 import { useTableTheme } from '../../theme/tableTheme';
 import { PICKER_ANIMALS, TILE_GRADS, AVATAR_NAMES, getAvatarChoice, saveAvatarChoice, persistAvatarChoice } from '../../utils/avatars';
 import ScreenShell, { ScreenBackdrop } from './ScreenShell';
+import BackButton from './BackButton';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 mobile avatar picker. Mirrors the "Avatar Picker v2" mockup. The choice is
@@ -12,7 +13,9 @@ import logoImage from '../../assets/chor-dai-dee-logo.webp';
 function AvatarPickerV2({ user }) {
     const username = user?.username;
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
-    const navigate = useNavigate();
+    // Reached from the home header and from Profile's avatar card — back (and
+    // a confirmed pick) return to whichever one it was.
+    const goBack = useBackNavigation();
 
     const existing = getAvatarChoice();
     const initialAnimal = existing?.owner === username && existing.animal ? existing.animal : PICKER_ANIMALS[0];
@@ -27,7 +30,7 @@ function AvatarPickerV2({ user }) {
         // Fire-and-forget: the local save already drives this session's UI, and
         // a failed upload is retried by the next sync on startup.
         persistAvatarChoice(user, { animal, tile });
-        navigate('/lobby');
+        goBack();
     };
 
     return (
@@ -43,15 +46,14 @@ function AvatarPickerV2({ user }) {
                 />
             }
         >
-            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-92 pt-safe-18 md:max-w-[720px] md:px-8">
+            {/* pb-[92px] with no safe-area inset: AppShell's tab bar sits below this
+                screen in flow and owns the bottom safe-area inset. The 92px is
+                clearance for the absolutely-positioned confirm button. */}
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-[92px] pt-safe-18 md:max-w-[720px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
-                        <button
-                            onClick={() => navigate('/lobby')}
-                            aria-label="Back"
-                            style={{ width: 32, height: 32, borderRadius: 10, border: '1px solid rgba(255,255,255,.18)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        >‹</button>
+                        <BackButton onClick={goBack} />
                         <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 17 }}>Choose your animal</div>
                     </div>
                     <img src={logoImage} alt="Chor Dai Dee" style={{ width: 32, height: 32, filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.4))' }} />

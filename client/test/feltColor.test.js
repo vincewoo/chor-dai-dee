@@ -75,59 +75,68 @@ test('the phone tab bar stays in normal flow', () => {
     // the page painting underneath it, and an out-of-flow element does not get
     // its background extended into the home-indicator band either. Only a flow
     // row at the end of a full-height column gets both right. See
-    // docs/IOS-PWA-LAYOUT.md.
-    const home = read('src/components/tableV2/HomeScreenV2.jsx');
+    // docs/IOS-PWA-LAYOUT.md. The bar (and this invariant) lived in
+    // HomeScreenV2 until it became the app-wide persistent bar in AppShell.
+    const shell = read('src/components/tableV2/AppShell.jsx');
 
-    const navs = [...home.matchAll(/<nav\s+className="([^"]*)"/g)].map((m) => m[1]);
+    const navs = [...shell.matchAll(/<nav\s+className="([^"]*)"/g)].map((m) => m[1]);
     const bar = navs.find((c) => c.includes('pb-safe-bar'));
     assert.ok(bar, 'the phone tab bar is the nav carrying pb-safe-bar');
     assert.doesNotMatch(bar, /\bfixed\b/, 'a fixed bottom edge is wrong in the installed iOS PWA');
-    assert.doesNotMatch(bar, /\babsolute\b/, 'absolute inside the scroller rides up onto the content');
-    assert.match(bar, /\bshrink-0\b/, 'the bar must not be squeezed by the scroller');
+    assert.doesNotMatch(bar, /\babsolute\b/, 'absolute inside the content row rides up onto it');
+    assert.match(bar, /\bshrink-0\b/, 'the bar must not be squeezed by the content row');
     assert.match(bar, /\bmd:hidden\b/, 'desktop uses the header destinations instead');
 
     // className alone is not enough — an inline style={{position:'fixed'}} would
     // reintroduce the bug with every class assertion above still green.
-    const barTag = /<nav\s+className="[^"]*pb-safe-bar[^"]*"[\s\S]*?>/.exec(home);
+    const barTag = /<nav\s+className="[^"]*pb-safe-bar[^"]*"[\s\S]*?>/.exec(shell);
     assert.ok(barTag, 'the tab bar opening tag parses');
     assert.doesNotMatch(barTag[0], /position:\s*['"]?(fixed|absolute)/, 'no inline position override');
 
-    // The column shell and the single scroller between its two flow rows. Token
+    // The column shell and the single content row between its flow rows. Token
     // checks, not whole ordered class-list literals, so reordering classes or
     // inserting one does not redden a behaviour-preserving refactor.
-    const shellTag = /<div\s+className="([^"]*h-full[^"]*)"/.exec(home);
+    const shellTag = /<div\s+className="([^"]*h-full[^"]*)"/.exec(shell);
     assert.ok(shellTag, 'the column shell is the first classed div');
-    for (const token of ['relative', 'flex', 'h-full', 'flex-col', 'overflow-hidden']) {
+    for (const token of ['flex', 'h-full', 'flex-col', 'overflow-hidden']) {
         assert.match(shellTag[1], new RegExp(`\\b${token}\\b`), `shell keeps ${token}`);
     }
     assert.doesNotMatch(shellTag[1], /\boverflow-y-auto\b/, 'the shell itself must not scroll');
 
-    const scroller = /<div className="([^"]*\bflex-1\b[^"]*)">/.exec(home);
-    assert.ok(scroller, 'the scroller is declared');
-    for (const token of ['min-h-0', 'flex-1', 'overflow-y-auto']) {
-        assert.match(scroller[1], new RegExp(`\\b${token.replace('-', '-')}\\b`), `scroller keeps ${token}`);
+    // The content row hosts the Outlet; the screens inside it own scrolling
+    // (via ScreenShell), so unlike the old home-screen bar this row is not a
+    // scroller itself — but it must still be the shrinkable flex middle.
+    const content = /<div className="([^"]*\bflex-1\b[^"]*)">/.exec(shell);
+    assert.ok(content, 'the content row is declared');
+    for (const token of ['min-h-0', 'flex-1']) {
+        assert.match(content[1], new RegExp(`\\b${token}\\b`), `content row keeps ${token}`);
     }
+    // The screens inside own their scrolling (ScreenShell); the row must not
+    // clip them or scroll itself.
+    assert.doesNotMatch(content[1], /\boverflow-hidden\b/, 'the content row must not clip the screens\' scrollers');
+    assert.doesNotMatch(content[1], /\boverflow-y-auto\b/, 'scrolling belongs to the screens, not the shell row');
 
     // The property the whole change is about: the bar is a FOLLOWING SIBLING of
-    // the scroller, not a descendant. Nested inside it, the bar scrolls away
-    // with the content — the original "footer rides up onto the game list" bug,
-    // which every assertion above would still pass.
-    const scrollerOpen = home.indexOf(scroller[0]);
-    const barOpen = home.indexOf(barTag[0]);
-    assert.ok(scrollerOpen !== -1 && barOpen !== -1, 'both tags located');
-    assert.ok(barOpen > scrollerOpen, 'the tab bar is written after the scroller');
+    // the content row, not a descendant. Nested inside it, the bar sits above
+    // the screens' scrollers and rides their layout — the original "footer
+    // rides up onto the game list" bug, which every assertion above would
+    // still pass.
+    const contentOpen = shell.indexOf(content[0]);
+    const barOpen = shell.indexOf(barTag[0]);
+    assert.ok(contentOpen !== -1 && barOpen !== -1, 'both tags located');
+    assert.ok(barOpen > contentOpen, 'the tab bar is written after the content row');
 
-    // Between the scroller's opening tag and the bar's, the <div>s must balance
-    // with exactly one surplus close — the scroller's own. Fewer means the bar
-    // is still nested inside it. Counted rather than string-matched on the
-    // closing tag so re-indenting the block does not redden this.
-    const between = home.slice(scrollerOpen + scroller[0].length, barOpen);
+    // Between the content row's opening tag and the bar's, the <div>s must
+    // balance with exactly one surplus close — the content row's own. Fewer
+    // means the bar is still nested inside it. Counted rather than
+    // string-matched on the closing tag so re-indenting does not redden this.
+    const between = shell.slice(contentOpen + content[0].length, barOpen);
     const opens = (between.match(/<div\b(?![^>]*\/>)/g) || []).length;
     const closes = (between.match(/<\/div>/g) || []).length;
     assert.equal(
         closes - opens,
         1,
-        'the tab bar must be a following SIBLING of the scroller, not a descendant — nested inside it, it scrolls away with the content'
+        'the tab bar must be a following SIBLING of the content row, not a descendant'
     );
 
     const css = read('src/index.css');

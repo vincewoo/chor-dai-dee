@@ -5,6 +5,7 @@ import io from 'socket.io-client'
 import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
+import AppShell from './components/tableV2/AppShell';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import { useOwnAvatarSync } from './hooks/useAvatars';
 
@@ -100,17 +101,23 @@ function App() {
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                   <Route path="/" element={!user ? <Login setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
-                  <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
-                  <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
-                  <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
-                  <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
-                  <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} user={user} /> : <Navigate to="/" />} />
-                  <Route path="/avatar" element={user ? <AvatarPickerV2 user={user} /> : <Navigate to="/" />} />
-                  {/* Guests have no account row to edit, so this one is not just
-                      "logged in" -- it needs a real user id. */}
-                  <Route path="/profile" element={user && !user.isGuest ? <Profile user={user} setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
-                  <Route path="/review/:gameId" element={user ? <GameReview user={user} /> : <Navigate to="/" />} />
-                  <Route path="/training" element={user ? <Training user={user} /> : <Navigate to="/" />} />
+                  {/* Everything outside a game shares AppShell: the persistent
+                      tab bar (phone) / header links (desktop) wrap the screen
+                      rendered in its Outlet. The game route stays outside — a
+                      table is full-screen. */}
+                  <Route element={<AppShell />}>
+                      <Route path="/lobby" element={user ? <Lobby user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                      <Route path="/stats" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                      <Route path="/stats/:username" element={user ? <Stats user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                      <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
+                      <Route path="/activity" element={user ? <ActivityFeed serverUrl={socketUrl} user={user} /> : <Navigate to="/" />} />
+                      <Route path="/avatar" element={user ? <AvatarPickerV2 user={user} /> : <Navigate to="/" />} />
+                      {/* Guests have no account row to edit, so this one is not just
+                          "logged in" -- it needs a real user id. */}
+                      <Route path="/profile" element={user && !user.isGuest ? <Profile user={user} setUser={handleSetUser} /> : <Navigate to="/lobby" />} />
+                      <Route path="/review/:gameId" element={user ? <GameReview user={user} /> : <Navigate to="/" />} />
+                      <Route path="/training" element={user ? <Training user={user} /> : <Navigate to="/" />} />
+                  </Route>
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>
             </Suspense>

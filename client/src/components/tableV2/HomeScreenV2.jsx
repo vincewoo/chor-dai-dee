@@ -4,6 +4,7 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import SuitWatermark from './SuitWatermark';
 import MaxBotsChip from './MaxBotsChip';
+import NavIcon from './NavIcon';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -24,41 +25,12 @@ const shell = {
     overflow: 'hidden',
 };
 
-// Stroke icons rather than emoji: the nav has to sit on one line at 320px, and
-// emoji would drag their own colour and metrics into the bar.
-const NAV_ICONS = {
-    help: <><circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1.1 1-1.1 1.9" /><path d="M12 16.8h.01" /></>,
-    trophy: <><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" /><path d="M8 5.5H5.5V7a3 3 0 0 0 3 3" /><path d="M16 5.5h2.5V7a3 3 0 0 1-3 3" /><path d="M12 13v3.5" /><path d="M9 20h6" /></>,
-    pulse: <path d="M3 12.5h4l2.5-7 4 14 2.5-7h5" />,
-    bars: <><path d="M5 20v-8" /><path d="M12 20V4" /><path d="M19 20v-5" /></>,
-    signOut: <><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M9 8.5 5 12l4 3.5" /><path d="M5 12h10" /></>,
-    signIn: <><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" /><path d="M15 8.5l4 3.5-4 3.5" /><path d="M19 12H9" /></>,
-};
-
-function NavIcon({ name, size = 19 }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            focusable="false"
-        >
-            {NAV_ICONS[name]}
-        </svg>
-    );
-}
-
 // v2 home screen. The brand is a mark in the corner, not a hero: the page opens
 // on who you are and the one button that starts a game, then a single Live /
-// Recent list for everything happening on the server. Destinations live in a
-// bottom bar on phones (thumb reach, and it can't collide with the scrolling
-// content the way the old floating footer did) and in the header on desktop.
+// Recent list for everything happening on the server. Destinations (Home,
+// Leaders, Activity, Stats) live in AppShell's persistent tab bar, not here —
+// this screen only keeps the affordances that are about *it*: the How-to-play
+// button, the avatar/profile header, and a guest's way to an account.
 // All connection state and actions live in Lobby and arrive via props.
 function HomeScreenV2({
     username,
@@ -78,12 +50,12 @@ function HomeScreenV2({
     onGameClick,
     nowTs,
     onHowToPlay,
-    onLeaderboard,
     onActivity,
-    onStats,
     onEditAvatar,
     onProfile,
-    onLogout,
+    // Guests only: the route to an account. Registered players log out from
+    // the Profile page, so the home screen carries no sign-out of its own.
+    onSignIn,
     error,
     spectateOffer,
     onWatchRoom,
@@ -117,21 +89,6 @@ function HomeScreenV2({
         : connected ? (ratingLine || (isGuest ? 'Stats not saved' : 'Ready to play')) : 'Offline';
     const statusDot = reconnecting ? '#ffc94d' : connected ? '#6ee7a8' : '#ff8f70';
 
-    const destinations = [
-        { key: 'how', label: 'How to play', icon: 'help', onClick: onHowToPlay },
-        { key: 'board', label: 'Leaders', icon: 'trophy', onClick: onLeaderboard },
-        onActivity && { key: 'activity', label: 'Activity', icon: 'pulse', onClick: onActivity },
-        { key: 'stats', label: 'Stats', icon: 'bars', onClick: onStats },
-        // Guests have no account to leave, so this is their route to one;
-        // registered players use it to switch accounts.
-        onLogout && {
-            key: 'auth',
-            label: isGuest ? 'Sign in' : 'Log out',
-            icon: isGuest ? 'signIn' : 'signOut',
-            onClick: onLogout,
-        },
-    ].filter(Boolean);
-
     const tabButton = (id, label, count) => {
         const on = tab === id;
         return (
@@ -164,13 +121,15 @@ function HomeScreenV2({
     });
 
     return (
-        // Column shell, not a scroller: the phone nav is the last row IN NORMAL
-        // FLOW rather than `position: fixed; bottom: 0`. In an installed
-        // viewport-fit=cover iOS PWA a fixed bottom edge resolves one
-        // safe-area-inset-top above the screen, which left the bar floating
-        // ~60pt up with the page painting underneath it. Nothing here is taken
-        // out of flow, so the bar lands on the physical bottom edge and iOS
-        // extends its background through the home-indicator band.
+        // Column shell, not a scroller: the root carries the backdrop and never
+        // scrolls, with the scroller as an inner flex-1 child — the same split
+        // ScreenShell enforces (screenShellInvariant.test.js exempts this file
+        // because it hand-rolls it). The phone tab bar that used to be this
+        // column's last row now lives in AppShell, as the last IN-FLOW row of
+        // the layout route's column, for the reason docs/IOS-PWA-LAYOUT.md
+        // records: `position: fixed; bottom: 0` resolves one
+        // safe-area-inset-top above the physical bottom edge in the installed
+        // viewport-fit=cover iOS PWA.
         <div
             className="relative flex h-full w-full flex-col overflow-hidden font-sans"
             style={{ background: surface.base, fontFamily: FONT, '--cdd-acc': acc, '--cdd-acc-soft': soft }}
@@ -228,19 +187,33 @@ function HomeScreenV2({
                             </div>
                         </div>
 
-                        {/* Desktop destinations. On phones these are the bottom bar. */}
-                        <nav className="hidden items-center gap-1 md:flex">
-                            {destinations.map((d) => (
-                                <button
-                                    key={d.key}
-                                    onClick={d.onClick}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderRadius: 11, border: 'none', background: 'none', color: 'rgba(244,245,247,.62)', fontFamily: FONT, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-                                >
-                                    <NavIcon name={d.icon} size={17} />
-                                    {d.label}
-                                </button>
-                            ))}
-                        </nav>
+                        {/* A guest's route to an account — prominent, since the
+                            tab bar no longer carries a Sign in item. */}
+                        {isGuest && onSignIn && (
+                            <button
+                                onClick={onSignIn}
+                                style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 11, border: `1px solid ${acc}66`, background: `${acc}18`, color: acc, fontFamily: FONT, fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap', cursor: 'pointer' }}
+                            >
+                                <NavIcon name="signIn" size={15} />
+                                Sign in
+                            </button>
+                        )}
+
+                        {/* How-to-play is a modal, not a destination, so it sits
+                            here rather than in the tab bar. Hidden below 360px:
+                            a guest's header also carries the Sign-in pill, and
+                            at 320px the two together squeezed the username out
+                            of its truncating block entirely. */}
+                        {onHowToPlay && (
+                            <button
+                                onClick={onHowToPlay}
+                                aria-label="How to play"
+                                className="hidden min-[360px]:flex"
+                                style={{ flexShrink: 0, alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 11, border: '1px solid rgba(255,255,255,.14)', background: 'rgba(255,255,255,.05)', color: 'rgba(244,245,247,.7)', cursor: 'pointer', padding: 0 }}
+                            >
+                                <NavIcon name="help" size={18} />
+                            </button>
+                        )}
 
                         <img
                             src={logoImage}
@@ -429,34 +402,6 @@ function HomeScreenV2({
                     )}
                 </div>
             </div>
-
-            {/* Phone destinations. A flow row of the column shell — NOT fixed and
-                NOT absolute in the scroller. Absolute inside the scroller let the
-                old footer ride up onto the game list once the page grew, and
-                `fixed` cured that but broke in the installed iOS PWA (see the
-                shell comment above). As the last row it can do neither. */}
-            <nav
-                className="relative z-20 shrink-0 flex items-stretch justify-around gap-1 px-2 pb-safe-bar pt-[7px] md:hidden"
-                style={{ background: 'rgba(8,26,18,.82)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderTop: '1px solid rgba(255,255,255,.09)' }}
-            >
-                {destinations.map((d) => (
-                    <button
-                        key={d.key}
-                        onClick={d.onClick}
-                        // No bottom padding of its own: the bar's pb-safe-bar
-                        // owns the space below the labels, so the two do not
-                        // stack into a tall half-empty bar on a device with a
-                        // home indicator. minHeight replaces the tap area that
-                        // padding used to provide — the bar's padding sits
-                        // OUTSIDE the button box, so without this the target
-                        // shrinks to 41px, under the 44pt minimum.
-                        style={{ flex: 1, minWidth: 0, minHeight: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 2px 0', border: 'none', background: 'none', color: 'rgba(244,245,247,.6)', fontFamily: FONT, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
-                    >
-                        <NavIcon name={d.icon} />
-                        <span className="truncate" style={{ maxWidth: '100%' }}>{d.label}</span>
-                    </button>
-                ))}
-            </nav>
         </div>
     );
 }
