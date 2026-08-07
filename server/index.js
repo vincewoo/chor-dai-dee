@@ -344,7 +344,7 @@ async function recordAbandonedGame(room, abandonReason) {
         try {
             await saveGameRoundReview(room.gameId, roundReview);
         } catch (e) {
-            console.error('Failed to save round review on abandon:', e);
+            console.error(`Failed to save round review on abandon for ${room.gameId}:`, e);
         }
     } catch (e) {
         console.error('Failed to save game history on abandon:', e);
@@ -2609,14 +2609,18 @@ app.get('/api/debug/game/:gameId', async (req, res) => {
 // than a field on /api/activity: the feed selects `page.*` and would otherwise
 // ship every game's review on every page, when a client needs at most the one
 // card the player expanded.
-app.get('/api/game/:gameId/review', async (req, res) => {
+app.get('/api/games/:gameId/round-review', async (req, res) => {
     try {
         const review = await getGameRoundReview(req.params.gameId);
+        // A finished game's review never changes, so it is worth caching hard.
+        // Private: the feed is unauthenticated but this is still per-game data
+        // a shared proxy has no business holding for other people.
+        if (review) res.set('Cache-Control', 'private, max-age=3600');
         // 200 with null, not 404: "this game predates the feature" is a normal
         // answer the client renders as the plain standings, not an error.
         res.json({ review });
     } catch (error) {
-        console.error('Error fetching round review:', error);
+        console.error(`Error fetching round review for ${req.params.gameId}:`, error);
         res.status(500).json({ error: 'Failed to fetch round review' });
     }
 });

@@ -637,15 +637,28 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   names the column unconditionally, so losing the boot race would throw and roll
   back the opening `game_participants` rows rather than merely drop a badge.
   See `docs/BOT-DIFFICULTY.md`.
-  Note both this table and `game_participants` store the **username**, not just
-  the id — they are the only two places in the schema that do, and therefore the
-  only two a rename has to backfill (`db.renameUser`, one transaction with the
+  Note this table, `game_participants` and `game_round_review` store the
+  **username**, not just the id — they are the only three places in the schema
+  that do, and therefore the only three a rename has to backfill
+  (`game_round_review` holds it as a JSON *key*, so `db.renameUser` rewrites
+  those blobs row by row rather than with an UPDATE) (`db.renameUser`, one transaction with the
   `users` update). Everything else — every `stats*` table, `round_stats`,
   `head_to_head_stats`, `placement_history`, the avatar lookup, the leaderboard —
   keys on `user_id` and joins the name at read time, so it follows a rename for
   free. The ML game log stores no username at all. A rename that landed in
   `users` but not here would be worse than one that never happened: the stale
   rows become indistinguishable from another player's.
+- `game_round_review` - The game-over round-by-round review (per seat, per
+  round: deal percentile, rank, points, cards left, winner flag), stored as
+  versioned JSON so the activity feed can show the same summary the players saw.
+  Deliberately **not** a column on `game_history`: `getActivityFeed` selects
+  `page.*`, so anything there ships to every client on every page. Served by
+  `GET /api/games/:gameId/round-review` and fetched only when a card is
+  expanded. Covers every seat including bots and guests, which is why
+  `round_stats` cannot serve it — that table holds registered humans only.
+  Games predating it have no row; the endpoint answers 200 with null and the
+  feed keeps its plain standings, since nothing can reconstruct the deals after
+  the fact.
 - `game_participants` - Who was in each game. Abandoned games carry rows too
   (scores at the moment the game died) but with a **NULL `final_placement`**,
   since an unfinished game has no standings. Anything reading placements must

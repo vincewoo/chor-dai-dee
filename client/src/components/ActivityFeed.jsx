@@ -75,7 +75,7 @@ const ActivityFeed = ({ serverUrl, user }) => {
         if (!gameId || inFlight.current.has(gameId) || loaded.current.has(gameId)) return;
         inFlight.current.add(gameId);
         try {
-            const response = await fetch(`${serverUrl}/api/game/${gameId}/review`);
+            const response = await fetch(`${serverUrl}/api/games/${gameId}/round-review`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             setReviews(prev => ({ ...prev, [gameId]: data.review || null }));

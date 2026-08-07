@@ -548,3 +548,48 @@ test('an abandoned game keeps its review, under the seat-owner names', async () 
         'review keys must match the participant rows the feed renders');
     assert.ok('Alice' in review, 'the rage quit is attributed to the human, not the bot');
 });
+
+test('a rename follows the review, which stores the name as a key', async () => {
+    // game_round_review is the third place a username is denormalized and the
+    // only one holding it as a KEY. A rename that rewrote the other two left
+    // the feed looking up the new name in a map still holding the old one, and
+    // the panel opened to a grid of dashes.
+    const { renameUser } = require('../db');
+    const user = await createUser(`renamer_${Date.now()}`, 'pw');
+    const gameId = nextGameId();
+
+    await saveGameHistory({
+        gameId, roomName: 'R', gameMode: 'short', isPublic: true, status: 'completed',
+        winnerId: user.id, winnerUsername: user.username,
+        startTime: '2026-01-01T00:00:00.000Z', endTime: '2026-01-01T00:20:00.000Z',
+        durationSeconds: 1200, totalRounds: 3, maxPoints: 50
+    });
+    await saveGameParticipant({
+        gameId, userId: user.id, username: user.username, isBot: false,
+        finalPlacement: 1, finalScore: 0, roundsWon: 3
+    });
+    await saveGameRoundReview(gameId, {
+        [user.username]: { avgPercentile: 61, dealRank: 1, totalPoints: 0, roundsWon: 3, rounds: [] },
+        'Bot 2': { avgPercentile: 40, dealRank: 2, totalPoints: 30, roundsWon: 0, rounds: [] }
+    });
+
+    const newName = `renamed_${Date.now()}`;
+    await renameUser(user.id, newName);
+
+    const review = await getGameRoundReview(gameId);
+    assert.ok(newName in review, 'the review must follow the rename');
+    assert.ok(!(user.username in review), 'the retired name must not linger');
+    assert.strictEqual(review[newName].dealRank, 1, 'the entry travels intact');
+    assert.ok('Bot 2' in review, 'other seats are untouched');
+
+    // And it still matches the participant row the feed renders it against.
+    const row = await get(`SELECT username FROM game_participants WHERE game_id = ?`, [gameId]);
+    assert.strictEqual(row.username, newName);
+});
+
+test('a review from a newer format is refused rather than guessed at', async () => {
+    const gameId = nextGameId();
+    await run(`INSERT INTO game_round_review (game_id, review) VALUES (?, ?)`,
+        [gameId, JSON.stringify({ version: 99, seats: { A: { avgPercentile: 1 } } })]);
+    assert.strictEqual(await getGameRoundReview(gameId), null);
+});
