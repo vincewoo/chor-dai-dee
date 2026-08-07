@@ -299,14 +299,14 @@ function WaitingRoomV2({
                                         // Said at the moment of choosing, not buried
                                         // in a doc.
                                         //
-                                        // "No personas" is the other half of the
-                                        // fixed, known-strongest contract: these
-                                        // bots always play their best-rated move
-                                        // rather than a persona's preference among
-                                        // near-equals. Naming it is not a leak —
-                                        // it says the hidden playstyles are absent,
-                                        // which is what the toggle now guarantees.
-                                        ? 'Strongest bots, no personas · placement paused'
+                                        // The toggle also drops the hidden persona
+                                        // (Room.personasEnabled), and that is
+                                        // deliberately NOT named here: personas are
+                                        // a system players are meant to meet only
+                                        // through play, and "no personas" would
+                                        // announce it in the one screen everyone
+                                        // reads. "Strongest bots" already covers it.
+                                        ? 'Strongest bots · placement paused'
                                         : 'Off — bots match the table'}
                                 </div>
                             </div>
