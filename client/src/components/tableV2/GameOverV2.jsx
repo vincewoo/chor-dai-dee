@@ -3,7 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import MaxBotsChip from './MaxBotsChip';
-import DealLuckPanel from './DealLuckPanel';
+import RoundReviewPanel from './RoundReviewPanel';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; shadow-rating
@@ -29,9 +29,9 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             total: s.cumulativeScore,
             // Mean percentile of the game's deals. A number rather than a tier
             // label because the label is nearly constant once averaged -- see
-            // Room.describeDealLuck.
-            dealPercentile: gameOver?.dealLuck?.[s.name]?.avgPercentile ?? null,
-            dealRank: gameOver?.dealLuck?.[s.name]?.dealRank ?? null,
+            // Room.describeRoundReview.
+            dealPercentile: gameOver?.roundReview?.[s.name]?.avgPercentile ?? null,
+            dealRank: gameOver?.roundReview?.[s.name]?.dealRank ?? null,
             delay: `${(0.35 + i * 0.09).toFixed(2)}s`,
         }));
         // avatarsVersion isn't read here, but it changes when a looked-up
@@ -154,7 +154,7 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                                         the other question instead: how the deal
                                         treated them. Falls back to the placement
                                         text only when a server too old to send
-                                        dealLuck leaves nothing to say. */}
+                                        roundReview leaves nothing to say. */}
                                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>
                                         {r.dealRank != null
                                             ? `Deal strength: ${r.dealRank}${ordinalSuffix(r.dealRank)} (${r.dealPercentile}${ordinalSuffix(r.dealPercentile)} percentile)`
@@ -168,9 +168,9 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                         ))}
                     </div>
 
-                    <DealLuckPanel
+                    <RoundReviewPanel
                         rows={rows}
-                        dealLuck={gameOver?.dealLuck}
+                        roundReview={gameOver?.roundReview}
                         acc={acc}
                         rm={rm}
                     />

@@ -816,12 +816,14 @@ class Room {
             // starting" signal a room gets -- both startRematch() and the lobby
             // restart come back through here.
             this.roundsWonByName = {};
-            // Every round's deal, kept for the game-over screen. Same lifetime
-            // and the same name keying as roundsWonByName, deliberately:
-            // roundPlayStats is keyed by socket id and has to be hand-copied
-            // between ids in three places when a player reconnects or a seat is
-            // swapped for a bot. A name survives all of that untouched.
-            this.dealHistoryByName = {};
+            // The game-over round-by-round review: one entry per player per
+            // round, opened at the deal with its strength and closed at round
+            // end with the points it cost. Same lifetime and the same name
+            // keying as roundsWonByName, deliberately: roundPlayStats is keyed
+            // by socket id and has to be hand-copied between ids in three
+            // places when a player reconnects or a seat is swapped for a bot.
+            // A name survives all of that untouched.
+            this.roundHistoryByName = {};
             // Stamped here for the same reason, and in lockstep with the new
             // gameId those two paths mint: this is the moment the game whose
             // duration we report actually begins.
@@ -996,24 +998,40 @@ class Room {
      * were built for.
      *
      * Rank stays per-round and is never averaged: it answers a different
-     * question ("were my cards good for this table") and blending the two is
-     * what the drill-in exists to avoid -- there, the number is the strength
-     * and the colour is the place.
+     * question ("were my cards good for this table"), and blending the two is
+     * what the drill-in exists to avoid.
      *
-     * Keyed by name to match dealHistoryByName. Seats that never received a
+     * Each round also carries what it actually cost -- `points`, `cardsLeft`
+     * and `won`, filled in by updateScores when the round ends. The review is
+     * primarily a scoreboard; the deal strength is the context that says
+     * whether a bad round was bad luck or bad play. A round that was dealt but
+     * never scored (the game ended, or the server restarted mid-round) keeps
+     * `points: null`, which the client renders as blank rather than as zero --
+     * zero is the winner's score and would be a lie.
+     *
+     * Keyed by name to match roundHistoryByName. Seats that never received a
      * deal -- someone who joined mid-game, or a round in flight when the server
-     * restarted -- simply have fewer rounds, which is why avgTier is computed
+     * restarted -- simply have fewer rounds, which is why the mean is computed
      * over the entries present rather than over roundNumber.
      */
-    describeDealLuck() {
+    describeRoundReview() {
         const out = {};
-        for (const [name, rounds] of Object.entries(this.dealHistoryByName || {})) {
+        for (const [name, rounds] of Object.entries(this.roundHistoryByName || {})) {
             if (!rounds.length) continue;
             const mean = rounds.reduce((sum, r) => sum + r.percentile, 0) / rounds.length;
             // Mean kept unrounded for the ordering below, so two players whose
             // percentiles round to the same whole number are still ranked by
             // the difference that produced them.
-            out[name] = { avgPercentile: Math.round(mean), mean, rounds };
+            out[name] = {
+                avgPercentile: Math.round(mean),
+                mean,
+                // The scoreboard half. Totalled from the scored rounds only,
+                // so it agrees with the standings even when a dealt round was
+                // never scored.
+                totalPoints: rounds.reduce((sum, r) => sum + (r.points ?? 0), 0),
+                roundsWon: rounds.filter(r => r.won).length,
+                rounds
+            };
         }
 
         // Who got the best cards across the whole game. Distinct from the
@@ -1040,7 +1058,7 @@ class Room {
      */
     recordDealStrength() {
         this.roundDealStrength = {};
-        this.dealHistoryByName ||= {};
+        this.roundHistoryByName ||= {};
         const humanCount = this.players.filter(p => !p.isBot).length;
         const scored = rankTable(this.players.map(p => p.hand));
 
@@ -1068,8 +1086,14 @@ class Room {
             // this may ever be shown: `rank` compares all four hands, so it
             // must not reach a client while a round can still be played.
             // Only the three display fields, not the whole scoring record.
-            (this.dealHistoryByName[player.name] ||= []).push({
+            (this.roundHistoryByName[player.name] ||= []).push({
                 round: this.roundNumber,
+                // Filled in by updateScores at round end. Null until then, and
+                // null forever for a round that never finished -- 0 is the
+                // winner's score, so defaulting to it would invent a win.
+                points: null,
+                cardsLeft: null,
+                won: false,
                 // The strength number the grid prints. Percentile, not raw:
                 // raw spans -9..19 and means nothing to a player, while
                 // "stronger than N% of deals" reads on its own.
@@ -1084,6 +1108,21 @@ class Room {
         // Add round scores to cumulative scores
         roundScores.forEach(s => {
             this.cumulativeScores[s.id] = (this.cumulativeScores[s.id] || 0) + s.roundPoints;
+        });
+
+        // Close out this round's review entries. Matched on the round number
+        // rather than by taking the last entry, so a score arriving for a round
+        // that was never dealt (or arriving twice) cannot corrupt another
+        // round's row. Keyed by name for the same reason the accumulator is.
+        roundScores.forEach(s => {
+            const entry = (this.roundHistoryByName?.[s.name] || [])
+                .find(r => r.round === this.roundNumber);
+            if (!entry) return;
+            entry.points = s.roundPoints;
+            entry.cardsLeft = s.cardsLeft;
+            // Dragon scores carry no isRoundWinner, and a dragon is by
+            // definition the only seat that shed everything.
+            entry.won = s.isRoundWinner ?? (s.cardsLeft === 0);
         });
 
         // Check if anyone hit the point threshold

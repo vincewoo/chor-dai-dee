@@ -16,4 +16,4 @@ export { default as ReviewMoment } from './ReviewMoment';
 export { default as TrainingV2 } from './TrainingV2';
 export { default as SuitWatermark } from './SuitWatermark';
 export { default as MaxBotsChip } from './MaxBotsChip';
-export { default as DealLuckPanel } from './DealLuckPanel';
+export { default as RoundReviewPanel } from './RoundReviewPanel';

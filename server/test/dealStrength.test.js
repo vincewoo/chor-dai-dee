@@ -142,7 +142,7 @@ test('BASELINE_VERSION is a positive integer', () => {
 
 // --- the game-over drill-in --------------------------------------------------
 //
-// Room.describeDealLuck() is the only thing that ever shows a player anything
+// Room.describeRoundReview() is the only thing that ever shows a player anything
 // about the deal, and only at game over. What is pinned here is the accumulator
 // (which outlives a round, unlike roundDealStrength) and the leak boundary: the
 // per-round rank compares all four dealt hands, so it must not appear anywhere
@@ -164,7 +164,7 @@ test('deal luck accumulates across rounds and covers every seat', () => {
     room.roundNumber++;
     room.startRound();
 
-    const luck = room.describeDealLuck();
+    const luck = room.describeRoundReview();
 
     // Bots included: the accumulator reads the table, not the stats tables.
     // round_stats only carries registered humans, which is why the game-over
@@ -185,7 +185,7 @@ test('every round ranks the four seats 1-4', () => {
     const room = seatFour(new Room('DEAL-LUCK-RANKS', 'short'));
     room.startGame();
 
-    const ranks = Object.values(room.describeDealLuck())
+    const ranks = Object.values(room.describeRoundReview())
         .map(entry => entry.rounds[0].rank)
         .sort();
 
@@ -202,7 +202,7 @@ test('a new game does not inherit the previous game deals', () => {
     room.startGame();
     room.roundNumber++;
     room.startRound();
-    assert.strictEqual(room.describeDealLuck()['Alice'].rounds.length, 2);
+    assert.strictEqual(room.describeRoundReview()['Alice'].rounds.length, 2);
 
     // What a lobby restart does: roundNumber back to 0, then start again. This
     // is the same signal roundsWonByName and gameStartedAt reset on.
@@ -210,7 +210,7 @@ test('a new game does not inherit the previous game deals', () => {
     room.gameState = 'waiting';
     room.startGame();
 
-    assert.strictEqual(room.describeDealLuck()['Alice'].rounds.length, 1,
+    assert.strictEqual(room.describeRoundReview()['Alice'].rounds.length, 1,
         'a rematch that re-counted the last game would report the wrong deals');
 });
 
@@ -222,7 +222,7 @@ test('deal ranks never appear in live room state', () => {
     room.startGame();
 
     const serialized = JSON.stringify(room.getGameState());
-    assert.ok(!serialized.includes('dealLuck'), 'room state must not carry deal luck');
+    assert.ok(!serialized.includes('roundReview'), 'room state must not carry the round review');
     assert.ok(!serialized.includes('tierLabel'), 'room state must not carry deal tiers');
     assert.ok(!('dealHistoryByName' in room.getGameState()));
 });
@@ -235,7 +235,7 @@ test('the game-level headline is a percentile, not a tier label', () => {
     // right unit for a single deal, which is what they were built for.
     const room = seatFour(new Room('DEAL-LUCK-PCT', 'short'));
     room.startGame();
-    const entry = Object.values(room.describeDealLuck())[0];
+    const entry = Object.values(room.describeRoundReview())[0];
 
     assert.ok(!('avgTier' in entry) && !('avgTierLabel' in entry),
         'a bucketed average is the thing this replaced');
@@ -253,7 +253,7 @@ test('a single round reports that round percentile exactly', () => {
     // A one-round game is the case where an average could hide a rounding bug.
     const room = seatFour(new Room('DEAL-LUCK-ONE', 'short'));
     room.startGame();
-    for (const entry of Object.values(room.describeDealLuck())) {
+    for (const entry of Object.values(room.describeRoundReview())) {
         assert.strictEqual(entry.rounds.length, 1);
         // Rounded, because percentileFor's mid-rank convention returns halves
         // and the headline is a whole number. The per-round value stays exact
@@ -270,7 +270,7 @@ test('deal strength is ranked across the game, ties sharing the better rank', ()
     room.startGame();
     room.roundNumber++; room.startRound();
 
-    const luck = room.describeDealLuck();
+    const luck = room.describeRoundReview();
     const entries = Object.values(luck);
     const ranks = entries.map(e => e.dealRank).sort();
 
@@ -286,4 +286,49 @@ test('deal strength is ranked across the game, ties sharing the better rank', ()
     }
     // The unrounded mean is an implementation detail of the ordering.
     for (const e of entries) assert.ok(!('mean' in e));
+});
+
+test('the review records what each round actually cost', () => {
+    // The table is primarily a scoreboard; deal strength is the context under
+    // it. Points are filled in at round end by updateScores, matched on the
+    // round number rather than by position, so a score for a round that was
+    // never dealt cannot land on another round's row.
+    const { calculateRoundScores } = require('../game/Scoring');
+    const room = seatFour(new Room('ROUND-REVIEW-PTS', 'short'));
+    room.startGame();
+
+    // Alice sheds everything; the bots keep full hands (13 cards => 3x).
+    room.players[0].hand = [];
+    room.updateScores(calculateRoundScores(room.players[0], room.players));
+
+    const review = room.describeRoundReview();
+    const alice = review['Alice'];
+    assert.strictEqual(alice.rounds[0].points, 0);
+    assert.strictEqual(alice.rounds[0].won, true);
+    assert.strictEqual(alice.totalPoints, 0);
+    assert.strictEqual(alice.roundsWon, 1);
+
+    for (const name of ['Bot Ada', 'Bot Bea', 'Bot Cy']) {
+        const e = review[name];
+        assert.strictEqual(e.rounds[0].won, false);
+        assert.ok(e.rounds[0].points > 0, 'a full hand costs points');
+        assert.strictEqual(e.totalPoints, e.rounds[0].points);
+        assert.strictEqual(e.roundsWon, 0);
+    }
+
+    // Exactly one winner per round.
+    assert.strictEqual(Object.values(review).filter(e => e.rounds[0].won).length, 1);
+});
+
+test('a dealt but unscored round stays null rather than zero', () => {
+    // Zero is the winner's score. Defaulting an unfinished round to it would
+    // invent a win on the game-over screen, so the client renders a dash.
+    const room = seatFour(new Room('ROUND-REVIEW-NULL', 'short'));
+    room.startGame();
+
+    const entry = Object.values(room.describeRoundReview())[0];
+    assert.strictEqual(entry.rounds[0].points, null);
+    assert.strictEqual(entry.rounds[0].won, false);
+    // ...and an unscored round contributes nothing to the total.
+    assert.strictEqual(entry.totalPoints, 0);
 });

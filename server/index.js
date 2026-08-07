@@ -867,7 +867,7 @@ io.on('connection', (socket) => {
             // A dragon ends the game on round 1, so this is a single round --
             // and the dragon holder is rank 1 by definition, since 13 distinct
             // ranks is the strongest deal there is.
-            dealLuck: room.describeDealLuck()
+            roundReview: room.describeRoundReview()
         };
 
         // Store dragon win results for reconnection handling
@@ -1181,7 +1181,7 @@ io.on('connection', (socket) => {
                 // Safe only because the game is over: the per-round ranks in
                 // here compare all four dealt hands. Never put this on
                 // round_over or getGameState.
-                dealLuck: room.describeDealLuck()
+                roundReview: room.describeRoundReview()
             };
 
             // Store game results for reconnection handling
