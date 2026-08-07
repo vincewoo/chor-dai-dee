@@ -46,10 +46,12 @@ Each standings row reads `Deal strength: 1st (61st percentile)` — the player's
 rank by deal quality across the whole game, and the mean percentile behind it.
 It replaces the finishing place, which the number in the left gutter already
 gives. A "Deal luck by round" drill-in opens a rounds × players grid
-(`tableV2/DealLuckPanel.jsx`) where **the number is the deal's percentile and
-the colour is its rank at the table**. Two channels, two questions: "were my
-cards good" and "were they good *for this table*". They usually agree; the
-rounds where they don't are where "won without the cards" actually lives.
+(`tableV2/DealLuckPanel.jsx`) where each cell is that deal's percentile,
+**banded by colour on the same number** — 67+ accent, 34–66 neutral, under 34
+red — so a game reads as a heat map. Colour is deliberately *not* the rank at
+the table: rank is relative, so in a round where all four hands were scraps
+somebody still places first, and colouring that gold would call a bad hand
+good. Where a player placed stays in the cell tooltip.
 
 ### Why the headline is a percentile and not a tier label
 

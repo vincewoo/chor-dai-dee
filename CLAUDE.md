@@ -427,8 +427,10 @@ fits at 768px.
     `Room.describeDealLuck()` (accumulated in `dealHistoryByName`, name-keyed
     and reset at `roundNumber === 0` like `roundsWonByName`). That method has
     one caller, the game-over handler, and is deliberately absent from
-    `getGameState()` and `round_over`. In the grid the *number* is the deal's
-    percentile and the *colour* is its rank; the standings rows show the mean
+    `getGameState()` and `round_over`. In the grid each cell is the deal's
+    percentile, colour-banded on that same number (67+ / 34-66 / under 34) --
+    not on rank, which is relative and would paint the best of four bad hands
+    as a good one; the standings rows show the mean
     percentile. **Not a tier label** - averaged over a game, rounding the tier
     index prints "Average" 77% of the time and can never print the outer two,
     which is measured in `docs/HAND-STRENGTH-STATS.md`. **Edge is never shown

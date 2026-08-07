@@ -2,11 +2,9 @@ import { useMemo, useState } from 'react';
 
 // The game-over drill-in: how the deal treated each seat, round by round.
 //
-// Each cell carries both halves of the question on separate channels -- the
-// number is the deal's absolute strength (percentile of all possible hands),
-// the colour is where it placed at this table. They usually agree; the reason
-// to show both is the rounds where they don't, which is where "won without the
-// cards" actually lives.
+// Each cell is one deal's strength as a percentile of all possible hands, with
+// the colour banding that same number so a whole game reads as a heat map.
+// Where a player placed at the table stays in the cell tooltip.
 //
 // Rank compares all four dealt hands, so it only exists here: the server sends
 // dealLuck on game_over alone, never on round_over or in room state, or it
@@ -15,16 +13,22 @@ import { useMemo, useState } from 'react';
 const MUTED = 'rgba(244,245,247,.5)';
 const FAINT = 'rgba(244,245,247,.38)';
 
-// Two facts per cell, on two channels that do not collide: the *number* is how
-// strong the deal was in absolute terms (percentile of all possible deals), and
-// the *colour* is where it placed at this table. A player can read either one
-// alone -- "I kept drawing 70s" or "I kept coming last" -- and the interesting
-// case is when they disagree.
+// Colour is absolute strength, the same thing the number says, so the grid can
+// be read as a heat map without doing arithmetic: the yellow rows are the
+// players who got the cards. Deliberately NOT the rank at the table -- rank is
+// relative, so in a round where everyone was dealt scraps somebody still comes
+// first, and colouring that gold would say "good hand" about a bad one.
 //
-// Ordered best to worst and borrowed from the palette already in use for scores
-// (ScoreCorner's green/amber/red ramp) so the screen stays one system.
-const RANK_COLORS = ['#f0b429', '#6ee7a8', '#ffab6b', '#ff8f70'];
-const rankColor = (rank, acc) => (rank === 1 ? acc : RANK_COLORS[rank - 1] || MUTED);
+// Thirds of the percentile scale. The bands are wide on purpose: percentile is
+// coarse (raw spans -9..19, so adjacent percentiles share values) and a finer
+// ramp would imply precision the metric does not have.
+const STRONG_AT = 67;
+const WEAK_AT = 34;
+const strengthColor = (percentile, acc) => {
+    if (percentile >= STRONG_AT) return acc;
+    if (percentile < WEAK_AT) return '#ff8f70';
+    return MUTED;
+};
 
 function DealLuckPanel({ rows, dealLuck, acc, rm }) {
     const [open, setOpen] = useState(false);
@@ -78,9 +82,9 @@ function DealLuckPanel({ rows, dealLuck, acc, rm }) {
                         Deal strength each round &mdash; percentile of all possible hands
                     </div>
                     <div className="mb-[9px] flex flex-wrap items-center gap-x-[10px] gap-y-1">
-                        {['best at table', '2nd', '3rd', 'worst'].map((label, i) => (
+                        {[[`${STRONG_AT}+ strong`, STRONG_AT], [`${WEAK_AT}–${STRONG_AT - 1} average`, WEAK_AT], [`under ${WEAK_AT} weak`, 0]].map(([label, at]) => (
                             <span key={label} className="flex items-center gap-[4px]" style={{ color: FAINT, fontSize: 10, fontWeight: 700 }}>
-                                <span style={{ width: 7, height: 7, borderRadius: 2, background: rankColor(i + 1, acc), display: 'inline-block' }} />
+                                <span style={{ width: 7, height: 7, borderRadius: 2, background: strengthColor(at, acc), display: 'inline-block' }} />
                                 {label}
                             </span>
                         ))}
@@ -126,7 +130,7 @@ function DealLuckPanel({ rows, dealLuck, acc, rm }) {
                                                             fontSize: 12, fontWeight: 800,
                                                             // Unknown, not average: a seat that was
                                                             // never dealt this round has no deal.
-                                                            color: cell ? rankColor(cell.rank, acc) : FAINT,
+                                                            color: cell ? strengthColor(cell.percentile, acc) : FAINT,
                                                         }}
                                                         // percentileFor uses the mid-rank
                                                         // convention, so it returns halves;
