@@ -117,6 +117,33 @@ of the root ceasing to be the scroller: the tint now covers the visible area at
 all scroll offsets, and the `top: 520` watermark is simply not reachable on
 viewports shorter than ~690px. Both are background decoration at ≤0.03 opacity.
 
+### This shape is no longer specific to the home screen
+
+The split above — a non-scrolling root carrying the backdrop, with the scroller
+as an inner box — is now shared by **eleven** screens. It was generalised into
+`client/src/components/tableV2/ScreenShell.jsx`, which ten screens go through;
+see the `ScreenShell.jsx` entry in `CLAUDE.md` for the full reasoning.
+
+The home screen was the accidental proof. It arrived here to fix the tab bar,
+and it turned out to be the one screen that never showed a *second* bug the
+other ten had: a backdrop painted onto a scrolling box is one viewport tall
+while its `min-h-full` content is not, so past one viewport the tint stops and
+the base gradient tiles a second copy of itself, drawing a visible seam. Getting
+the tab bar right had incidentally got the backdrop right.
+
+`HomeScreenV2` still hand-rolls the shape rather than using `ScreenShell`, and
+should keep doing so: its bottom nav has to be a flow row **below** the
+scroller, which is exactly what the measurement in this document is about, and
+`ScreenShell` provides no such slot. **If that ever changes, the ASCII diagram
+above must change with it** — its whole value is being an accurate record of a
+measured fix.
+
+The consequence recorded in the paragraph above now applies to all eleven: a
+watermark below the fold cannot be scrolled to. The ten shell screens therefore
+place their lower watermark at `top: 460` so it lands on the shortest supported
+viewport; the home screen's `top: 520` predates that and is the one still
+subject to the ~690px caveat.
+
 ## Still out of flow
 
 Everything still bottom-anchored and out of flow, and why it was left:
@@ -129,9 +156,12 @@ Everything still bottom-anchored and out of flow, and why it was left:
 | `PWAUpdatePrompt` toast | `fixed`, `.bottom-safe-20` | Transient overlay; ~60pt high is cosmetic. |
 
 `LeaderboardV2`'s "me" row is **not** in this list and must not be added to it:
-it is `position: sticky` inside its own scroller (`LeaderboardV2.jsx`), chosen
-specifically because absolute-in-a-scroller was this same family of bug.
-`sticky` does not share `fixed`'s failure mode here.
+it is `position: sticky` inside its scroller, chosen specifically because
+absolute-in-a-scroller was this same family of bug. `sticky` does not share
+`fixed`'s failure mode here. Note the scroller it resolves against is now the
+inner div of `ScreenShell.jsx`, not anything written in `LeaderboardV2.jsx` —
+sticky picks the nearest scrolling ancestor, so the behaviour is unchanged, but
+that is the file to open when debugging it.
 
 If the in-game table shows the same band of felt below its controls, the fix is
 probably the same shape as the home screen's — but measure first, because its

@@ -1,5 +1,5 @@
 import { useTableTheme } from '../../theme/tableTheme';
-import SuitWatermark from './SuitWatermark';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // Presentational shell for every auth screen. Login.jsx owns all the state,
@@ -9,18 +9,19 @@ export function AuthShell({ title, subtitle, error, children, footer }) {
     const { acc, soft, surface, rm } = useTableTheme();
 
     return (
-        <div
-            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
+        <ScreenShell
+            className="relative h-full w-full font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            backdrop={
+                <ScreenBackdrop
+                    glow={{ width: 560, height: 380, top: '-120px' }}
+                    watermarks={[
+                        { suit: 'S', size: 150, rotate: -14, style: { top: 180, left: -46 } },
+                        { suit: 'H', size: 165, rotate: 12, opacity: 0.03, style: { top: 460, right: -52 } },
+                    ]}
+                />
+            }
         >
-            <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
-            <div
-                className="absolute pointer-events-none"
-                style={{ top: '-120px', left: '50%', transform: 'translateX(-50%)', width: 560, height: 380, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
-            />
-            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: 180, left: -46 }} />
-            <SuitWatermark suit="H" size={165} rotate={12} opacity={0.03} style={{ top: 520, right: -52 }} />
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[420px] flex-col justify-center px-[22px] py-10">
                 <div className="flex flex-col items-center gap-2">
                     <img
@@ -58,7 +59,7 @@ export function AuthShell({ title, subtitle, error, children, footer }) {
 
                 {footer && <div className="mt-4 text-center">{footer}</div>}
             </div>
-        </div>
+        </ScreenShell>
     );
 }
 

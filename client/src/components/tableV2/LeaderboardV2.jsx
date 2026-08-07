@@ -6,7 +6,7 @@ import {
     publicRankColor,
     publicRankLabel
 } from '../../constants/publicRank';
-import SuitWatermark from './SuitWatermark';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 const SORTS = [
@@ -84,15 +84,18 @@ function LeaderboardV2({
     const tileSize = (rank) => (rank === 1 ? 64 : 52);
 
     return (
-        <div
-            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
+        <ScreenShell
+            className="relative h-full w-full font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            backdrop={
+                <ScreenBackdrop
+                    watermarks={[
+                        { suit: 'C', size: 150, rotate: -14, style: { top: 200, left: -46 } },
+                        { suit: 'D', size: 165, rotate: 12, opacity: 0.03, style: { top: 460, right: -52 } },
+                    ]}
+                />
+            }
         >
-            <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
-            <div className="absolute pointer-events-none" style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }} />
-            <SuitWatermark suit="C" size={150} rotate={-14} style={{ top: 200, left: -46 }} />
-            <SuitWatermark suit="D" size={165} rotate={12} opacity={0.03} style={{ top: 540, right: -52 }} />
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-26 pt-safe-18 md:max-w-[1000px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
@@ -294,7 +297,7 @@ function LeaderboardV2({
                     </div>
                 )}
             </div>
-        </div>
+        </ScreenShell>
     );
 }
 

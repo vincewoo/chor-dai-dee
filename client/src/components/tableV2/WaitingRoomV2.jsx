@@ -3,7 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import { GAME_MODES } from '../../constants/gameModes';
-import SuitWatermark from './SuitWatermark';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // v2 waiting room. Mirrors the "Waiting Room v2" claude.ai/design mockup and
@@ -85,18 +85,18 @@ function WaitingRoomV2({
             : `Waiting for host (${hostUsername}) to start…`);
 
     return (
-        <div
-            className="absolute inset-0 z-40 overflow-y-auto font-sans"
+        <ScreenShell
+            className="absolute inset-0 z-40 font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            backdrop={
+                <ScreenBackdrop
+                    watermarks={[
+                        { suit: 'S', size: 150, rotate: -14, style: { top: 120, left: -46 } },
+                        { suit: 'H', size: 165, rotate: 12, opacity: 0.03, style: { top: 460, right: -52 } },
+                    ]}
+                />
+            }
         >
-            <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
-            <div
-                className="absolute pointer-events-none"
-                style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
-            />
-            <SuitWatermark suit="S" size={150} rotate={-14} style={{ top: 120, left: -46 }} />
-            <SuitWatermark suit="H" size={165} rotate={12} opacity={0.03} style={{ top: 460, right: -52 }} />
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[18px] pb-safe-6 pt-[18px] md:max-w-[880px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
@@ -350,7 +350,7 @@ function WaitingRoomV2({
                     >Leave room</button>
                 </div>
             </div>
-        </div>
+        </ScreenShell>
     );
 }
 

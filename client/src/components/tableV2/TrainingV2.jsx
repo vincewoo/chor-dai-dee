@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import ReviewMoment from './ReviewMoment';
-import SuitWatermark from './SuitWatermark';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // Worked examples of one kind of decision, drawn from recent games.
@@ -90,15 +90,18 @@ function TrainingV2({
     });
 
     return (
-        <div
-            className="relative h-full w-full overflow-y-auto overflow-x-hidden font-sans"
+        <ScreenShell
+            className="relative h-full w-full font-sans"
             style={{ background: surface.base, fontFamily: "'Outfit',sans-serif", '--cdd-acc': acc, '--cdd-acc-soft': soft }}
+            backdrop={
+                <ScreenBackdrop
+                    watermarks={[
+                        { suit: 'C', size: 150, rotate: -14, style: { top: 220, left: -46 } },
+                        { suit: 'S', size: 165, rotate: 12, opacity: 0.03, style: { top: 460, right: -52 } },
+                    ]}
+                />
+            }
         >
-            <div className="absolute inset-0 pointer-events-none" style={{ background: surface.tint }} />
-            <div className="absolute pointer-events-none" style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 520, height: 340, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }} />
-            <SuitWatermark suit="C" size={150} rotate={-14} style={{ top: 220, left: -46 }} />
-            <SuitWatermark suit="S" size={165} rotate={12} opacity={0.03} style={{ top: 580, right: -52 }} />
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-36 pt-safe-18 md:max-w-[720px] md:px-8">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
@@ -181,7 +184,7 @@ function TrainingV2({
                     isn&apos;t perfect, and it can&apos;t see the cards you couldn&apos;t either.
                 </div>
             </div>
-        </div>
+        </ScreenShell>
     );
 }
 

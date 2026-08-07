@@ -4,6 +4,7 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import MaxBotsChip from './MaxBotsChip';
 import RoundReviewPanel from './RoundReviewPanel';
+import ScreenShell, { ScreenBackdrop } from './ScreenShell';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; shadow-rating
@@ -63,29 +64,36 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
     }, [rm]);
 
     return (
-        <div
+        <ScreenShell
             // Fixed, like RoundCelebration: a full-screen takeover should be
             // pinned to the viewport rather than to whatever mounted it.
-            className="fixed inset-0 z-50 overflow-y-auto font-sans"
+            className="fixed inset-0 z-50 font-sans"
             style={{
                 background: 'radial-gradient(ellipse 120% 90% at 50% 32%,#1e6141 0%,#154930 46%,#0d3520 78%,#082515 100%)',
                 fontFamily: "'Outfit',sans-serif",
                 '--cdd-acc': acc,
                 '--cdd-acc-soft': soft,
             }}
+            backdrop={
+                <>
+                    {/* tint={false}, not omitted: this screen's gradient is its
+                        own darker celebration surface rather than the felt, so
+                        it wants no vignette at all. Leaving it out would now
+                        get the felt's. */}
+                    <ScreenBackdrop tint={false} glow={{ width: 560, height: 380 }} />
+                    {/* Confetti rains down the screen, so it belongs to the
+                        backdrop and not to the scroll: inside the scroller it
+                        slid away with the scoreboard. */}
+                    {confetti.map((p, i) => (
+                        <div
+                            key={i}
+                            className="absolute pointer-events-none"
+                            style={{ top: -24, left: p.left, width: 9, height: 14, borderRadius: 2, background: p.bg, zIndex: 5, animation: `cddConfetti ${p.dur} ${p.delay} linear infinite` }}
+                        />
+                    ))}
+                </>
+            }
         >
-            <div
-                className="absolute pointer-events-none"
-                style={{ top: '-140px', left: '50%', transform: 'translateX(-50%)', width: 560, height: 380, borderRadius: '50%', background: `radial-gradient(ellipse,${soft},transparent 70%)` }}
-            />
-            {confetti.map((p, i) => (
-                <div
-                    key={i}
-                    className="absolute pointer-events-none"
-                    style={{ top: -24, left: p.left, width: 9, height: 14, borderRadius: 2, background: p.bg, zIndex: 5, animation: `cddConfetti ${p.dur} ${p.delay} linear infinite` }}
-                />
-            ))}
-
             <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-6 pt-[52px] md:max-w-[560px] md:justify-center">
                 {/* Winner hero */}
                 <div className="flex flex-col items-center gap-2">
@@ -181,7 +189,7 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                     {children}
                 </div>
             </div>
-        </div>
+        </ScreenShell>
     );
 }
 
