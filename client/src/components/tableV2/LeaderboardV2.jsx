@@ -7,6 +7,7 @@ import {
     publicRankLabel
 } from '../../constants/publicRank';
 import ScreenShell, { ScreenBackdrop } from './ScreenShell';
+import BackButton from './BackButton';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 const SORTS = [
@@ -96,15 +97,13 @@ function LeaderboardV2({
                 />
             }
         >
-            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-26 pt-safe-18 md:max-w-[1000px] md:px-8">
+            {/* pb-[26px] with no safe-area inset: AppShell's tab bar sits below this
+                screen in flow and owns the bottom safe-area inset. */}
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-[26px] pt-safe-18 md:max-w-[1000px] md:px-8">
                 {/* HUD */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px]">
-                        <button
-                            onClick={onBack}
-                            aria-label="Back"
-                            style={{ width: 32, height: 32, borderRadius: 10, border: '1px solid rgba(255,255,255,.18)', background: 'rgba(0,0,0,.38)', color: '#f4f5f7', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        >‹</button>
+                        <BackButton onClick={onBack} />
                         <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 17 }}>Leaderboard</div>
                     </div>
                     <img src={logoImage} alt="Chor Dai Dee" style={{ width: 32, height: 32, filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.4))' }} />

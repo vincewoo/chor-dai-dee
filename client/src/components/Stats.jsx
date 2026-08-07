@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { StatsV2 } from './tableV2';
+import { useBackNavigation } from '../hooks/useBackNavigation';
+import { useLogout } from '../hooks/useLogout';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
-const Stats = ({ user }) => {
+const Stats = ({ user, setUser }) => {
     const { username: urlUsername } = useParams();
     const [searchParams] = useSearchParams();
     const initialMode = searchParams.get('mode') || 'short';
@@ -18,6 +20,11 @@ const Stats = ({ user }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const goBack = useBackNavigation();
+    // "Create an account" for a guest must shed the guest identity before
+    // heading to `/` — the login route redirects any truthy user (guests
+    // included) straight back to /lobby, so a bare navigate('/') bounces.
+    const leaveGuestSession = useLogout(setUser);
 
     // Use URL username if provided, otherwise use logged-in user's username
     const viewingUsername = urlUsername || user?.username;
@@ -76,10 +83,14 @@ const Stats = ({ user }) => {
                 rank={playerRank}
                 loading={loading}
                 error={error}
-                onBack={() => navigate('/lobby')}
+                // Own stats (/stats) is a tab root — the tab bar is how you
+                // leave, so there is no arrow. Another player's page is a
+                // drill-in, and back means the page you drilled in from
+                // (leaderboard, head-to-head, ...), not the lobby.
+                onBack={urlUsername ? goBack : null}
                 onViewMyStats={() => navigate(`/stats?mode=${mode}`)}
                 onOpponentClick={(name) => navigate(`/stats/${name}?mode=${mode}`)}
-            onCreateAccount={() => navigate('/')}
+            onCreateAccount={leaveGuestSession}
             // Guests have no tape attributed to them, so there is nothing to
             // draw examples from.
             onExamples={user?.isGuest

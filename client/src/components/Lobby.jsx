@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { shouldShowJoinError } from '../utils/joinErrors';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 import HowToPlay from './HowToPlay';
 import ScoreDialog from './ScoreDialog';
 import { useVoice } from '../contexts/VoiceContext';
+import { useLogout } from '../hooks/useLogout';
 import { GAME_MODES } from '../constants/gameModes';
 import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
@@ -40,6 +41,19 @@ const Lobby = ({ user, socket, setUser }) => {
     const [roomLobbyData, setRoomLobbyData] = useState(null);
     // { roomId, players, hostUsername, gameMode }
     const [selectedGameMode, setSelectedGameMode] = useState('standard');
+
+    // While the rematch waiting room is up the player holds a live seat
+    // server-side, and navigating away runs no leave_room cleanup — the seat
+    // stays occupied and the game_started listener is torn down, so a
+    // host-started rematch would begin around an absent player. AppShell's
+    // tabs would offer exactly that walk-out, so they are hidden for the
+    // duration: the explicit Leave button is the only way off this screen,
+    // as it was before the tab bar became persistent.
+    const { setChromeHidden } = useOutletContext();
+    useEffect(() => {
+        setChromeHidden(!!roomLobbyData);
+        return () => setChromeHidden(false);
+    }, [roomLobbyData, setChromeHidden]);
 
     // Check if we're returning from a game to room lobby
     useEffect(() => {
@@ -149,15 +163,9 @@ const Lobby = ({ user, socket, setUser }) => {
         }
     }, [roomLobbyData, voiceContext, user.username]);
 
-    const handleLogout = () => {
-        // Drop the mic/peer connections before the identity goes away, otherwise
-        // the WebRTC session outlives the user it was opened for.
-        if (voiceContext?.voiceEnabled) {
-            voiceContext.leaveVoiceRoom();
-        }
-        setUser(null);
-        navigate('/');
-    };
+    // Signing out here backs the guest Sign-in pill: dropping the guest
+    // identity lands on the login screen, where a real account can sign in.
+    const handleLogout = useLogout(setUser);
 
     const handleGameClick = (game) => {
         // Check if game has valid data
@@ -403,12 +411,12 @@ const Lobby = ({ user, socket, setUser }) => {
                 onGameClick={handleGameClick}
                 nowTs={nowTs}
                 onHowToPlay={() => setShowHowToPlay(true)}
-                onLeaderboard={() => navigate('/leaderboard')}
                 onActivity={() => navigate('/activity')}
-                onStats={() => navigate('/stats')}
                 onEditAvatar={() => navigate('/avatar')}
                 onProfile={user.isGuest ? null : () => navigate('/profile')}
-                onLogout={handleLogout}
+                // A guest "signing in" is leaving the guest identity for the
+                // login screen; registered players log out from Profile.
+                onSignIn={user.isGuest ? handleLogout : null}
                 error={error}
                 spectateOffer={spectateOffer}
                 onWatchRoom={watchRoom}

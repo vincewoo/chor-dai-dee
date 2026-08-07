@@ -33,11 +33,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const tableV2 = join(here, '..', 'src', 'components', 'tableV2');
 
 // ScreenShell owns the scroller. HomeScreenV2 is the one deliberate exception:
-// its bottom nav must be a flow row *below* the scroller, so it hand-rolls the
-// same split — a non-scrolling root carrying the backdrop, with the scroller as
-// an inner `flex-1` child. It is a correct instance of the invariant, not a
-// violation of it, and docs/IOS-PWA-LAYOUT.md records why it cannot use the
-// shell. Adding a name here should take a comment saying which of those it is.
+// it predates the shell and hand-rolls the same split — a non-scrolling root
+// carrying the backdrop, with the scroller as an inner `flex-1` child. (The
+// bottom tab bar that originally forced that shape now lives in AppShell as
+// the layout route's own in-flow bottom row; the home screen kept its
+// hand-rolled split rather than migrating for no visual change.) It is a
+// correct instance of the invariant, not a violation of it. Adding a name here
+// should take a comment saying which of those it is.
 const EXEMPT = new Set(['ScreenShell.jsx', 'HomeScreenV2.jsx']);
 
 const screens = readdirSync(tableV2)

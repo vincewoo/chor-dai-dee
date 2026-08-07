@@ -142,8 +142,35 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
 #### Core App Files
 - `main.jsx` - Entry point
 - `App.jsx` - Router with routes: `/` (Login), `/lobby`, `/game/:roomId`, `/stats`,
-  `/profile` (account settings; guests are redirected, having no account row)
+  `/profile` (account settings; guests are redirected, having no account row).
+  Every route except Login and the game sits inside the `AppShell` layout route
+  (`tableV2/AppShell.jsx`), which draws the persistent tab bar around the
+  screen in its Outlet.
 - Socket.io connection initialized in App and passed as prop to children
+
+#### Navigation model: tabs + stacks
+Home (`/lobby`), Leaders, Activity and Stats are peer **tabs**, drawn by
+`AppShell` as a bottom bar on phones and a header strip from 768px up; which
+tab a pathname lights up is `utils/appNav.js` (pure, tested — drill-ins map to
+the tab they are conceptually under, e.g. `/review/:id` to Activity). Everything
+else outside a game is a **drill-in**: it pushes onto history and its back
+arrow means `navigate(-1)`, via `hooks/useBackNavigation.js` — never a
+hardcoded `navigate('/lobby')`, which is what used to send "back" from a
+leaderboard player's stats to the lobby. The hook's one wrinkle: on the first
+history entry (`location.key === 'default'`, a deep link or fresh PWA launch)
+it replaces to a per-screen fallback instead of leaving the app (the decision
+itself is `resolveBackTarget` in `appNav.js`, pure and pinned by test). Tab
+roots pass `onBack={null}`, and `tableV2/BackButton.jsx` — the one back-arrow
+component every screen uses — renders nothing without an onClick, so the
+tab-root rule cannot be bypassed per screen (`test/navWiring.test.js` scans
+for hand-rolled arrows). Actions stayed out of the tab bar: How-to-play is a
+`?` button in the home header, log out lives on the Profile page
+(`hooks/useLogout.js`, shared with the guest Sign-in pill), and guests get a
+Sign-in pill in the home header. One screen opts out of the chrome entirely:
+Lobby's post-game rematch waiting room sets `setChromeHidden` (passed through
+AppShell's Outlet context) while `roomLobbyData` is live, because the player
+holds a real seat server-side and a tab tap would abandon it with no
+`leave_room` — the explicit Leave button must stay the only way out.
 
 #### Components (`components/`)
 - **Game Components:**
@@ -152,8 +179,8 @@ Browser (React) ◄──REST API + Socket.io──► Express Server ◄──�
   - `Profile.jsx` - Account settings (rename, password, Google link/unlink),
     split the same way against `tableV2/ProfileV2.jsx`. Each card is its own form
     with its own status line, so a success in one is not read as a success in the
-    one below it. Reached from the username on the home screen — the bottom nav
-    has to hold one line at 320px, so a fifth destination does not go there.
+    one below it. Reached from the username on the home screen — the tab bar
+    holds destinations only, so account concerns (including Log out) live here.
   - `Lobby.jsx` - Room creation/joining, game mode selection
   - `GameRoom.jsx` - Owns all in-game state, socket wiring and player actions,
     then hands one prop bundle to a v2 table orchestrator. It renders no table
@@ -288,24 +315,33 @@ fits at 768px.
   `ScreenBackdrop` (same file) is the tint + glow + watermark trio; it reads the
   theme itself, so a screen passes only its two suits, and `tint={false}` where
   it wants no vignette.
+- `AppShell.jsx` - the layout route around every screen outside a game: the
+  persistent tab bar (phone) / header strip (desktop) plus an Outlet the
+  screens render into. The bar is the last row **in normal flow** of a
+  full-height column, never `position: fixed` — the fixed version was measured
+  landing one `safe-area-inset-top` above the physical bottom edge in the
+  installed iOS PWA. See `docs/IOS-PWA-LAYOUT.md`, required reading before
+  moving anything to a screen edge. Because the bar owns the bottom safe-area
+  inset, the screens inside it use plain fixed bottom padding, never a
+  safe-area calc — no `pb-safe-*` helper. `safeAreaHelpers.test.js` is a
+  general orphan check on the safe-area helpers, so it would catch a screen
+  referencing one that has been deleted. Also exports `NavIcon`, the stroke
+  icon set the home header reuses.
 - `HomeScreenV2.jsx` - the home screen. The logo is a corner mark, not a hero:
   the page opens on identity + the one button that starts a game, then a single
   Live/Recent switch over one hairline-separated list (joinable rooms in
-  progress / finished games) instead of a stack of panels. Destinations are a
-  bottom bar on phones and header links from 768px up. The screen is a
-  **column shell** - a `flex-1 min-h-0` scroller between the content and a
-  bottom bar that is the last row **in normal flow**. It has been both of the
-  other two things and neither works: absolute inside the scroller rides up
-  onto the game list once the page grows, and `position: fixed` breaks in the
-  installed iOS PWA. See `docs/IOS-PWA-LAYOUT.md`, which is required reading
-  before moving anything to a screen edge.
+  progress / finished games) instead of a stack of panels. Destinations live in
+  AppShell's tab bar; this screen keeps only what is about *it* — the
+  How-to-play `?`, the avatar/profile header, a guest's Sign-in pill. Still a
+  hand-rolled **column shell** (non-scrolling backdrop root over a `flex-1
+  min-h-0` scroller), the split ScreenShell enforces elsewhere.
 - `useHandGeometry.js` (in `hooks/`) - card size and overlap for the hand fan.
   Type scales only *above* the 75px mobile card (`typeScale`), so no mobile
   width can be altered by a desktop change.
 
 #### Contexts (`contexts/`)
 - `SuitColorContext.jsx` - Manages 2-color vs 4-color deck modes
-- `VoiceChatContext.jsx` - Manages WebRTC connections and voice state
+- `VoiceContext.jsx` - Manages WebRTC connections and voice state
 - `UserPreferencesContext.jsx` - User preferences with server sync
   - Four-color deck mode toggle
   - Auto-pass toggle

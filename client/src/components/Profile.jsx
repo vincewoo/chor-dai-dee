@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 import { Field, AuthButton } from './tableV2/LoginV2';
 import { ProfileShell, Section, InfoRow } from './tableV2/ProfileV2';
+import { useBackNavigation } from '../hooks/useBackNavigation';
+import { useLogout } from '../hooks/useLogout';
 
 // In production, use same origin; in development, use localhost:3000
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
@@ -17,8 +19,13 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 // are visibly logged in.
 function Profile({ user, setUser }) {
     const navigate = useNavigate();
+    const goBack = useBackNavigation();
     const [account, setAccount] = useState(null);
     const [loadError, setLoadError] = useState('');
+
+    // Signing out lives here, with the other account actions, rather than in
+    // the tab bar — a persistent bar is for destinations, not actions.
+    const handleLogout = useLogout(setUser);
 
     // Each card reports its own outcome; a rename succeeding must not render as
     // a confirmation on the password card.
@@ -161,7 +168,7 @@ function Profile({ user, setUser }) {
 
     if (!account) {
         return (
-            <ProfileShell title="Profile" onBack={() => navigate('/lobby')}>
+            <ProfileShell title="Profile" onBack={goBack}>
                 <Section title={loadError ? 'Something went wrong' : 'Loading…'} status={loadError ? { kind: 'error', message: loadError } : null} />
             </ProfileShell>
         );
@@ -170,7 +177,7 @@ function Profile({ user, setUser }) {
     const nameUnchanged = newUsername.trim() === account.username;
 
     return (
-        <ProfileShell title="Profile" subtitle={account.username} onBack={() => navigate('/lobby')}>
+        <ProfileShell title="Profile" subtitle={account.username} onBack={goBack}>
             <Section
                 title="Display name"
                 description="This is the name other players see, and the name your past games are listed under."
@@ -344,6 +351,15 @@ function Profile({ user, setUser }) {
                         </button>
                     }
                 />
+            </Section>
+
+            <Section
+                title="Session"
+                description="Sign out of this account on this device."
+            >
+                <AuthButton variant="secondary" onClick={handleLogout}>
+                    Log out
+                </AuthButton>
             </Section>
         </ProfileShell>
     );

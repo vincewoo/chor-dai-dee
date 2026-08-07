@@ -1,5 +1,6 @@
 import { useTableTheme } from '../../theme/tableTheme';
 import ScreenShell, { ScreenBackdrop } from './ScreenShell';
+import BackButton from './BackButton';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 
 // Presentational frame for the profile page, following the same split as the
@@ -28,14 +29,12 @@ export function ProfileShell({ title, subtitle, onBack, children }) {
                 />
             }
         >
-            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-safe-92 pt-safe-18 md:max-w-[560px] md:px-8">
+            {/* pb-9 with no safe-area inset: AppShell's tab bar sits below this screen
+                in flow and owns the bottom safe-area inset. */}
+            <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[440px] flex-col px-[22px] pb-9 pt-safe-18 md:max-w-[560px] md:px-8">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-[9px] min-w-0">
-                        <button
-                            onClick={onBack}
-                            aria-label="Back"
-                            style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 10, border: '1px solid rgba(255,255,255,.18)', background: 'rgba(0,0,0,.38)', color: TEXT, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        >‹</button>
+                        <BackButton onClick={onBack} />
                         <div className="min-w-0">
                             <div className="truncate" style={{ color: TEXT, fontWeight: 800, fontSize: 17 }}>{title}</div>
                             {subtitle && (

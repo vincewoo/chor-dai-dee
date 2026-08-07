@@ -89,12 +89,12 @@ body {
 }
 
 /* Scrollable v2 screens: base padding + the inset, so content clears the
-   status bar and home indicator rather than hiding underneath them. */
+   status bar and home indicator rather than hiding underneath them. The
+   pb variants shrank to one when the screens moved inside AppShell, whose
+   in-flow tab bar owns the bottom inset for them; pb-safe-6 remains for the
+   rank promotion splash, which renders inside the game (no bar below it). */
 .pt-safe-18 { padding-top: calc(18px + env(safe-area-inset-top)); }
 .pb-safe-6 { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
-.pb-safe-26 { padding-bottom: calc(26px + env(safe-area-inset-bottom)); }
-.pb-safe-36 { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
-.pb-safe-92 { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
 
 /* Fixed-position toasts (PWAUpdatePrompt): floated above the home screen's
    bottom nav, plus the home indicator inset. Scoped to mobile widths — this
