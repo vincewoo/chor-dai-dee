@@ -165,7 +165,7 @@ class Room {
         // It chooses the next complete game's frozen Adaptive temperature and
         // never changes live bot behaviour.
         this.adaptiveCalibration = defaultCalibration();
-        this.adaptiveRoundEvidence = {};
+        this.placementRoundEvidence = {};
         // Hints may use a different policy from the seats. Reactions and
         // grading remain deterministic; this advisor is read only.
         this.coachAdvisor = createCoachAdvisor();
@@ -843,7 +843,7 @@ class Room {
             this.tier3DecisionTracking = {};
             this.pendingRiskyDecisions = {};
             this.pendingControlPlays = {};
-            this.adaptiveRoundEvidence = {};
+            this.placementRoundEvidence = {};
         }
 
         this.roundNumber++;
@@ -1332,11 +1332,44 @@ class Room {
     }
 
     /**
+     * Whether this game's result counts toward its humans' placement.
+     *
+     * Two production tables qualify and nothing else does: an `adaptive` room,
+     * and a Max Bots room. Max Bots used to be excluded, which meant a player
+     * who only ever played the strongest tier never completed placement and
+     * stayed Unranked indefinitely - the one group most obviously entitled to a
+     * rank. Their games are real completed games against the hardest opponents
+     * the server has, so they count.
+     *
+     * `balanced` and `casual` deliberately do not. No socket or preference API
+     * selects them - they are reachable only from `setBotDifficulty`, the
+     * internal primitive for tests, benchmarks and replay - but the rule to
+     * state is the one that stays true if that ever changes: placement is never
+     * earned against bots weakened below the roster's own calibration.
+     */
+    recordsPlacementEvidence() {
+        return this.botPolicy.difficulty === 'adaptive' || this.forceMaxBots;
+    }
+
+    /**
+     * Whether finishing position is admissible skill evidence in this room.
+     *
+     * Only on `adaptive`, where the bots were built to the player's own
+     * calibration, so where they finish says something about them. On Max Bots
+     * the table is deliberately above that, and the rounds count toward
+     * placement while the finish is not read as skill. See the `outcomeCounts`
+     * note in AdaptiveBotController.summarizeEvidence.
+     */
+    placementOutcomeCounts() {
+        return this.botPolicy.difficulty === 'adaptive';
+    }
+
+    /**
      * Store one post-round, deal-adjusted observation for later calibration.
      * Names are stable across reconnects, while socket ids are not.
      */
-    recordAdaptiveRoundPlacements(roundPlacements) {
-        if (this.botPolicy.difficulty !== 'adaptive') return;
+    recordPlacementRoundEvidence(roundPlacements) {
+        if (!this.recordsPlacementEvidence()) return;
         for (const result of roundPlacements || []) {
             const player = this.players.find(p => p.id === result.id);
             if (!player || player.isBot || player.joinedMidGame) {
@@ -1344,10 +1377,10 @@ class Room {
             }
             const deal = this.roundDealStrength[player.id];
             if (!deal) continue;
-            if (!this.adaptiveRoundEvidence[player.name]) {
-                this.adaptiveRoundEvidence[player.name] = [];
+            if (!this.placementRoundEvidence[player.name]) {
+                this.placementRoundEvidence[player.name] = [];
             }
-            this.adaptiveRoundEvidence[player.name].push({
+            this.placementRoundEvidence[player.name].push({
                 round: this.roundNumber,
                 dealRank: deal.rank,
                 placement: result.placement
@@ -1355,12 +1388,13 @@ class Room {
         }
     }
 
-    adaptiveEvidenceFor(player, finalPlacement) {
+    placementEvidenceFor(player, finalPlacement) {
         const tracking = this.tier3DecisionTracking[player.id];
         return {
             decisions: tracking ? tracking.decisions : [],
-            rounds: this.adaptiveRoundEvidence[player.name] || [],
-            finalPlacement
+            rounds: this.placementRoundEvidence[player.name] || [],
+            finalPlacement,
+            outcomeCounts: this.placementOutcomeCounts()
         };
     }
 
