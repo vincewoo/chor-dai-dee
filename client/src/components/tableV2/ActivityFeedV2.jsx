@@ -306,6 +306,7 @@ function ActivityFeedV2({
                                             {c.participants.map((p, idx) => {
                                                 const first = p.placement === 1;
                                                 const isMe = p.username === username;
+                                                const deal = review?.[p.username];
                                                 return (
                                                     <div key={`${p.username}-${idx}`} className="flex items-center gap-[10px]">
                                                         <div style={{ width: 16, textAlign: 'center', color: first ? acc : 'rgba(244,245,247,.4)', fontWeight: 800, fontSize: 12 }}>
@@ -319,18 +320,27 @@ function ActivityFeedV2({
                                                                 {p.username}
                                                                 {p.isBot ? <span style={{ color: 'rgba(244,245,247,.4)', fontWeight: 600 }}> · bot</span> : null}
                                                             </div>
+                                                            {/* Placement is the number in the left
+                                                                gutter, so naming it again here spends the
+                                                                line on nothing -- same reasoning as the
+                                                                game-over standings. It survives only for
+                                                                an abandoned game, where the gutter shows a
+                                                                dash because there is no final standing. */}
                                                             <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 10, fontWeight: 600 }}>
-                                                                {p.placement
-                                                                    ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
-                                                                    : (c.abandoned ? 'Score when abandoned' : 'Unranked')}
-                                                                {p.roundsWon ? ` · ${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won` : ''}
-                                                                {/* Placement stays here, unlike the game-over
-                                                                    screen: this list has no left-hand position
-                                                                    gutter to make it redundant. */}
-                                                                {review?.[p.username]?.dealRank
-                                                                    ? ` · deals ${review[p.username].dealRank}${ordinalSuffix(review[p.username].dealRank)}`
-                                                                    + ` (${review[p.username].avgPercentile}${ordinalSuffix(review[p.username].avgPercentile)} pct)`
-                                                                    : ''}
+                                                                {[
+                                                                    p.placement
+                                                                        ? null
+                                                                        : (c.abandoned ? 'Score when abandoned' : 'Unranked'),
+                                                                    deal?.dealRank
+                                                                        ? `Deals: ${deal.dealRank}${ordinalSuffix(deal.dealRank)}`
+                                                                          + ` (${deal.avgPercentile}${ordinalSuffix(deal.avgPercentile)} pct)`
+                                                                        // Nothing recorded for this game: fall back to
+                                                                        // the placement rather than an empty line.
+                                                                        : (p.placement ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`) : null),
+                                                                    p.roundsWon
+                                                                        ? `${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won`
+                                                                        : null,
+                                                                ].filter(Boolean).join(' · ')}
                                                             </div>
                                                         </div>
                                                         <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>
