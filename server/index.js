@@ -874,7 +874,7 @@ io.on('connection', (socket) => {
             // and can be out-dealt by a hand full of 2s. That is not a flaw in
             // either rule. The dragon is an instant-win *rule*; deal strength
             // measures how well a hand plays out, which a dragon never does.
-            roundReview: room.describeRoundReview()
+            roundReview: room.describeRoundReview(scoresWithCumulative.map(x => x.name))
         };
 
         // Store dragon win results for reconnection handling
@@ -1188,7 +1188,7 @@ io.on('connection', (socket) => {
                 // Safe only because the game is over: the per-round ranks in
                 // here compare all four dealt hands. Never put this on
                 // round_over or getGameState.
-                roundReview: room.describeRoundReview()
+                roundReview: room.describeRoundReview(scoresWithCumulative.map(x => x.name))
             };
 
             // Store game results for reconnection handling

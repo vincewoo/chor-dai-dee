@@ -1025,7 +1025,7 @@ class Room {
      * server restarted -- simply has fewer, which is why the mean is computed
      * over the entries present rather than over roundNumber.
      */
-    describeRoundReview() {
+    describeRoundReview(seatNames) {
         // Null-prototype, because the keys are player names and `validateUsername`
         // happily accepts `__proto__`, `constructor`, `toString` and friends
         // (3-20 chars of [A-Za-z0-9_], and only `guest_` is reserved). On a
@@ -1034,9 +1034,18 @@ class Room {
         // the game-over screen. JSON.stringify and JSON.parse both handle a
         // null-prototype object and rebuild it as own properties.
         const out = Object.create(null);
-        this.players.forEach((player, seat) => {
+        // Callers pass the seat names the standings were built from, and must:
+        // the game-over handler captures those names, then awaits a database
+        // transaction and the game-log write before it gets here. gameState is
+        // not 'finished' during those awaits, so `leave_room` still takes its
+        // mid-game branch and can rename a live seat to `Bot (Alice)` in the
+        // window. Reading names here instead of taking the caller's snapshot
+        // put the review keys out of sync with the rows that consume them --
+        // rank 1 landed on a key no row was named after, and the screen showed
+        // 2nd, 3rd and 4th with nobody first.
+        const names = seatNames || this.players.map(p => p.name);
+        names.forEach((name, seat) => {
             const rounds = this.roundHistoryBySeat?.[seat] || [];
-            const name = player.name;
             if (!rounds.length) return;
             const mean = rounds.reduce((sum, r) => sum + r.percentile, 0) / rounds.length;
             // Mean kept unrounded for the ordering below, so two players whose

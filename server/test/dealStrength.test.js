@@ -436,3 +436,25 @@ test('tied game-long deal strength shares the better rank', () => {
     assert.strictEqual(tied[names[0]].dealRank, tied[names[1]].dealRank,
         'equal deals must share a rank rather than be ordered arbitrarily');
 });
+
+test('the review keys off the caller snapshot, not names read later', () => {
+    // The game-over handler captures the standings names, then awaits a DB
+    // transaction and the game-log write before building the review. gameState
+    // is not 'finished' during those awaits, so a walkout renames a live seat
+    // in the window. Re-reading names here desynced the keys from the rows and
+    // put rank 1 on a key nothing was named after -- no row rendered 1st.
+    const room = seatFour(new Room('SNAPSHOT-RACE', 'short'));
+    room.startGame();
+
+    const standingsNames = room.players.map(p => p.name);
+    // The walkout lands between the two.
+    room.players[0].name = 'Bot (Alice)';
+    room.players[0].isBot = true;
+
+    const review = room.describeRoundReview(standingsNames);
+    assert.deepStrictEqual(Object.keys(review).sort(), [...standingsNames].sort(),
+        'keys must be the names the standings will render');
+
+    const ranks = standingsNames.map(n => review[n].dealRank).sort();
+    assert.deepStrictEqual(ranks, [1, 2, 3, 4], 'every row ranks, and somebody is 1st');
+});
