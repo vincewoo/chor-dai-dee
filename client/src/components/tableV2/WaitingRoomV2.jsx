@@ -298,7 +298,15 @@ function WaitingRoomV2({
                                         // toward a public rank for the whole table.
                                         // Said at the moment of choosing, not buried
                                         // in a doc.
-                                        ? 'Strongest bots · placement paused'
+                                        //
+                                        // "No personas" is the other half of the
+                                        // fixed, known-strongest contract: these
+                                        // bots always play their best-rated move
+                                        // rather than a persona's preference among
+                                        // near-equals. Naming it is not a leak —
+                                        // it says the hidden playstyles are absent,
+                                        // which is what the toggle now guarantees.
+                                        ? 'Strongest bots, no personas · placement paused'
                                         : 'Off — bots match the table'}
                                 </div>
                             </div>

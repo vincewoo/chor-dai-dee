@@ -803,7 +803,8 @@ class Room {
         // Deal secret personas only after the final bot roster is known. They
         // are intentionally absent from getGameState(), so players have to
         // infer them from behaviour. An immediate rematch preserves each named
-        // bot's persona; a lobby restart deals again.
+        // bot's persona; a lobby restart deals again. A Max Bots room gets
+        // Classic on every seat instead - see personasEnabled().
         this.assignBotPersonas(this.rematchBotPersonas);
         this.rematchBotPersonas = null;
 
@@ -1204,9 +1205,33 @@ class Room {
         return { success: true };
     }
 
+    /**
+     * Whether this room's bots wear a hidden persona.
+     *
+     * Max Bots is a request for the strongest opponent the server has, and a
+     * persona is the one thing left at that tier that can move a decision off
+     * the actor's own best action. `competitive` is argmax, so the promoted
+     * generation-18 logits are taken at face value - but BotStyle adds up to
+     * MAX_STYLE_LOGIT_ADJUSTMENT to each candidate *before* that argmax, so a
+     * persona is by construction willing to play something the model did not
+     * rate highest. Bounded is not free. Max Bots therefore plays Classic: the
+     * promoted actor, unmodified, always taking its own top-scored move.
+     *
+     * Keyed on the room's own `forceMaxBots` flag rather than on
+     * `botPolicy.difficulty === MAX_BOT_DIFFICULTY`, because MAX_BOT_DIFFICULTY
+     * and DEFAULT_BOT_DIFFICULTY are the same string ('competitive'): testing
+     * the tier would also strip personas from every bare `new Room()` - the
+     * benchmarks, the style tests, every internal caller that never opted in.
+     * `forceMaxBots` is waiting-only, so it cannot shift under a live game, and
+     * a mid-game replacement reads the same answer the roster was dealt from.
+     */
+    personasEnabled() {
+        return this.botPolicy.supportsStyles && !this.forceMaxBots;
+    }
+
     assignBotPersonas(preservedByName = null) {
         const bots = this.players.filter(player => player.isBot);
-        if (!this.botPolicy.supportsStyles) {
+        if (!this.personasEnabled()) {
             for (const bot of bots) bot.botStyle = DEFAULT_BOT_STYLE;
             return bots.map(bot => bot.botStyle);
         }
@@ -1228,7 +1253,7 @@ class Room {
     }
 
     nextReplacementBotPersona() {
-        if (!this.botPolicy.supportsStyles) return DEFAULT_BOT_STYLE;
+        if (!this.personasEnabled()) return DEFAULT_BOT_STYLE;
         return randomBotPersona();
     }
 

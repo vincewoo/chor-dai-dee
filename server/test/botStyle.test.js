@@ -244,3 +244,55 @@ test('a mid-game replacement receives a valid independent secret persona', () =>
     assert.ok(replacement);
     assert.ok(BOT_PERSONA_IDS.includes(replacement.botPlayer.botStyle));
 });
+
+// Max Bots is the "strongest opponent you have" switch, and a persona is the
+// last thing at that tier that can move a decision off the actor's own top
+// action: competitive is argmax, but BotStyle shifts the logits before the
+// argmax is taken. So the ceiling plays Classic - the promoted actor itself.
+function maxBotsRoom(id) {
+    const room = new Room(id, 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    assert.ok(room.setForceMaxBots(true, 'Alice').success);
+    room.startGame();
+    return room;
+}
+
+test('max bots deal no persona and play the unmodified actor', () => {
+    const room = maxBotsRoom('PERSONA-MAXBOTS');
+    const bots = room.players.filter(player => player.isBot);
+
+    assert.strictEqual(bots.length, 3);
+    for (const bot of bots) {
+        assert.strictEqual(bot.botStyle, DEFAULT_BOT_STYLE);
+    }
+    // Classic plus argmax is the whole claim: no style adjustment, and no
+    // sampling away from the top-scored candidate.
+    assert.strictEqual(room.botPolicy.sample, false);
+
+    const loggedStyles = room.describeSeats()
+        .filter(seat => seat.occupant === 'bot_ppo')
+        .map(seat => seat.botStyle);
+    assert.deepStrictEqual(
+        loggedStyles, [DEFAULT_BOT_STYLE, DEFAULT_BOT_STYLE, DEFAULT_BOT_STYLE],
+        'provenance must record the classic seats that actually played');
+});
+
+test('a max-bots replacement bot is personaless too', () => {
+    const room = maxBotsRoom('PERSONA-MAXBOTS-REPLACEMENT');
+    const replacement = room.replaceWithBot('human-1');
+    assert.ok(replacement);
+    assert.strictEqual(replacement.botPlayer.botStyle, DEFAULT_BOT_STYLE);
+});
+
+test('turning max bots back off deals personas again', () => {
+    const room = maxBotsRoom('PERSONA-MAXBOTS-OFF');
+    room.gameState = 'waiting';
+    assert.ok(room.setForceMaxBots(false, 'Alice').success);
+    room.startGame();
+
+    const styles = room.players
+        .filter(player => player.isBot)
+        .map(player => player.botStyle);
+    assert.strictEqual(styles.length, 3);
+    assert.ok(styles.every(style => BOT_PERSONA_IDS.includes(style)));
+});
