@@ -707,32 +707,41 @@ function initDb() {
 // whether the work is already done. A data migration cannot be recognised that
 // way (a zeroed counter is indistinguishable from a counter that has since been
 // legitimately incremented), so applied migrations are recorded by key.
-function runOnce(key, migration) {
+//
+// `next` runs once the migration has reached a terminal state - applied,
+// skipped as already-applied, or failed - and exists so migrations that touch
+// the same rows can be sequenced. Outside a db.serialize() block node-sqlite3
+// is free to interleave statements, and runOnce always reads schema_meta before
+// it writes anything, so two rank migrations fired back to back can land in
+// either order.
+function runOnce(key, migration, next = () => {}) {
+    const done = () => next();
     db.run(`CREATE TABLE IF NOT EXISTS schema_meta (
         key TEXT PRIMARY KEY,
         applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`, (err) => {
         if (err) {
             console.error('Error creating schema_meta table:', err.message);
-            return;
+            return done();
         }
 
         db.get(`SELECT key FROM schema_meta WHERE key = ?`, [key], (err, row) => {
             if (err) {
                 console.error(`Error checking migration ${key}:`, err.message);
-                return;
+                return done();
             }
-            if (row) return; // already applied
+            if (row) return done(); // already applied
 
             migration((err) => {
                 if (err) {
                     // Deliberately not recorded, so the next start retries.
                     console.error(`Migration ${key} failed:`, err.message);
-                    return;
+                    return done();
                 }
                 db.run(`INSERT OR IGNORE INTO schema_meta (key) VALUES (?)`, [key], (err) => {
                     if (err) console.error(`Error recording migration ${key}:`, err.message);
                     else console.log(`Applied one-time migration: ${key}`);
+                    done();
                 });
             });
         });
@@ -741,6 +750,7 @@ function runOnce(key, migration) {
 
 const RESET_PRE_DECISION_COUNTERS = 'reset_pre_decision_counters_v1';
 const RESET_INCOMPLETE_RANKS = 'reset_incomplete_rank_placements_v1';
+const REPLACE_PLACEMENT_RANKS = 'replace_placement_ranks_v1';
 
 // Public ranks used to be backfilled from shadow ratings earned against older,
 // materially weaker bots. Preserve players who completed Adaptive placement,
@@ -796,6 +806,37 @@ function resetIncompletePlacementRanks(done) {
                  updated_at = CURRENT_TIMESTAMP
              WHERE calibration_complete = 0`
         ))
+        .then(() => done(null), done);
+}
+
+// Ranks placed by the first version of the placement snapshot, which read the
+// player's own `mu - 3 * sigma` at 5-10 games and so charged everybody a
+// three-tier tax for still being uncertain (see PLACEMENT_ENTRY_SCORES). Those
+// tiers were not earned against the ladder they are displayed on, so they are
+// cleared and re-placed on the next completed game in that mode - by which
+// point the shadow mu behind them is strictly better evidence than it was at
+// original placement.
+//
+// Bounded to ranks at or below the placement cap. Diamond and Champ can only
+// have been reached by winning a promotion series on the settled scoring, which
+// this changes nothing about, and re-placing them would silently demote them.
+function replacePlacementRanks(done) {
+    const tables = ['stats', 'stats_short', 'stats_standard'];
+    const run = (sql) => new Promise((resolve, reject) => {
+        db.run(sql, (err) => err ? reject(err) : resolve());
+    });
+
+    tables.reduce((chain, table) => chain
+        .then(() => run(
+            `UPDATE ${table}
+             SET rank_placement_complete = 0,
+                 public_rank = 0,
+                 promotion_progress = 0,
+                 demotion_progress = 0
+             WHERE rank_placement_complete = 1
+               AND public_rank <= ${PLACEMENT_RANK_CAP}`
+        )),
+    Promise.resolve())
         .then(() => done(null), done);
 }
 
@@ -972,7 +1013,11 @@ function createStatsTable() {
             if (!err) {
                 runOnce(
                     RESET_INCOMPLETE_RANKS,
-                    done => done(null)
+                    done => done(null),
+                    () => runOnce(
+                        REPLACE_PLACEMENT_RANKS,
+                        done => done(null)
+                    )
                 );
             }
         });
@@ -999,9 +1044,18 @@ function ensurePublicRankColumns() {
     const tableComplete = () => {
         remainingTables--;
         if (remainingTables === 0) {
+            // Strictly ordered: the reset stamps rank_placement_complete = 1
+            // on everyone who finished calibration, and the re-placement then
+            // clears the tiers that stamp left on the old scoring. Reversed,
+            // the reset would re-stamp the rows the re-placement had just
+            // zeroed, placing every one of them at Iron.
             runOnce(
                 RESET_INCOMPLETE_RANKS,
-                resetIncompletePlacementRanks
+                resetIncompletePlacementRanks,
+                () => runOnce(
+                    REPLACE_PLACEMENT_RANKS,
+                    replacePlacementRanks
+                )
             );
         }
     };
@@ -1320,6 +1374,7 @@ const updateUserStatsByMode = (
                             stats.public_rank, stats.promotion_progress,
                             stats.demotion_progress,
                             stats.rank_placement_complete,
+                            stats.games_played,
                             COALESCE(calibration.calibration_complete, 0)
                                 AS placement_matches_complete
                      FROM ${tableName} stats
@@ -1346,7 +1401,11 @@ const updateUserStatsByMode = (
                                 sigma: newSigma,
                                 placement,
                                 placementMatchesComplete: Boolean(
-                                    current.placement_matches_complete)
+                                    current.placement_matches_complete),
+                                // The row is read before the increment above,
+                                // so the game being recorded is the +1.
+                                modeGamesPlayed:
+                                    (Number(current.games_played) || 0) + 1
                             });
                             query += `, rating_mu = ?, rating_sigma = ?,
                                 public_rank = ?,
@@ -3136,6 +3195,9 @@ const unlinkGoogleAccount = async (userId) => {
 
 module.exports = {
     db,
+    // Exported for its test only. runOnce fires it at most once per database,
+    // so nothing else should ever call it.
+    replacePlacementRanks,
     createUser,
     verifyUser,
     getUserStats,

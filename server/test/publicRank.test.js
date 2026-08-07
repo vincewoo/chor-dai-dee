@@ -4,9 +4,15 @@ const assert = require('node:assert');
 const {
     PUBLIC_RANKS,
     PLACEMENT_RANK_CAP,
+    PLACEMENT_REFERENCE_SIGMA,
+    PLACEMENT_ENTRY_SCORES,
+    MIN_PLACEMENT_MODE_GAMES,
+    placementRankIndex,
+    rankIndexForShadow,
     updatePublicRank,
     publicStatsView
 } = require('../game/PublicRank');
+const { DEFAULT_MU, DEFAULT_SIGMA } = require('../game/RatingSystem');
 const {
     botMuForTemperature,
     botRatingForDifficulty
@@ -123,6 +129,82 @@ test('placement stays Unranked and can place no higher than Platinum', () => {
     assert.strictEqual(placed.rank.label, 'Platinum');
     assert.strictEqual(placed.rankPlacementComplete, true);
     assert.strictEqual(placed.change, 'placed');
+});
+
+test('placement does not charge a player for their own uncertainty', () => {
+    // The whole point of the placement ladder. Sigma at placement is whatever
+    // 5-10 games happen to have left it at, and under the settled scoring the
+    // difference between finishing calibration in 5 games and in 10 was worth
+    // ~48 display points - about a third of a tier - on identical play.
+    const mu = 26;
+    const early = updatePublicRank(
+        { rankPlacementComplete: false },
+        { mu, sigma: 7.9, placement: 1, placementMatchesComplete: true });
+    const late = updatePublicRank(
+        { rankPlacementComplete: false },
+        { mu, sigma: 7.5, placement: 1, placementMatchesComplete: true });
+
+    assert.strictEqual(early.publicRank, late.publicRank);
+    assert.strictEqual(early.publicRank, placementRankIndex(mu));
+
+    // And it is strictly kinder than the settled ladder in that window, which
+    // is the bug it was written for: a player with this mu after five games
+    // used to place at the very bottom.
+    assert.ok(placementRankIndex(mu) > rankIndexForShadow(mu, 7.9));
+    assert.strictEqual(rankIndexForShadow(mu, 7.9), 0);
+    // The same mu, the same play, one extra calibration game's worth of sigma
+    // decay - and under the settled ladder that alone crossed a tier.
+    assert.notStrictEqual(
+        rankIndexForShadow(mu, 7.9), rankIndexForShadow(mu, 7.5));
+});
+
+test('the placement ladder is monotonic in mu and capped', () => {
+    let previous = -1;
+    for (let mu = 0; mu <= 60; mu += 0.25) {
+        const index = placementRankIndex(mu);
+        assert.ok(index >= previous, `placement fell at mu ${mu}`);
+        assert.ok(index <= PLACEMENT_RANK_CAP);
+        previous = index;
+    }
+    // A brand-new player is at the floor, so placement can only be earned.
+    assert.strictEqual(placementRankIndex(DEFAULT_MU - 3 * DEFAULT_SIGMA), 0);
+    // The fitted entries stay inside the ladder they are read against.
+    assert.strictEqual(PLACEMENT_ENTRY_SCORES.length, PLACEMENT_RANK_CAP + 1);
+    for (let index = 2; index < PLACEMENT_ENTRY_SCORES.length; index++) {
+        assert.ok(PLACEMENT_ENTRY_SCORES[index] >
+            PLACEMENT_ENTRY_SCORES[index - 1]);
+    }
+    assert.ok(PLACEMENT_REFERENCE_SIGMA < DEFAULT_SIGMA);
+});
+
+test('placement waits for evidence in the mode being placed', () => {
+    // Calibration is one row per player; a rank is per mode. Completing it in
+    // Short must not place anybody in Standard off a single Standard game.
+    const args = {
+        mu: 34,
+        sigma: DEFAULT_SIGMA,
+        placement: 1,
+        placementMatchesComplete: true
+    };
+    const firstGame = updatePublicRank(
+        { rankPlacementComplete: false },
+        { ...args, modeGamesPlayed: 1 });
+    assert.strictEqual(firstGame.rankPlacementComplete, false);
+    assert.strictEqual(firstGame.rank.label, 'Unranked');
+    assert.strictEqual(firstGame.change, null);
+
+    const gatingGame = updatePublicRank(
+        firstGame,
+        { ...args, modeGamesPlayed: MIN_PLACEMENT_MODE_GAMES });
+    assert.strictEqual(gatingGame.rankPlacementComplete, true);
+    assert.strictEqual(gatingGame.change, 'placed');
+    assert.strictEqual(gatingGame.publicRank, placementRankIndex(args.mu));
+
+    // Omitting the count leaves the gate out of it, so a caller that does not
+    // track per-mode games behaves exactly as it did before.
+    const ungated = updatePublicRank(
+        { rankPlacementComplete: false }, args);
+    assert.strictEqual(ungated.rankPlacementComplete, true);
 });
 
 test('every result reports the rank it moved away from', () => {
