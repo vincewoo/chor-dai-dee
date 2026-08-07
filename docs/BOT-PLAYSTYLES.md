@@ -15,6 +15,9 @@ over a multi-round game and its immediate rematches.
   starts a new matchup and deals fresh personas.
 - Bot names, room state, game state, and debug reasoning do not reveal the
   assignment. Players learn it only from play.
+- **Max difficulty bots wear no persona.** A room with the waiting room's Max
+  Bots toggle on deals `classic` to every bot seat, so there is nothing to read
+  and nothing to exploit — see [Max Bots](#max-bots) below.
 
 ## Personas
 
@@ -49,7 +52,40 @@ invalidate the promoted checkpoint and turn a bug fix into a retrain.
 
 The unmodified generation-18 actor remains `classic`. It is the compatibility
 default for benchmarks, training collectors, the coach, and the heuristic
-rollback path; production room bots use the four personas above.
+rollback path; production room bots use the four personas above, except at the
+ceiling.
+
+## Max Bots
+
+`Room.personasEnabled()` is false while `Room.forceMaxBots` is on, so a Max Bots
+room deals `classic` to every bot seat — the roster at `startGame`, and any
+mid-game `replaceWithBot` replacement.
+
+A persona is not free, and this is where that matters. `competitive` is argmax,
+so the promoted actor's logits are taken at face value; but the style adjustment
+is applied *before* the argmax, so a persona seat is by construction willing to
+play a move the model did not rate highest. That is the whole point of a persona
+at every other tier — it is what makes a bot readable and rememberable — and it
+is exactly the wrong trade for a control whose contract is "the strongest
+opponent the server has". Max Bots therefore gets the promoted generation-18
+actor taking its own top-scored move, every time.
+
+Measured with one full-strength `classic` argmax reference seat against three
+argmax bots on paired deal streams (`npm run bench:maxbots`, 96k rounds per
+lineup), a persona table gives that reference **25.32%** of rounds versus
+**24.89%** for a classic table — a paired delta of
+**+0.43pp ± 0.09pp (4.6 sigma)**. Small in absolute terms, but unambiguous and
+in the direction the design predicts. The pairing matters: the between-matchup
+spread from the deals alone is several times the effect, so an unpaired
+comparison at this size reads as noise (1.4 sigma at 8 matchups).
+
+Two consequences. The flag is `forceMaxBots` rather than
+`botPolicy.difficulty === MAX_BOT_DIFFICULTY`, because `MAX_BOT_DIFFICULTY` and
+`DEFAULT_BOT_DIFFICULTY` are the same string and testing the tier would strip
+personas from every bare `new Room()` — benchmarks, tests, every internal caller
+that never opted in. And `mlog_seat.bot_style` records `classic` for these
+seats, so the log keeps describing the policy that actually played rather than
+one the room would have dealt.
 
 ## Implementation boundary
 

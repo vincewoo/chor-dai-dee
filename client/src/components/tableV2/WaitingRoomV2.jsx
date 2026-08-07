@@ -293,12 +293,21 @@ function WaitingRoomV2({
                                 </div>
                                 <div style={{ color: 'rgba(244,245,247,.38)', fontSize: 11, fontWeight: 600 }}>
                                     {forceMaxBots
-                                        // Adaptive calibration only records on the
-                                        // adaptive policy, so this pauses progress
-                                        // toward a public rank for the whole table.
-                                        // Said at the moment of choosing, not buried
-                                        // in a doc.
-                                        ? 'Strongest bots · placement paused'
+                                        // These games count for rank like any
+                                        // other -- placement progress and the
+                                        // promotion series both. Said here because
+                                        // this line used to warn that placement was
+                                        // paused, and a player who read that once
+                                        // will assume it still is.
+                                        //
+                                        // The toggle also drops the hidden persona
+                                        // (Room.personasEnabled), and that is
+                                        // deliberately NOT named here: personas are
+                                        // a system players are meant to meet only
+                                        // through play, and "no personas" would
+                                        // announce it in the one screen everyone
+                                        // reads. "Strongest bots" already covers it.
+                                        ? 'Strongest bots · counts toward your rank'
                                         : 'Off — bots match the table'}
                                 </div>
                             </div>

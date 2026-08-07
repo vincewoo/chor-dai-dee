@@ -1109,7 +1109,7 @@ io.on('connection', (socket) => {
 
         // Server-only deal ranks are safe to consume now that the round has
         // ended. They never influence a move in the round that produced them.
-        room.recordAdaptiveRoundPlacements(roundScoresWithPlacements);
+        room.recordPlacementRoundEvidence(roundScoresWithPlacements);
 
         // Save round stats for each player (only registered human players, not guests).
         // One transaction for the whole loop: these are up to 4 independent inserts
@@ -1236,33 +1236,37 @@ io.on('connection', (socket) => {
             // Every human gets an individual placement update. The room used
             // their average for this game, but their estimates remain separate
             // so the next lineup can be averaged from its actual members.
-            if (room.botPolicy.difficulty === 'adaptive') {
-                const adaptivePlayers = room.players.filter(player =>
+            //
+            // Max Bots games count here too. What differs is only whether the
+            // finishing position is read as skill evidence, and the room
+            // answers that itself via placementEvidenceFor's outcomeCounts.
+            if (room.recordsPlacementEvidence()) {
+                const calibratingPlayers = room.players.filter(player =>
                     !player.isBot && !player.isGuest &&
                     !player.joinedMidGame);
-                for (const adaptivePlayer of adaptivePlayers) {
+                for (const calibratingPlayer of calibratingPlayers) {
                     const placement = finalPlacements.find(
-                        item => item.playerId === adaptivePlayer.id);
+                        item => item.playerId === calibratingPlayer.id);
                     if (!placement) continue;
                     try {
-                        const user = await lookupUser(adaptivePlayer.name);
+                        const user = await lookupUser(calibratingPlayer.name);
                         if (!user) continue;
                         const currentCalibration = await getBotCalibration(
                             user.id);
                         const evidence = summarizeEvidence(
-                            room.adaptiveEvidenceFor(
-                                adaptivePlayer, placement.placement));
+                            room.placementEvidenceFor(
+                                calibratingPlayer, placement.placement));
                         const updated = updateCalibration(
                             currentCalibration, evidence);
                         await saveBotCalibration(
                             user.id, updated.calibration);
-                        if (adaptivePlayers.length === 1) {
+                        if (calibratingPlayers.length === 1) {
                             room.setAdaptiveCalibration(updated.calibration);
                         }
                     } catch (e) {
                         console.error(
                             'Failed to save Adaptive calibration for',
-                            adaptivePlayer.name, e);
+                            calibratingPlayer.name, e);
                     }
                 }
             }

@@ -3,6 +3,9 @@
 Difficulty is independent from the hidden move-preference personas documented
 in [BOT-PLAYSTYLES.md](BOT-PLAYSTYLES.md). Temperature controls how hard a bot
 tries; persona changes what similarly rated alternatives it tends to prefer.
+The one place the two axes meet is the ceiling: **Max difficulty bots wear no
+persona at all**, because a persona is by construction willing to play something
+the actor did not rate highest (see below).
 
 Bot strength is selected automatically, with one opt-in override:
 
@@ -13,9 +16,10 @@ Bot strength is selected automatically, with one opt-in override:
   without any placement history contribute the neutral cold-start estimate.
 - **Max difficulty bots** (waiting room, host only, off by default) pins the
   room to `MAX_BOT_DIFFICULTY` — currently `competitive`, the argmax policy —
-  instead of the roster average. It is a deliberately quiet, advanced control:
-  Adaptive is the right experience for almost everyone, and this exists for
-  players who have outgrown it and want a fixed, known-strongest opponent.
+  instead of the roster average, *and* deals every bot seat the `classic`
+  persona. It is a deliberately quiet, advanced control: Adaptive is the right
+  experience for almost everyone, and this exists for players who have outgrown
+  it and want a fixed, known-strongest opponent.
 
 The override is held as `Room.forceMaxBots`, not by leaving `botDifficulty` on
 `competitive`, because `configureBotPolicyForRoster()` re-applies Adaptive at
@@ -182,16 +186,74 @@ binary `set_max_bots` socket event (host only, waiting only), which chooses
 between the roster average and `MAX_BOT_DIFFICULTY`. The per-room policy
 snapshot exists so an in-flight game can never change how its bots play.
 
-**Max difficulty suspends placement.** Adaptive calibration is recorded only
-while the room is on the `adaptive` policy — see the `difficulty === 'adaptive'`
-guards in `RoomManager.recordAdaptiveRoundPlacements` and the game-end handler
-in `server/index.js`. A game played against max-difficulty bots therefore
-contributes no placement evidence, so players in that room make no progress
-toward completing placement and a still-placing player stays Unranked. Hidden
-rating still updates as normal. This applies to everyone at the table, not just
-the host who set it.
-`replaceWithBot` needs no special handling for the same reason: the replacement
-seat has no policy of its own and is answered for by the room's.
+**Max difficulty counts toward placement.** It did not always: calibration was
+recorded only while the room was on the `adaptive` policy, so a player who only
+ever chose the strongest bots earned no placement progress and stayed Unranked
+indefinitely — the one group most obviously entitled to a rank. Two Room
+predicates now decide this, and the game-end handler in `server/index.js` reads
+them rather than testing a tier id:
+
+- `recordsPlacementEvidence()` — true on `adaptive` **and** on a `forceMaxBots`
+  room. Deliberately false for `balanced` and `casual`. No socket or preference
+  API selects those, but the rule worth stating is the one that survives if that
+  changes: placement is never earned against bots weakened below the roster's
+  own calibration.
+- `placementOutcomeCounts()` — true only on `adaptive`, and passed through to
+  `AdaptiveBotController.summarizeEvidence` as `outcomeCounts`.
+
+The split matters because `outcomeSkill` is *table-relative*: it scores where a
+player finished against the finish their deal implied, so the same deal played
+the same way finishes lower against stronger opponents. Read unadjusted, a
+strong player's preference for the hardest bots would be evidence that they need
+easier ones. On Max Bots the rounds still count for progress — they are real
+completed rounds — while the finish is withheld, leaving decision quality, which
+is graded against the player's own legal options and so is opponent-independent.
+It already carries 0.7 of the weight, and `null` means *no opinion*, not a bad
+one: `updateCalibration` gives it zero weight rather than treating it as zero
+skill.
+
+The alternative considered and rejected was discounting the outcome by tier, the
+way `BOT_RATING_BY_DIFFICULTY` does for the shadow rating. It needs a fitted
+constant per tier and buys a dial these players are not using — the public rank
+already credits beating strong bots correctly, through OpenSkill.
+
+**The public rank was never suspended, and still isn't.** `competitive` bots sit
+at `DEFAULT_MU`, the highest-rated bot seat there is, so an already-placed player
+has always earned full shadow rating and full promotion-series progress from Max
+Bots games — `updatePublicRank` only consults `placementMatchesComplete` while a
+player is *unplaced*. What changed is the unplaced case.
+
+This applies to everyone at the table, not just the host who set it.
+`replaceWithBot` needs no special handling: the replacement seat has no policy of
+its own and is answered for by the room's.
+
+**Max difficulty also drops the persona.** `competitive` is argmax, so the
+promoted actor's logits are taken at face value — but `BotStyle.applyBotStyle`
+adds up to `MAX_STYLE_LOGIT_ADJUSTMENT` (2.5) to each candidate *before* that
+argmax is taken, so a persona seat can and does play a move the model did not
+rate highest. Bounded is not free. A room asking for the strongest opponent the
+server has should get the promoted generation-18 actor taking its own top-scored
+move every time, so `Room.personasEnabled()` returns false while `forceMaxBots`
+is on and every bot seat — including a mid-game `replaceWithBot` replacement —
+is dealt `classic`.
+
+It is keyed on `forceMaxBots` rather than on
+`botPolicy.difficulty === MAX_BOT_DIFFICULTY` because those two are *not* the
+same question: `MAX_BOT_DIFFICULTY` and `DEFAULT_BOT_DIFFICULTY` are the same
+string, so testing the tier would also strip personas from every bare
+`new Room()` — the benchmarks, the style tests, every internal caller that never
+opted in. `forceMaxBots` is waiting-only, so it cannot shift under a live game
+and a replacement seat reads the same answer the roster was dealt from.
+
+Measured with one full-strength `classic` argmax reference seat against three
+argmax bots on paired deal streams (96k rounds per lineup), a persona table
+gives that reference **25.32%** of rounds against **24.89%** for a classic
+table: a paired delta of **+0.43pp ± 0.09pp (4.6 sigma)**. Small in absolute
+terms, but unambiguous and in the direction the design predicts — personas cost
+strength, which is exactly the trade the ceiling should not be making. Reproduce
+with `npm run bench:maxbots`.
+`mlog_seat.bot_style` records `classic` for these seats, so the log still
+describes the policy that actually played.
 
 ## What a viewer is shown
 

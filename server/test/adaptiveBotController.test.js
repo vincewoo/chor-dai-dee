@@ -130,3 +130,62 @@ test('temperature changes are smaller after calibration', () => {
     assert.ok(next.lastTemperature < 10);
     assert.ok(10 - next.lastTemperature <= 0.75);
 });
+
+// Max Bots games count toward placement, but the table was deliberately set
+// above the player's own calibration, so where they finished is not read as
+// skill. `outcomeCounts: false` withholds that inference without discarding the
+// rounds themselves - they are real completed rounds and buy real progress.
+test('outcomeCounts:false keeps the rounds and drops only the skill claim', () => {
+    const played = { decisions: decisions(24), rounds: rounds(6) };
+    const counted = summarizeEvidence(played);
+    const withheld = summarizeEvidence({ ...played, outcomeCounts: false });
+
+    assert.strictEqual(withheld.completedRounds, counted.completedRounds,
+        'the rounds still count toward placement progress');
+    assert.strictEqual(withheld.effectiveDecisions, counted.effectiveDecisions);
+    assert.strictEqual(withheld.decisionSkill, counted.decisionSkill);
+    assert.notStrictEqual(counted.outcomeSkill, null);
+    assert.strictEqual(withheld.outcomeSkill, null);
+});
+
+test('a withheld outcome is no opinion, not a bad one', () => {
+    // Losing every round to a table set above you must not read as evidence
+    // that you are worse than a player who won every round against it.
+    const lost = {
+        decisions: decisions(24),
+        rounds: rounds(6, { dealRank: 1, placement: 4 }),
+        outcomeCounts: false
+    };
+    const won = {
+        decisions: decisions(24),
+        rounds: rounds(6, { dealRank: 4, placement: 1 }),
+        outcomeCounts: false
+    };
+    const start = defaultCalibration();
+
+    const afterLoss = updateCalibration(start, summarizeEvidence(lost));
+    const afterWin = updateCalibration(start, summarizeEvidence(won));
+    assert.strictEqual(afterLoss.calibration.skillMu,
+        afterWin.calibration.skillMu,
+        'with the outcome withheld, only decision quality may move skill');
+
+    // And it must not be silently read as zero skill either: good decisions
+    // still push the estimate up from the forgiving cold start.
+    assert.ok(afterLoss.calibration.skillMu > start.skillMu,
+        'decision quality is still admissible evidence');
+});
+
+test('placement still completes on Max Bots evidence alone', () => {
+    // The failure this fixes: a player who only ever chose the hardest bots
+    // never completed placement and stayed Unranked indefinitely.
+    let calibration = defaultCalibration();
+    for (let game = 0; game < 5; game++) {
+        calibration = updateCalibration(calibration, summarizeEvidence({
+            decisions: decisions(24),
+            rounds: rounds(4),
+            outcomeCounts: false
+        })).calibration;
+    }
+    assert.strictEqual(calibration.calibrationComplete, true);
+    assert.ok(calibration.completedRounds >= 15);
+});

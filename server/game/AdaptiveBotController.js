@@ -90,7 +90,27 @@ function trimmedMean(values) {
 function summarizeEvidence({
     decisions = [],
     rounds = [],
-    finalPlacement = null
+    finalPlacement = null,
+    // Whether where the player *finished* is admissible evidence about their
+    // skill. It normally is, but it is table-relative in a way decision quality
+    // is not: `outcomeSkill` scores a placement against the placement the deal
+    // implied, so the same deal played the same way finishes lower against
+    // stronger opponents. On a table deliberately set above the player's own
+    // calibration - Max Bots - reading that as "played worse" is backwards, and
+    // would answer a strong player's preference for the hardest bots by
+    // concluding they need easier ones.
+    //
+    // The rounds still *count* when this is false: they are real completed
+    // rounds and placement progress is exactly what they should buy. Only the
+    // skill inference is withheld, which leaves decision quality - graded
+    // against the player's own legal options, so opponent-independent - as the
+    // whole signal. It already carries 0.7 of the weight.
+    //
+    // The alternative is to keep the outcome and discount it by tier, the way
+    // BOT_RATING_BY_DIFFICULTY does for the shadow rating. That needs a fitted
+    // constant per tier and it buys a dial the player is not using: the public
+    // rank already credits beating strong bots correctly, through OpenSkill.
+    outcomeCounts = true
 } = {}) {
     const byRound = new Map();
     for (const decision of decisions) {
@@ -128,15 +148,19 @@ function summarizeEvidence({
         Number.isInteger(round?.placement) &&
         round.dealRank >= 1 && round.dealRank <= 4 &&
         round.placement >= 1 && round.placement <= 4);
-    const outcomeSkill = validRounds.length
-        ? validRounds.reduce((sum, round) => {
-            // Beating the placement implied by the deal is positive evidence.
-            const residual = (round.dealRank - round.placement) / 3;
-            return sum + clamp(0.5 + residual / 2, 0, 1);
-        }, 0) / validRounds.length
-        : Number.isInteger(finalPlacement)
-            ? clamp(1 - (finalPlacement - 1) / 3, 0, 1)
-            : null;
+    // null here means "no opinion", which updateCalibration reads as zero
+    // outcome weight - not as an opinion that the player did badly.
+    const outcomeSkill = !outcomeCounts
+        ? null
+        : validRounds.length
+            ? validRounds.reduce((sum, round) => {
+                // Beating the placement implied by the deal is positive evidence.
+                const residual = (round.dealRank - round.placement) / 3;
+                return sum + clamp(0.5 + residual / 2, 0, 1);
+            }, 0) / validRounds.length
+            : Number.isInteger(finalPlacement)
+                ? clamp(1 - (finalPlacement - 1) / 3, 0, 1)
+                : null;
 
     return {
         effectiveDecisions: losses.length,

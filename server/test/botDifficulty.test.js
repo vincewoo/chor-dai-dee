@@ -455,3 +455,64 @@ test('setGameMode rejects an unknown mode', () => {
     assert.deepStrictEqual(room.setGameMode('standard'), { success: true });
     assert.strictEqual(room.gameMode, 'standard');
 });
+
+// ---- Placement credit -------------------------------------------------
+//
+// Max Bots used to record no placement evidence at all, so a player who only
+// ever chose the strongest tier never completed placement and stayed Unranked
+// indefinitely. Their games now count. What stays excluded is the *weakened*
+// tiers, and the finishing position on a table set above the player.
+
+test('a Max Bots room records placement evidence', () => {
+    const room = new Room('PLACEMENT-MAXBOTS', 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    assert.ok(room.setForceMaxBots(true, 'Alice').success);
+
+    assert.strictEqual(room.recordsPlacementEvidence(), true);
+    // ...but the finish against a deliberately stronger table is not skill.
+    assert.strictEqual(room.placementOutcomeCounts(), false);
+    assert.strictEqual(
+        room.placementEvidenceFor({ id: 'human-1', name: 'Alice' }, 3)
+            .outcomeCounts,
+        false);
+});
+
+test('an adaptive room records placement evidence and reads the outcome', () => {
+    const room = new Room('PLACEMENT-ADAPTIVE', 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    assert.deepStrictEqual(room.configureBotPolicyForRoster(), { success: true });
+
+    assert.strictEqual(room.botPolicy.difficulty, 'adaptive');
+    assert.strictEqual(room.recordsPlacementEvidence(), true);
+    assert.strictEqual(room.placementOutcomeCounts(), true);
+    assert.strictEqual(
+        room.placementEvidenceFor({ id: 'human-1', name: 'Alice' }, 1)
+            .outcomeCounts,
+        true);
+});
+
+test('weakened tiers never buy placement progress', () => {
+    // No socket API selects these, but the rule has to hold if one ever does:
+    // placement is not earned against bots weakened below the roster average.
+    for (const difficulty of ['casual', 'balanced']) {
+        const room = seatedRoom(difficulty);
+        assert.strictEqual(room.recordsPlacementEvidence(), false, difficulty);
+        assert.strictEqual(room.placementOutcomeCounts(), false, difficulty);
+    }
+});
+
+test('round evidence is collected on a Max Bots table', () => {
+    const room = new Room('PLACEMENT-ROUNDS', 'short');
+    room.addPlayer({ id: 'human-1', name: 'Alice', isBot: false });
+    assert.ok(room.setForceMaxBots(true, 'Alice').success);
+    room.startGame();
+
+    room.roundDealStrength['human-1'] = { rank: 2 };
+    room.recordPlacementRoundEvidence([{ id: 'human-1', placement: 1 }]);
+
+    const evidence = room.placementEvidenceFor(
+        room.players.find(p => p.id === 'human-1'), 1);
+    assert.strictEqual(evidence.rounds.length, 1);
+    assert.strictEqual(evidence.rounds[0].dealRank, 2);
+    assert.strictEqual(evidence.rounds[0].placement, 1);
+});

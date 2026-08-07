@@ -567,7 +567,28 @@ to offer and would otherwise be locked out of its own settings.
   Bot strength is automatic: the server averages every human player's saved
   placement calibration and snapshots that policy for the complete game.
 - `set_max_bots` - Host-only, waiting-only. Pins the room to the strongest tier
-  instead of the roster average. The activity feed's "MAX BOTS" chip is the only
+  instead of the roster average, **and drops the hidden persona**: with
+  `forceMaxBots` on, `Room.personasEnabled()` is false and every bot seat —
+  roster and mid-game replacement alike — is dealt `classic`. `competitive` is
+  argmax, but `BotStyle` shifts the logits *before* that argmax, so a persona
+  seat will play a move the actor did not rate highest; the ceiling is the one
+  place that trade is wrong. Keyed on the `forceMaxBots` flag, never on
+  `difficulty === MAX_BOT_DIFFICULTY` — that string is also
+  `DEFAULT_BOT_DIFFICULTY`, so it would strip personas from every bare
+  `new Room()`. Worth +0.43pp ± 0.09pp of reference win rate, paired over 96k
+  rounds per lineup (`npm run bench:maxbots`).
+  These games **count toward placement**. `Room.recordsPlacementEvidence()` is
+  true on `adaptive` and on `forceMaxBots`, never on the weakened tiers;
+  `Room.placementOutcomeCounts()` is true only on `adaptive`, and rides through
+  to `summarizeEvidence` as `outcomeCounts`. The split exists because
+  `outcomeSkill` is table-relative — finishing 3rd against the strongest bots is
+  not evidence of playing worse — so a Max Bots game buys real placement
+  progress from its rounds while only decision quality (opponent-independent,
+  0.7 of the weight) moves the skill estimate. The public rank was never
+  suspended: `competitive` bots are `DEFAULT_MU`, the highest-rated bot seat, and
+  `updatePublicRank` consults `placementMatchesComplete` only while a player is
+  still unplaced.
+  The activity feed's "MAX BOTS" chip is the only
   *per-game* difficulty label anything shows a viewer; the hand-strength stats'
   "Easy bots" scope also reflects difficulty, but as an aggregate over rounds
   that never names a game or a tier.
