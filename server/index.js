@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
+const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, saveGameRoundReview, getGameRoundReview, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
 const { validateUsername, validatePassword } = require('./username');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
@@ -877,6 +877,12 @@ io.on('connection', (socket) => {
             roundReview: room.describeRoundReview(scoresWithCumulative.map(x => x.name))
         };
 
+        try {
+            await saveGameRoundReview(room.gameId, dragonResults.roundReview);
+        } catch (e) {
+            console.error('Failed to save round review (dragon):', e);
+        }
+
         // Store dragon win results for reconnection handling
         room.lastGameResults = dragonResults;
 
@@ -1190,6 +1196,15 @@ io.on('connection', (socket) => {
                 // round_over or getGameState.
                 roundReview: room.describeRoundReview(scoresWithCumulative.map(x => x.name))
             };
+
+            // Persisted from the payload rather than rebuilt, so the feed can
+            // never show a different review from the one the players saw. Its
+            // own try/catch: a summary is not worth failing a game over.
+            try {
+                await saveGameRoundReview(room.gameId, gameResults.roundReview);
+            } catch (e) {
+                console.error('Failed to save round review:', e);
+            }
 
             // Store game results for reconnection handling
             room.lastGameResults = gameResults;
@@ -2567,6 +2582,22 @@ app.get('/api/debug/game/:gameId', async (req, res) => {
     } catch (error) {
         console.error('Debug endpoint error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// The round-by-round review for one finished game. Its own endpoint rather
+// than a field on /api/activity: the feed selects `page.*` and would otherwise
+// ship every game's review on every page, when a client needs at most the one
+// card the player expanded.
+app.get('/api/game/:gameId/review', async (req, res) => {
+    try {
+        const review = await getGameRoundReview(req.params.gameId);
+        // 200 with null, not 404: "this game predates the feature" is a normal
+        // answer the client renders as the plain standings, not an error.
+        res.json({ review });
+    } catch (error) {
+        console.error('Error fetching round review:', error);
+        res.status(500).json({ error: 'Failed to fetch round review' });
     }
 });
 

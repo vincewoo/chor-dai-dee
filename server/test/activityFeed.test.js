@@ -32,6 +32,8 @@ const {
     sweepAbandonedGames,
     getComebackStats,
     createUser,
+    saveGameRoundReview,
+    getGameRoundReview,
     MAX_BOT_DIFFICULTY_ID
 } = require('../db');
 const { Room } = require('../game/RoomManager');
@@ -474,4 +476,49 @@ test('a room whose host chose max bots records the ceiling tier', async () => {
         { username: 'MaxedBot3', isBot: true }
     ]);
     assert.strictEqual((await feedGame(gameId)).max_bots, true);
+});
+
+// --- the round-by-round review in the feed ----------------------------------
+//
+// The feed cannot rebuild this from anything else it stores: round_stats holds
+// registered humans only, so three seats of a typical game would be blank, and
+// game_participants keeps no per-round data at all. It is persisted verbatim
+// from the game-over payload so the feed and the table cannot disagree.
+
+test('a stored review round-trips for every seat, bots included', async () => {
+    const gameId = nextGameId();
+    const review = {
+        Alice: { avgPercentile: 61, dealRank: 1, totalPoints: 12, roundsWon: 2,
+                 rounds: [{ round: 1, percentile: 61, tierLabel: 'Strong', rank: 1, points: 0, cardsLeft: 0, won: true }] },
+        'Bot 2': { avgPercentile: 30, dealRank: 2, totalPoints: 40, roundsWon: 0,
+                   rounds: [{ round: 1, percentile: 30, tierLabel: 'Rough', rank: 2, points: 40, cardsLeft: 13, won: false }] }
+    };
+    await saveGameRoundReview(gameId, review);
+
+    const back = await getGameRoundReview(gameId);
+    assert.deepStrictEqual(back, review);
+    assert.ok('Bot 2' in back, 'bots must survive; round_stats would drop them');
+});
+
+test('a game with no stored review answers null rather than failing', async () => {
+    // Every game played before this shipped. The feed renders its plain
+    // standings; there is nothing to reconstruct the deals from afterwards.
+    assert.strictEqual(await getGameRoundReview('game_never_reviewed'), null);
+});
+
+test('the first review written for a game is the one kept', async () => {
+    // The review describes a finished game, so a second write is a bug or a
+    // retry, never a correction.
+    const gameId = nextGameId();
+    await saveGameRoundReview(gameId, { A: { avgPercentile: 50, rounds: [] } });
+    await saveGameRoundReview(gameId, { A: { avgPercentile: 99, rounds: [] } });
+    assert.strictEqual((await getGameRoundReview(gameId)).A.avgPercentile, 50);
+});
+
+test('an empty review is not stored at all', async () => {
+    // A game that ended before any deal was scored has nothing to say, and a
+    // row of "{}" would be indistinguishable from a real but empty answer.
+    const gameId = nextGameId();
+    await saveGameRoundReview(gameId, {});
+    assert.strictEqual(await getGameRoundReview(gameId), null);
 });

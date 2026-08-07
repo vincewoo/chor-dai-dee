@@ -261,6 +261,26 @@ function initDb() {
             UNIQUE(game_id, username)
         )`);
 
+        // The game-over round-by-round review, so the activity feed can show
+        // the same summary the players saw at the table.
+        //
+        // Deliberately its own table rather than a column on game_history:
+        // getActivityFeed selects `page.*`, so anything on that table ships to
+        // every client on every page of the feed. This is a few KB per game and
+        // is only ever read for one game at a time, when a card is expanded.
+        //
+        // Stored as JSON because it is only ever read whole, for display -- the
+        // same reason game_events.event_data is JSON. Nothing queries inside it.
+        // It covers every seat including bots and guests, which is exactly why
+        // round_stats cannot serve this: that table holds registered humans
+        // only, so three seats of a typical game would be blank.
+        db.run(`CREATE TABLE IF NOT EXISTS game_round_review (
+            game_id TEXT PRIMARY KEY,
+            review TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(game_id) REFERENCES game_history(game_id)
+        )`);
+
         // Notable events in games (for highlights)
         db.run(`CREATE TABLE IF NOT EXISTS game_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2433,6 +2453,47 @@ const saveGameParticipant = (participantData) => {
     });
 };
 
+/**
+ * Store a finished game's round-by-round review.
+ *
+ * ON CONFLICT DO NOTHING: the review describes a game that has ended, so the
+ * first write is the true one. A rematch mints a new gameId, so this cannot
+ * collide with a later game in the same room.
+ */
+const saveGameRoundReview = (gameId, review) => {
+    return new Promise((resolve, reject) => {
+        if (!review || Object.keys(review).length === 0) return resolve();
+        db.run(
+            `INSERT INTO game_round_review (game_id, review) VALUES (?, ?)
+             ON CONFLICT(game_id) DO NOTHING`,
+            [gameId, JSON.stringify(review)],
+            (err) => err ? reject(err) : resolve()
+        );
+    });
+};
+
+/**
+ * The review for one game, or null for a game played before this was recorded.
+ * Null is the honest answer and the feed simply falls back to its plain
+ * standings; there is nothing to reconstruct it from after the fact, since the
+ * deals only ever existed in the room's memory.
+ */
+const getGameRoundReview = (gameId) => {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT review FROM game_round_review WHERE game_id = ?`, [gameId],
+            (err, row) => {
+                if (err) return reject(err);
+                if (!row) return resolve(null);
+                try {
+                    resolve(JSON.parse(row.review));
+                } catch (e) {
+                    console.error('Malformed round review for', gameId, e);
+                    resolve(null);
+                }
+            });
+    });
+};
+
 // Save notable game event
 const saveGameEvent = (gameId, eventType, eventData, roundNumber = null) => {
     return new Promise((resolve, reject) => {
@@ -3067,6 +3128,8 @@ module.exports = {
     saveGameHistory,
     saveGameParticipant,
     saveGameEvent,
+    saveGameRoundReview,
+    getGameRoundReview,
     getActivityFeed,
     getGameEvents,
     getActivityFeedCount,

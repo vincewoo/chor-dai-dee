@@ -54,6 +54,26 @@ const ActivityFeed = ({ serverUrl, user }) => {
         fetchActivityFeed();
     }, [fetchActivityFeed]);
 
+    // Reviews are fetched per expanded card, not with the feed page: a review
+    // is a few KB and a page is twenty games, almost none of which get opened.
+    // Cached by game id so re-expanding the same card is free.
+    const [reviews, setReviews] = useState({});
+
+    const loadReview = useCallback(async (gameId) => {
+        if (!gameId || reviews[gameId] !== undefined) return;
+        // Marked in-flight so a double tap cannot fire two requests.
+        setReviews(prev => ({ ...prev, [gameId]: null }));
+        try {
+            const response = await fetch(`${serverUrl}/api/game/${gameId}/review`);
+            if (!response.ok) return;
+            const data = await response.json();
+            setReviews(prev => ({ ...prev, [gameId]: data.review || null }));
+        } catch (err) {
+            // A missing review just leaves the plain standings in place.
+            console.error('Error fetching round review:', err);
+        }
+    }, [serverUrl, reviews]);
+
     // Filter changes always restart at page 1 with a fresh list.
     const applyFilters = (next) => {
         setFilters(next);
@@ -71,6 +91,8 @@ const ActivityFeed = ({ serverUrl, user }) => {
             hasMore={currentPage < totalPages}
             onLoadMore={() => setPage({ number: currentPage + 1, append: true })}
             onRetry={fetchActivityFeed}
+            reviews={reviews}
+            onExpandGame={loadReview}
             onBack={() => navigate('/lobby')}
             username={user?.username}
         />

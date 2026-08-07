@@ -4,6 +4,7 @@ import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import SuitWatermark from './SuitWatermark';
 import MaxBotsChip from './MaxBotsChip';
+import RoundReviewPanel from './RoundReviewPanel';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -54,6 +55,10 @@ function ActivityFeedV2({
     onRetry,
     onBack,
     username,
+    // Fetched per expanded card; undefined = not loaded, null = this game
+    // predates the feature and has nothing to show.
+    reviews = {},
+    onExpandGame,
 }) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const [expandedId, setExpandedId] = useState(null);
@@ -188,12 +193,33 @@ function ActivityFeedV2({
                             // are no standings to open.
                             const canExpand = c.participants.length > 0;
                             const open = canExpand && expandedId === c.id;
+                            const review = reviews[c.id] || null;
                             return (
-                                <button
+                                // A div with button semantics, not a <button>:
+                                // the expanded body now contains the round
+                                // review's own toggle, and a button inside a
+                                // button is not parseable HTML. Keyboard and
+                                // ARIA behaviour are kept by hand so this is a
+                                // change of element, not of affordance.
+                                <div
                                     key={c.id}
-                                    onClick={() => canExpand && setExpandedId(open ? null : c.id)}
+                                    role={canExpand ? 'button' : undefined}
+                                    tabIndex={canExpand ? 0 : undefined}
+                                    onClick={() => {
+                                        if (!canExpand) return;
+                                        const next = open ? null : c.id;
+                                        setExpandedId(next);
+                                        if (next) onExpandGame?.(c.id);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (!canExpand) return;
+                                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                                        e.preventDefault();
+                                        const next = open ? null : c.id;
+                                        setExpandedId(next);
+                                        if (next) onExpandGame?.(c.id);
+                                    }}
                                     aria-expanded={canExpand ? open : undefined}
-                                    disabled={!canExpand}
                                     className="text-left"
                                     style={{
                                         background: c.hasMe
@@ -298,6 +324,13 @@ function ActivityFeedV2({
                                                                     ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
                                                                     : (c.abandoned ? 'Score when abandoned' : 'Unranked')}
                                                                 {p.roundsWon ? ` · ${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won` : ''}
+                                                                {/* Placement stays here, unlike the game-over
+                                                                    screen: this list has no left-hand position
+                                                                    gutter to make it redundant. */}
+                                                                {review?.[p.username]?.dealRank
+                                                                    ? ` · deals ${review[p.username].dealRank}${ordinalSuffix(review[p.username].dealRank)}`
+                                                                    + ` (${review[p.username].avgPercentile}${ordinalSuffix(review[p.username].avgPercentile)} pct)`
+                                                                    : ''}
                                                             </div>
                                                         </div>
                                                         <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>
@@ -306,9 +339,27 @@ function ActivityFeedV2({
                                                     </div>
                                                 );
                                             })}
+
+                                            {/* The same panel the game-over screen
+                                                draws, from the same recorded data,
+                                                so the two cannot describe one game
+                                                differently. Absent for games played
+                                                before it was recorded. */}
+                                            <div onClick={(e) => e.stopPropagation()}>
+                                                <RoundReviewPanel
+                                                    rows={c.participants.map((p) => ({
+                                                        key: p.username,
+                                                        name: p.username,
+                                                        isYou: p.username === username,
+                                                    }))}
+                                                    roundReview={review}
+                                                    acc={acc}
+                                                    rm={rm}
+                                                />
+                                            </div>
                                         </div>
                                     )}
-                                </button>
+                                </div>
                             );
                         })}
 
