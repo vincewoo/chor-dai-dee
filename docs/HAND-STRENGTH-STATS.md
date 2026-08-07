@@ -31,6 +31,77 @@ Two headline numbers fall out:
   Deal-luck-neutral. This is the skill number, and it is the point of the
   whole feature.
 
+## Where a player sees this
+
+Two places, and they show deliberately different things.
+
+**Career stats** (`/api/stats/:username/hand-strength`) show **Edge**, because
+only there is the sample big enough — `MIN_ROUNDS_FOR_EDGE` is 50, and the
+residual SD of 0.415 means ±10pp needs ~67 rounds.
+
+**The game-over screen** shows **deal luck only, never Edge.** A game is six to
+ten rounds, so an Edge figure there would be noise presented as a verdict.
+
+Each standings row reads `Deal strength: 1st (61st percentile)` — the player's
+rank by deal quality across the whole game, and the mean percentile behind it.
+It replaces the finishing place, which the number in the left gutter already
+gives. A "Round by round" drill-in opens a rounds × players grid
+(`tableV2/RoundReviewPanel.jsx`). That grid is **primarily a scoreboard**: each
+cell shows the points that round cost, with the deal's percentile underneath as
+the context that says whether a bad round was bad luck or bad play — a 39 under
+a 12 is a different story from a 39 under an 88. The round winner's cell is
+accent-tinted, and a Total column closes it out.
+
+Colour bands the percentile — 67+ accent, 34–66 neutral, under 34 red — not the
+points (already legible as a number) and not the rank at the table: rank is
+relative, so in a round where all four hands were scraps somebody still places
+first, and colouring that gold would call a bad hand good. Where a player placed
+stays in the cell tooltip.
+
+Points are filled in by `updateScores` at round end, matched on the round number
+rather than by position. A round that was dealt but never scored keeps
+`points: null` and renders as a dash — zero is the winner's score, so it cannot
+double as "unknown".
+
+### Why the headline is a percentile and not a tier label
+
+The first version averaged the *tier index* and printed the bucket. Measured
+over 16,000 simulated 12-round player-games:
+
+| Aggregate | p5 | p50 | p95 | spread |
+|---|---|---|---|---|
+| mean tier index | 1.17 | 1.83 | 2.50 | 1.33 |
+| mean raw | −1.75 | 0.17 | 2.08 | 3.83 |
+| **mean percentile** | 35.7 | 49.8 | 63.6 | 27.9 |
+
+Rounding the mean tier to a bucket prints **"Average" 77.3% of the time**, and
+"Rough" and "Premium" are unreachable — a whole line of UI carrying no
+information, which is exactly how it looked on screen with all four players
+reading the same label.
+
+Mean **raw** separates players but is uninterpretable ("your deals averaged
+0.17"). Mean **percentile** separates them *and* reads on its own. It still
+compresses — p5–p95 is only 36–64 — but that is the truth about twelve random
+deals rather than a defect: luck genuinely averages out. 36 against 64 is a
+difference a player can see; "Average" against "Average" is not.
+
+Tiers remain correct for a *single* deal, which is what they were built for, and
+survive per-round in the grid's tooltip. Rank is never averaged.
+
+Reproduce the table by sampling `calculateDealStrength` over dealt hands; the
+percentile itself comes from `percentileFor`, fitted on 200k random deals.
+
+`Room.dealHistoryByName` accumulates this across a game, keyed by name for the
+same reason `roundsWonByName` is: `roundPlayStats` is keyed by socket id and has
+to be hand-copied between ids on every reconnect and bot swap. It resets on
+`roundNumber === 0`, the room's only "new game" signal.
+
+**The rank must never reach a client mid-round.** It compares all four dealt
+hands, so it is a live read on opponents' holdings. `Room.describeRoundReview()`
+has exactly one caller — the game-over handler — and is deliberately absent from
+`getGameState()` and from `round_over`. `dealStrength.test.js` pins that
+boundary by serializing room state and asserting the fields are absent.
+
 ## Part 1: scoring a dealt hand
 
 ### Why not reuse `calculateHandStrength`

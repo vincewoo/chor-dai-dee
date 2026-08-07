@@ -422,7 +422,21 @@ fits at 768px.
   - Deliberately separate from `DecisionAnalyzer.calculateHandStrength`, which
     scores *partial* hands mid-round and is entangled with hand size by design.
   - `rank` is derived from all four hands and must never reach a client
-    mid-round - it leaks opponents' holdings.
+    mid-round - it leaks opponents' holdings. It surfaces in exactly one place:
+    the game-over screen's "Deal luck by round" grid, fed by
+    `Room.describeRoundReview()` (accumulated in `dealHistoryByName`, name-keyed
+    and reset at `roundNumber === 0` like `roundsWonByName`). That method has
+    one caller, the game-over handler, and is deliberately absent from
+    `getGameState()` and `round_over`. The grid is primarily a
+    *scoreboard* - points per round, winner's cell accent-tinted, Total column -
+    with the deal percentile under each score as context, colour-banded on that
+    percentile (67+ / 34-66 / under 34) rather than on rank, which is relative
+    and would paint the best of four bad hands as a good one. An unscored round
+    is `null`, never 0. The standings rows show the mean percentile. **Not a tier label** - averaged over a game, rounding the tier
+    index prints "Average" 77% of the time and can never print the outer two,
+    which is measured in `docs/HAND-STRENGTH-STATS.md`. **Edge is never shown
+    per game** - at six to ten rounds it is noise, and it needs 50
+    (`MIN_ROUNDS_FOR_EDGE`).
   - Bots do **not** use it: feeding own-hand strength into bot scoring was
     measured and made play worse. A *relative* signal (`BotLogic.roundLostness`)
     did work and shipped instead. See `docs/BOT-HEURISTICS-REVIEW.md` §§ 11-12.

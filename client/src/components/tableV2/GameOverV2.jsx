@@ -3,6 +3,7 @@ import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import MaxBotsChip from './MaxBotsChip';
+import RoundReviewPanel from './RoundReviewPanel';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; shadow-rating
@@ -26,6 +27,11 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             animal: getAvatarEmoji(s.name),
             tile: getAvatarTile(s.name),
             total: s.cumulativeScore,
+            // Mean percentile of the game's deals. A number rather than a tier
+            // label because the label is nearly constant once averaged -- see
+            // Room.describeRoundReview.
+            dealPercentile: gameOver?.roundReview?.[s.name]?.avgPercentile ?? null,
+            dealRank: gameOver?.roundReview?.[s.name]?.dealRank ?? null,
             delay: `${(0.35 + i * 0.09).toFixed(2)}s`,
         }));
         // avatarsVersion isn't read here, but it changes when a looked-up
@@ -142,7 +148,18 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                                     <div style={{ color: '#f4f5f7', fontWeight: 700, fontSize: 14 }}>
                                         {r.name}{r.isYou ? ' (You)' : ''}{r.isBot ? ' · bot' : ''}
                                     </div>
-                                    <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>{r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`}</div>
+                                    {/* Finishing place is the number in the left
+                                        gutter, so repeating it here spent the
+                                        subtitle on nothing. This line answers
+                                        the other question instead: how the deal
+                                        treated them. Falls back to the placement
+                                        text only when a server too old to send
+                                        roundReview leaves nothing to say. */}
+                                    <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>
+                                        {r.dealRank != null
+                                            ? `Deal strength: ${r.dealRank}${ordinalSuffix(r.dealRank)} (${r.dealPercentile}${ordinalSuffix(r.dealPercentile)} percentile)`
+                                            : (r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`)}
+                                    </div>
                                 </div>
                                 <div style={{ textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap' }}>
                                     <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 17 }}>{r.total} <span style={{ color: 'rgba(244,245,247,.45)', fontSize: 11, fontWeight: 600 }}>pts</span></div>
@@ -150,6 +167,13 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                             </div>
                         ))}
                     </div>
+
+                    <RoundReviewPanel
+                        rows={rows}
+                        roundReview={gameOver?.roundReview}
+                        acc={acc}
+                        rm={rm}
+                    />
                 </div>
 
                 {/* Actions slot (buttons supplied by GameRoom) */}

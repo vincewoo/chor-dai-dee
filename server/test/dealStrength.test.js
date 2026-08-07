@@ -139,3 +139,347 @@ test('an empty hand scores zero rather than throwing', () => {
 test('BASELINE_VERSION is a positive integer', () => {
     assert.ok(Number.isInteger(BASELINE_VERSION) && BASELINE_VERSION > 0);
 });
+
+// --- the game-over drill-in --------------------------------------------------
+//
+// Room.describeRoundReview() is the only thing that ever shows a player anything
+// about the deal, and only at game over. What is pinned here is the accumulator
+// (which outlives a round, unlike roundDealStrength) and the leak boundary: the
+// per-round rank compares all four dealt hands, so it must not appear anywhere
+// a round can still be played.
+
+const { Room } = require('../game/RoomManager');
+
+// A valid competition ranking over the seats, checked as a *property* rather
+// than as the literal sequence [1,2,3,4]. Deals are random and ties share the
+// better rank by design, so an honest table can legitimately rank 1,1,3,4;
+// asserting the literal sequence failed whenever two seats drew equal strength.
+//
+// Checked against avgPercentile because that is what the implementation now
+// orders on -- the number the row prints. An earlier version of both the
+// ranking and this helper disagreed about that (rank on the unrounded mean,
+// tie-check on the rounded one), which flaked at the same ~20% rate for a
+// subtler reason. If they ever diverge again this helper is what catches it.
+const assertValidRanking = (entries, label) => {
+    const byMean = [...entries].sort((a, b) => b.avgPercentile - a.avgPercentile);
+    assert.strictEqual(byMean[0].dealRank, 1, `${label}: somebody must be 1st`);
+    byMean.forEach((e, i) => {
+        assert.ok(e.dealRank >= 1 && e.dealRank <= entries.length,
+            `${label}: rank ${e.dealRank} out of range`);
+        if (i === 0) return;
+        const prev = byMean[i - 1];
+        if (e.avgPercentile === prev.avgPercentile) {
+            assert.strictEqual(e.dealRank, prev.dealRank,
+                `${label}: equal strength must share a rank`);
+        } else {
+            assert.ok(e.dealRank > prev.dealRank,
+                `${label}: weaker deals must rank strictly worse`);
+        }
+    });
+};
+
+const seatFour = (room) => {
+    room.addPlayer({ id: 'p1', name: 'Alice', isBot: false });
+    room.addPlayer({ id: 'p2', name: 'Bot Ada', isBot: true });
+    room.addPlayer({ id: 'p3', name: 'Bot Bea', isBot: true });
+    room.addPlayer({ id: 'p4', name: 'Bot Cy', isBot: true });
+    return room;
+};
+
+test('deal luck accumulates across rounds and covers every seat', () => {
+    const room = seatFour(new Room('DEAL-LUCK', 'short'));
+    room.startGame();
+    room.roundNumber++;
+    room.startRound();
+
+    const luck = room.describeRoundReview();
+
+    // Bots included: the accumulator reads the table, not the stats tables.
+    // round_stats only carries registered humans, which is why the game-over
+    // screen cannot be built from it.
+    assert.deepStrictEqual(
+        Object.keys(luck).sort(),
+        ['Alice', 'Bot Ada', 'Bot Bea', 'Bot Cy']);
+
+    for (const entry of Object.values(luck)) {
+        assert.strictEqual(entry.rounds.length, 2,
+            'roundDealStrength is wiped every round; this must not be');
+        assert.ok(Number.isInteger(entry.avgPercentile));
+        assert.ok(entry.avgPercentile >= 0 && entry.avgPercentile <= 100);
+    }
+});
+
+test('every round ranks the four seats 1-4', () => {
+    const room = seatFour(new Room('DEAL-LUCK-RANKS', 'short'));
+    room.startGame();
+
+    const ranks = Object.values(room.describeRoundReview())
+        .map(entry => entry.rounds[0].rank)
+        .sort();
+
+    assert.strictEqual(ranks.length, 4);
+    for (const rank of ranks) {
+        assert.ok(rank >= 1 && rank <= 4, `rank out of range: ${rank}`);
+    }
+    // Ties share the better rank, so 1,1,3,4 is legal and 1,2,3,5 is not.
+    assert.strictEqual(ranks[0], 1, 'somebody held the best hand');
+});
+
+test('a new game does not inherit the previous game deals', () => {
+    const room = seatFour(new Room('DEAL-LUCK-RESET', 'short'));
+    room.startGame();
+    room.roundNumber++;
+    room.startRound();
+    assert.strictEqual(room.describeRoundReview()['Alice'].rounds.length, 2);
+
+    // What a lobby restart does: roundNumber back to 0, then start again. This
+    // is the same signal roundsWonByName and gameStartedAt reset on.
+    room.roundNumber = 0;
+    room.gameState = 'waiting';
+    room.startGame();
+
+    assert.strictEqual(room.describeRoundReview()['Alice'].rounds.length, 1,
+        'a rematch that re-counted the last game would report the wrong deals');
+});
+
+test('deal ranks never appear in live room state', () => {
+    // The leak boundary. rank is derived from all four dealt hands, so anything
+    // a client can read mid-round must not carry it -- see the SECURITY note on
+    // rankTable. getGameState() is sent on every room_update.
+    const room = seatFour(new Room('DEAL-LUCK-LEAK', 'short'));
+    room.startGame();
+
+    const serialized = JSON.stringify(room.getGameState());
+    assert.ok(!serialized.includes('roundReview'), 'room state must not carry the round review');
+    assert.ok(!serialized.includes('tierLabel'), 'room state must not carry deal tiers');
+    assert.ok(!('dealHistoryByName' in room.getGameState()));
+});
+
+test('the game-level headline is a percentile, not a tier label', () => {
+    // Measured over 16,000 simulated 12-round player-games: rounding the mean
+    // *tier* to a bucket prints "Average" 77% of the time and can never print
+    // "Rough" or "Premium" at all, so the line carries no information. The mean
+    // percentile over the same games spans p5=35.7 to p95=63.6. Tiers stay the
+    // right unit for a single deal, which is what they were built for.
+    const room = seatFour(new Room('DEAL-LUCK-PCT', 'short'));
+    room.startGame();
+    const entry = Object.values(room.describeRoundReview())[0];
+
+    assert.ok(!('avgTier' in entry) && !('avgTierLabel' in entry),
+        'a bucketed average is the thing this replaced');
+    assert.ok(Number.isInteger(entry.avgPercentile));
+
+    // Each round carries the number the grid prints and the colour it uses.
+    for (const r of entry.rounds) {
+        assert.ok(r.percentile >= 0 && r.percentile <= 100, 'strength: the number');
+        assert.ok(r.rank >= 1 && r.rank <= 4, 'place: the colour');
+        assert.ok(typeof r.tierLabel === 'string' && r.tierLabel, 'tier survives per-round for the tooltip');
+    }
+});
+
+test('a single round reports that round percentile exactly', () => {
+    // A one-round game is the case where an average could hide a rounding bug.
+    const room = seatFour(new Room('DEAL-LUCK-ONE', 'short'));
+    room.startGame();
+    for (const entry of Object.values(room.describeRoundReview())) {
+        assert.strictEqual(entry.rounds.length, 1);
+        // Rounded, because percentileFor's mid-rank convention returns halves
+        // and the headline is a whole number. The per-round value stays exact
+        // so the mean is not computed from already-rounded parts.
+        assert.strictEqual(entry.avgPercentile, Math.round(entry.rounds[0].percentile));
+    }
+});
+
+test('deal strength is ranked across the game, ties sharing the better rank', () => {
+    // The standings row prints this instead of the finishing place, which the
+    // left gutter already shows. Ranked server-side so the tie convention
+    // matches rankTable's rather than being reinvented on the client.
+    const room = seatFour(new Room('DEAL-RANK', 'short'));
+    room.startGame();
+    room.roundNumber++; room.startRound();
+
+    const luck = room.describeRoundReview();
+    const entries = Object.values(luck);
+    const ranks = entries.map(e => e.dealRank).sort();
+
+    assert.strictEqual(ranks.length, 4);
+    assert.strictEqual(ranks[0], 1, 'somebody got the best cards over the game');
+    for (const r of ranks) assert.ok(r >= 1 && r <= 4);
+
+    // Better mean percentile must never rank worse.
+    const byRank = entries.slice().sort((a, b) => a.dealRank - b.dealRank);
+    for (let i = 1; i < byRank.length; i++) {
+        assert.ok(byRank[i - 1].avgPercentile >= byRank[i].avgPercentile,
+            'ranking must follow the percentiles it is derived from');
+    }
+    // The unrounded mean is an implementation detail of the ordering.
+    for (const e of entries) assert.ok(!('mean' in e), 'ordering scratch value must not ship');
+});
+
+test('the review records what each round actually cost', () => {
+    // The table is primarily a scoreboard; deal strength is the context under
+    // it. Points are filled in at round end by updateScores, matched on the
+    // round number rather than by position, so a score for a round that was
+    // never dealt cannot land on another round's row.
+    const { calculateRoundScores } = require('../game/Scoring');
+    const room = seatFour(new Room('ROUND-REVIEW-PTS', 'short'));
+    room.startGame();
+
+    // Alice sheds everything; the bots keep full hands (13 cards => 3x).
+    room.players[0].hand = [];
+    room.updateScores(calculateRoundScores(room.players[0], room.players));
+
+    const review = room.describeRoundReview();
+    const alice = review['Alice'];
+    assert.strictEqual(alice.rounds[0].points, 0);
+    assert.strictEqual(alice.rounds[0].won, true);
+    assert.strictEqual(alice.totalPoints, 0);
+    assert.strictEqual(alice.roundsWon, 1);
+
+    for (const name of ['Bot Ada', 'Bot Bea', 'Bot Cy']) {
+        const e = review[name];
+        assert.strictEqual(e.rounds[0].won, false);
+        assert.ok(e.rounds[0].points > 0, 'a full hand costs points');
+        assert.strictEqual(e.totalPoints, e.rounds[0].points);
+        assert.strictEqual(e.roundsWon, 0);
+    }
+
+    // Exactly one winner per round.
+    assert.strictEqual(Object.values(review).filter(e => e.rounds[0].won).length, 1);
+});
+
+test('a dealt but unscored round stays null rather than zero', () => {
+    // Zero is the winner's score. Defaulting an unfinished round to it would
+    // invent a win on the game-over screen, so the client renders a dash.
+    const room = seatFour(new Room('ROUND-REVIEW-NULL', 'short'));
+    room.startGame();
+
+    const entry = Object.values(room.describeRoundReview())[0];
+    assert.strictEqual(entry.rounds[0].points, null);
+    assert.strictEqual(entry.rounds[0].won, false);
+    // ...and an unscored round contributes nothing to the total.
+    assert.strictEqual(entry.totalPoints, 0);
+});
+
+test('deal strength ranks exactly the seats on the game-over screen', () => {
+    // Keying the accumulator on name let a mid-game join or a walkout leave
+    // orphaned entries behind, and ranking those produced "Deal strength: 5th"
+    // at a four-seat table with a gap where a player nobody could see took a
+    // place. Seat keying means only seats exist to rank.
+    const room = seatFour(new Room('DEAL-RANK-ORPHAN', 'short'));
+    room.startGame();
+    room.roundNumber++; room.startRound();
+
+    // Somebody joins mid-game into a seat that was held by another name.
+    const departed = room.players[1].name;
+    room.players[1] = { id: 'c1', name: 'Charlie', isBot: false, hand: [], joinedMidGame: true };
+    room.roundNumber++; room.startRound();
+
+    const review = room.describeRoundReview();
+    assert.strictEqual(Object.keys(review).length, 4, 'one entry per seat, never per name');
+    assert.ok(!(departed in review), 'a name that no longer holds a seat is not a row');
+
+    assertValidRanking(room.players.map(p => review[p.name]), 'seated');
+
+    // The ordering scratch value must never reach the client.
+    for (const e of Object.values(review)) assert.ok(!('mean' in e));
+});
+
+test('a seat keeps one history when its player walks out mid-game', () => {
+    // replaceWithBot renames the seat to `Bot (Alice)`. Keyed by name that
+    // split one seat across two entries and dropped the human's own rounds out
+    // of their average, while the standings row -- named off the live player --
+    // showed only the post-swap rounds. The seat is the continuous thing here:
+    // cumulativeScores is already carried across the same handover.
+    const room = seatFour(new Room('SEAT-CONTINUITY', 'short'));
+    room.startGame();
+    room.roundNumber++; room.startRound();
+
+    const before = room.describeRoundReview()['Alice'].rounds.length;
+    assert.strictEqual(before, 2);
+
+    // The walkout: same seat, new name.
+    room.players[0].name = 'Bot (Alice)';
+    room.players[0].isBot = true;
+    room.roundNumber++; room.startRound();
+
+    const review = room.describeRoundReview();
+    assert.strictEqual(Object.keys(review).length, 4, 'still one entry per seat');
+    assert.ok(!('Alice' in review), 'the old name is not a second row');
+    assert.strictEqual(review['Bot (Alice)'].rounds.length, 3,
+        'the seat keeps the rounds it played under its previous name');
+});
+
+test('the dragon deal is not treated as the strongest possible hand', () => {
+    // The dragon_win payload used to claim rank 1 "by definition". It is not:
+    // thirteen distinct ranks is thirteen plays to shed, so it scores as merely
+    // Strong. The instant-win rule and the deal metric measure different things.
+    const dragon = RANKS.map((r, i) => card(r, SUITS[i % 4]));
+    const d = calculateDealStrength(dragon);
+    assert.strictEqual(d.tierKey, 'strong');
+    assert.ok(d.percentile < 100, 'a dragon does not top the deal distribution');
+
+    const stacked = hand('2S', '2H', '2C', '2D', 'AS', 'AH', 'AC', 'AD', 'KS', 'KH', 'KC', 'KD', 'QS');
+    assert.ok(calculateDealStrength(stacked).raw > d.raw,
+        'a hand full of control out-scores the dragon on this metric');
+});
+
+test('a player named after an Object.prototype key still gets a row', () => {
+    // validateUsername accepts `__proto__`, `constructor`, `toString` and
+    // friends -- 3-20 chars of [A-Za-z0-9_], with only `guest_` reserved -- so
+    // these are registrable names, not hypotheticals. On a plain object the
+    // review's key assignment would set the prototype instead of an own
+    // property and the player would silently vanish from the game-over screen.
+    for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+        const room = new Room(`PROTO-${name}`, 'short');
+        room.addPlayer({ id: 'p1', name, isBot: false });
+        ['Bot 2', 'Bot 3', 'Bot 4'].forEach((n, i) =>
+            room.addPlayer({ id: `b${i}`, name: n, isBot: true }));
+        room.startGame();
+
+        // Checked through the wire, which is where a prototype-valued key is lost.
+        const onTheWire = JSON.parse(JSON.stringify(room.describeRoundReview()));
+        assert.ok(Object.prototype.hasOwnProperty.call(onTheWire, name),
+            `"${name}" must be a row of its own`);
+        assert.strictEqual(onTheWire[name].rounds.length, 1);
+        assert.strictEqual(Object.keys(onTheWire).length, 4, `"${name}" table has four seats`);
+        assert.ok(onTheWire[name].dealRank >= 1 && onTheWire[name].dealRank <= 4);
+    }
+});
+
+test('tied game-long deal strength shares the better rank', () => {
+    // The tie branch reads the previous entry's unrounded mean, so deleting
+    // that scratch value inside the ranking loop made the branch unreachable.
+    // Ties are rare per game but routine in short ones.
+    const room = seatFour(new Room('DEAL-RANK-TIE', 'short'));
+    room.startGame();
+    const names = Object.keys(room.describeRoundReview());
+
+    // Force an exact tie, then re-rank through the real code path.
+    room.roundHistoryBySeat[1] = room.roundHistoryBySeat[0].map(r => ({ ...r }));
+    const tied = room.describeRoundReview();
+    assert.strictEqual(tied[names[0]].avgPercentile, tied[names[1]].avgPercentile);
+    assert.strictEqual(tied[names[0]].dealRank, tied[names[1]].dealRank,
+        'equal deals must share a rank rather than be ordered arbitrarily');
+});
+
+test('the review keys off the caller snapshot, not names read later', () => {
+    // The game-over handler captures the standings names, then awaits a DB
+    // transaction and the game-log write before building the review. gameState
+    // is not 'finished' during those awaits, so a walkout renames a live seat
+    // in the window. Re-reading names here desynced the keys from the rows and
+    // put rank 1 on a key nothing was named after -- no row rendered 1st.
+    const room = seatFour(new Room('SNAPSHOT-RACE', 'short'));
+    room.startGame();
+
+    const standingsNames = room.players.map(p => p.name);
+    // The walkout lands between the two.
+    room.players[0].name = 'Bot (Alice)';
+    room.players[0].isBot = true;
+
+    const review = room.describeRoundReview(standingsNames);
+    assert.deepStrictEqual(Object.keys(review).sort(), [...standingsNames].sort(),
+        'keys must be the names the standings will render');
+
+    assertValidRanking(standingsNames.map(n => review[n]), 'snapshot');
+});
