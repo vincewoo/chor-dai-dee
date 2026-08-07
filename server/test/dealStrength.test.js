@@ -332,3 +332,68 @@ test('a dealt but unscored round stays null rather than zero', () => {
     // ...and an unscored round contributes nothing to the total.
     assert.strictEqual(entry.totalPoints, 0);
 });
+
+test('deal strength ranks exactly the seats on the game-over screen', () => {
+    // Keying the accumulator on name let a mid-game join or a walkout leave
+    // orphaned entries behind, and ranking those produced "Deal strength: 5th"
+    // at a four-seat table with a gap where a player nobody could see took a
+    // place. Seat keying means only seats exist to rank.
+    const room = seatFour(new Room('DEAL-RANK-ORPHAN', 'short'));
+    room.startGame();
+    room.roundNumber++; room.startRound();
+
+    // Somebody joins mid-game into a seat that was held by another name.
+    const departed = room.players[1].name;
+    room.players[1] = { id: 'c1', name: 'Charlie', isBot: false, hand: [], joinedMidGame: true };
+    room.roundNumber++; room.startRound();
+
+    const review = room.describeRoundReview();
+    assert.strictEqual(Object.keys(review).length, 4, 'one entry per seat, never per name');
+    assert.ok(!(departed in review), 'a name that no longer holds a seat is not a row');
+
+    const seated = room.players.map(p => review[p.name].dealRank);
+    assert.deepStrictEqual([...seated].sort(), [1, 2, 3, 4],
+        'the four seats on screen must rank 1-4 with no gaps');
+
+    // The ordering scratch value must never reach the client.
+    for (const e of Object.values(review)) assert.ok(!('mean' in e));
+});
+
+test('a seat keeps one history when its player walks out mid-game', () => {
+    // replaceWithBot renames the seat to `Bot (Alice)`. Keyed by name that
+    // split one seat across two entries and dropped the human's own rounds out
+    // of their average, while the standings row -- named off the live player --
+    // showed only the post-swap rounds. The seat is the continuous thing here:
+    // cumulativeScores is already carried across the same handover.
+    const room = seatFour(new Room('SEAT-CONTINUITY', 'short'));
+    room.startGame();
+    room.roundNumber++; room.startRound();
+
+    const before = room.describeRoundReview()['Alice'].rounds.length;
+    assert.strictEqual(before, 2);
+
+    // The walkout: same seat, new name.
+    room.players[0].name = 'Bot (Alice)';
+    room.players[0].isBot = true;
+    room.roundNumber++; room.startRound();
+
+    const review = room.describeRoundReview();
+    assert.strictEqual(Object.keys(review).length, 4, 'still one entry per seat');
+    assert.ok(!('Alice' in review), 'the old name is not a second row');
+    assert.strictEqual(review['Bot (Alice)'].rounds.length, 3,
+        'the seat keeps the rounds it played under its previous name');
+});
+
+test('the dragon deal is not treated as the strongest possible hand', () => {
+    // The dragon_win payload used to claim rank 1 "by definition". It is not:
+    // thirteen distinct ranks is thirteen plays to shed, so it scores as merely
+    // Strong. The instant-win rule and the deal metric measure different things.
+    const dragon = RANKS.map((r, i) => card(r, SUITS[i % 4]));
+    const d = calculateDealStrength(dragon);
+    assert.strictEqual(d.tierKey, 'strong');
+    assert.ok(d.percentile < 100, 'a dragon does not top the deal distribution');
+
+    const stacked = hand('2S', '2H', '2C', '2D', 'AS', 'AH', 'AC', 'AD', 'KS', 'KH', 'KC', 'KD', 'QS');
+    assert.ok(calculateDealStrength(stacked).raw > d.raw,
+        'a hand full of control out-scores the dragon on this metric');
+});

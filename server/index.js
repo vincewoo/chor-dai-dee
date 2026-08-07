@@ -864,9 +864,16 @@ io.on('connection', (socket) => {
             // Whose client should wait for a rank_update before showing the
             // final scoreboard. See sendRankResult.
             pendingRankFor: pendingRankNames(room),
-            // A dragon ends the game on round 1, so this is a single round --
-            // and the dragon holder is rank 1 by definition, since 13 distinct
-            // ranks is the strongest deal there is.
+            // Carries every round played, not one: the dragon check lives in
+            // startRound(), which runs each round, so a dragon dealt in round 5
+            // ends a game with five rounds of history behind it.
+            //
+            // And the dragon does not top its own table. rawDealStrength prices
+            // control against plays needed to shed, and thirteen distinct ranks
+            // is thirteen plays: it scores 2 -- "Strong", 69th percentile --
+            // and can be out-dealt by a hand full of 2s. That is not a flaw in
+            // either rule. The dragon is an instant-win *rule*; deal strength
+            // measures how well a hand plays out, which a dragon never does.
             roundReview: room.describeRoundReview()
         };
 

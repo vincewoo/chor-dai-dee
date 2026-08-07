@@ -816,14 +816,21 @@ class Room {
             // starting" signal a room gets -- both startRematch() and the lobby
             // restart come back through here.
             this.roundsWonByName = {};
-            // The game-over round-by-round review: one entry per player per
+            // The game-over round-by-round review: one entry per seat per
             // round, opened at the deal with its strength and closed at round
-            // end with the points it cost. Same lifetime and the same name
-            // keying as roundsWonByName, deliberately: roundPlayStats is keyed
-            // by socket id and has to be hand-copied between ids in three
-            // places when a player reconnects or a seat is swapped for a bot.
-            // A name survives all of that untouched.
-            this.roundHistoryByName = {};
+            // end with the points it cost.
+            //
+            // Keyed by SEAT INDEX, which is the only identity that survives
+            // everything this room does to a player mid-game. Socket ids change
+            // on reconnect. Names change too -- `replaceWithBot` renames a
+            // walked-out seat to `Bot (Alice)`, which split one seat's history
+            // across two keys and silently dropped the human's rounds out of
+            // their own average. And a seat is exactly what the standings row
+            // is: `cumulativeScores` is already carried across both the
+            // human-to-bot swap and the bot-to-newcomer join, so the points and
+            // the deals now follow the same thing. This is the same reason the
+            // ML game log is keyed on seat rather than socket id.
+            this.roundHistoryBySeat = [];
             // Stamped here for the same reason, and in lockstep with the new
             // gameId those two paths mint: this is the moment the game whose
             // duration we report actually begins.
@@ -1009,15 +1016,21 @@ class Room {
      * `points: null`, which the client renders as blank rather than as zero --
      * zero is the winner's score and would be a lie.
      *
-     * Keyed by name to match roundHistoryByName. Seats that never received a
-     * deal -- someone who joined mid-game, or a round in flight when the server
-     * restarted -- simply have fewer rounds, which is why the mean is computed
+     * Accumulated per seat and emitted keyed by that seat's *current* occupant,
+     * which is exactly what the standings row is named after. A seat whose
+     * player walked out and was replaced therefore reports one continuous
+     * history under the replacement's name, matching `cumulativeScores`, which
+     * the room already carries across the same handover. A seat that missed
+     * rounds -- someone who joined mid-game, or a round in flight when the
+     * server restarted -- simply has fewer, which is why the mean is computed
      * over the entries present rather than over roundNumber.
      */
     describeRoundReview() {
         const out = {};
-        for (const [name, rounds] of Object.entries(this.roundHistoryByName || {})) {
-            if (!rounds.length) continue;
+        this.players.forEach((player, seat) => {
+            const rounds = this.roundHistoryBySeat?.[seat] || [];
+            const name = player.name;
+            if (!rounds.length) return;
             const mean = rounds.reduce((sum, r) => sum + r.percentile, 0) / rounds.length;
             // Mean kept unrounded for the ordering below, so two players whose
             // percentiles round to the same whole number are still ranked by
@@ -1032,19 +1045,26 @@ class Room {
                 roundsWon: rounds.filter(r => r.won).length,
                 rounds
             };
-        }
+        });
 
         // Who got the best cards across the whole game. Distinct from the
         // per-round rank in the grid, and computed here rather than on the
         // client so the tie convention matches DealStrength.rankTable: ties
         // share the better rank, so two equal games are not arbitrarily
         // declared better and worse than each other.
+        //
+        // Only seats are in `out` at all now, so this ranks exactly the rows on
+        // screen: 1..4 with no gaps. Keying on name instead let a walkout or a
+        // mid-game join leave orphaned entries behind, which produced
+        // "Deal strength: 5th" at a four-seat table.
         const order = Object.keys(out).sort((a, b) => out[b].mean - out[a].mean);
         order.forEach((name, i) => {
             const tied = i > 0 && out[name].mean === out[order[i - 1]].mean;
             out[name].dealRank = tied ? out[order[i - 1]].dealRank : i + 1;
-            delete out[name].mean;
         });
+        // Every entry, not just the ranked ones: the unrounded mean is an
+        // ordering detail and has no business on the wire.
+        for (const entry of Object.values(out)) delete entry.mean;
         return out;
     }
 
@@ -1058,7 +1078,7 @@ class Room {
      */
     recordDealStrength() {
         this.roundDealStrength = {};
-        this.roundHistoryByName ||= {};
+        this.roundHistoryBySeat ||= [];
         const humanCount = this.players.filter(p => !p.isBot).length;
         const scored = rankTable(this.players.map(p => p.hand));
 
@@ -1085,8 +1105,8 @@ class Room {
             // Kept for the game-over screen, which is the only place any of
             // this may ever be shown: `rank` compares all four hands, so it
             // must not reach a client while a round can still be played.
-            // Only the three display fields, not the whole scoring record.
-            (this.roundHistoryByName[player.name] ||= []).push({
+            // Only the display fields, not the whole scoring record.
+            (this.roundHistoryBySeat[seat] ||= []).push({
                 round: this.roundNumber,
                 // Filled in by updateScores at round end. Null until then, and
                 // null forever for a round that never finished -- 0 is the
@@ -1113,9 +1133,12 @@ class Room {
         // Close out this round's review entries. Matched on the round number
         // rather than by taking the last entry, so a score arriving for a round
         // that was never dealt (or arriving twice) cannot corrupt another
-        // round's row. Keyed by name for the same reason the accumulator is.
+        // round's row. Resolved to a seat, for the same reason the accumulator
+        // is keyed on one.
         roundScores.forEach(s => {
-            const entry = (this.roundHistoryByName?.[s.name] || [])
+            const seat = this.seatOf(s.id);
+            if (seat < 0) return;
+            const entry = (this.roundHistoryBySeat?.[seat] || [])
                 .find(r => r.round === this.roundNumber);
             if (!entry) return;
             entry.points = s.roundPoints;
