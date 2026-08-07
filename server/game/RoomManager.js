@@ -1026,7 +1026,14 @@ class Room {
      * over the entries present rather than over roundNumber.
      */
     describeRoundReview() {
-        const out = {};
+        // Null-prototype, because the keys are player names and `validateUsername`
+        // happily accepts `__proto__`, `constructor`, `toString` and friends
+        // (3-20 chars of [A-Za-z0-9_], and only `guest_` is reserved). On a
+        // plain object `out['__proto__'] = ...` sets the prototype instead of
+        // creating an own property, so that player would silently vanish from
+        // the game-over screen. JSON.stringify and JSON.parse both handle a
+        // null-prototype object and rebuild it as own properties.
+        const out = Object.create(null);
         this.players.forEach((player, seat) => {
             const rounds = this.roundHistoryBySeat?.[seat] || [];
             const name = player.name;

@@ -397,3 +397,42 @@ test('the dragon deal is not treated as the strongest possible hand', () => {
     assert.ok(calculateDealStrength(stacked).raw > d.raw,
         'a hand full of control out-scores the dragon on this metric');
 });
+
+test('a player named after an Object.prototype key still gets a row', () => {
+    // validateUsername accepts `__proto__`, `constructor`, `toString` and
+    // friends -- 3-20 chars of [A-Za-z0-9_], with only `guest_` reserved -- so
+    // these are registrable names, not hypotheticals. On a plain object the
+    // review's key assignment would set the prototype instead of an own
+    // property and the player would silently vanish from the game-over screen.
+    for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+        const room = new Room(`PROTO-${name}`, 'short');
+        room.addPlayer({ id: 'p1', name, isBot: false });
+        ['Bot 2', 'Bot 3', 'Bot 4'].forEach((n, i) =>
+            room.addPlayer({ id: `b${i}`, name: n, isBot: true }));
+        room.startGame();
+
+        // Checked through the wire, which is where a prototype-valued key is lost.
+        const onTheWire = JSON.parse(JSON.stringify(room.describeRoundReview()));
+        assert.ok(Object.prototype.hasOwnProperty.call(onTheWire, name),
+            `"${name}" must be a row of its own`);
+        assert.strictEqual(onTheWire[name].rounds.length, 1);
+        assert.strictEqual(Object.keys(onTheWire).length, 4, `"${name}" table has four seats`);
+        assert.ok(onTheWire[name].dealRank >= 1 && onTheWire[name].dealRank <= 4);
+    }
+});
+
+test('tied game-long deal strength shares the better rank', () => {
+    // The tie branch reads the previous entry's unrounded mean, so deleting
+    // that scratch value inside the ranking loop made the branch unreachable.
+    // Ties are rare per game but routine in short ones.
+    const room = seatFour(new Room('DEAL-RANK-TIE', 'short'));
+    room.startGame();
+    const names = Object.keys(room.describeRoundReview());
+
+    // Force an exact tie, then re-rank through the real code path.
+    room.roundHistoryBySeat[1] = room.roundHistoryBySeat[0].map(r => ({ ...r }));
+    const tied = room.describeRoundReview();
+    assert.strictEqual(tied[names[0]].avgPercentile, tied[names[1]].avgPercentile);
+    assert.strictEqual(tied[names[0]].dealRank, tied[names[1]].dealRank,
+        'equal deals must share a rank rather than be ordered arbitrarily');
+});
