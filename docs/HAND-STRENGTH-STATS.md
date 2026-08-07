@@ -40,15 +40,42 @@ only there is the sample big enough — `MIN_ROUNDS_FOR_EDGE` is 50, and the
 residual SD of 0.415 means ±10pp needs ~67 rounds.
 
 **The game-over screen** shows **deal luck only, never Edge.** A game is six to
-ten rounds, so an Edge figure there would be noise presented as a verdict. Each
-standings row carries the *absolute* tier averaged over the game's deals
-(comparable between games), and a "Deal luck by round" drill-in opens a
-rounds × players grid of the per-round **rank** at the table
-(`tableV2/DealLuckPanel.jsx`).
+ten rounds, so an Edge figure there would be noise presented as a verdict.
 
-The two numbers answer different questions — the tier is "were my cards good",
-the rank is "were they good *for this table*" — which is why averaging the rank
-would blend them and is not done.
+Each standings row carries the **mean percentile** of that player's deals, and
+a "Deal luck by round" drill-in opens a rounds × players grid
+(`tableV2/DealLuckPanel.jsx`) where **the number is the deal's percentile and
+the colour is its rank at the table**. Two channels, two questions: "were my
+cards good" and "were they good *for this table*". They usually agree; the
+rounds where they don't are where "won without the cards" actually lives.
+
+### Why the headline is a percentile and not a tier label
+
+The first version averaged the *tier index* and printed the bucket. Measured
+over 16,000 simulated 12-round player-games:
+
+| Aggregate | p5 | p50 | p95 | spread |
+|---|---|---|---|---|
+| mean tier index | 1.17 | 1.83 | 2.50 | 1.33 |
+| mean raw | −1.75 | 0.17 | 2.08 | 3.83 |
+| **mean percentile** | 35.7 | 49.8 | 63.6 | 27.9 |
+
+Rounding the mean tier to a bucket prints **"Average" 77.3% of the time**, and
+"Rough" and "Premium" are unreachable — a whole line of UI carrying no
+information, which is exactly how it looked on screen with all four players
+reading the same label.
+
+Mean **raw** separates players but is uninterpretable ("your deals averaged
+0.17"). Mean **percentile** separates them *and* reads on its own. It still
+compresses — p5–p95 is only 36–64 — but that is the truth about twelve random
+deals rather than a defect: luck genuinely averages out. 36 against 64 is a
+difference a player can see; "Average" against "Average" is not.
+
+Tiers remain correct for a *single* deal, which is what they were built for, and
+survive per-round in the grid's tooltip. Rank is never averaged.
+
+Reproduce the table by sampling `calculateDealStrength` over dealt hands; the
+percentile itself comes from `percentileFor`, fitted on 200k random deals.
 
 `Room.dealHistoryByName` accumulates this across a game, keyed by name for the
 same reason `roundsWonByName` is: `roundPlayStats` is keyed by socket id and has

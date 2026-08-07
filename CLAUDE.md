@@ -427,9 +427,12 @@ fits at 768px.
     `Room.describeDealLuck()` (accumulated in `dealHistoryByName`, name-keyed
     and reset at `roundNumber === 0` like `roundsWonByName`). That method has
     one caller, the game-over handler, and is deliberately absent from
-    `getGameState()` and `round_over`. The standings rows show the *absolute*
-    tier instead, which is comparable between games; **Edge is never shown per
-    game** - at six to ten rounds it is noise, and it needs 50
+    `getGameState()` and `round_over`. In the grid the *number* is the deal's
+    percentile and the *colour* is its rank; the standings rows show the mean
+    percentile. **Not a tier label** - averaged over a game, rounding the tier
+    index prints "Average" 77% of the time and can never print the outer two,
+    which is measured in `docs/HAND-STRENGTH-STATS.md`. **Edge is never shown
+    per game** - at six to ten rounds it is noise, and it needs 50
     (`MIN_ROUNDS_FOR_EDGE`).
   - Bots do **not** use it: feeding own-hand strength into bot scoring was
     measured and made play worse. A *relative* signal (`BotLogic.roundLostness`)

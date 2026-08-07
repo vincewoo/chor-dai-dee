@@ -20,7 +20,7 @@ const {
 } = require('./RatingSystem');
 const { GAME_MODES, getPointThreshold } = require('./GameModes');
 const { DecisionAnalyzer } = require('./DecisionAnalyzer');
-const { rankTable, playsNeeded, BASELINE_VERSION, TIERS } = require('./DealStrength');
+const { rankTable, playsNeeded, BASELINE_VERSION } = require('./DealStrength');
 const { buildGameContext } = require('./BotContext');
 const { evaluateMove } = require('./MoveQuality');
 const Coach = require('./Coach');
@@ -984,10 +984,21 @@ class Room {
      * DealStrength.rankTable. It is deliberately absent from getGameState() and
      * from the round_over payload, and the one caller is the game-over handler.
      *
-     * The headline is the *absolute* tier, averaged on the raw tier index and
-     * rounded, so it means the same thing from one game to the next. Rank is
-     * per-round only: it answers a different question ("were my cards good for
-     * this table") and averaging it would blend the two.
+     * The headline is the mean *percentile* of the game's deals, and it is
+     * deliberately not a tier label. Measured over 16,000 simulated 12-round
+     * player-games, the mean tier index runs p5=1.17 / p50=1.83 / p95=2.50, so
+     * rounding it to a bucket prints "Average" 77% of the time and can never
+     * print "Rough" or "Premium" at all -- a whole line of UI carrying no
+     * information. The mean percentile over the same games runs p5=35.7 /
+     * p50=49.8 / p95=63.6: it still compresses, because twelve random deals
+     * genuinely do average out, but 36 against 64 is a difference a player can
+     * see. Tiers remain the right unit for a *single* deal, which is what they
+     * were built for.
+     *
+     * Rank stays per-round and is never averaged: it answers a different
+     * question ("were my cards good for this table") and blending the two is
+     * what the drill-in exists to avoid -- there, the number is the strength
+     * and the colour is the place.
      *
      * Keyed by name to match dealHistoryByName. Seats that never received a
      * deal -- someone who joined mid-game, or a round in flight when the server
@@ -998,13 +1009,8 @@ class Room {
         const out = {};
         for (const [name, rounds] of Object.entries(this.dealHistoryByName || {})) {
             if (!rounds.length) continue;
-            const mean = rounds.reduce((sum, r) => sum + r.tier, 0) / rounds.length;
-            const tier = Math.round(mean);
-            out[name] = {
-                avgTier: tier,
-                avgTierLabel: TIERS[tier].label,
-                rounds
-            };
+            const mean = rounds.reduce((sum, r) => sum + r.percentile, 0) / rounds.length;
+            out[name] = { avgPercentile: Math.round(mean), rounds };
         }
         return out;
     }
@@ -1049,7 +1055,10 @@ class Room {
             // Only the three display fields, not the whole scoring record.
             (this.dealHistoryByName[player.name] ||= []).push({
                 round: this.roundNumber,
-                tier: scored[seat].tier,
+                // The strength number the grid prints. Percentile, not raw:
+                // raw spans -9..19 and means nothing to a player, while
+                // "stronger than N% of deals" reads on its own.
+                percentile: scored[seat].percentile,
                 tierLabel: scored[seat].tierLabel,
                 rank: scored[seat].rank
             });

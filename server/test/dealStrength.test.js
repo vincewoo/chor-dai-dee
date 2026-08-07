@@ -176,8 +176,8 @@ test('deal luck accumulates across rounds and covers every seat', () => {
     for (const entry of Object.values(luck)) {
         assert.strictEqual(entry.rounds.length, 2,
             'roundDealStrength is wiped every round; this must not be');
-        assert.ok(typeof entry.avgTierLabel === 'string' && entry.avgTierLabel);
-        assert.ok(entry.avgTier >= 0 && entry.avgTier < TIERS.length);
+        assert.ok(Number.isInteger(entry.avgPercentile));
+        assert.ok(entry.avgPercentile >= 0 && entry.avgPercentile <= 100);
     }
 });
 
@@ -225,4 +225,39 @@ test('deal ranks never appear in live room state', () => {
     assert.ok(!serialized.includes('dealLuck'), 'room state must not carry deal luck');
     assert.ok(!serialized.includes('tierLabel'), 'room state must not carry deal tiers');
     assert.ok(!('dealHistoryByName' in room.getGameState()));
+});
+
+test('the game-level headline is a percentile, not a tier label', () => {
+    // Measured over 16,000 simulated 12-round player-games: rounding the mean
+    // *tier* to a bucket prints "Average" 77% of the time and can never print
+    // "Rough" or "Premium" at all, so the line carries no information. The mean
+    // percentile over the same games spans p5=35.7 to p95=63.6. Tiers stay the
+    // right unit for a single deal, which is what they were built for.
+    const room = seatFour(new Room('DEAL-LUCK-PCT', 'short'));
+    room.startGame();
+    const entry = Object.values(room.describeDealLuck())[0];
+
+    assert.ok(!('avgTier' in entry) && !('avgTierLabel' in entry),
+        'a bucketed average is the thing this replaced');
+    assert.ok(Number.isInteger(entry.avgPercentile));
+
+    // Each round carries the number the grid prints and the colour it uses.
+    for (const r of entry.rounds) {
+        assert.ok(r.percentile >= 0 && r.percentile <= 100, 'strength: the number');
+        assert.ok(r.rank >= 1 && r.rank <= 4, 'place: the colour');
+        assert.ok(typeof r.tierLabel === 'string' && r.tierLabel, 'tier survives per-round for the tooltip');
+    }
+});
+
+test('a single round reports that round percentile exactly', () => {
+    // A one-round game is the case where an average could hide a rounding bug.
+    const room = seatFour(new Room('DEAL-LUCK-ONE', 'short'));
+    room.startGame();
+    for (const entry of Object.values(room.describeDealLuck())) {
+        assert.strictEqual(entry.rounds.length, 1);
+        // Rounded, because percentileFor's mid-rank convention returns halves
+        // and the headline is a whole number. The per-round value stays exact
+        // so the mean is not computed from already-rounded parts.
+        assert.strictEqual(entry.avgPercentile, Math.round(entry.rounds[0].percentile));
+    }
 });

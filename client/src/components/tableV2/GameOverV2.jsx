@@ -27,9 +27,10 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             animal: getAvatarEmoji(s.name),
             tile: getAvatarTile(s.name),
             total: s.cumulativeScore,
-            // The absolute tier, averaged over the game's deals. Comparable
-            // between games, unlike the per-round rank in the drill-in.
-            dealTierLabel: gameOver?.dealLuck?.[s.name]?.avgTierLabel || null,
+            // Mean percentile of the game's deals. A number rather than a tier
+            // label because the label is nearly constant once averaged -- see
+            // Room.describeDealLuck.
+            dealPercentile: gameOver?.dealLuck?.[s.name]?.avgPercentile ?? null,
             delay: `${(0.35 + i * 0.09).toFixed(2)}s`,
         }));
         // avatarsVersion isn't read here, but it changes when a looked-up
@@ -148,7 +149,9 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
                                     </div>
                                     <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600 }}>
                                         {r.winner ? 'Winner' : `${r.pos}${ordinalSuffix(r.pos)} place`}
-                                        {r.dealTierLabel ? ` · deals ${r.dealTierLabel.toLowerCase()}` : ''}
+                                        {r.dealPercentile != null
+                                            ? ` · deals ${r.dealPercentile}${ordinalSuffix(r.dealPercentile)} percentile`
+                                            : ''}
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap' }}>

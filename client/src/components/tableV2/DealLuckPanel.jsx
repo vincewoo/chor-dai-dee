@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 
 // The game-over drill-in: how the deal treated each seat, round by round.
 //
-// Two different questions, deliberately answered by two different numbers. The
-// standings row carries the *absolute* tier (Rough -> Premium), which means the
-// same thing from one game to the next. This grid carries the per-round *rank*
-// at the table, which needs no calibration and is the legible form -- "won
-// holding the worst hand" reads without any statistical literacy.
+// Each cell carries both halves of the question on separate channels -- the
+// number is the deal's absolute strength (percentile of all possible hands),
+// the colour is where it placed at this table. They usually agree; the reason
+// to show both is the rounds where they don't, which is where "won without the
+// cards" actually lives.
 //
 // Rank compares all four dealt hands, so it only exists here: the server sends
 // dealLuck on game_over alone, never on round_over or in room state, or it
@@ -14,7 +14,17 @@ import { useMemo, useState } from 'react';
 
 const MUTED = 'rgba(244,245,247,.5)';
 const FAINT = 'rgba(244,245,247,.38)';
-const WORST = '#ff8f70';
+
+// Two facts per cell, on two channels that do not collide: the *number* is how
+// strong the deal was in absolute terms (percentile of all possible deals), and
+// the *colour* is where it placed at this table. A player can read either one
+// alone -- "I kept drawing 70s" or "I kept coming last" -- and the interesting
+// case is when they disagree.
+//
+// Ordered best to worst and borrowed from the palette already in use for scores
+// (ScoreCorner's green/amber/red ramp) so the screen stays one system.
+const RANK_COLORS = ['#f0b429', '#6ee7a8', '#ffab6b', '#ff8f70'];
+const rankColor = (rank, acc) => (rank === 1 ? acc : RANK_COLORS[rank - 1] || MUTED);
 
 function DealLuckPanel({ rows, dealLuck, acc, rm }) {
     const [open, setOpen] = useState(false);
@@ -31,12 +41,6 @@ function DealLuckPanel({ rows, dealLuck, acc, rm }) {
     }, [dealLuck]);
 
     if (!dealLuck || rounds.length === 0) return null;
-
-    const rankColor = (rank) => {
-        if (rank === 1) return acc;
-        if (rank === 4) return WORST;
-        return MUTED;
-    };
 
     return (
         <div className="mt-5">
@@ -70,8 +74,16 @@ function DealLuckPanel({ rows, dealLuck, acc, rm }) {
                         ...(rm ? {} : { animation: 'cddToast .3s ease-out both' }),
                     }}
                 >
-                    <div style={{ color: FAINT, fontSize: 10, fontWeight: 700, marginBottom: 9 }}>
-                        Rank of each player&rsquo;s dealt hand, 1 = best at the table
+                    <div style={{ color: FAINT, fontSize: 10, fontWeight: 700, marginBottom: 4 }}>
+                        Deal strength each round &mdash; percentile of all possible hands
+                    </div>
+                    <div className="mb-[9px] flex flex-wrap items-center gap-x-[10px] gap-y-1">
+                        {['best at table', '2nd', '3rd', 'worst'].map((label, i) => (
+                            <span key={label} className="flex items-center gap-[4px]" style={{ color: FAINT, fontSize: 10, fontWeight: 700 }}>
+                                <span style={{ width: 7, height: 7, borderRadius: 2, background: rankColor(i + 1, acc), display: 'inline-block' }} />
+                                {label}
+                            </span>
+                        ))}
                     </div>
 
                     {/* A standard game can run well past ten rounds, so the grid
@@ -113,11 +125,17 @@ function DealLuckPanel({ rows, dealLuck, acc, rm }) {
                                                             textAlign: 'center', padding: '4px 0',
                                                             fontSize: 12, fontWeight: 800,
                                                             // Unknown, not average: a seat that was
-                                                            // never dealt this round has no rank.
-                                                            color: cell ? rankColor(cell.rank) : FAINT,
+                                                            // never dealt this round has no deal.
+                                                            color: cell ? rankColor(cell.rank, acc) : FAINT,
                                                         }}
-                                                        title={cell ? `Round ${n}: ${cell.tierLabel}` : undefined}
-                                                    >{cell ? cell.rank : '–'}</td>
+                                                        // percentileFor uses the mid-rank
+                                                        // convention, so it returns halves;
+                                                        // rounded here rather than at the
+                                                        // source so the mean stays exact.
+                                                        title={cell
+                                                            ? `Round ${n}: ${cell.tierLabel}, stronger than ${Math.round(cell.percentile)}% of deals (${cell.rank} of 4 at the table)`
+                                                            : undefined}
+                                                    >{cell ? Math.round(cell.percentile) : '–'}</td>
                                                 );
                                             })}
                                         </tr>
