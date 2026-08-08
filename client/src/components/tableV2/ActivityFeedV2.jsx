@@ -43,8 +43,8 @@ function ActivityFeedV2({
     onBack,
     username,
     isGuest,
-    // Fetched per expanded card; undefined = not loaded, null = this game
-    // predates the feature and has nothing to show.
+    // Fetched per expanded card, keyed by game id. A missing key means the
+    // fetch has not run or failed; see GameSummaryCard's `review` note.
     reviews = {},
     onExpandGame,
     onReviewGame,

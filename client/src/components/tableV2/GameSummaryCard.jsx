@@ -1,6 +1,6 @@
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
-import { ordinalSuffix } from '../../utils/gameSummary';
+import { compactMetaLine, describeStanding, pluralize } from '../../utils/gameSummary';
 import MaxBotsChip from './MaxBotsChip';
 import RoundReviewPanel from './RoundReviewPanel';
 
@@ -43,7 +43,10 @@ function GameSummaryCard({
     username,
     expanded = false,
     onToggle,
-    // undefined = not loaded yet, null = this game predates the feature.
+    // Two states, not three: both call sites collapse "not fetched yet" into
+    // null, so a review in flight, a failed fetch and a game that predates the
+    // feature all arrive here identically and render as plain standings. A
+    // loading or error affordance would need that distinction kept.
     review = null,
     onReview,
     // 'compact' only: the first row in the shell draws no separator.
@@ -106,7 +109,7 @@ function GameSummaryCard({
     // depend on its caller's filter to stay honest.
     const winnerAvatar = (size, emojiSize, crownSize) => (
         <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{ width: size, height: size, borderRadius: size === 38 ? 12 : 11, background: card.abandoned ? 'rgba(255,143,112,.14)' : getAvatarTile(card.winnerName || '?'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: emojiSize, ...(compact ? { border: '1.5px solid rgba(12,32,22,.65)' } : {}) }}>
+            <div style={{ width: size, height: size, borderRadius: compact ? 11 : 12, background: card.abandoned ? 'rgba(255,143,112,.14)' : getAvatarTile(card.winnerName || '?'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: emojiSize, ...(compact ? { border: '1.5px solid rgba(12,32,22,.65)' } : {}) }}>
                 {card.abandoned ? '🚪' : getAvatarEmoji(card.winnerName || '?')}
             </div>
             {!card.abandoned && (
@@ -115,13 +118,7 @@ function GameSummaryCard({
         </div>
     );
 
-    const compactMeta = [
-        card.mode === 'short' ? 'Short' : 'Standard',
-        card.rounds ? `${card.rounds} round${card.rounds === 1 ? '' : 's'}` : null,
-        card.participants.length > 1
-            ? `beat ${card.participants.slice(1).map((p) => p.username).join(', ')}`
-            : null,
-    ].filter(Boolean).join(' · ');
+    const compactMeta = compactMetaLine(card);
 
     return (
         // A div with button semantics, not a <button>: the expanded body
@@ -211,7 +208,7 @@ function GameSummaryCard({
                                 {card.participants.length > 0
                                     ? `${card.participants.length} players`
                                     : 'Players unknown'}
-                                {card.rounds ? ` · ${card.rounds} round${card.rounds === 1 ? '' : 's'}` : ''}
+                                {card.rounds ? ` · ${pluralize(card.rounds, 'round')}` : ''}
                                 {card.duration ? ` · ${card.duration}` : ''}
                             </div>
                         </div>
@@ -244,32 +241,8 @@ function GameSummaryCard({
                                         {p.username}
                                         {p.isBot ? <span style={{ color: 'rgba(244,245,247,.4)', fontWeight: 600 }}> · bot</span> : null}
                                     </div>
-                                    {/* Placement is the number in the left gutter, so naming
-                                        it again here spends the line on nothing -- same
-                                        reasoning as the game-over standings. It survives only
-                                        for an abandoned game, where the gutter shows a dash
-                                        because there is no final standing. */}
                                     <div style={{ color: 'rgba(244,245,247,.4)', fontSize: 10, fontWeight: 600 }}>
-                                        {[
-                                            // No placement means no gutter number to be
-                                            // redundant with, so this still earns its space.
-                                            p.placement
-                                                ? null
-                                                : (card.abandoned ? 'Score when abandoned' : 'Unranked'),
-                                            // Nothing recorded for this game: fall back to the
-                                            // placement rather than leaving an empty line.
-                                            (!deal?.dealRank && p.placement)
-                                                ? (first ? 'Winner' : `${p.placement}${ordinalSuffix(p.placement)} place`)
-                                                : null,
-                                            // What they did, then the cards they did it with.
-                                            p.roundsWon
-                                                ? `${p.roundsWon} round${p.roundsWon === 1 ? '' : 's'} won`
-                                                : null,
-                                            deal?.dealRank
-                                                ? `Deal strength: ${deal.dealRank}${ordinalSuffix(deal.dealRank)}`
-                                                  + ` (${deal.avgPercentile}${ordinalSuffix(deal.avgPercentile)} pct)`
-                                                : null,
-                                        ].filter(Boolean).join(' · ')}
+                                        {describeStanding(p, card, deal)}
                                     </div>
                                 </div>
                                 <div style={{ color: TEXT, fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>
@@ -300,7 +273,14 @@ function GameSummaryCard({
                         <button
                             onClick={() => onReview(card.id)}
                             style={{ marginTop: 8, width: '100%', padding: '11px 0', borderRadius: 12, border: `1px solid ${acc}66`, background: `${acc}18`, color: acc, fontFamily: FONT, fontWeight: 800, fontSize: 13, cursor: 'pointer' }}
-                        >🔍 Review my moves</button>
+                        >
+                            {/* Its own box with explicit spacing, not "🔍 Review"
+                                in one string: the magnifier resolves to a colour
+                                emoji whose advance width does not survive the
+                                fallback, and the glyph rendered on top of the R. */}
+                            <span aria-hidden="true" style={{ marginRight: 7 }}>🔍</span>
+                            Review my moves
+                        </button>
                     )}
                 </div>
             )}

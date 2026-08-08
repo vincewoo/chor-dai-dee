@@ -1,11 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
+import { shouldLoadReview } from '../utils/gameSummary';
 
 // Round reviews for expandable game cards, shared by the Activity feed and the
 // home screen's Recent list so both can draw the same expanded card.
 //
 // Fetched per expanded card, not with the list: a review is a few KB and a feed
-// page is twenty games, almost none of which get opened. Cached by game id so
-// re-expanding the same card is free.
+// page is twenty games, almost none of which get opened. Cached by game id, so
+// re-expanding the same card is free for as long as the screen stays mounted —
+// the cache is per-mount, and navigating away and back refetches.
 export function useRoundReviews(serverUrl) {
     const [reviews, setReviews] = useState({});
 
@@ -22,7 +24,8 @@ export function useRoundReviews(serverUrl) {
     const loaded = useRef(new Set());
 
     const loadReview = useCallback(async (gameId) => {
-        if (!gameId || inFlight.current.has(gameId) || loaded.current.has(gameId)) return;
+        // The decision itself is pure and tested; this hook is the fetch shell.
+        if (!shouldLoadReview(gameId, { inFlight: inFlight.current, loaded: loaded.current })) return;
         inFlight.current.add(gameId);
         try {
             const response = await fetch(`${serverUrl}/api/games/${gameId}/round-review`);
@@ -32,7 +35,9 @@ export function useRoundReviews(serverUrl) {
             loaded.current.add(gameId);
         } catch (err) {
             // Left unresolved on purpose, so closing and reopening retries.
-            console.error('Error fetching round review:', err);
+            // Named: this string is the only observability the feature has, and
+            // it now fires from two screens.
+            console.error(`Error fetching round review for ${gameId}:`, err);
         } finally {
             inFlight.current.delete(gameId);
         }

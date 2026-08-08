@@ -26,6 +26,10 @@ export function ordinalSuffix(n) {
     return s[(v - 20) % 10] || s[v] || s[0];
 }
 
+export function pluralize(n, noun) {
+    return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 export function buildGameCard(game, { username, isGuest = false, nowTs } = {}) {
     const abandoned = game.status === 'abandoned';
     // Abandoned games carry scores but no placements, so ordering by placement
@@ -47,7 +51,10 @@ export function buildGameCard(game, { username, isGuest = false, nowTs } = {}) {
         // Server-derived, and already a real boolean: it knows both the frozen
         // tier and whether the game seated a bot for it to apply to.
         maxBots: game.max_bots,
-        when: timeAgo(game.end_time, nowTs),
+        // Guarded rather than defaulted to Date.now(): this module is pure, and
+        // timeAgo against an undefined "now" computes NaN through every branch
+        // and renders the literal string "NaNy ago" on every card.
+        when: nowTs ? timeAgo(game.end_time, nowTs) : null,
         rounds: game.total_rounds,
         duration: formatDuration(game.duration_seconds),
         highlights: game.event_count || 0,
@@ -65,4 +72,52 @@ export function buildGameCard(game, { username, isGuest = false, nowTs } = {}) {
 
 export function buildGameCards(games = [], opts) {
     return games.map((g) => buildGameCard(g, opts));
+}
+
+// The sub-line under a name in the expanded standings. Four interacting rules
+// over data that arrives asynchronously, so it lives here rather than in the
+// card's JSX, where this repo's harness (node --test over pure utils, no DOM)
+// could not reach it.
+export function describeStanding(participant, { abandoned = false } = {}, deal = null) {
+    const { placement, roundsWon } = participant;
+    return [
+        // Placement is the number in the left gutter, so naming it again here
+        // spends the line on nothing — same reasoning as the game-over
+        // standings. No placement means no gutter number to be redundant with,
+        // so this still earns its space.
+        placement ? null : (abandoned ? 'Score when abandoned' : 'Unranked'),
+        // Nothing recorded for this game: fall back to the placement rather
+        // than leaving an empty line.
+        (!deal?.dealRank && placement)
+            ? (placement === 1 ? 'Winner' : `${placement}${ordinalSuffix(placement)} place`)
+            : null,
+        // What they did, then the cards they did it with.
+        roundsWon ? `${pluralize(roundsWon, 'round')} won` : null,
+        deal?.dealRank
+            ? `Deal strength: ${deal.dealRank}${ordinalSuffix(deal.dealRank)}`
+              + ` (${deal.avgPercentile}${ordinalSuffix(deal.avgPercentile)} pct)`
+            : null,
+    ].filter(Boolean).join(' · ');
+}
+
+// The compact (home) header's meta line. Names the opponents rather than the
+// duration — the feed's header spends that room on chips instead.
+export function compactMetaLine(card) {
+    return [
+        card.mode === 'short' ? 'Short' : 'Standard',
+        card.rounds ? pluralize(card.rounds, 'round') : null,
+        // `> 1`, not truthy: a one-participant game has nobody to have beaten,
+        // and the old home row emitted a dangling "beat " for it.
+        card.participants.length > 1
+            ? `beat ${card.participants.slice(1).map((p) => p.username).join(', ')}`
+            : null,
+    ].filter(Boolean).join(' · ');
+}
+
+// Whether a round-review fetch should start. Pulled out of useRoundReviews as
+// the one decision worth pinning: the two sets encode regressions the hook's
+// comments record as having been live — a double fetch on rapid toggle, and a
+// failed fetch wedging a card because it was marked loaded anyway.
+export function shouldLoadReview(gameId, { inFlight, loaded }) {
+    return !!gameId && !inFlight.has(gameId) && !loaded.has(gameId);
 }

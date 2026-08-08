@@ -2,8 +2,8 @@ import { useTableTheme } from '../../theme/tableTheme';
 
 // The badge for a game whose bots were pinned to max difficulty by the waiting
 // room's toggle, drawn wherever a finished game is summarised: `GameOverV2` at
-// the moment it ends, then the activity feed, the home screen's Recent list and
-// the score dialog that list opens.
+// the moment it ends, then the activity feed and the home screen's Recent list,
+// both via `GameSummaryCard`.
 //
 // Accent gold rather than the warm red QUIT wears or the faint grey of PRIVATE.
 // Those two are caveats on a game; this is the opposite - an opt-in, host-chosen

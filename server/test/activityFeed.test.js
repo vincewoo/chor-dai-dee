@@ -244,8 +244,8 @@ test('comeback stats count placed participants and ignore unplaced ones', async 
 //
 // game_history.bot_difficulty is the frozen tier the room's bots actually ran.
 // The feed does not hand that string to the client to compare: it derives one
-// boolean, so all three surfaces that draw the badge (the feed, the home
-// screen's Recent list, and the score dialog they open) agree by construction.
+// boolean, so both surfaces that draw the badge (the feed and the home
+// screen's Recent list, both via `GameSummaryCard`) agree by construction.
 
 const feedGame = async (gameId) => {
     const games = await getActivityFeed({ includeStatus: ['completed'], limit: 200 });
