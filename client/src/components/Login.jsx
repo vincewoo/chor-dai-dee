@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 import { AuthShell, Field, AuthButton, Divider } from './tableV2/LoginV2';
+import { useIsDesktop } from '../hooks/useMediaQuery';
 
 // In production, use same origin; in development, use localhost:3000
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
@@ -18,6 +19,11 @@ const Login = ({ setUser }) => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+    // Autofocus the login field on desktop only. On the installed iOS PWA an
+    // autofocused input pops the software keyboard the instant the app cold-
+    // launches, covering the logo and "Play as guest" — so mobile opens with the
+    // form fully visible and the keyboard waits for a deliberate tap.
+    const isDesktop = useIsDesktop();
 
     // Google OAuth state
     const [googleFlowStep, setGoogleFlowStep] = useState(null); // null | 'choose' | 'register' | 'link'
@@ -286,7 +292,7 @@ const Login = ({ setUser }) => {
                     id="username"
                     label="Username"
                     type="text"
-                    autoFocus
+                    autoFocus={isDesktop}
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}

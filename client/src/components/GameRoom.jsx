@@ -980,7 +980,11 @@ const GameRoom = ({ user, socket, roomIdOverride = null, practiceMode = false })
     };
 
     return (
-        <div className="game-screen-safe w-screen bg-[#0b0d10] overflow-hidden flex items-center justify-center font-sans">
+        // bg is #0c3a23 (the felt-edge colour, matching html/body and every
+        // other screen), NOT a near-black: in the installed iOS PWA this shell's
+        // background is what shows through the top safe-area band above the
+        // table, and a dark value there reads as a black border over the felt.
+        <div className="game-screen-safe w-screen bg-[#0c3a23] overflow-hidden flex items-center justify-center font-sans">
             {/* Owns the room's WebRTC lifecycle; renders nothing itself. */}
             {!practiceMode && (
                 <VoiceChat

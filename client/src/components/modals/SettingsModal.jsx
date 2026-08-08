@@ -1,5 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { playSound } from '../../utils/sounds';
+// Canonical FE0E-carrying glyphs: raw ♥/♦ text renders as red Apple Color Emoji
+// on iOS, so this description must not hard-code them (see theme/tableTheme.js).
+import { SUIT_SYMBOLS } from '../../theme/tableTheme';
 
 /**
  * Settings Modal - gameplay, sound, and accessibility settings.
@@ -164,7 +167,7 @@ const SettingsModal = ({
                                 </button>
                             </div>
                             <p className="text-gray-300 text-sm md:text-[0.85vmax]">
-                                Display suits in Filipino Pusoy Dos order: ♣ lowest, then ♠, ♥, ♦ highest.
+                                Display suits in Filipino Pusoy Dos order: {SUIT_SYMBOLS.C} lowest, then {SUIT_SYMBOLS.S}, {SUIT_SYMBOLS.H}, {SUIT_SYMBOLS.D} highest.
                                 Changes only what you see — the game rules and every other player's view are unchanged.
                             </p>
                         </div>
