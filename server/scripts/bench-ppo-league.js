@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { BotLogic } = require('../game/BotLogic');
-const { PPOModel } = require('../game/PPOModel');
+const { loadPPOModel } = require('../game/ModelLoader');
 const { PPOBot } = require('../game/PPOBot');
 const {
     calculateRoundScores,
@@ -98,7 +98,7 @@ function main(argv = process.argv) {
         guardFallbacks: 0
     };
     let currentTrace = null;
-    const learned = new PPOBot(PPOModel.load(args.model), {
+    const learned = new PPOBot(loadPPOModel(args.model), {
         overrideMargin: args.overrideMargin,
         onDecision: decision => {
             telemetry.decisions++;
@@ -113,7 +113,7 @@ function main(argv = process.argv) {
         { name: 'heuristic', logic: BotLogic },
         ...args.opponentPool.map(file => ({
             name: `historical-${path.basename(path.dirname(file))}`,
-            logic: new PPOBot(PPOModel.load(file), {
+            logic: new PPOBot(loadPPOModel(file), {
                 overrideMargin: args.overrideMargin
             })
         }))

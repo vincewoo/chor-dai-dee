@@ -50,7 +50,7 @@ function GameTableDesktop(props) {
         roundResult, nextRound, onOpenSettings, onCreateAccount,
         sensors, handleDragEnd,
         handContainerRef,
-        voiceState,
+        voiceState, practiceMode,
         isSpectator, viewerIndex, spectatorHands, onSelectSeat, onOpenSpectators, coach,
     } = props;
 
@@ -143,6 +143,7 @@ function GameTableDesktop(props) {
 
             <HudBar
                 roomId={roomId}
+                practiceMode={practiceMode}
                 gameMode={gameState.gameMode}
                 roundNumber={gameState.roundNumber}
                 // The corner scoreboard is always on screen and expands to show
@@ -157,7 +158,7 @@ function GameTableDesktop(props) {
                 onOpenSpectators={
                     (gameState.spectators?.length > 0 || isSpectator) ? onOpenSpectators : undefined
                 }
-                voiceControl={(
+                voiceControl={voiceState ? (
                     <VoiceControlBubble
                         username={user?.username}
                         voiceEnabled={voiceState?.voiceEnabled || false}
@@ -174,7 +175,7 @@ function GameTableDesktop(props) {
                         playerVolumes={voiceState?.playerVolumes || {}}
                         size="hud"
                     />
-                )}
+                ) : null}
             />
 
             <ScoreCorner

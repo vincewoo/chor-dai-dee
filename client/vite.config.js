@@ -14,6 +14,9 @@ export default defineConfig({
     global: 'globalThis',
   },
   build: {
+    commonjsOptions: {
+      include: [/server\/game/, /node_modules/],
+    },
     rollupOptions: {
       output: {
         // Split the big third-party libraries out of the app chunk. They change

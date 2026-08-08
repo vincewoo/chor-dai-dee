@@ -4,7 +4,7 @@
 const path = require('path');
 
 const { BotLogic, BOT_LOGIC_VERSION } = require('./BotLogic');
-const { PPOModel } = require('./PPOModel');
+const { loadPPOModel } = require('./ModelLoader');
 const { PPOBot } = require('./PPOBot');
 const { decisionOptions } = require('./RLValueBot');
 const { DEFAULT_BOT_STYLE } = require('./BotStyle');
@@ -156,7 +156,7 @@ function loadPPO(modelPath) {
     if (!cachedPPO || cachedPPO.path !== resolved) {
         cachedPPO = {
             path: resolved,
-            model: PPOModel.load(resolved)
+            model: loadPPOModel(resolved)
         };
     }
     return cachedPPO.model;

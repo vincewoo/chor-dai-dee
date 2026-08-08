@@ -17,7 +17,7 @@
 
 const path = require('path');
 
-const { PPOModel } = require('../game/PPOModel');
+const { loadPPOModel } = require('../game/ModelLoader');
 const { PPOBot } = require('../game/PPOBot');
 const { BOT_PERSONA_IDS, DEFAULT_BOT_STYLE } = require('../game/BotStyle');
 const {
@@ -117,7 +117,7 @@ function main(argv = process.argv) {
         return 0;
     }
 
-    const model = PPOModel.load(args.modelPath);
+    const model = loadPPOModel(args.modelPath);
 
     console.log(`\nMax Bots persona check  [${path.basename(args.modelPath)}, ` +
         `${args.rounds} rounds x ${args.matchups} matchups, every seat argmax]`);

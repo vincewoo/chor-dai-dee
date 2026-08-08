@@ -6,48 +6,12 @@
 // here, rather than in the legacy Python environment, also means training and
 // inference share the exact feature implementation.
 
-const fs = require('fs');
+const { FEATURE_NAMES } = require('./BotFeatures');
 
 const MODEL_SCHEMA_VERSION = 1;
 const DEFAULT_HIDDEN_SIZE = 32;
 
 // Stable order: artifacts store this list and are rejected if it drifts.
-const FEATURE_NAMES = [
-    'bias',
-    'own_cards',
-    'next_cards',
-    'across_cards',
-    'previous_cards',
-    'min_opponent_cards',
-    'played_fraction',
-    'pass_count',
-    'has_control',
-    'first_turn',
-    'pile_by_next',
-    'pile_by_across',
-    'pile_by_previous',
-    'action_pass',
-    'action_size',
-    'action_strength',
-    'heuristic_score',
-    'heuristic_rank',
-    'heuristic_choice',
-    'spends_king',
-    'spends_ace',
-    'spends_two',
-    'remaining_cards',
-    'remaining_pairs',
-    'remaining_triples',
-    'remaining_five_card_hands',
-    'remaining_aces',
-    'remaining_twos',
-    'plays_out',
-    'crosses_ten_card_tier',
-    'crosses_thirteen_card_tier',
-    'opponent_at_one',
-    'opponent_at_two'
-];
-
 function mulberry32(seed) {
     let a = seed >>> 0;
     return () => {
@@ -186,9 +150,6 @@ class RLValueModel {
         });
     }
 
-    static load(filePath) {
-        return RLValueModel.fromArtifact(JSON.parse(fs.readFileSync(filePath, 'utf8')));
-    }
 }
 
 module.exports = {

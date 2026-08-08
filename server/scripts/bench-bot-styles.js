@@ -7,7 +7,7 @@
 const path = require('path');
 
 const { BotLogic } = require('../game/BotLogic');
-const { PPOModel } = require('../game/PPOModel');
+const { loadPPOModel } = require('../game/ModelLoader');
 const { PPOBot } = require('../game/PPOBot');
 const { FEATURE_NAMES } = require('../game/RLValueModel');
 const {
@@ -63,7 +63,7 @@ function ratio(signature, key) {
 }
 
 async function main() {
-    const model = PPOModel.load(modelPath);
+    const model = loadPPOModel(modelPath);
     const rows = [];
     for (const style of [DEFAULT_BOT_STYLE, ...BOT_PERSONA_IDS]) {
         const signature = makeSignature();

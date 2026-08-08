@@ -31,7 +31,7 @@ function GameTableMobile(props) {
         roundResult, nextRound, onOpenSettings, onCreateAccount,
         sensors, handleDragEnd,
         handContainerRef,
-        containerWidth, voiceState,
+        containerWidth, voiceState, practiceMode,
         isSpectator, viewerIndex, onSelectSeat, onOpenSpectators, coach,
     } = props;
 
@@ -106,6 +106,7 @@ function GameTableMobile(props) {
 
             <HudBar
                 roomId={roomId}
+                practiceMode={practiceMode}
                 gameMode={gameState.gameMode}
                 roundNumber={gameState.roundNumber}
                 infoOn={infoOn}
@@ -118,7 +119,7 @@ function GameTableMobile(props) {
                 onOpenSpectators={
                     (gameState.spectators?.length > 0 || isSpectator) ? onOpenSpectators : undefined
                 }
-                voiceControl={(
+                voiceControl={voiceState ? (
                     <VoiceControlBubble
                         username={user?.username}
                         voiceEnabled={voiceState?.voiceEnabled || false}
@@ -135,7 +136,7 @@ function GameTableMobile(props) {
                         playerVolumes={voiceState?.playerVolumes || {}}
                         size="hud"
                     />
-                )}
+                ) : null}
             />
 
             {infoOn && <ScoreStrip players={players} acc={acc} rm={rm} />}

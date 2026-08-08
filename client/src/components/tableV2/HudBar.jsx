@@ -6,7 +6,7 @@ import { GAME_MODES } from '../../constants/gameModes';
 // `showInfo` is off on the desktop table, where the corner scoreboard already
 // carries everything the Info layer revealed — scores always, and cards left,
 // rank and points-to-threshold when it is expanded.
-function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, showInfo = true, onOpenSettings, isGuest, onCreateAccount, acc, voiceControl, spectatorCount = 0, onOpenSpectators }) {
+function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, showInfo = true, onOpenSettings, isGuest, onCreateAccount, acc, voiceControl, spectatorCount = 0, onOpenSpectators, practiceMode = false }) {
     const modeName = gameMode ? (GAME_MODES[gameMode.toUpperCase()]?.name || 'Standard Game') : '';
     const subtitle = [modeName, roundNumber > 0 ? `Round ${roundNumber}` : null].filter(Boolean).join(' · ');
 
@@ -16,7 +16,7 @@ function HudBar({ roomId, gameMode, roundNumber, infoOn, onToggleInfo, showInfo 
                 <img src={logoImage} alt="Chor Dai Dee" style={{ width: 36, height: 36, filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.4))' }} />
                 <div style={{ minWidth: 0 }}>
                     <div style={{ color: '#f4f5f7', fontWeight: 800, fontSize: 15, letterSpacing: '.2px', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        Room {roomId}
+                        {practiceMode ? 'Practice Mode' : `Room ${roomId}`}
                     </div>
                     {isGuest ? (
                         <div style={{ color: 'rgba(244,245,247,.5)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

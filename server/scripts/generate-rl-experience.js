@@ -12,6 +12,7 @@ const path = require('path');
 const { BotLogic, BOT_LOGIC_VERSION } = require('../game/BotLogic');
 const { RULES_VERSION } = require('../game/Big2Rules');
 const { RLValueModel, FEATURE_NAMES } = require('../game/RLValueModel');
+const { loadRLValueModel } = require('../game/ModelLoader');
 const { RLValueBot } = require('../game/RLValueBot');
 const { makeRng, deal, playRound } = require('../test/botHarness');
 const { roundUtilities } = require('./train-rl-value-bot');
@@ -125,7 +126,7 @@ function main(argv = process.argv) {
         throw new Error('--opponents must be selfplay, heuristic, or mixed');
     }
 
-    const model = RLValueModel.load(args.model);
+    const model = loadRLValueModel(args.model);
     const rng = makeRng(args.seed);
     fs.mkdirSync(path.dirname(args.output), { recursive: true });
     const fd = fs.openSync(args.output, 'w');

@@ -9,6 +9,11 @@ import { GAME_MODES } from '../constants/gameModes';
 import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
 
+// Socket.IO's own connection timeout is 20 seconds. This shorter grace period
+// gets past a normal Fly cold start without making a genuinely offline player
+// stare at a dead home screen.
+const PRACTICE_OFFER_DELAY_MS = 12000;
+
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
     const [error, setError] = useState('');
@@ -25,6 +30,8 @@ const Lobby = ({ user, socket, setUser }) => {
     // Room id we can offer to watch after a join was refused for being full
     const [spectateOffer, setSpectateOffer] = useState(null);
     const [connected, setConnected] = useState(socket.connected);
+    const [practiceAvailable, setPracticeAvailable] = useState(false);
+    const practiceOfferTimer = useRef(null);
     const [showHowToPlay, setShowHowToPlay] = useState(false);
     const [joinableRooms, setJoinableRooms] = useState([]);
     const [recentGames, setRecentGames] = useState([]);
@@ -205,11 +212,16 @@ const Lobby = ({ user, socket, setUser }) => {
     // together here, so a new call site can't forget the mirror. The ref is
     // set synchronously (not effect-synced) because a localhost server can
     // answer before an effect would flush.
-    const beginJoin = (targetRoomId) => {
+    const beginJoin = (targetRoomId, { quickPlay = false } = {}) => {
         if (isJoining) return false;
         setIsJoining(true);
         isJoiningRef.current = true;
-        socket.emit('join_room', { roomId: targetRoomId, username: user.username, isGuest: user.isGuest });
+        socket.emit('join_room', {
+            roomId: targetRoomId,
+            username: user.username,
+            isGuest: user.isGuest,
+            quickPlay,
+        });
         return true;
     };
 
@@ -217,6 +229,9 @@ const Lobby = ({ user, socket, setUser }) => {
         console.log('createRoom called, socket connected:', socket.connected);
         beginJoin('create');
     };
+
+    const quickPlay = () => beginJoin('create', { quickPlay: true });
+    const startPractice = () => navigate('/practice');
 
     const joinRoom = () => {
         if (!roomId) return;
@@ -288,18 +303,37 @@ const Lobby = ({ user, socket, setUser }) => {
 
         const onConnect = () => {
             console.log('Socket connected');
+            if (practiceOfferTimer.current) {
+                clearTimeout(practiceOfferTimer.current);
+                practiceOfferTimer.current = null;
+            }
+            setPracticeAvailable(false);
             setConnected(true);
             // Try to reconnect when socket connects
             attemptReconnect();
         };
 
+        const schedulePracticeOffer = () => {
+            if (practiceOfferTimer.current) return;
+            practiceOfferTimer.current = setTimeout(() => {
+                practiceOfferTimer.current = null;
+                if (!socket.connected) setPracticeAvailable(true);
+            }, PRACTICE_OFFER_DELAY_MS);
+        };
+
         const onDisconnect = () => {
             console.log('Socket disconnected');
             setConnected(false);
+            setIsJoining(false);
+            isJoiningRef.current = false;
+            schedulePracticeOffer();
         };
+
+        const onConnectError = () => schedulePracticeOffer();
 
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
+        socket.on('connect_error', onConnectError);
 
         socket.on('joined_room', ({ roomId, playerId }) => {
             console.log('joined_room received:', roomId, playerId);
@@ -337,6 +371,8 @@ const Lobby = ({ user, socket, setUser }) => {
         if (socket.connected) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             attemptReconnect();
+        } else {
+            schedulePracticeOffer();
         }
 
         // Fetch joinable rooms initially and every 5 seconds
@@ -349,11 +385,16 @@ const Lobby = ({ user, socket, setUser }) => {
         return () => {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
+            socket.off('connect_error', onConnectError);
             socket.off('joined_room');
             socket.off('reconnected');
             socket.off('error');
             socket.off('join_failed');
             clearInterval(interval);
+            if (practiceOfferTimer.current) {
+                clearTimeout(practiceOfferTimer.current);
+                practiceOfferTimer.current = null;
+            }
         };
     }, [socket, navigate, user?.username]);
 
@@ -404,6 +445,11 @@ const Lobby = ({ user, socket, setUser }) => {
                 code={roomId}
                 onCodeChange={setRoomId}
                 onCreateRoom={createRoom}
+                onQuickPlay={connected ? quickPlay : (practiceAvailable ? startPractice : null)}
+                quickPlayLabel={connected ? 'Quick play vs bots' : 'Practice Mode'}
+                quickPlayDetail={connected
+                    ? `${user.isGuest ? 'Guest game' : 'Ranked'} · Short game · Public room`
+                    : 'Offline · Unranked · Runs on this device'}
                 onJoinRoom={joinRoom}
                 activeGames={joinableRooms}
                 onJoinActiveGame={joinInProgressRoom}

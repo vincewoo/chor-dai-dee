@@ -16,7 +16,7 @@
 
 const path = require('path');
 
-const { PPOModel } = require('../game/PPOModel');
+const { loadPPOModel } = require('../game/ModelLoader');
 const { PPOBot } = require('../game/PPOBot');
 const {
     BOT_DIFFICULTIES,
@@ -96,7 +96,7 @@ function main(argv = process.argv) {
         return 0;
     }
 
-    const model = PPOModel.load(args.modelPath);
+    const model = loadPPOModel(args.modelPath);
     const started = Date.now();
 
     console.log(`\nBot difficulty ladder  [${path.basename(args.modelPath)}, ` +

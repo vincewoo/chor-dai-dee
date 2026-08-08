@@ -8,6 +8,7 @@ const { RANKS, SUITS } = require('../game/Deck');
 const { Big2Rules } = require('../game/Big2Rules');
 const { BotLogic } = require('../game/BotLogic');
 const { RLValueModel, FEATURE_NAMES } = require('../game/RLValueModel');
+const { loadRLValueModel } = require('../game/ModelLoader');
 const { RLValueBot, decisionOptions } = require('../game/RLValueBot');
 const {
     makeRng, deal, playRound, playRoundAsync
@@ -271,7 +272,7 @@ test('training CLI writes a loadable checkpoint', () => {
     } finally {
         console.log = originalLog;
     }
-    const model = RLValueModel.load(output);
+    const model = loadRLValueModel(output);
     assert.strictEqual(model.hiddenSize, 6);
 });
 

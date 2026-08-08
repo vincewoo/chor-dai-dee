@@ -8,7 +8,7 @@
 const { BotLogic } = require('./BotLogic');
 const { HAND_TYPES } = require('./Big2Rules');
 const { rankOptions } = require('./MoveQuality');
-const { FEATURE_NAMES } = require('./RLValueModel');
+const { FEATURE_NAMES } = require('./BotFeatures');
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 

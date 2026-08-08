@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const { BotLogic, BOT_LOGIC_VERSION } = require('../game/BotLogic');
 const { RULES_VERSION } = require('../game/Big2Rules');
 const { FEATURE_NAMES } = require('../game/RLValueModel');
-const { PPOModel } = require('../game/PPOModel');
+const { loadPPOModel } = require('../game/ModelLoader');
 const { PPOBot } = require('../game/PPOBot');
 const { makeRng, deal, playRound } = require('../test/botHarness');
 const { roundUtilities } = require('./train-rl-value-bot');
@@ -171,8 +171,8 @@ function main(argv = process.argv) {
         }
     }
 
-    const model = PPOModel.load(args.model);
-    const historicalModels = args.opponentPool.map(file => PPOModel.load(file));
+    const model = loadPPOModel(args.model);
+    const historicalModels = args.opponentPool.map(file => loadPPOModel(file));
     const poolProvenance = opponentPoolProvenance(args.opponentPool);
     const rng = makeRng(args.seed);
     fs.mkdirSync(path.dirname(args.output), { recursive: true });

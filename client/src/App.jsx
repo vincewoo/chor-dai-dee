@@ -18,6 +18,7 @@ const Leaderboard = lazy(() => import('./components/Leaderboard'));
 const ActivityFeed = lazy(() => import('./components/ActivityFeed'));
 const GameReview = lazy(() => import('./components/GameReview'));
 const Training = lazy(() => import('./components/Training'));
+const PracticeRoom = lazy(() => import('./components/PracticeRoom'));
 const AvatarPickerV2 = lazy(() =>
   import('./components/tableV2').then(m => ({ default: m.AvatarPickerV2 }))
 );
@@ -119,6 +120,7 @@ function App() {
                       <Route path="/training" element={user ? <Training user={user} /> : <Navigate to="/" />} />
                   </Route>
                   <Route path="/game/:roomId" element={user?.username ? <GameRoom user={user} socket={socket} setUser={handleSetUser} /> : <Navigate to="/" />} />
+                  <Route path="/practice" element={user?.username ? <PracticeRoom user={user} setUser={handleSetUser} /> : <Navigate to="/" />} />
               </Routes>
             </Suspense>
             {/* Inside Router so it can read the route: the toasts render

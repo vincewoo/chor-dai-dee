@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { RLValueModel } = require('../game/RLValueModel');
+const { loadRLValueModel } = require('../game/ModelLoader');
 const { RLValueBot } = require('../game/RLValueBot');
 const { makeRng, deal, playRound } = require('../test/botHarness');
 const { calculateRoundScores } = require('../game/Scoring');
@@ -135,7 +136,7 @@ function main(argv = process.argv) {
 
     const rng = makeRng(args.seed);
     const model = args.resume
-        ? RLValueModel.load(args.resume)
+        ? loadRLValueModel(args.resume)
         : new RLValueModel({ hiddenSize: args.hidden, seed: args.seed });
 
     let totalLoss = 0;

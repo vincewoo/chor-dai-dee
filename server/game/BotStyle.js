@@ -5,7 +5,7 @@
 // score only within MAX_STYLE_LOGIT_ADJUSTMENT. That keeps personality
 // orthogonal to difficulty and lets Classic remain exactly the promoted model.
 
-const { FEATURE_NAMES } = require('./RLValueModel');
+const { FEATURE_NAMES } = require('./BotFeatures');
 
 const DEFAULT_BOT_STYLE = 'classic';
 const STYLE_SCORE_SCALE = 6;
@@ -30,7 +30,7 @@ function feature(row, name) {
  * (docs/BOT-HEURISTICS-REVIEW.md section 15), and personas were amplifying it.
  *
  * Derived from `next_cards` rather than fixed by adding a feature, because
- * RLValueModel.load asserts an artifact's featureNames match FEATURE_NAMES
+ * ModelLoader asserts an artifact's featureNames match FEATURE_NAMES
  * exactly: a new feature would invalidate the promoted generation-18
  * checkpoint and force a retrain to ship a bug fix. `next_cards` is that seat's
  * count over 13 and is already in the vector, so the information was never

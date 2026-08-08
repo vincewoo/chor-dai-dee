@@ -26,8 +26,9 @@ import { useIsDesktop } from '../hooks/useMediaQuery';
 import useGameSounds from '../hooks/useGameSounds';
 import { playSound } from '../utils/sounds';
 
-const GameRoom = ({ user, socket }) => {
-    const { roomId } = useParams();
+const GameRoom = ({ user, socket, roomIdOverride = null, practiceMode = false }) => {
+    const { roomId: routeRoomId } = useParams();
+    const roomId = roomIdOverride || routeRoomId;
     const navigate = useNavigate();
     const { fourColorMode, toggleFourColorMode, pusoyMode, togglePusoyMode } = useSuitColors();
     const {
@@ -644,9 +645,9 @@ const GameRoom = ({ user, socket }) => {
     // changes, because a reconnect issues a new one and the server keys the
     // set on it. Spectators are rejected server-side and have no button anyway.
     useEffect(() => {
-        if (isSpectator || !myPlayerId) return;
+        if (practiceMode || isSpectator || !myPlayerId) return;
         socket.emit('set_coach', { roomId, enabled: coachEnabled });
-    }, [socket, roomId, coachEnabled, myPlayerId, isSpectator]);
+    }, [socket, roomId, coachEnabled, myPlayerId, isSpectator, practiceMode]);
 
     // Notes arrive unprompted, so they time out. Hints were asked for and stay
     // until dismissed or until the turn moves on (see the turn stamp above).
@@ -947,7 +948,7 @@ const GameRoom = ({ user, socket }) => {
     const showTable = gameState.gameState !== 'waiting';
     const TableComposition = isDesktop ? GameTableDesktop : GameTableMobile;
     const tableProps = {
-        user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode,
+        user, roomId, gameState, myPlayerId, fourColorMode, pusoyMode, practiceMode,
         sortedHand, myHand, selectedCards, toggleCard, handleSelectCards,
         playCards, passTurn, isSubmitting, isMyTurn, getRelativePlayer,
         endgameSingleError, passForbidden, endgameNotice,
@@ -969,7 +970,7 @@ const GameRoom = ({ user, socket }) => {
         // the speech bubble above it. Spectators never see either — they have
         // no move to be coached on.
         coach: {
-            enabled: coachEnabled && !isSpectator,
+            enabled: coachEnabled && !isSpectator && !practiceMode,
             canAsk: isMyTurn && !gameState.trickWinPending && !isSubmitting,
             busy: coachBusy,
             onAsk: askCoach,
@@ -981,12 +982,14 @@ const GameRoom = ({ user, socket }) => {
     return (
         <div className="game-screen-safe w-screen bg-[#0b0d10] overflow-hidden flex items-center justify-center font-sans">
             {/* Owns the room's WebRTC lifecycle; renders nothing itself. */}
-            <VoiceChat
-                socket={socket}
-                roomId={roomId}
-                username={user?.username}
-                onVoiceStateChange={setVoiceState}
-            />
+            {!practiceMode && (
+                <VoiceChat
+                    socket={socket}
+                    roomId={roomId}
+                    username={user?.username}
+                    onVoiceStateChange={setVoiceState}
+                />
+            )}
             {/* Error Toast */}
             <AnimatePresence>
                 {error && (
@@ -1245,15 +1248,17 @@ const GameRoom = ({ user, socket }) => {
             {showTable && <TableComposition {...tableProps} />}
 
             {/* Spectator roster + host mute controls (both breakpoints) */}
-            <SpectatorPanel
-                show={showSpectators}
-                onClose={() => setShowSpectators(false)}
-                spectators={gameState?.spectators || []}
-                mutedAll={gameState?.spectatorsMutedAll}
-                isHost={isHost}
-                onMuteAll={(muted) => socket.emit('mute_all_spectators', { roomId, muted })}
-                onMuteOne={(username, muted) => socket.emit('mute_spectator', { roomId, username, muted })}
-            />
+            {!practiceMode && (
+                <SpectatorPanel
+                    show={showSpectators}
+                    onClose={() => setShowSpectators(false)}
+                    spectators={gameState?.spectators || []}
+                    mutedAll={gameState?.spectatorsMutedAll}
+                    isHost={isHost}
+                    onMuteAll={(muted) => socket.emit('mute_all_spectators', { roomId, muted })}
+                    onMuteOne={(username, muted) => socket.emit('mute_spectator', { roomId, username, muted })}
+                />
+            )}
 
             {/* Settings Modal */}
             <SettingsModal
@@ -1262,7 +1267,7 @@ const GameRoom = ({ user, socket }) => {
                 autoPass={autoPass}
                 toggleAutoPass={toggleAutoPass}
                 coachEnabled={coachEnabled}
-                toggleCoach={toggleCoach}
+                toggleCoach={practiceMode ? null : toggleCoach}
                 fourColorMode={fourColorMode}
                 toggleFourColorMode={toggleFourColorMode}
                 pusoyMode={pusoyMode}

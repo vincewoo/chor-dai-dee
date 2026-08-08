@@ -3,8 +3,7 @@
 // Training happens in PyTorch, but the exported matrices deliberately use the
 // same small tanh networks here so production needs no Python runtime.
 
-const fs = require('fs');
-const { FEATURE_NAMES } = require('./RLValueModel');
+const { FEATURE_NAMES } = require('./BotFeatures');
 
 const PPO_SCHEMA_VERSION = 1;
 const STATE_FEATURE_NAMES = [
@@ -111,10 +110,6 @@ class PPOModel {
             probabilities: stableSoftmax(logits, temperature),
             value: this.stateValue(featureRows[0])
         };
-    }
-
-    static load(filePath) {
-        return new PPOModel(JSON.parse(fs.readFileSync(filePath, 'utf8')));
     }
 
     static heuristicBootstrap({ actorHiddenSize = 64, criticHiddenSize = 64 } = {}) {

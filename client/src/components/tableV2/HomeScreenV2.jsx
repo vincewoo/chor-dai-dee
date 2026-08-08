@@ -43,6 +43,8 @@ function HomeScreenV2({
     onCodeChange,
     onCreateRoom,
     onQuickPlay,
+    quickPlayLabel = 'Quick play vs bots',
+    quickPlayDetail,
     onJoinRoom,
     activeGames = [],
     onJoinActiveGame,
@@ -62,6 +64,7 @@ function HomeScreenV2({
 }) {
     const { acc, accGrad, soft, surface, rm } = useTableTheme();
     const codeReady = (code || '').trim().length >= 4;
+    const joinReady = codeReady && connected;
     const anim = (delay) => (rm ? undefined : { animation: `cddToast .4s ${delay} ease-out both` });
 
     const liveGames = onJoinActiveGame ? activeGames : [];
@@ -230,22 +233,29 @@ function HomeScreenV2({
                         <div className="flex min-w-0 flex-col gap-3">
                             <button
                                 onClick={onCreateRoom}
-                                disabled={isJoining}
-                                style={{ padding: '19px 0', borderRadius: 18, border: 'none', background: accGrad, color: '#0b0d10', fontWeight: 800, fontSize: 18, letterSpacing: '.2px', boxShadow: `0 14px 30px ${soft},inset 0 1px 0 rgba(255,255,255,.32)`, cursor: isJoining ? 'default' : 'pointer', fontFamily: FONT, opacity: isJoining ? 0.7 : 1, ...anim('.08s') }}
-                            >{isJoining ? 'Connecting…' : 'Create a room'}</button>
+                                disabled={isJoining || !connected}
+                                style={{ padding: '19px 0', borderRadius: 18, border: 'none', background: accGrad, color: '#0b0d10', fontWeight: 800, fontSize: 18, letterSpacing: '.2px', boxShadow: `0 14px 30px ${soft},inset 0 1px 0 rgba(255,255,255,.32)`, cursor: isJoining || !connected ? 'default' : 'pointer', fontFamily: FONT, opacity: isJoining || !connected ? 0.7 : 1, ...anim('.08s') }}
+                            >{isJoining || !connected ? 'Connecting…' : 'Create a room'}</button>
 
                             {onQuickPlay && (
                                 <button
                                     onClick={onQuickPlay}
                                     disabled={isJoining}
-                                    style={{ padding: '15px 0', borderRadius: 16, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)', color: TEXT, fontWeight: 800, fontSize: 15, cursor: isJoining ? 'default' : 'pointer', fontFamily: FONT, ...anim('.12s') }}
-                                >Quick play vs bots</button>
+                                    style={{ padding: '13px 0', borderRadius: 16, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)', color: TEXT, fontWeight: 800, fontSize: 15, cursor: isJoining ? 'default' : 'pointer', fontFamily: FONT, ...anim('.12s') }}
+                                >
+                                    <span style={{ display: 'block' }}>{quickPlayLabel}</span>
+                                    {quickPlayDetail && (
+                                        <span style={{ display: 'block', marginTop: 2, color: MUTED, fontSize: 11, fontWeight: 600 }}>
+                                            {quickPlayDetail}
+                                        </span>
+                                    )}
+                                </button>
                             )}
 
                             {/* Joining a friend is one row, not a titled panel. */}
                             <form
                                 className="flex gap-2"
-                                onSubmit={(e) => { e.preventDefault(); if (codeReady && !isJoining) onJoinRoom(); }}
+                                onSubmit={(e) => { e.preventDefault(); if (codeReady && connected && !isJoining) onJoinRoom(); }}
                                 style={anim('.16s')}
                             >
                                 <input
@@ -261,14 +271,14 @@ function HomeScreenV2({
                                 />
                                 <button
                                     type="submit"
-                                    disabled={!codeReady || isJoining}
+                                    disabled={!codeReady || !connected || isJoining}
                                     style={{
-                                        minWidth: 88, borderRadius: 14, border: codeReady ? 'none' : '1px solid rgba(255,255,255,.1)',
-                                        background: codeReady ? accGrad : 'rgba(0,0,0,.22)',
-                                        color: codeReady ? '#0b0d10' : FAINT,
+                                        minWidth: 88, borderRadius: 14, border: joinReady ? 'none' : '1px solid rgba(255,255,255,.1)',
+                                        background: joinReady ? accGrad : 'rgba(0,0,0,.22)',
+                                        color: joinReady ? '#0b0d10' : FAINT,
                                         fontWeight: 800, fontSize: 15, fontFamily: FONT,
-                                        cursor: codeReady && !isJoining ? 'pointer' : 'default',
-                                        boxShadow: codeReady ? `0 8px 18px ${soft}` : 'none',
+                                        cursor: joinReady && !isJoining ? 'pointer' : 'default',
+                                        boxShadow: joinReady ? `0 8px 18px ${soft}` : 'none',
                                         transition: rm ? undefined : 'background .18s ease,color .18s ease',
                                     }}
                                 >Join</button>

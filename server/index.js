@@ -367,8 +367,9 @@ io.on('connection', (socket) => {
         socket.emit('pong');
     });
 
-    socket.on('join_room', async ({ roomId, username, isGuest }) => {
-        console.log(`join_room event received: roomId=${roomId}, username=${username}, isGuest=${isGuest}`);
+    socket.on('join_room', async ({ roomId, username, isGuest, quickPlay = false }) => {
+        const quickPlayRequested = roomId === 'create' && quickPlay === true;
+        console.log(`join_room event received: roomId=${roomId}, username=${username}, isGuest=${isGuest}, quickPlay=${quickPlayRequested}`);
 
         // Reject joins without a username. An empty username would fall through the
         // username-keyed reconnection/dedup logic and stack up duplicate phantom
@@ -393,7 +394,7 @@ io.on('connection', (socket) => {
             // If this user is already waiting in a room, reuse it instead of minting
             // a new one. Repeated 'create' emits (e.g. socket reconnect, double-fire)
             // would otherwise spawn orphan rooms and bounce the user between them.
-            const reusableRoom = existingRooms.find(
+            const reusableRoom = quickPlayRequested ? null : existingRooms.find(
                 ({ room }) => room.gameState === 'waiting'
             );
             if (reusableRoom) {
@@ -407,6 +408,18 @@ io.on('connection', (socket) => {
                 // The final policy is selected automatically from the roster
                 // when the host starts the game.
                 createdRoom?.setBotDifficulty('adaptive');
+            }
+        }
+
+        // Quick Play is deliberately a fresh short room. Set the mode before
+        // looking up the badge so the table shows the player's Short rank from
+        // its very first room_update.
+        if (quickPlayRequested) {
+            const quickPlayRoom = roomManager.getRoom(targetRoomId);
+            const modeResult = quickPlayRoom?.setGameMode('short');
+            if (!quickPlayRoom || modeResult?.error) {
+                socket.emit('error', modeResult?.error || 'Could not create Quick Play room');
+                return;
             }
         }
 
@@ -628,6 +641,10 @@ io.on('connection', (socket) => {
 
         // Final safety check: Verify player doesn't already exist in target room
         const finalTargetRoom = roomManager.getRoom(targetRoomId);
+        if (finalTargetRoom?.quickPlayStarting) {
+            socket.emit('error', 'This Quick Play game is starting');
+            return;
+        }
         if (finalTargetRoom && username) {
             const duplicatePlayer = finalTargetRoom.players.find(p => p.name === username && !p.isBot);
             if (duplicatePlayer) {
@@ -734,6 +751,26 @@ io.on('connection', (socket) => {
             // Notify everyone in room
             io.to(targetRoomId).emit('room_update', room.getGameState());
             socket.emit('joined_room', { roomId: targetRoomId, playerId: socket.id });
+
+            if (quickPlayRequested) {
+                // addPlayer made this player the host, so use the same guarded
+                // privacy path as the waiting-room control. New rooms are public
+                // already; this makes the invariant explicit and future-proof.
+                const privacyResult = room.setPrivacy(false, username);
+                if (privacyResult.error) {
+                    socket.emit('error', privacyResult.error);
+                    return;
+                }
+                // Configuration reads the creator's saved bot calibration. Keep
+                // the one-human roster closed during that async read so Quick
+                // Play always starts with exactly three bots.
+                room.quickPlayStarting = true;
+                try {
+                    await startOnlineGame(room, targetRoomId);
+                } finally {
+                    delete room.quickPlayStarting;
+                }
+            }
         }
     });
 
@@ -1842,20 +1879,17 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('room_update', room.getGameState());
     });
 
-    socket.on('start_game', async ({ roomId }) => {
-        const room = roomManager.getRoom(roomId);
-        if (room) {
-            // Verify that the requesting player is the host
-            const player = room.players.find(p => p.id === socket.id);
-            if (!player || player.name !== room.hostUsername) {
-                socket.emit('error', 'Only the room host can start the game');
-                return;
-            }
+    const startOnlineGame = async (room, roomId) => {
+        if (!room) return false;
+        if (room.gameState !== 'waiting') {
+            socket.emit('error', 'Game has already started');
+            return false;
+        }
 
             const botPolicyResult = await configureBotsForRoom(room);
             if (botPolicyResult.error) {
                 socket.emit('error', botPolicyResult.error);
-                return;
+                return false;
             }
 
             room.startGame();
@@ -1918,7 +1952,7 @@ io.on('connection', (socket) => {
                 emitSpectatorHands(room, roomId);
                 // Handle dragon win
                 handleDragonWin(room, roomId, room.dragonWinner);
-                return;
+                return true;
             }
 
             // Normal game start
@@ -1933,7 +1967,21 @@ io.on('connection', (socket) => {
 
             // Check if first player is bot
             processBotTurns(room, roomId);
+            return true;
+    };
+
+    socket.on('start_game', async ({ roomId }) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room) return;
+
+        // Verify that the requesting player is the host
+        const player = room.players.find(p => p.id === socket.id);
+        if (!player || player.name !== room.hostUsername) {
+            socket.emit('error', 'Only the room host can start the game');
+            return;
         }
+
+        await startOnlineGame(room, roomId);
     });
 
     socket.on('play_card', ({ roomId, cards }) => {
