@@ -42,6 +42,7 @@ __pycache__/
 *.ppo.decisions.bin
 *.ppo.json
 fly-export/
+/full-export-*/
 server/.rl-generations/
 server/.ppo-generations/
 server/.ppo-distillation/

@@ -19,6 +19,12 @@ RUN npm ci
 # Copy client source code
 COPY client/ ./
 
+# Practice Mode deliberately reuses the production rules and PPO evaluator so
+# browser and server play cannot drift. The local Vite build can resolve these
+# sibling modules from the repository; mirror that layout in this build stage.
+COPY server/game/ /app/server/game/
+COPY server/ai/ppo-policy-gpu-v1.json /app/server/ai/ppo-policy-gpu-v1.json
+
 # Build the client application
 # This will output static files to /app/client/dist
 RUN npm run build
