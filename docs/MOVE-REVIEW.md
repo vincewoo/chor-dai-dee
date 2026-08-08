@@ -159,8 +159,9 @@ is nearly free.
 | `/training?topic=` | Examples of one kind, across games |
 
 Reached from the Recent-games list on the home screen (the primary path), from
-the game-over screen, and from the decision-quality numbers on the stats page —
-a rate is only useful if a player can get from it to the moves behind it.
+the expanded game card in the activity feed, from the game-over screen, and from
+the decision-quality numbers on the stats page — a rate is only useful if a
+player can get from it to the moves behind it.
 
 `ReviewMoment` renders a highlight and is shared by both pages, on the same
 reasoning as `RoundLogRows`: two surfaces showing the same thing must not be able

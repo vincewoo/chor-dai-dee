@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTableTheme } from '../../theme/tableTheme';
 import { getAvatarEmoji, getAvatarTile } from '../../utils/avatars';
 import { useAvatars } from '../../hooks/useAvatars';
 import SuitWatermark from './SuitWatermark';
-import MaxBotsChip from './MaxBotsChip';
 import NavIcon from './NavIcon';
+import GameSummaryCard from './GameSummaryCard';
 import logoImage from '../../assets/chor-dai-dee-logo.webp';
-import { timeAgo } from '../../utils/timeAgo';
+import { buildGameCards } from '../../utils/gameSummary';
 
 const TEXT = '#f4f5f7';
 const MUTED = 'rgba(244,245,247,.5)';
@@ -49,7 +49,12 @@ function HomeScreenV2({
     activeGames = [],
     onJoinActiveGame,
     recentGames = [],
-    onGameClick,
+    // A recent game expands in place into the same card the Activity feed
+    // draws, so there is no per-game tap handler here any more — only the
+    // review fetch it needs and the route out to the move review.
+    reviews = {},
+    onExpandGame,
+    onReviewGame,
     nowTs,
     onHowToPlay,
     onActivity,
@@ -68,9 +73,14 @@ function HomeScreenV2({
     const anim = (delay) => (rm ? undefined : { animation: `cddToast .4s ${delay} ease-out both` });
 
     const liveGames = onJoinActiveGame ? activeGames : [];
-    const finishedGames = onGameClick ? recentGames : [];
+    const recentCards = useMemo(
+        () => buildGameCards(recentGames.slice(0, 4), { username, isGuest, nowTs }),
+        [recentGames, username, isGuest, nowTs]
+    );
     const hasLive = liveGames.length > 0;
-    const hasRecent = finishedGames.length > 0;
+    const hasRecent = recentCards.length > 0;
+    // Accordion, like the feed: opening one recent game closes the last.
+    const [expandedGameId, setExpandedGameId] = useState(null);
 
     // `null` means "follow the data" — live rooms arrive a beat after mount, and
     // until someone picks a tab we want the busier one in front.
@@ -79,12 +89,13 @@ function HomeScreenV2({
     const showLive = tab === 'live';
     const isEmpty = showLive ? !hasLive : !hasRecent;
 
-    // Your own avatar, the players on the joinable-game rows, and the winners in
-    // the recent-results list.
+    // Your own avatar, the players on the joinable-game rows, and — since a
+    // recent game expands its full standings in place — every seat in the
+    // recent-results list, not just its winner.
     useAvatars([
         username,
         ...liveGames.flatMap(g => (g.players || []).map(p => p.name)),
-        ...finishedGames.flatMap(g => (g.participants || []).map(p => p.username)),
+        ...recentCards.flatMap(c => c.participants.map(p => p.username)),
     ]);
 
     const statusText = reconnecting
@@ -352,43 +363,26 @@ function HomeScreenV2({
                                     );
                                 })}
 
-                                {!showLive && finishedGames.slice(0, 4).map((game, i) => {
-                                    // `nowTs` is sampled once by Lobby, so the
-                                    // relative times don't drift on re-render.
-                                    const timeStr = nowTs ? timeAgo(game.end_time, nowTs) : null;
-                                    const ranked = [...(game.participants || [])].sort((a, b) => a.placement - b.placement);
-                                    const winner = ranked[0];
-                                    const meta = [
-                                        game.game_mode === 'short' ? 'Short' : 'Standard',
-                                        `${game.total_rounds} round${game.total_rounds === 1 ? '' : 's'}`,
-                                        ranked.length ? `beat ${ranked.slice(1).map((p) => p.username).join(', ')}` : null,
-                                    ].filter(Boolean).join(' · ');
-                                    return (
-                                        <button
-                                            key={game.game_id}
-                                            onClick={() => onGameClick(game)}
-                                            style={{ ...row(i === 0), cursor: 'pointer' }}
-                                        >
-                                            <div style={{ position: 'relative', flexShrink: 0 }}>
-                                                <div style={{ width: 32, height: 32, borderRadius: 11, background: getAvatarTile(winner?.username || '?'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, border: '1.5px solid rgba(12,32,22,.65)' }}>
-                                                    {getAvatarEmoji(winner?.username || '?')}
-                                                </div>
-                                                <span aria-hidden="true" style={{ position: 'absolute', top: -7, left: -5, fontSize: 12 }}>👑</span>
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div className="truncate" style={{ color: TEXT, fontWeight: 700, fontSize: 14 }}>
-                                                    {winner ? `${winner.username} won` : 'Game finished'}
-                                                </div>
-                                                <div className="truncate" style={{ color: MUTED, fontSize: 11, fontWeight: 600 }}>{meta}</div>
-                                            </div>
-                                            {/* Outside the truncating block, so
-                                                a long winner name shortens
-                                                instead of hiding the badge. */}
-                                            {game.max_bots && <MaxBotsChip />}
-                                            <span style={{ color: FAINT, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{timeStr}</span>
-                                        </button>
-                                    );
-                                })}
+                                {/* The same card the Activity feed draws, in its
+                                    compact variant: a tap expands the full
+                                    standings, deal strength and round-by-round
+                                    review in place. */}
+                                {!showLive && recentCards.map((c, i) => (
+                                    <GameSummaryCard
+                                        key={c.id}
+                                        card={c}
+                                        variant="compact"
+                                        isFirst={i === 0}
+                                        username={username}
+                                        expanded={expandedGameId === c.id}
+                                        onToggle={(next) => {
+                                            setExpandedGameId(next);
+                                            if (next) onExpandGame?.(next);
+                                        }}
+                                        review={reviews[c.id] || null}
+                                        onReview={onReviewGame}
+                                    />
+                                ))}
 
                                 {isEmpty && (
                                     <div style={{ padding: '26px 16px', textAlign: 'center', color: MUTED, fontSize: 13, fontWeight: 600 }}>

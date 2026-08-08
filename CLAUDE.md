@@ -330,11 +330,31 @@ fits at 768px.
 - `HomeScreenV2.jsx` - the home screen. The logo is a corner mark, not a hero:
   the page opens on identity + the one button that starts a game, then a single
   Live/Recent switch over one hairline-separated list (joinable rooms in
-  progress / finished games) instead of a stack of panels. Destinations live in
+  progress / finished games, the latter expanding in place via
+  `GameSummaryCard`) instead of a stack of panels. Destinations live in
   AppShell's tab bar; this screen keeps only what is about *it* — the
   How-to-play `?`, the avatar/profile header, a guest's Sign-in pill. Still a
   hand-rolled **column shell** (non-scrolling backdrop root over a `flex-1
   min-h-0` scroller), the split ScreenShell enforces elsewhere.
+- `GameSummaryCard.jsx` - one finished (or abandoned) game, expandable in place.
+  Drawn by both the Activity feed and the home screen's Recent list, from the
+  same `/api/activity` row via `utils/gameSummary.js`'s `buildGameCard` (pure,
+  tested). The two surfaces request the *identical* row — home just asks for
+  four — but home used to remap it into a legacy Tailwind score dialog, which
+  silently dropped deal strength, rounds won, duration, the timestamp, the
+  highlights count and the whole abandoned-game treatment, and was the last
+  screen outside the v2 look. The `variant` is only the **collapsed header**:
+  `feed` is a bordered card with the mode/QUIT/PRIVATE chip row, `compact` is a
+  hairline row in the home shell whose meta line names the opponents ("beat Bot
+  3, Bot 4") instead of the duration — home queries `status=completed`, so QUIT
+  and PRIVATE could never fire there and a mode chip would repeat the "Short ·"
+  already leading its line. The **expanded body is unconditional and shared**:
+  standings, deal strength, `RoundReviewPanel`, and the route into
+  `GameReviewV2` — that is the part that drifted, so nothing may branch on
+  variant inside it. It is a div with hand-built button semantics, never a
+  `<button>`: the expanded body contains buttons of its own. Expansion state is
+  the parent list's (an accordion) and the review is fetched on expand by
+  `hooks/useRoundReviews.js`, shared by both containers.
 - `useHandGeometry.js` (in `hooks/`) - card size and overlap for the hand fan.
   Type scales only *above* the 75px mobile card (`typeScale`), so no mobile
   width can be altered by a desktop change.
@@ -353,6 +373,13 @@ fits at 768px.
 - `gameModes.js` - Game mode definitions (Short: 50pts, Standard: 100pts)
 - `timeAgo.js` - Compact relative-time labels ("7mo ago"), shared by the
   activity feed and the home screen's recent-games list
+- `gameSummary.js` - `buildGameCard`, the one derivation of an `/api/activity`
+  row into what `tableV2/GameSummaryCard.jsx` draws, plus the pure formatting
+  that copy needs (`formatDuration`, `ordinalSuffix`, `pluralize`). Both
+  surfaces consuming that row build their view model here, which is what stops
+  them interpreting it differently again. `when` is guarded on `nowTs`: this
+  module is pure, and `timeAgo` against an undefined "now" renders the literal
+  string "NaNy ago" rather than throwing.
 - `joinErrors.js` - Pure predicate deciding whether a `join_room` error is
   worth a toast (the lobby's reconnect probes also miss with "Room not found")
 
@@ -763,7 +790,10 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   Deliberately **not** a column on `game_history`: `getActivityFeed` selects
   `page.*`, so anything there ships to every client on every page. Served by
   `GET /api/games/:gameId/round-review` and fetched only when a card is
-  expanded. Covers every seat including bots and guests, which is why
+  expanded — on the activity feed and the home screen's Recent list alike, both
+  via `hooks/useRoundReviews.js`, which caches per game id so reopening a card
+  is free while that screen stays mounted (the cache does not survive
+  navigation). Covers every seat including bots and guests, which is why
   `round_stats` cannot serve it — that table holds registered humans only.
   Games predating it have no row; the endpoint answers 200 with null and the
   feed keeps its plain standings, since nothing can reconstruct the deals after

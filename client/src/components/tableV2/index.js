@@ -17,3 +17,4 @@ export { default as TrainingV2 } from './TrainingV2';
 export { default as SuitWatermark } from './SuitWatermark';
 export { default as MaxBotsChip } from './MaxBotsChip';
 export { default as RoundReviewPanel } from './RoundReviewPanel';
+export { default as GameSummaryCard } from './GameSummaryCard';

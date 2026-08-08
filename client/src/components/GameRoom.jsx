@@ -7,7 +7,6 @@ import {
 } from '../utils/handChecker';
 import { sortByRank, sortBySuit } from '../utils/cardUtils';
 import { lensServerMessage } from '../utils/suitLens';
-import ScoreDialog from './ScoreDialog';
 import { useSuitColors } from '../contexts/SuitColorContext';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 import { MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';

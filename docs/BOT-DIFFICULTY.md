@@ -259,14 +259,13 @@ describes the policy that actually played.
 
 `game_history.bot_difficulty` records the frozen tier for the whole game,
 written from `room.botPolicy.difficulty` at every `saveGameHistory` call site.
-The activity feed, the home screen's Recent list and the score dialog that list
-opens render exactly one thing from it: a gold **⚔️ MAX BOTS** chip
-(`tableV2/MaxBotsChip.jsx`), and only on a game that was pinned to
-`MAX_BOT_DIFFICULTY` *and* actually seated a bot. (The `/activity` page expands
-standings in place and never mounts `ScoreDialog`; only the home screen's Recent
-list does.) It is the only *per-game* difficulty label anything shows a viewer —
-the hand-strength stats' "Easy bots" scope also reflects difficulty, but as an
-aggregate over rounds that never names a game or a tier.
+The activity feed and the home screen's Recent list render exactly one thing
+from it: a gold **⚔️ MAX BOTS** chip (`tableV2/MaxBotsChip.jsx`), and only on a
+game that was pinned to `MAX_BOT_DIFFICULTY` *and* actually seated a bot. Both
+lists draw the same `tableV2/GameSummaryCard.jsx`, so there is one place the
+chip is decided. It is the only *per-game* difficulty label anything shows a
+viewer — the hand-strength stats' "Easy bots" scope also reflects difficulty,
+but as an aggregate over rounds that never names a game or a tier.
 
 `GameOverV2` draws the same chip at the moment the game ends, since that is what
 the badge is for; the feed is where you go to find it again. It is the one

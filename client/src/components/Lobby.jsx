@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { shouldShowJoinError } from '../utils/joinErrors';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 import HowToPlay from './HowToPlay';
-import ScoreDialog from './ScoreDialog';
 import { useVoice } from '../contexts/VoiceContext';
 import { useLogout } from '../hooks/useLogout';
+import { useRoundReviews } from '../hooks/useRoundReviews';
 import { GAME_MODES } from '../constants/gameModes';
 import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
@@ -13,6 +13,8 @@ import { useSuitColors } from '../contexts/SuitColorContext';
 // gets past a normal Fly cold start without making a genuinely offline player
 // stare at a dead home screen.
 const PRACTICE_OFFER_DELAY_MS = 12000;
+
+const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 const Lobby = ({ user, socket, setUser }) => {
     const [roomId, setRoomId] = useState('');
@@ -38,7 +40,9 @@ const Lobby = ({ user, socket, setUser }) => {
     // Snapshot "now" once at mount so the relative "Xm ago" labels stay pure
     // across re-renders (avoids calling Date.now() during render).
     const [nowTs] = useState(() => Date.now());
-    const [selectedGame, setSelectedGame] = useState(null);
+    // Recent games expand in place into the shared game card, which shows a
+    // round-by-round review when there is one recorded.
+    const { reviews, loadReview } = useRoundReviews(API_BASE);
     const navigate = useNavigate();
     const location = useLocation();
     const voiceContext = useVoice();
@@ -174,40 +178,6 @@ const Lobby = ({ user, socket, setUser }) => {
     // identity lands on the login screen, where a real account can sign in.
     const handleLogout = useLogout(setUser);
 
-    const handleGameClick = (game) => {
-        // Check if game has valid data
-        if (!game || !game.participants) {
-            console.error('Invalid game data:', game);
-            return;
-        }
-
-        // Convert game data to format expected by ScoreDialog
-        const winner = game.participants.find(p => p.placement === 1);
-
-        // For completed games from activity feed, always set a winner to trigger "Final Scores" display
-        const gameDialogData = {
-            winner: winner ? { name: winner.username } : { name: game.winner_username || 'Unknown' },
-            scores: game.participants.map(p => ({
-                name: p.username || 'Unknown',
-                isBot: p.isBot || false,
-                cumulativeScore: p.score || 0,
-                finalScore: p.score || 0
-            })),
-            roundNumber: game.total_rounds || 0,
-            gameMode: game.game_mode || 'standard',
-            isDragonWin: false, // We could detect this from events if needed
-            maxBots: game.max_bots,
-            // Carried so the dialog can offer a review, but only for a game
-            // this player actually sat in - reviews show every hand at the
-            // table and are scoped to your own games.
-            gameId: game.game_id,
-            canReview: !user?.isGuest && game.participants.some(
-                p => !p.isBot && p.username === user?.username
-            )
-        };
-        setSelectedGame(gameDialogData);
-    };
-
     // The single place a user-initiated join starts: state and ref move
     // together here, so a new call site can't forget the mirror. The ref is
     // set synchronously (not effect-synced) because a localhost server can
@@ -252,8 +222,7 @@ const Lobby = ({ user, socket, setUser }) => {
     // Fetch joinable rooms on mount and periodically
     const fetchJoinableRooms = async () => {
         try {
-            const baseUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
-            const response = await fetch(`${baseUrl}/api/rooms/joinable`);
+            const response = await fetch(`${API_BASE}/api/rooms/joinable`);
             if (response.ok) {
                 const rooms = await response.json();
                 setJoinableRooms(rooms);
@@ -266,8 +235,7 @@ const Lobby = ({ user, socket, setUser }) => {
     // Fetch recent games for activity snippet
     const fetchRecentGames = async () => {
         try {
-            const baseUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
-            const response = await fetch(`${baseUrl}/api/activity?limit=4&status=completed`);
+            const response = await fetch(`${API_BASE}/api/activity?limit=4&status=completed`);
             if (response.ok) {
                 const data = await response.json();
                 setRecentGames(data.games || []);
@@ -454,7 +422,9 @@ const Lobby = ({ user, socket, setUser }) => {
                 activeGames={joinableRooms}
                 onJoinActiveGame={joinInProgressRoom}
                 recentGames={recentGames}
-                onGameClick={handleGameClick}
+                reviews={reviews}
+                onExpandGame={loadReview}
+                onReviewGame={(gameId) => navigate(`/review/${gameId}`)}
                 nowTs={nowTs}
                 onHowToPlay={() => setShowHowToPlay(true)}
                 onActivity={() => navigate('/activity')}
@@ -468,15 +438,6 @@ const Lobby = ({ user, socket, setUser }) => {
                 onWatchRoom={watchRoom}
             />
             <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} pusoyMode={pusoyMode} />
-            <ScoreDialog
-                isOpen={!!selectedGame}
-                onClose={() => setSelectedGame(null)}
-                gameData={selectedGame}
-                showActions={false}
-                onReview={selectedGame?.canReview && selectedGame?.gameId
-                    ? () => navigate(`/review/${selectedGame.gameId}`)
-                    : null}
-            />
         </>
     );
 };

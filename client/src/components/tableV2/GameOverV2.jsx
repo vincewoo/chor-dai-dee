@@ -5,6 +5,8 @@ import { useAvatars } from '../../hooks/useAvatars';
 import MaxBotsChip from './MaxBotsChip';
 import RoundReviewPanel from './RoundReviewPanel';
 import ScreenShell, { ScreenBackdrop } from './ScreenShell';
+// Same helper the feed and home cards use for their deal-strength ordinals.
+import { ordinalSuffix } from '../../utils/gameSummary';
 
 // v2 mobile game-over / final-results screen. Mirrors the "Game Over v2"
 // mockup. Standings are derived from the game_over payload; shadow-rating
@@ -191,12 +193,6 @@ function GameOverV2({ gameOver, myName, maxBots = false, children }) {
             </div>
         </ScreenShell>
     );
-}
-
-function ordinalSuffix(n) {
-    const s = ['th', 'st', 'nd', 'rd'];
-    const v = n % 100;
-    return s[(v - 20) % 10] || s[v] || s[0];
 }
 
 export default GameOverV2;
