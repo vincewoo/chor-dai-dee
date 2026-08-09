@@ -93,11 +93,13 @@ really about flow.
 The tab bar is no longer the home screen's. It moved to
 `client/src/components/tableV2/AppShell.jsx`, the layout route around every
 screen outside a game, so it persists across Home, Leaders, Activity and
-Stats. The shape the measurement produced is unchanged — the bar is still the
-last row in normal flow of a full-height column, just one level up:
+Stats. The bar is still the last row in normal flow of the column; the column
+itself is now **pinned to the viewport edges** (`fixed inset-0`) rather than
+sized with the `h-full` percentage chain — see "Update: the flow column was not
+enough" below:
 
 ```
-<div class="flex h-full w-full flex-col overflow-hidden">        ← column shell, no scroll
+<div class="fixed inset-0 flex flex-col overflow-hidden">        ← column shell pinned to viewport, no scroll
   <nav class="hidden shrink-0 … md:flex">                        ← desktop header strip
   <div class="relative min-h-0 flex-1">                          ← Outlet row: screens render here
   <nav class="relative z-20 shrink-0 … pb-safe-bar md:hidden">   ← flow row, owns its inset
@@ -116,6 +118,32 @@ onto the game list once the page grew), then `fixed` (this bug), then the last
 flow row of the home screen's own column — the fix the measurement above
 produced. The move into AppShell changed which column it is the last row of,
 not the shape.
+
+## Update: the flow column was not enough
+
+The flow fix above shipped, deployed, and **still floated the bar** — measured
+again on an installed device (home screen, tab bar ~62pt above the physical
+bottom, felt band beneath it). The bar being a flow row was necessary but not
+sufficient: the column it is the last row of was sized `h-full`, i.e. the
+`html/body/#root { height: 100% }` percentage chain, and that chain resolves
+~one safe-area inset short in the installed PWA — exactly the failure this
+document worried about in the tension note above and left unresolved. So the
+column was as short as a `fixed; bottom: 0` bar had been, and its last row
+inherited the gap.
+
+The fix is to pin the **column** to both viewport edges — `fixed inset-0` on
+`AppShell`'s root instead of `h-full`. A fixed box with top and bottom both
+pinned derives its height from the edge pair and reaches the real bottom, the
+same construction `.game-screen-safe` uses (and the reason those shells never
+showed this bug). The bar stays a normal-flow row inside that fixed column, so
+its `pb-safe-bar` still paints through the home-indicator band. `top: 0` is safe
+because the screens inside pad their own top (`pt-safe-18`). Verified on device:
+the bar now sits on the physical bottom with no band beneath it.
+
+This resolves the "correct by construction (normal flow) vs correct by inset
+arithmetic" preference in a way the earlier fix could not: the winning shape is
+a flow row inside a viewport-pinned column — flow where it can be, pinned only
+where the height would otherwise be mis-resolved.
 
 The home screen's decorative layers (tint, radial glow, both `SuitWatermark`s)
 are siblings of its scroller, not children of it, so they are **pinned to the
@@ -187,6 +215,10 @@ comments claim the opposite and they may be right.
   gap still existed when the flow fix was written.** The flow fix is right
   regardless of which mechanism was operative, but if a future change needs to
   know which one actually mattered, that answer is not in this document.
+  *(Partly resolved: the gap was re-measured on device after the flow fix
+  shipped and was still present — see "Update: the flow column was not enough".
+  The flow row was necessary but the `h-full` column around it was not; pinning
+  the column with `fixed inset-0` fixed it.)*
 - `client/index.html` keeps `apple-mobile-web-app-status-bar-style: black`.
   That change has not been confirmed on device either.
   `qbk-scheduler` uses `black-translucent` successfully *because* it has

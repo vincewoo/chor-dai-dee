@@ -10,13 +10,17 @@ const FONT = "'Outfit',sans-serif";
 // here, so it survives navigating between Home, Leaders, Activity and Stats
 // instead of being a private detail of the home screen.
 //
-// The structure is the column shell docs/IOS-PWA-LAYOUT.md requires: nothing is
-// taken out of flow. The phone bar is the LAST ROW IN NORMAL FLOW of a
-// full-height column — `position: fixed` anchored by bottom alone resolves one
-// safe-area-inset-top above the physical bottom edge in the installed
-// viewport-fit=cover iOS PWA, which is exactly the bug that killed the old
-// floating footer. The bar's own `pb-safe-bar` paints its background through
-// the home-indicator band.
+// The phone bar is the LAST ROW IN NORMAL FLOW of the column, so it is never
+// `position: fixed` by bottom alone — that resolves one safe-area-inset-top
+// above the physical bottom edge in the installed viewport-fit=cover iOS PWA,
+// the bug that killed the old floating footer. The bar's own `pb-safe-bar`
+// paints its background through the home-indicator band.
+//
+// The COLUMN itself is the out-of-flow piece: `fixed inset-0` rather than a
+// percentage `h-full`, because the html/body/#root height:100% chain resolves
+// ~one inset short on device and re-floated the bar (see the root div below and
+// docs/IOS-PWA-LAYOUT.md). Pinning the column to both viewport edges is what
+// makes the flow bar inside it land on the real bottom.
 //
 // Screens render in the middle row and keep their own ScreenShell backdrops;
 // the root carries `surface.base` only so the translucent bar (and the strip
@@ -46,7 +50,18 @@ function AppShell() {
     };
 
     return (
-        <div className="flex h-full w-full flex-col overflow-hidden" style={{ background: surface.base }}>
+        // Pinned to all four physical viewport edges, NOT `h-full`. In the
+        // installed iOS PWA the html/body/#root { height:100% } chain resolves
+        // ~one safe-area inset short, so the bar below — even as the last flow
+        // row of an h-full column — floated ~62pt above the physical bottom on
+        // device (docs/IOS-PWA-LAYOUT.md; confirmed on-device after the flow fix
+        // shipped). A fixed box with BOTH top and bottom pinned derives its
+        // height from the edge pair and reaches the real bottom reliably — the
+        // same construction the game shells (.game-screen-safe) use. The bar is
+        // still the last flow row; it now lands on the physical bottom, its
+        // pb-safe-bar painting through the home-indicator band. top:0 is safe
+        // because the screens inside pad their own top (pt-safe-18).
+        <div className="fixed inset-0 flex flex-col overflow-hidden" style={{ background: surface.base }}>
             {/* Desktop destinations: a slim header strip. The bottom bar is a
                 thumb-reach affordance; from 768px up these read better as
                 header links, as they did on the old desktop home screen. */}

@@ -73,9 +73,12 @@ test('the phone tab bar stays in normal flow', () => {
     // Measured on device: a `position: fixed; bottom: 0` bar in the installed
     // PWA lands one env(safe-area-inset-top) — 62pt — above the screen, with
     // the page painting underneath it, and an out-of-flow element does not get
-    // its background extended into the home-indicator band either. Only a flow
-    // row at the end of a full-height column gets both right. See
-    // docs/IOS-PWA-LAYOUT.md. The bar (and this invariant) lived in
+    // its background extended into the home-indicator band either. The fix is a
+    // flow row at the end of a column that is itself pinned to both viewport
+    // edges (`fixed inset-0`) — an `h-full` percentage column re-floated the bar
+    // the same way, because html/body/#root height:100% also resolves one inset
+    // short in the installed PWA (verified on device after the flow fix shipped).
+    // See docs/IOS-PWA-LAYOUT.md. The bar (and this invariant) lived in
     // HomeScreenV2 until it became the app-wide persistent bar in AppShell.
     const shell = read('src/components/tableV2/AppShell.jsx');
 
@@ -96,11 +99,16 @@ test('the phone tab bar stays in normal flow', () => {
     // The column shell and the single content row between its flow rows. Token
     // checks, not whole ordered class-list literals, so reordering classes or
     // inserting one does not redden a behaviour-preserving refactor.
-    const shellTag = /<div\s+className="([^"]*h-full[^"]*)"/.exec(shell);
+    //
+    // The shell is `fixed inset-0`, NOT `h-full`: pinning the column to both
+    // viewport edges is what makes the flow bar inside it reach the physical
+    // bottom, where the height:100% chain landed it one inset short on device.
+    const shellTag = /<div\s+className="([^"]*\binset-0\b[^"]*)"/.exec(shell);
     assert.ok(shellTag, 'the column shell is the first classed div');
-    for (const token of ['flex', 'h-full', 'flex-col', 'overflow-hidden']) {
+    for (const token of ['fixed', 'inset-0', 'flex', 'flex-col', 'overflow-hidden']) {
         assert.match(shellTag[1], new RegExp(`\\b${token}\\b`), `shell keeps ${token}`);
     }
+    assert.doesNotMatch(shellTag[1], /\bh-full\b/, 'h-full resolves one inset short in the installed PWA — pin the column with fixed inset-0');
     assert.doesNotMatch(shellTag[1], /\boverflow-y-auto\b/, 'the shell itself must not scroll');
 
     // The content row hosts the Outlet; the screens inside it own scrolling
