@@ -1284,46 +1284,6 @@ const getUserStats = (username) => {
     });
 };
 
-const updateUserStats = (userId, isWin, pointsDelta, newMu = null, newSigma = null) => {
-    return new Promise((resolve, reject) => {
-        const winInc = isWin ? 1 : 0;
-        const lossInc = isWin ? 0 : 1;
-
-        // Build query dynamically based on whether rating is updated
-        let query = `UPDATE stats SET
-            wins = wins + ?,
-            losses = losses + ?,
-            points = points + ?,
-            games_played = games_played + 1`;
-
-        const params = [winInc, lossInc, pointsDelta];
-
-        if (newMu !== null && newSigma !== null) {
-            query += `, rating_mu = ?, rating_sigma = ?`;
-            params.push(newMu, newSigma);
-        }
-
-        query += ` WHERE user_id = ?`;
-        params.push(userId);
-
-        db.run(query, params, (err) => {
-                if (err) reject(err);
-                else resolve();
-            }
-        );
-    });
-};
-
-const updateUserStatsByName = (username, isWin, pointsDelta, newMu = null, newSigma = null) => {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT id FROM users WHERE username = ?`, [username], (err, row) => {
-            if (err) return reject(err);
-            if (!row) return reject('User not found');
-            updateUserStats(row.id, isWin, pointsDelta, newMu, newSigma).then(resolve).catch(reject);
-        });
-    });
-};
-
 // Helper function to get stats table name based on game mode
 const getStatsTableName = (gameMode) => {
     // Default to 'standard' if invalid mode
@@ -1765,21 +1725,7 @@ const getHeadToHeadStats = (playerId, gameMode) => {
 
 // ========== TIER 3 ADVANCED ANALYTICS FUNCTIONS ==========
 
-// Track individual decision for efficiency analysis
-const trackDecision = (gameId, userId, roundNumber, turnNumber, action, handSize, cardsInDeck, pileStrength, handStrength, quality) => {
-    return new Promise((resolve, reject) => {
-        const query = `INSERT INTO decision_tracking
-            (game_id, user_id, round_number, turn_number, action, hand_size, cards_remaining_in_deck, current_pile_strength, hand_strength, decision_quality)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-        db.run(query, [gameId, userId, roundNumber, turnNumber, action, handSize, cardsInDeck, pileStrength, handStrength, quality], (err) => {
-            if (err) reject(err);
-            else resolve();
-        });
-    });
-};
-
-// Batched form of trackDecision. A single game can produce hundreds of decisions
+// Track decisions for efficiency analysis. A single game can produce hundreds of decisions
 // per player; inserting them one awaited statement at a time was the largest
 // write source in the app. One multi-row INSERT collapses that into one
 // statement (chunked to stay under SQLITE_MAX_VARIABLE_NUMBER).
@@ -2761,24 +2707,6 @@ const sweepAbandonedGames = () => {
 };
 
 // Get game events for a specific game
-const getGameEvents = (gameId) => {
-    return new Promise((resolve, reject) => {
-        const query = `SELECT * FROM game_events WHERE game_id = ? ORDER BY timestamp ASC`;
-
-        db.all(query, [gameId], (err, rows) => {
-            if (err) return reject(err);
-
-            // Parse event_data JSON
-            const events = (rows || []).map(row => ({
-                ...row,
-                event_data: row.event_data ? JSON.parse(row.event_data) : null
-            }));
-
-            resolve(events);
-        });
-    });
-};
-
 // Get total count for pagination
 const getActivityFeedCount = (options = {}) => {
     const {
@@ -3201,8 +3129,6 @@ module.exports = {
     createUser,
     verifyUser,
     getUserStats,
-    updateUserStats,
-    updateUserStatsByName,
     getUserStatsByMode,
     updateUserStatsByMode,
     getUserByUsername,
@@ -3215,7 +3141,6 @@ module.exports = {
     updateHeadToHeadStats,
     getHeadToHeadStats,
     // Tier 3 functions
-    trackDecision,
     trackDecisionsBatch,
     pruneDecisionTracking,
     DECISION_TRACKING_RETENTION_DAYS,
@@ -3223,9 +3148,7 @@ module.exports = {
     updateCardAwarenessStats,
     getCardAwarenessStats,
     updateVarianceStats,
-    getVarianceStats,
     updateBehavioralStats,
-    getBehavioralStats,
     getTier3Stats,
     getDealStrengthStats,
     getGameRoundSummary,
@@ -3250,7 +3173,6 @@ module.exports = {
     saveGameRoundReview,
     getGameRoundReview,
     getActivityFeed,
-    getGameEvents,
     getActivityFeedCount,
     sweepAbandonedGames,
     // Google OAuth

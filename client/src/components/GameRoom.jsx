@@ -15,8 +15,14 @@ import SpectatorPanel from './SpectatorPanel';
 import VoiceChat from './VoiceChat';
 import VoiceControlBubble from './VoiceControlBubble';
 import { useVoice } from '../contexts/VoiceContext';
-import { SettingsModal, LeaveConfirmModal, KickConfirmModal } from './modals';
-import { GameTableMobile, GameTableDesktop, WaitingRoomV2, GameOverV2, RankPromotionSplash } from './tableV2';
+import SettingsModal from './modals/SettingsModal';
+import LeaveConfirmModal from './modals/LeaveConfirmModal';
+import KickConfirmModal from './modals/KickConfirmModal';
+import GameTableMobile from './tableV2/GameTableMobile';
+import GameTableDesktop from './tableV2/GameTableDesktop';
+import WaitingRoomV2 from './tableV2/WaitingRoomV2';
+import GameOverV2 from './tableV2/GameOverV2';
+import RankPromotionSplash from './tableV2/RankPromotionSplash';
 import {
     RANK_RESULT_GRACE_MS, awaitsRankResult, shouldSplashRank,
     rankSplashSeen, markRankSplashSeen, rankSplashStore,

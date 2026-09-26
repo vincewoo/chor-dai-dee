@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { StatsV2 } from './tableV2';
+import StatsV2 from './tableV2/StatsV2';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useLogout } from '../hooks/useLogout';
 

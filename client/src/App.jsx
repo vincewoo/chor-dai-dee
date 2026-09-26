@@ -19,9 +19,7 @@ const ActivityFeed = lazy(() => import('./components/ActivityFeed'));
 const GameReview = lazy(() => import('./components/GameReview'));
 const Training = lazy(() => import('./components/Training'));
 const PracticeRoom = lazy(() => import('./components/PracticeRoom'));
-const AvatarPickerV2 = lazy(() =>
-  import('./components/tableV2').then(m => ({ default: m.AvatarPickerV2 }))
-);
+const AvatarPickerV2 = lazy(() => import('./components/tableV2/AvatarPickerV2'));
 const Profile = lazy(() => import('./components/Profile'));
 
 // Route-level fallback. These chunks are small and usually warm from the service
@@ -34,7 +32,6 @@ const RouteFallback = () => (
 import { UserPreferencesProvider } from './contexts/UserPreferencesContext';
 import { SuitColorProvider } from './contexts/SuitColorContext';
 import { VoiceProvider } from './contexts/VoiceContext';
-import './utils/voiceDebug'; // Load voice debug utilities
 
 // Google OAuth Client ID from environment
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;

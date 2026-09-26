@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
-import { GameReviewV2 } from './tableV2';
+import GameReviewV2 from './tableV2/GameReviewV2';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 

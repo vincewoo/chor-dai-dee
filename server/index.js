@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const compression = require('compression');
 const { RoomManager } = require('./game/RoomManager');
-const { createUser, verifyUser, getUserStats, updateUserStats, updateUserStatsByName, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecision, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, saveGameRoundReview, getGameRoundReview, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
+const { createUser, verifyUser, getUserStats, getUserStatsByMode, updateUserStatsByMode, getUserByUsername, saveRoundStats, getRoundAggregates, getComebackStats, getCombinationStats, getRecentRounds, updateAggregateStats, updateHeadToHeadStats, getHeadToHeadStats, updateCardAwarenessStats, updateVarianceStats, updateBehavioralStats, getTier3Stats, getDealStrengthStats, getGameRoundSummary, savePlacementHistory, getPlacementHistory, updateVarianceScores, trackDecisionsBatch, pruneDecisionTracking, DECISION_TRACKING_RETENTION_DAYS, withTransaction, getUserPreferences, updateUserPreferences, getBotCalibration, saveBotCalibration, getAvatarsByUsernames, saveGameHistory, saveGameParticipant, saveGameEvent, saveGameRoundReview, getGameRoundReview, getActivityFeed, getActivityFeedCount, sweepAbandonedGames, getUserByGoogleId, createGoogleUser, linkGoogleAccount, isUsernameAvailable, verifyUserById, getAccountById, renameUser, setUserPassword, unlinkGoogleAccount } = require('./db');
 const { validateUsername, validatePassword } = require('./username');
 const { OAuth2Client } = require('google-auth-library');
 const { calculateRoundScores, calculateDragonScores } = require('./game/Scoring');
@@ -1698,10 +1698,6 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('game_update', room.getGameState());
                 // A bot just played, so spectators need the refreshed hands
                 emitSpectatorHands(room, roomId);
-                // Emit bot reasoning if debug mode is enabled
-                if (room.debugMode && result.reasoning) {
-                    io.to(roomId).emit('bot_reasoning', result.reasoning);
-                }
                 // If a trick was won, delay before clearing and continuing
                 if (result.trickWinDelay) {
                     // Capture the current generation for validation
@@ -2107,7 +2103,7 @@ io.on('connection', (socket) => {
     socket.on('set_coach', ({ roomId, enabled }) => {
         const room = roomManager.getRoom(roomId);
         if (!room) return;
-        // Requires a seat, like toggle_debug: a spectator has no move to coach.
+        // Requires a seat: a spectator has no move to coach.
         if (!room.players.some(p => p.id === socket.id)) return;
         room.setCoachEnabled(socket.id, Boolean(enabled));
     });
@@ -2122,21 +2118,6 @@ io.on('connection', (socket) => {
         }
         const result = room.coachSuggestion(socket.id);
         socket.emit('coach_hint', result.error ? { error: result.error } : result.suggestion);
-    });
-
-    // Debug mode toggle
-    socket.on('toggle_debug', ({ roomId, enabled }) => {
-        const room = roomManager.getRoom(roomId);
-        if (room) {
-            // Require a seat. Previously any socket that knew a room ID could flip
-            // debug mode on and make the room broadcast bot reasoning.
-            if (!room.players.some(p => p.id === socket.id)) {
-                return socket.emit('error', 'You are not in this room');
-            }
-            room.setDebugMode(enabled);
-            io.to(roomId).emit('game_update', room.getGameState());
-            console.log(`Debug mode ${enabled ? 'enabled' : 'disabled'} for room ${roomId}`);
-        }
     });
 
     socket.on('kick_player', ({ roomId, kickedPlayerId }) => {

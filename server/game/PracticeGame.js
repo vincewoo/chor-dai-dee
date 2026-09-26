@@ -430,7 +430,6 @@ class PracticeGame {
             roundNumber: this.roundNumber,
             turnNumber: this.turnNumber,
             cumulativeScores: { ...this.cumulativeScores },
-            debugMode: false,
             gameMode: this.gameMode,
             botDifficulty: 'balanced',
             forceMaxBots: false,

@@ -190,10 +190,6 @@ holds a real seat server-side and a tab tap would abandon it with no
     controls (`VoiceControlBubble` in the HUD, `VoiceIndicator` per seat).
 
 - **UI Helper Components:**
-  - `BotDebugPanel.jsx` - Real-time bot decision analysis
-    - Shows bot reasoning and decision factors
-    - Displays situation analysis and alternative moves
-    - History tracking of bot decisions
   - `Stats.jsx` - Comprehensive 3-tier statistics dashboard
     - Tier 1: Basic stats (games, wins, win rate, rating, placements, penalties)
     - Tier 2: Strategic stats (lead control, head-to-head records)
@@ -681,7 +677,6 @@ to offer and would otherwise be locked out of its own settings.
 - `pass_turn` - Pass current turn
 - `next_round` - Start the next round after round ends
 - `get_room_state` - Request current room state (for reconnection)
-- `toggle_debug` - Enable/disable bot debug panel
 - `set_coach` - Turn the coach on/off for this seat (re-sent after reconnect,
   since the server keys it on player id)
 - `coach_hint` - Ask what to play. Read-only, and answered only for the asking
@@ -705,7 +700,6 @@ to offer and would otherwise be locked out of its own settings.
   Stored on the room (`lastRankResults`) and replayed after `game_over` on every
   reconnect path, or a player who refreshes onto the game-over screen waits out
   the client's grace period for a result that already happened.
-- `bot_reasoning` - Bot decision analysis (for debug panel)
 - `coach_hint` - The coach's suggested move + reasoning (to the asker only)
 - `coach_note` - The coach's unprompted reaction to the move just made (to the
   player who made it only)
@@ -913,8 +907,7 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   `${rank}-${suit}` identity keys, the socket protocol, `SUITS_ORDER` in
   `cardUtils.js`, the bots, stats and the ML game log all keep seeing the
   underlying suit. A lensed suit in the 52-byte deal blob or the 52-bit card
-  masks would corrupt stored tapes irreversibly. `BotDebugPanel` is dev-only and
-  deliberately stays in underlying notation.
+  masks would corrupt stored tapes irreversibly.
 - **Auto-Pass:** Automatically pass when no valid moves available
 - **Coach (off by default):** Adds an owl button on the left edge of the
   Pass/Play row (`tableV2/CoachBubble.jsx`). Tapping it on your turn asks the
@@ -974,13 +967,6 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
   (`useTableTheme`)
 - Auto-reconnection with status indicators
 
-### Developer Features
-- **Bot Debug Panel:** Real-time AI decision analysis
-  - Toggle with settings panel
-  - Shows reasoning, factors, alternatives
-  - History tracking of decisions
-  - Situation analysis (hand size, 2s count, free play)
-
 ## Technical Notes
 
 ### Technology Stack
@@ -1029,7 +1015,6 @@ or `fly machine restart`.
   rematch for the whole previous game.
 - Card value encoding: `rankIndex * 4 + suitIndex` for comparison
 - Reconnection handling: players can rejoin in-progress games
-- Bot decisions captured with reasoning for debug panel
 - Bot AI uses retention-cost heuristics, card counting, and per-round opponent
   modelling built from `Room.trickHistory`
 - Stats calculated at round-end and persisted to multiple tables

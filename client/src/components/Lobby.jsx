@@ -6,7 +6,8 @@ import { useVoice } from '../contexts/VoiceContext';
 import { useLogout } from '../hooks/useLogout';
 import { useRoundReviews } from '../hooks/useRoundReviews';
 import { GAME_MODES } from '../constants/gameModes';
-import { HomeScreenV2, WaitingRoomV2 } from './tableV2';
+import HomeScreenV2 from './tableV2/HomeScreenV2';
+import WaitingRoomV2 from './tableV2/WaitingRoomV2';
 import { useSuitColors } from '../contexts/SuitColorContext';
 
 // Socket.IO's own connection timeout is 20 seconds. This shorter grace period
