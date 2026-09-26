@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ActivityFeedV2 } from './tableV2';
+import ActivityFeedV2 from './tableV2/ActivityFeedV2';
 import { useRoundReviews } from '../hooks/useRoundReviews';
 
 const ActivityFeed = ({ serverUrl, user }) => {

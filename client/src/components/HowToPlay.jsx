@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import PileCardGlyph from './tableV2/PileCardGlyph';
-import { SUIT_SYMBOLS } from '../constants';
+import { SUIT_SYMBOLS } from '../theme/tableTheme';
 import { displaySuit } from '../utils/suitLens';
 
 // Suit names and tiers, indexed by the underlying ascending order so the

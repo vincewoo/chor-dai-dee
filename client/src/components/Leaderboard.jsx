@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ArchetypeDialog from './ArchetypeDialog';
-import { LeaderboardV2 } from './tableV2';
+import LeaderboardV2 from './tableV2/LeaderboardV2';
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 

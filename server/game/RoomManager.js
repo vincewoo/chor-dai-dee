@@ -67,8 +67,6 @@ class Room {
         this.lastRoundWinnerId = null; // Winner of last round starts next
         this.playedCards = []; // Track all cards played this round for card counting
         this.trickHistory = []; // Ordered plays/passes this round, for bot opponent modelling
-        this.debugMode = false; // Enable bot reasoning capture
-        this.lastBotReasoning = null; // Store the most recent bot decision reasoning
         // Players with the coach turned on, by player id. Held per-room rather
         // than read from the account preference so it follows the socket: the
         // preference says what a player wants, this says which live seats are
@@ -743,13 +741,6 @@ class Room {
         return this.players.find(p => p.id === socketId && p.isDisconnected);
     }
 
-    setDebugMode(enabled) {
-        this.debugMode = enabled;
-    }
-
-    getLastBotReasoning() {
-        return this.lastBotReasoning;
-    }
 
     removePlayer(socketId) {
         this.players = this.players.filter(p => p.id !== socketId);
@@ -2147,17 +2138,7 @@ class Room {
                 this.botPolicy.profileFor(currentPlayer.name)
             );
 
-            const handleBotMove = (move, reasoning) => {
-                // Store reasoning if in debug mode
-                if (this.debugMode && reasoning) {
-                    this.lastBotReasoning = {
-                        botId: currentPlayer.id,
-                        botName: currentPlayer.name,
-                        timestamp: Date.now(),
-                        ...reasoning
-                    };
-                }
-
+            const handleBotMove = (move) => {
                 // Use registerTimeout to ensure we can cancel if needed and don't double-queue
                 const timeoutId = setTimeout(() => {
                     // Reset thinking flag so next turn can proceed
@@ -2174,12 +2155,11 @@ class Room {
                         const res = this.playHand(currentPlayer.id, move);
                         if (res.success) {
                             if (res.roundOver) {
-                                callback({ type: 'roundOver', roundWinner: res.roundWinner, reasoning: this.lastBotReasoning, roundWinDelay: res.roundWinDelay || false });
+                                callback({ type: 'roundOver', roundWinner: res.roundWinner, roundWinDelay: res.roundWinDelay || false });
                             } else {
                                 callback({
                                     type: 'play',
                                     playerId: currentPlayer.id,
-                                    reasoning: this.lastBotReasoning,
                                     trickWinDelay: res.trickWinDelay || false
                                 });
                             }
@@ -2191,7 +2171,6 @@ class Room {
                             callback({
                                 type: 'pass',
                                 playerId: currentPlayer.id,
-                                reasoning: this.lastBotReasoning,
                                 trickWinDelay: res.trickWinDelay || false
                             });
                         }
@@ -2202,21 +2181,17 @@ class Room {
             };
 
             try {
-                const result = this.botPolicy.getMove(
+                const move = this.botPolicy.getMove(
                     currentPlayer.hand,
                     this.lastPlayedHand,
                     isFirstTurn,
                     gameContext,
                     {
-                        captureReasoning: this.debugMode,
                         style: currentPlayer.botStyle || DEFAULT_BOT_STYLE
                     }
                 );
 
-                // Extract move and reasoning based on debug mode
-                const move = this.debugMode ? result.cards : result;
-                const reasoning = this.debugMode ? result.reasoning : null;
-                handleBotMove(move, reasoning);
+                handleBotMove(move);
             } catch (e) {
                 console.error('Error getting bot move:', e);
                 this.isBotThinking = false;
@@ -2253,7 +2228,6 @@ class Room {
             // decision point from the next.
             turnNumber: this.turnNumber,
             cumulativeScores: this.cumulativeScores,
-            debugMode: this.debugMode,
             gameMode: this.gameMode,
             botDifficulty: this.botPolicy.difficulty,
             // The room's own setting, not a description of the live policy:

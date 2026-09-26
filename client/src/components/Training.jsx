@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { TrainingV2 } from './tableV2';
+import TrainingV2 from './tableV2/TrainingV2';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
 

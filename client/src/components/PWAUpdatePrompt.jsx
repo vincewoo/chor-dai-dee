@@ -19,7 +19,8 @@ function PWAUpdatePrompt() {
     updateServiceWorker,
   } = useRegisterSW({
     onRegistered(r) {
-      console.log('SW Registered:', r);
+      // The only registration: check for a new deploy every hour.
+      if (r) setInterval(() => r.update(), 60 * 60 * 1000);
     },
     onRegisterError(error) {
       console.log('SW registration error', error);
