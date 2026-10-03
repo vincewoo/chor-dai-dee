@@ -3654,16 +3654,22 @@ const CHECK_INTERVAL = 60 * 1000;
 //
 // Any connected socket or any live room resets the clock, so this is 6 hours
 // of nobody touching the server at all -- not 6 hours since the last game.
+//
+// "0" disables the self-exit entirely. Production does that, because Fly
+// suspends the machine itself (auto_stop_machines = 'suspend'), which keeps
+// in-memory rooms and resumes far faster than a fresh boot.
 const DEFAULT_IDLE_SHUTDOWN_MINUTES = 6 * 60;
 const parsedIdleMinutes = Number(process.env.IDLE_SHUTDOWN_MINUTES);
-const IDLE_SHUTDOWN_MINUTES = Number.isFinite(parsedIdleMinutes) && parsedIdleMinutes > 0
+const IDLE_SHUTDOWN_MINUTES = Number.isFinite(parsedIdleMinutes) && parsedIdleMinutes >= 0
     ? parsedIdleMinutes
     : DEFAULT_IDLE_SHUTDOWN_MINUTES;
+const IDLE_SHUTDOWN_ENABLED = IDLE_SHUTDOWN_MINUTES > 0;
 const IDLE_SHUTDOWN_MS = IDLE_SHUTDOWN_MINUTES * 60 * 1000;
 
 // Start the clock at boot so a machine that nobody ever connects to still
 // winds down instead of running forever.
 let idleSince = Date.now();
+let lastTickAt = Date.now();
 
 setInterval(() => {
     const reaped = roomManager.cleanupInactiveRooms();
@@ -3688,6 +3694,19 @@ setInterval(() => {
     // Logic: if there have been no active rooms AND no connected clients for
     // IDLE_SHUTDOWN_MS, stop the server. This allows Fly.io to scale down to
     // zero when idle, without punishing short gaps between players.
+    if (!IDLE_SHUTDOWN_ENABLED) return;
+
+    // A tick far later than scheduled means the machine was suspended. The
+    // wall clock kept running while it was frozen, so the idle window would
+    // otherwise count the suspension and exit on the very tick that the
+    // resuming request woke it for. Restart the window from now.
+    const now = Date.now();
+    const tickGap = now - lastTickAt;
+    lastTickAt = now;
+    if (tickGap > CHECK_INTERVAL * 3 && idleSince !== null) {
+        idleSince = now;
+    }
+
     const activeRooms = roomManager.rooms.size;
     const connectedClients = io.engine.clientsCount;
 
@@ -3709,9 +3728,11 @@ setInterval(() => {
 }, CHECK_INTERVAL);
 
 console.log(
-    `[Cleanup] Automatic room cleanup and autostop enabled ` +
-    `(check every ${CHECK_INTERVAL / 60000} minute(s), shut down after ` +
-    `${IDLE_SHUTDOWN_MINUTES} idle minute(s))`
+    `[Cleanup] Automatic room cleanup enabled ` +
+    `(check every ${CHECK_INTERVAL / 60000} minute(s)); ` +
+    (IDLE_SHUTDOWN_ENABLED
+        ? `autostop after ${IDLE_SHUTDOWN_MINUTES} idle minute(s)`
+        : 'autostop disabled (IDLE_SHUTDOWN_MINUTES=0)')
 );
 
 // Error handlers to catch crashes

@@ -992,7 +992,7 @@ them, because a four-seat zero-sum utility cannot be reconstructed without them.
 | `PORT` | `3000` | |
 | `NODE_ENV` | — | `production` switches DB path to `/data` and tightens CORS |
 | `DATABASE_PATH` | `/data/database.sqlite` prod, `server/database.sqlite` dev | Overrides both. Exists so tests can point `db.js` at a scratch file — requiring it opens and migrates whatever path it resolves. |
-| `IDLE_SHUTDOWN_MINUTES` | `360` (6h) | The process exits once it has been continuously idle — no rooms and no connected sockets — for this long, letting Fly scale to zero. Any room or socket resets the clock. Fly restarts the machine on the next request. |
+| `IDLE_SHUTDOWN_MINUTES` | `360` (6h) | The process exits once it has been continuously idle — no rooms and no connected sockets — for this long. Any room or socket resets the clock. `0` disables it, which is what `fly.toml` sets: production scales to zero with Fly's `auto_stop_machines = 'suspend'` instead, which keeps in-memory rooms across the suspension and resumes much faster than a cold boot. A tick that arrives long overdue (a resumed suspension) restarts the idle window rather than counting the frozen time. |
 | `CLIENT_URL` | — | Allowed CORS origin in production |
 | `GOOGLE_CLIENT_ID` | — | Google OAuth |
 | `GAMELOG_ENABLED` | off | Must be exactly `"1"`. Enabled in `fly.toml`. |
